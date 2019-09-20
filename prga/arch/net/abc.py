@@ -133,6 +133,8 @@ class AbstractBus(Abstract, Sequence):
             return self._static_bits[index]
         except AttributeError:
             if isinstance(index, int):
+                if index < 0 or index >= self.width:
+                    raise IndexError
                 return self._get_or_create_bit(index, True)
             elif isinstance(index, slice):
                 return tuple(self._get_or_create_bit(i, True) for i in
@@ -160,16 +162,10 @@ class AbstractBus(Abstract, Sequence):
         """:obj:`bool`: Test if this net is a bus."""
         return True
 
-    @property
+    @abstractproperty
     def physical_cp(self):
         """:obj:`Sequence` [`AbstractBit` ]: Physical counterpart of this bus."""
-        try:
-            return tuple(bit.physical_cp for bit in self._static_bits)
-        except AttributeError:
-            if self.is_physical:
-                return self
-            else:
-                return None
+        raise NotImplementedError
 
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractproperty

@@ -6,6 +6,7 @@ from prga.compatible import *
 from prga.arch.net.abc import AbstractSourceBit, AbstractSinkBit
 from prga.arch.net.const import UNCONNECTED
 from prga.util import Object, ReadonlySequenceProxy
+from prga.exception import PRGAInternalError
 
 __all__ = ['DynamicSourceBit', 'StaticSourceBit', 'DynamicSinkBit', 'StaticSinkBit']
 
@@ -105,13 +106,19 @@ class _BaseDynamicBit(_BaseBit):
     # -- implementing properties/methods required by superclass --------------
     @property
     def physical_cp(self):
+        if self.is_physical:
+            return self
         try:
             return self._static_cp.physical_cp
         except AttributeError:
-            if self.is_physical:
-                return self
-            else:
-                return None
+            return None
+
+    @physical_cp.setter
+    def physical_cp(self, cp):
+        if self.is_physical:
+            raise PRGAInternalError("'{}' is physical so no counterpart should be set"
+                    .format(self))
+        self._get_or_create_static_cp().physical_cp = cp
 
 # ----------------------------------------------------------------------------
 # -- Base Class for Static Port/Pin Bits -------------------------------------
@@ -142,6 +149,9 @@ class _BaseStaticBit(_BaseBit):
     # -- implementing properties/methods required by superclass --------------
     @property
     def physical_cp(self):
+        # 0. no physical counterpart if myself is physical
+        if self.is_physical:
+            return self
         # 1. check ungrouped physical counterpart
         try:
             return self._physical_cp
@@ -161,6 +171,9 @@ class _BaseStaticBit(_BaseBit):
         if cp is self.physical_cp:
             return
         # 1. validate self and parameter
+        if self.is_physical:
+            raise PRGAInternalError("'{}' is physical so no counterpart should be set"
+                    .format(self))
         if cp is not None and not (cp.is_physical and cp.is_sink is self.is_sink):
             raise PRGAInternalError("'{}' is not a valid physical counterpart for '{}'"
                     .format(cp, self))
@@ -224,8 +237,20 @@ class DynamicSinkBit(_BaseDynamicBit, AbstractSinkBit):
             return self.bus._physical_source[self.index]
         except AttributeError:
             pass
-        # 3. give up
-        return self.logical_source
+        # 3. default to logical source
+        logical_source = self.logical_source
+        if logical_source.is_physical:
+            return logical_source
+        # 4. give up
+        return UNCONNECTED
+
+    @physical_source.setter
+    def physical_source(self, source):
+        # 0. physical source is only valid if this is a physical net
+        if not self.is_physical:
+            raise PRGAInternalError("'{}' is not a physical net"
+                    .format(self))
+        self._get_or_create_static_cp().physical_source = source
 
     @property
     def logical_source(self):
@@ -241,6 +266,10 @@ class DynamicSinkBit(_BaseDynamicBit, AbstractSinkBit):
             pass
         # 3. give up
         return UNCONNECTED
+
+    @logical_source.setter
+    def logical_source(self, source):
+        self._get_or_create_static_cp().logical_source = source
 
     @property
     def user_sources(self):
@@ -302,8 +331,12 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
             return self.bus._physical_source[self.index]
         except AttributeError:
             pass
-        # 3. give up
-        return self.logical_source
+        # 3. default to logical source
+        logical_source = self.logical_source
+        if logical_source.is_physical:
+            return logical_source
+        # 4. give up
+        return UNCONNECTED
 
     @physical_source.setter
     def physical_source(self, source):

@@ -8,26 +8,134 @@ from prga.arch.net.abc import AbstractBus, AbstractPort, AbstractPin
 from prga.arch.net.const import UNCONNECTED
 from prga.arch.net.bit import DynamicSourceBit, StaticSourceBit, DynamicSinkBit, StaticSinkBit
 from prga.util import Object
+from prga.exception import PRGAInternalError
 
 from abc import abstractproperty
 
 __all__ = ['BaseClockPort', 'BaseInputPort', 'BaseOutputPort', 'BaseInputPin', 'BaseOutputPin']
 
 # ----------------------------------------------------------------------------
-# -- Source Bus --------------------------------------------------------------
+# -- Base Class for Port/Pin Bus ---------------------------------------------
 # ----------------------------------------------------------------------------
-class _SourceBus(Object, AbstractBus):
-    """Source bus.
+class _BaseBus(Object, AbstractBus):
+    """Base class for all buses.
 
     Args:
         parent (`AbstractModule` or `AbstractInstance`): parent module/instance of this bus
     """
 
-    __slots__ = ['_parent', '_static_bits']
+    __slots__ = ['_parent', '_static_bits', '_physical_cp']
     # == internal API ========================================================
     def __init__(self, parent):
-        super(_SourceBus, self).__init__()
+        super(_BaseBus, self).__init__()
         self._parent = parent
+
+    # == low-level API =======================================================
+    # -- implementing properties/methods required by superclass --------------
+    @property
+    def parent(self):
+        """`AbstractModule` or `AbstractInstance`: Parent module/instance of this port/pin."""
+        return self._parent
+
+    @property
+    def physical_cp(self):
+        # 0. no physical counterpart if myself is physical
+        if self.is_physical:
+            return self
+        # 1. check grouped physical counterpart
+        try:
+            return self._physical_cp
+        except AttributeError:
+            pass
+        # 2. check ungrouped physical counterpart
+        try:
+            return tuple(bit._physical_cp for bit in self._static_bits)
+        except AttributeError:
+            return None
+
+    @physical_cp.setter
+    def physical_cp(self, cp):
+        # 1. shortcut if no changes are to be made
+        try:
+            if cp is self._physical_cp:
+                return
+        except AttributeError:
+            pass
+        # 2. validate
+        if self.is_physical:
+            raise PRGAInternalError("'{}' is physical so no counterpart should be set"
+                    .format(self))
+        # 3. ``cp`` is ``None`` or a bus
+        try:
+            if cp is None or cp.is_bus:
+                # 3.1 validate
+                if cp is not None and not (cp.is_physical and cp.is_sink is self.is_sink):
+                    raise PRGAInternalError("'{}' is not a valid physical counterpart for '{}'"
+                            .format(cp, self))
+                # 3.2 clean up ungrouped physical counterparts
+                try:
+                    for bit in self._static_bits:
+                        try:
+                            del bit._physical_cp
+                        except AttributeError:
+                            pass
+                except AttributeError:
+                    pass
+                # 3.3 update
+                if cp is None:
+                    try:
+                        del self._physical_cp
+                    except AttributeError:
+                        pass
+                else:
+                    self._physical_cp = cp
+            elif self.width == 1:
+                # 3.4 validate
+                if not (cp.is_physical and cp.is_sink is self.is_sink):
+                    raise PRGAInternalError("'{}' is not a valid physical counterpart for '{}'"
+                            .format(cp, self))
+                # 3.5 clean up grouped physical counterpart
+                try:
+                    del self._physical_cp
+                except AttributeError:
+                    pass
+                # 3.6 update
+                self._get_or_create_bit(0, False)._physical_cp = cp._get_or_create_static_cp()
+        # 4. ``cp`` is a sequence of bits
+        except AttributeError:
+            # 4.1 validate
+            if not len(cp) == self.width:
+                raise PRGAInternalError("Got {} bits but {} expected"
+                        .format(len(cp), self.width))
+            # 4.2 clean up grouped physical counterpart
+            try:
+                del self._physical_cp
+            except AttributeError:
+                pass
+            # 4.3 update
+            for i, cpbit in enumerate(cp):
+                # 4.3.1 validate
+                if cpbit is not None and not (cpbit.is_physical and cpbit.is_sink is self.is_sink):
+                    raise PRGAInternalError("'{}' is not a valid physical counterpart for '{}'"
+                            .format(cp, self[i]))
+                # 4.3.2 update
+                if cp is None:
+                    try:
+                        del self._static_bits[i]._physical_cp
+                    except AttributeError:
+                        pass
+                else:
+                    self._get_or_create_bit(i, False)._physical_cp = cp._get_or_create_static_cp()
+
+# ----------------------------------------------------------------------------
+# -- Source Bus --------------------------------------------------------------
+# ----------------------------------------------------------------------------
+class _SourceBus(_BaseBus, AbstractBus):
+    """Source bus.
+
+    Args:
+        parent (`AbstractModule` or `AbstractInstance`): parent module/instance of this bus
+    """
 
     # -- implementing properties/methods required by superclass --------------
     def _get_or_create_bit(self, index, dynamic):
@@ -41,12 +149,6 @@ class _SourceBus(Object, AbstractBus):
                 return self._static_bits[index]
 
     # == low-level API =======================================================
-    # -- properties/methods to be implemented/overriden by subclasses --------
-    @property
-    def parent(self):
-        """`AbstractModule` or `AbstractInstance`: Parent module/instance of this port/pin."""
-        return self._parent
-
     # -- implementing properties/methods required by superclass --------------
     @property
     def is_sink(self):
@@ -55,18 +157,14 @@ class _SourceBus(Object, AbstractBus):
 # ----------------------------------------------------------------------------
 # -- Sink Bus ----------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class _SinkBus(Object, AbstractBus):
+class _SinkBus(_BaseBus, AbstractBus):
     """Sink bus.
 
     Args:
         parent (`AbstractModule` or `AbstractInstance`): parent module/instance of this bus
     """
 
-    __slots__ = ['_parent', '_static_bits', '_physical_source', '_logical_source']
-    # == internal API ========================================================
-    def __init__(self, parent):
-        super(_SinkBus, self).__init__()
-        self._parent = parent
+    __slots__ = ['_physical_source', '_logical_source']
 
     # -- implementing properties/methods required by superclass --------------
     def _get_or_create_bit(self, index, dynamic):
@@ -80,12 +178,6 @@ class _SinkBus(Object, AbstractBus):
                 return self._static_bits[index]
 
     # == low-level API =======================================================
-    # -- properties/methods to be implemented/overriden by subclasses --------
-    @property
-    def parent(self):
-        """`AbstractModule` or `AbstractInstance`: Parent module/instance of this port/pin."""
-        return self._parent
-
     @property
     def physical_source(self):
         """:obj:`Sequence` [`AbstractSourceBit` ]: Physical driver of this bus."""
