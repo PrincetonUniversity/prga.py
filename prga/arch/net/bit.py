@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.arch.net.abc import AbstractSourceBit, AbstractSinkBit
+from prga.arch.net.abc import AbstractBit, AbstractSourceBit, AbstractSinkBit
 from prga.arch.net.const import UNCONNECTED
 from prga.util import Object, ReadonlySequenceProxy
 from prga.exception import PRGAInternalError
@@ -13,7 +13,7 @@ __all__ = ['DynamicSourceBit', 'StaticSourceBit', 'DynamicSinkBit', 'StaticSinkB
 # ----------------------------------------------------------------------------
 # -- Base Class for Port/Pin Bits --------------------------------------------
 # ----------------------------------------------------------------------------
-class _BaseBit(Object):
+class _BaseBit(Object, AbstractBit):
     """Base class for all port/pin bits.
     
     Args:
@@ -95,7 +95,7 @@ class _BaseDynamicBit(_BaseBit):
     @property
     def _static_cp(self):
         try:
-            return self.bus._static_bits[self.index]
+            return self.bus._bits[self.index]
         except AttributeError:
             return None
 
@@ -222,6 +222,25 @@ class DynamicSinkBit(_BaseDynamicBit, AbstractSinkBit):
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
     @property
+    def source(self):
+        # 1. check static counterpart's logical source
+        try:
+            return self._static_cp._source
+        except AttributeError:
+            pass
+        # 2. check grouped logical source
+        try:
+            return self.bus._source[self.index]
+        except AttributeError:
+            pass
+        # 3. give up
+        return UNCONNECTED
+
+    @source.setter
+    def source(self, source):
+        self._get_or_create_static_cp().source = source
+
+    @property
     def physical_source(self):
         # 0. physical source is only valid if this is a physical net
         if not self.is_physical:
@@ -238,9 +257,9 @@ class DynamicSinkBit(_BaseDynamicBit, AbstractSinkBit):
         except AttributeError:
             pass
         # 3. default to logical source
-        logical_source = self.logical_source
-        if logical_source.is_physical:
-            return logical_source
+        source = self.source
+        if source.is_physical:
+            return source
         # 4. give up
         return UNCONNECTED
 
@@ -251,25 +270,6 @@ class DynamicSinkBit(_BaseDynamicBit, AbstractSinkBit):
             raise PRGAInternalError("'{}' is not a physical net"
                     .format(self))
         self._get_or_create_static_cp().physical_source = source
-
-    @property
-    def logical_source(self):
-        # 1. check static counterpart's logical source
-        try:
-            return self._static_cp._logical_source
-        except AttributeError:
-            pass
-        # 2. check grouped logical source
-        try:
-            return self.bus._logical_source[self.index]
-        except AttributeError:
-            pass
-        # 3. give up
-        return UNCONNECTED
-
-    @logical_source.setter
-    def logical_source(self, source):
-        self._get_or_create_static_cp().logical_source = source
 
     @property
     def user_sources(self):
@@ -311,10 +311,46 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
         index (:obj:`int`): The index of this bit in the bus
     """
 
-    __slots__ = ['_physical_source', '_logical_source', '_user_sources']
+    __slots__ = ['_source', '_physical_source', '_user_sources']
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
+    @property
+    def source(self):
+        # 1. check ungrouped logical source
+        try:
+            return self._source
+        except AttributeError:
+            pass
+        # 2. check grouped logical source
+        try:
+            return self.bus._source[self.index]
+        except AttributeError:
+            pass
+        # 3. give up
+        return UNCONNECTED
+
+    @source.setter
+    def source(self, source):
+        # 0. shortcut if no changes are to be made
+        if source is self.source:
+            return
+        # 1. validate self and source
+        if source.is_sink:
+            raise PRGAInternalError("'{}' is not a source"
+                    .format(source))
+        # 2. ungroup grouped logical source if there are
+        try:
+            grouped = self.bus._source
+            for i in range(self.bus.width):
+                sink = self.bus._get_or_create_bit(i, False)
+                sink._source = grouped._get_or_create_bit(i, False)
+            del self.bus._source
+        except AttributeError:
+            pass
+        # 3. update
+        self._source = source._get_or_create_static_cp()
+
     @property
     def physical_source(self):
         # 0. physical source is only valid if this is a physical sink
@@ -332,9 +368,9 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
         except AttributeError:
             pass
         # 3. default to logical source
-        logical_source = self.logical_source
-        if logical_source.is_physical:
-            return logical_source
+        source = self.source
+        if source.is_physical:
+            return source
         # 4. give up
         return UNCONNECTED
 
@@ -358,42 +394,6 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
             pass
         # 3. update
         self._physical_source = source._get_or_create_static_cp()
-
-    @property
-    def logical_source(self):
-        # 1. check ungrouped logical source
-        try:
-            return self._logical_source
-        except AttributeError:
-            pass
-        # 2. check grouped logical source
-        try:
-            return self.bus._logical_source[self.index]
-        except AttributeError:
-            pass
-        # 3. give up
-        return UNCONNECTED
-
-    @logical_source.setter
-    def logical_source(self, source):
-        # 0. shortcut if no changes are to be made
-        if source is self.logical_source:
-            return
-        # 1. validate self and source
-        if source.is_sink:
-            raise PRGAInternalError("'{}' is not a source"
-                    .format(source))
-        # 2. ungroup grouped logical source if there are
-        try:
-            grouped = self.bus._logical_source
-            for i in range(self.bus.width):
-                sink = self.bus._get_or_create_bit(i, False)
-                sink._logical_source = grouped._get_or_create_bit(i, False)
-            del self.bus._logical_source
-        except AttributeError:
-            pass
-        # 3. update
-        self._logical_source = source._get_or_create_static_cp()
 
     @property
     def user_sources(self):

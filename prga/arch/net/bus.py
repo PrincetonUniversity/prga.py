@@ -12,7 +12,7 @@ from prga.exception import PRGAInternalError
 
 from abc import abstractproperty
 
-__all__ = ['BaseClockPort', 'BaseInputPort', 'BaseOutputPort', 'BaseInputPin', 'BaseOutputPin']
+__all__ = ['BaseClockPort', 'BaseInputPort', 'BaseOutputPort', 'InputPin', 'OutputPin']
 
 # ----------------------------------------------------------------------------
 # -- Base Class for Port/Pin Bus ---------------------------------------------
@@ -24,7 +24,7 @@ class _BaseBus(Object, AbstractBus):
         parent (`AbstractModule` or `AbstractInstance`): parent module/instance of this bus
     """
 
-    __slots__ = ['_parent', '_static_bits', '_physical_cp']
+    __slots__ = ['_parent', '_bits', '_physical_cp']
     # == internal API ========================================================
     def __init__(self, parent):
         super(_BaseBus, self).__init__()
@@ -49,7 +49,7 @@ class _BaseBus(Object, AbstractBus):
             pass
         # 2. check ungrouped physical counterpart
         try:
-            return tuple(bit._physical_cp for bit in self._static_bits)
+            return tuple(bit._physical_cp for bit in self._bits)
         except AttributeError:
             return None
 
@@ -74,7 +74,7 @@ class _BaseBus(Object, AbstractBus):
                             .format(cp, self))
                 # 3.2 clean up ungrouped physical counterparts
                 try:
-                    for bit in self._static_bits:
+                    for bit in self._bits:
                         try:
                             del bit._physical_cp
                         except AttributeError:
@@ -121,7 +121,7 @@ class _BaseBus(Object, AbstractBus):
                 # 4.3.2 update
                 if cp is None:
                     try:
-                        del self._static_bits[i]._physical_cp
+                        del self._bits[i]._physical_cp
                     except AttributeError:
                         pass
                 else:
@@ -140,13 +140,13 @@ class _SourceBus(_BaseBus, AbstractBus):
     # -- implementing properties/methods required by superclass --------------
     def _get_or_create_bit(self, index, dynamic):
         try:
-            return self._static_bits[index]
+            return self._bits[index]
         except AttributeError:
             if dynamic:
                 return DynamicSourceBit(self, index)
             else:
-                self._static_bits = tuple(StaticSourceBit(self, i) for i in range(self.width))
-                return self._static_bits[index]
+                self._bits = tuple(StaticSourceBit(self, i) for i in range(self.width))
+                return self._bits[index]
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
@@ -164,20 +164,89 @@ class _SinkBus(_BaseBus, AbstractBus):
         parent (`AbstractModule` or `AbstractInstance`): parent module/instance of this bus
     """
 
-    __slots__ = ['_physical_source', '_logical_source']
+    __slots__ = ['_physical_source', '_source']
 
     # -- implementing properties/methods required by superclass --------------
     def _get_or_create_bit(self, index, dynamic):
         try:
-            return self._static_bits[index]
+            return self._bits[index]
         except AttributeError:
             if dynamic:
                 return DynamicSinkBit(self, index)
             else:
-                self._static_bits = tuple(StaticSinkBit(self, i) for i in range(self.width))
-                return self._static_bits[index]
+                self._bits = tuple(StaticSinkBit(self, i) for i in range(self.width))
+                return self._bits[index]
 
     # == low-level API =======================================================
+    @property
+    def source(self):
+        """:obj:`Sequence` [`AbstractSourceBit` ]: Logical driver of this bus."""
+        # 1. check grouped logical source
+        try:
+            return self._source
+        except AttributeError:
+            pass
+        # 2. check ungrouped logical source
+        return tuple(bit.source for bit in self)
+
+    @source.setter
+    def source(self, source):
+        # 1. shortcut if no changes are to be made
+        try:
+            if source is self._source:
+                return
+        except AttributeError:
+            pass
+        # 2. if ``source`` is a bus or a bit:
+        try:
+            if source.is_bus:
+                # 2.1 validate
+                if not (not source.is_sink and source.width == self.width):
+                    raise PRGAInternalError("'{}' is not a {}-bit source bus"
+                            .format(source, self.width))
+                # 2.2 clean up ungrouped logical sources
+                try:
+                    for bit in self._bits:
+                        try:
+                            del bit._source
+                        except AttributeError:
+                            pass
+                except AttributeError:
+                    pass
+                # 2.3 update
+                self._source = source
+            elif self.width == 1:
+                # 2.4 validate
+                if source.is_sink:
+                    raise PRGAInternalError("'{}' is not a source"
+                            .format(source))
+                # 2.5 clean up grouped logical source
+                try:
+                    del self._source
+                except AttributeError:
+                    pass
+                # 2.6 update
+                self._get_or_create_bit(0, False)._source = source
+        # 3. if ``source`` is a sequence of bits
+        except AttributeError:
+            # 3.1 validate
+            if not len(source) == self.width:
+                raise PRGAInternalError("Got {} bits but {} expected"
+                        .format(len(source), self.width))
+            # 3.2 clean up grouped logical source
+            try:
+                del self._source
+            except AttributeError:
+                pass
+            # 3.3 create links
+            for i, src in enumerate(source):
+                # 3.3.1 validate
+                if src.is_sink:
+                    raise PRGAInternalError("'{}' is not a source"
+                            .format(src))
+                # 3.3.2 update
+                self._get_or_create_bit(i, False)._source = src
+
     @property
     def physical_source(self):
         """:obj:`Sequence` [`AbstractSourceBit` ]: Physical driver of this bus."""
@@ -214,7 +283,7 @@ class _SinkBus(_BaseBus, AbstractBus):
                             .format(source, self.width))
                 # 2.2 clean up ungrouped physical sources
                 try:
-                    for bit in self._static_bits:
+                    for bit in self._bits:
                         try:
                             del bit._physical_source
                         except AttributeError:
@@ -254,75 +323,6 @@ class _SinkBus(_BaseBus, AbstractBus):
                             .format(src))
                 # 3.3.2 update
                 self._get_or_create_bit(i, False)._physical_source = src
-
-    @property
-    def logical_source(self):
-        """:obj:`Sequence` [`AbstractSourceBit` ]: Logical driver of this bus."""
-        # 1. check grouped logical source
-        try:
-            return self._logical_source
-        except AttributeError:
-            pass
-        # 2. check ungrouped logical source
-        return tuple(bit.logical_source for bit in self)
-
-    @logical_source.setter
-    def logical_source(self, source):
-        # 1. shortcut if no changes are to be made
-        try:
-            if source is self._logical_source:
-                return
-        except AttributeError:
-            pass
-        # 2. if ``source`` is a bus or a bit:
-        try:
-            if source.is_bus:
-                # 2.1 validate
-                if not (not source.is_sink and source.width == self.width):
-                    raise PRGAInternalError("'{}' is not a {}-bit logical source bus"
-                            .format(source, self.width))
-                # 2.2 clean up ungrouped logical sources
-                try:
-                    for bit in self._static_bits:
-                        try:
-                            del bit._logical_source
-                        except AttributeError:
-                            pass
-                except AttributeError:
-                    pass
-                # 2.3 update
-                self._logical_source = source
-            elif self.width == 1:
-                # 2.4 validate
-                if source.is_sink:
-                    raise PRGAInternalError("'{}' is not a logical source"
-                            .format(source))
-                # 2.5 clean up grouped logical source
-                try:
-                    del self._logical_source
-                except AttributeError:
-                    pass
-                # 2.6 update
-                self._get_or_create_bit(0, False)._logical_source = source
-        # 3. if ``source`` is a sequence of bits
-        except AttributeError:
-            # 3.1 validate
-            if not len(source) == self.width:
-                raise PRGAInternalError("Got {} bits but {} expected"
-                        .format(len(source), self.width))
-            # 3.2 clean up grouped logical source
-            try:
-                del self._logical_source
-            except AttributeError:
-                pass
-            # 3.3 create links
-            for i, src in enumerate(source):
-                # 3.3.1 validate
-                if src.is_sink:
-                    raise PRGAInternalError("'{}' is not a logical source"
-                            .format(src))
-                # 3.3.2 update
-                self._get_or_create_bit(i, False)._logical_source = src
 
     # -- implementing properties/methods required by superclass --------------
     @property
@@ -396,7 +396,7 @@ class BaseOutputPort(_SinkBus, AbstractPort):
 # ----------------------------------------------------------------------------
 # -- Input Pin ---------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class BaseInputPin(_SinkBus, AbstractPin):
+class InputPin(_SinkBus, AbstractPin):
     """Clock or non-clock input pin.
 
     Args:
@@ -406,7 +406,7 @@ class BaseInputPin(_SinkBus, AbstractPin):
 
     __slots__ = ['_model']
     def __init__(self, parent, model):
-        super(BaseInputPin, self).__init__(parent)
+        super(InputPin, self).__init__(parent)
         self._model = model
 
     # == low-level API =======================================================
@@ -418,7 +418,7 @@ class BaseInputPin(_SinkBus, AbstractPin):
 # ----------------------------------------------------------------------------
 # -- Output Pin --------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class BaseOutputPin(_SourceBus, AbstractPin):
+class OutputPin(_SourceBus, AbstractPin):
     """Output pin.
 
     Args:
@@ -428,7 +428,7 @@ class BaseOutputPin(_SourceBus, AbstractPin):
 
     __slots__ = ['_model']
     def __init__(self, parent, model):
-        super(BaseOutputPin, self).__init__(parent)
+        super(OutputPin, self).__init__(parent)
         self._model = model
 
     # == low-level API =======================================================

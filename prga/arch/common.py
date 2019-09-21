@@ -139,12 +139,14 @@ class Global(Object):
 
     Args:
         name (:obj:`str`): Name of this global wire
+        width (:obj:`int`): Number of bits of this global wire
         is_clock (:obj:`bool`): If the global wire is a clock wire
     """
 
-    __slots__ = ['_name', '_is_clock', '_bound_to_position', '_bound_to_subblock']
-    def __init__(self, name, is_clock = False):
+    __slots__ = ['_name', '_width', '_is_clock', '_bound_to_position', '_bound_to_subblock']
+    def __init__(self, name, width = 1, is_clock = False):
         self._name = name
+        self._width = width
         self._is_clock = is_clock
         self._bound_to_position = None
         self._bound_to_subblock = None
@@ -153,6 +155,11 @@ class Global(Object):
     def name(self):
         """:obj:`str`: Name of this global wire."""
         return self._name
+
+    @property
+    def width(self):
+        """:obj:`int`: Number of bits of this global wire."""
+        return self._width
 
     @property
     def is_clock(self):

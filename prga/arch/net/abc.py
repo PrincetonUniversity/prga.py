@@ -90,13 +90,13 @@ class AbstractSinkBit(AbstractBit):
     # == low-level API =======================================================
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractproperty
-    def physical_source(self):
-        """`AbstractSourceBit`: Physical source of this bit."""
+    def source(self):
+        """`AbstractSourceBit`: Logical source of this bit."""
         raise NotImplementedError
 
     @abstractproperty
-    def logical_source(self):
-        """`AbstractSourceBit`: Logical source of this bit."""
+    def physical_source(self):
+        """`AbstractSourceBit`: Physical source of this bit."""
         raise NotImplementedError
 
     @abstractproperty
@@ -126,11 +126,11 @@ class AbstractBus(Abstract, Sequence):
 
     # == internal API ========================================================
     def __len__(self):
-        return len(self._static_bits)
+        return len(self._bits)
 
     def __getitem__(self, index):
         try:
-            return self._static_bits[index]
+            return self._bits[index]
         except AttributeError:
             if isinstance(index, int):
                 if index < 0 or index >= self.width:
@@ -142,7 +142,7 @@ class AbstractBus(Abstract, Sequence):
 
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractproperty
-    def _static_bits(self):
+    def _bits(self):
         """:obj:`Sequence` [`AbstractBit` ]: Array of bits in this bus."""
         raise NotImplementedError
 
@@ -288,6 +288,10 @@ class AbstractPin(AbstractBus):
         raise NotImplementedError
 
     # -- implementing properties/methods required by superclass --------------
+    @property
+    def is_physical(self):
+        return self.parent.is_physical and self.model.is_physical
+
     @property
     def is_user_accessible(self):
         return self.model.is_user_accessible

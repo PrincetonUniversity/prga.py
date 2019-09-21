@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from prga.arch.net.common import NetClass
 from prga.arch.net.const import UNCONNECTED
-from prga.arch.net.bus import BaseClockPort, BaseInputPort, BaseOutputPort, BaseInputPin, BaseOutputPin
+from prga.arch.net.bus import BaseClockPort, BaseInputPort, BaseOutputPort, InputPin, OutputPin
 from prga.exception import PRGAInternalError
 
 import pytest
@@ -42,18 +42,6 @@ class MockOutputPort(BaseOutputPort):
         self.is_physical = is_physical
         self.is_user_accessible = is_user_accessible
 
-class MockInputPin(BaseInputPin):
-    __slots__ = ['is_physical']
-    def __init__(self, parent, model, is_physical = True):
-        super(MockInputPin, self).__init__(parent, model)
-        self.is_physical = is_physical
-
-class MockOutputPin(BaseOutputPin):
-    __slots__ = ['is_physical']
-    def __init__(self, parent, model, is_physical = True):
-        super(MockOutputPin, self).__init__(parent, model)
-        self.is_physical = is_physical
-
 def test_physical_source():
     module = 'mock_module'
     i = MockInputPort(module, 'mock_input', 4)
@@ -85,36 +73,36 @@ def test_physical_source():
     assert o[0].physical_source is i[3]
     assert o[3].physical_source is i[0]
 
-def test_logical_source():
+def test_source():
     module = 'mock_module'
     i = MockInputPort(module, 'mock_input', 4)
     o = MockOutputPort(module, 'mock_output', 4)
 
     # 2. connect bus
-    o.logical_source = i
+    o.source = i
     assert not o[0]._is_static
-    assert not o[0].logical_source._is_static
+    assert not o[0].source._is_static
 
     # 3. save a dynamic object
     do0 = o[0]
     di0 = i[0]
 
     # 4. bit-wise assignment
-    o[2].logical_source = i[1]
+    o[2].source = i[1]
     assert o[2]._is_static
-    assert o[2].logical_source is i[1]
+    assert o[2].source is i[1]
     assert o[0]._is_static
     assert i[0]._is_static
-    assert o[0].logical_source is i[0]
-    assert o.logical_source == (i[0], i[1], i[1], i[3])
+    assert o[0].source is i[0]
+    assert o.source == (i[0], i[1], i[1], i[3])
 
     # 5. use stale dynamic handler
-    assert do0.logical_source is i[0]
+    assert do0.source is i[0]
     assert di0 is not i[0]
-    do0.logical_source = i[3]
-    o[3].logical_source = di0
-    assert o[0].logical_source is i[3]
-    assert o[3].logical_source is i[0]
+    do0.source = i[3]
+    o[3].source = di0
+    assert o[0].source is i[3]
+    assert o[3].source is i[0]
 
 def test_physical_cp():
     module = 'mock_module'
@@ -161,20 +149,20 @@ def test_regular_net():
     li = MockInputPort(module, 'li', 4, is_physical = False)
 
     # 2. connect bus
-    o.logical_source = i
+    o.source = i
     assert not o[0]._is_static
-    assert not o[0].logical_source._is_static
+    assert not o[0].source._is_static
     for idx, bit in enumerate(o.physical_source):
         assert not bit._is_static
         assert bit.bus is i
         assert bit.index is idx
 
     # 3. bit-wise
-    o[0].logical_source = li[0]
+    o[0].source = li[0]
     assert o[2]._is_static
-    assert o[2].logical_source is i[2]
+    assert o[2].source is i[2]
     assert o[0]._is_static
     assert i[0]._is_static
     assert li[0]._is_static
-    assert o[0].logical_source is li[0]
+    assert o[0].source is li[0]
     assert o[0].physical_source is UNCONNECTED
