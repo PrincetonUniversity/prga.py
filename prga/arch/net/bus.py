@@ -343,7 +343,7 @@ class BaseClockPort(_SourceBus, AbstractPort):
     # -- implementing properties/methods required by superclass --------------
     @property
     def direction(self):
-        return PortDirection.input
+        return PortDirection.input_
 
     @property
     def is_clock(self):
@@ -367,7 +367,7 @@ class BaseInputPort(_SourceBus, AbstractPort):
     # -- implementing properties/methods required by superclass --------------
     @property
     def direction(self):
-        return PortDirection.input
+        return PortDirection.input_
 
     @property
     def is_clock(self):

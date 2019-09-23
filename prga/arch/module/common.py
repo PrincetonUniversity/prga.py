@@ -20,7 +20,7 @@ class ModuleClass(Enum):
     # config circuitry
     config = 3              #: configuration circuitry-related modules
     # sub-block hierarchy
-    slice_ = 4              #: user-defined intermediate modules inside logic/io blocks
+    cluster = 4             #: user-defined intermediate modules inside logic/io blocks
     # logic blocks
     logic_block = 5         #: logic block
     io_block = 6            #: io block

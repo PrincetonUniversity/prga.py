@@ -39,7 +39,7 @@ class AbstractModule(Abstract):
         elif port.key in self.all_ports:
             raise PRGAInternalError("Key '{}' for port '{}' already exists in module '{}'"
                     .format(port.key, port, self))
-        return self.setdefault(port.key, port)
+        return self.all_ports.setdefault(port.key, port)
 
     def _add_instance(self, instance):
         """Add an instance to this module.
@@ -59,7 +59,7 @@ class AbstractModule(Abstract):
         elif instance.key in self.all_instances:
             raise PRGAInternalError("Key '{}' for instance '{}' already exists in module '{}'"
                     .format(instance.key, instance, self))
-        return self.setdefault(instance.key, instance)
+        return self.all_instances.setdefault(instance.key, instance)
 
     # == low-level API =======================================================
     @property
@@ -91,6 +91,11 @@ class AbstractModule(Abstract):
     def is_physical(self):
         """:obj:`bool`: Test if this module is physical."""
         return True
+
+    @property
+    def is_leaf_module(self):
+        """:obj:`bool`: Test if this module is a leaf-level module."""
+        return False
 
     @abstractproperty
     def name(self):
@@ -125,26 +130,47 @@ class AbstractModule(Abstract):
         user-accessible instances."""
         return ReadonlyMappingProxy(self.all_instances, lambda kv: kv[1].is_user_accessible)
 
-    # -- properties/methods to be implemented/overriden by subclasses --------
-    @abstractmethod
-    def instantiate(self, model, name):
-        """Instantiate a module and add it to this module as a sub-instance.
+# ----------------------------------------------------------------------------
+# -- Abstract Leaf Module ----------------------------------------------------
+# ----------------------------------------------------------------------------
+class AbstractLeafModule(AbstractModule):
+    """Abstract base class for leaf modules."""
 
-        Args:
-            model (`AbstractModule`):
-            name (:obj:`str`):
-        """
-        raise NotImplementedError
+    # == internal API ========================================================
+    def _elaborate(self):
+        """Verify all the ``clock`` and ``combinational_sources`` attributes are valid."""
+        for port in itervalues(self.ports):
+            if port.is_clock:
+                continue
+            if port.clock is not None:
+                clock = self.ports.get(port.clock, None)
+                if clock is None:
+                    raise PRGAInternalError("Clock '{}' of port '{}' not found in primitive '{}'"
+                            .format(port.clock, port, self))
+                elif not clock.is_clock:
+                    raise PRGAInternalError("Clock '{}' of port '{}' in primitive '{}' is not a clock"
+                            .format(clock, port, self))
+            if port.direction.is_input:
+                continue
+            for source_name in port.combinational_sources:
+                source = self.ports.get(source_name, None)
+                if source is None:
+                    raise PRGAInternalError("Combinational source '{}' of port '{}' not found in primitive '{}'"
+                            .format(source_name, port, self))
+                elif not source.direction.is_input:
+                    raise PRGAInternalError("Combinational source '{}' of port '{}' in primitive '{}' is not an input"
+                            .format(source_name, port, self))
 
-    @abstractmethod
-    def connect(self, sources, sinks, fully_connected = False, pack_pattern = False):
-        """Connect a sequence of source net bits to a sequence of sink net bits.
+    def _add_instance(self):
+        raise PRGAInternalError("Cannot add instance to leaf module '{}'"
+                .format(self))
 
-        Args:
-            sources (:obj:`Sequence` [`AbstractSourceBit` ]):
-            sinks (:obj:`Sequence` [`AbstractSinkBit` ]):
-            fully_connected (:obj:`bool`): Connections are created bit-wise by default. If ``fully_connected`` is set,
-                connections are created in a all-to-all manner
-            pack_pattern (:obj:`bool`): An advanced feature in VPR
-        """
-        raise NotImplementedError
+    # == low-level API =======================================================
+    # -- implementing properties/methods required by superclass --------------
+    @property
+    def is_leaf_module(self):
+        return True
+
+    @property
+    def all_instances(self):
+        return ReadonlyMappingProxy({})

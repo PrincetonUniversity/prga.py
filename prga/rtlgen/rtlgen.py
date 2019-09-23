@@ -6,6 +6,7 @@ from prga.compatible import *
 from prga.util import Object
 from prga.exception import PRGAInternalError
 
+import os
 import jinja2 as jj
 
 __all__ = ['NetSlice', 'VerilogGenerator']
@@ -80,10 +81,17 @@ class NetSlice(Object):
 # -- Verilog Generator -------------------------------------------------------
 # ----------------------------------------------------------------------------
 class VerilogGenerator(object):
-    """Verilog generator."""
+    """Verilog generator.
+    
+    Args:
+        additional_template_search_paths (:obj:`Sequence` [:obj:`str` ]): A sequence of additional paths which contain
+            verilog source files or verilog templates
+    """
 
-    def __init__(self, env):
-        self.env = env
+    def __init__(self, additional_template_search_paths = tuple()):
+        self.env = jj.Environment(loader =
+                jj.FileSystemLoader([os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')] +
+                    additional_template_search_paths))
 
     def bitslice2verilog(self, slice_):
         if slice_.type_.is_const:

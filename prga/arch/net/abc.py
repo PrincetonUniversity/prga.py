@@ -237,6 +237,10 @@ class AbstractPort(AbstractBus):
 
     # -- implementing properties/methods required by superclass --------------
     @property
+    def is_physical(self):
+        return self.parent.is_physical
+
+    @property
     def net_type(self):
         return NetType.port
 

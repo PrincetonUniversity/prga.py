@@ -19,9 +19,9 @@ except ImportError:
     pass
 
 try:
-    from collections.abc import Sequence, MutableSequence, Mapping, MutableMapping, Hashable
+    from collections.abc import Sequence, MutableSequence, Mapping, MutableMapping, Hashable, Iterable
 except ImportError:
-    from collections import Sequence, MutableSequence, Mapping, MutableMapping, Hashable
+    from collections import Sequence, MutableSequence, Mapping, MutableMapping, Hashable, Iterable
 
 try:
     from io import BytesIO as StringIO

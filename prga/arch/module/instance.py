@@ -29,16 +29,16 @@ class _InstancePinsProxy(Object, Mapping):
 
     def __getitem__(self, key):
         try:
-            port = self.model.all_ports[key]
+            port = self.instance.model.all_ports[key]
         except KeyError:
             raise KeyError(key)
         return self.instance._pins.setdefault(key, self.instance._create_pin(port))
 
     def __len__(self):
-        return len(self.model.all_ports)
+        return len(self.instance.model.all_ports)
 
     def __iter__(self):
-        return iter(self.model.all_ports)
+        return iter(self.instance.model.all_ports)
 
 # ----------------------------------------------------------------------------
 # -- Abstract Instance -------------------------------------------------------
@@ -82,7 +82,7 @@ class AbstractInstance(Abstract):
     @property
     def is_user_accessible(self):
         """:obj:`bool`: Test if this instance is user-accessible."""
-        return self.module_class in (ModuleClass.primitive, ModuleClass.slice_)
+        return self.module_class in (ModuleClass.primitive, ModuleClass.cluster)
 
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractproperty

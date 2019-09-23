@@ -13,7 +13,7 @@ import pytest
 class MockClockPort(BaseClockPort):
     __slots__ = ['name', 'net_class', 'is_physical', 'is_user_accessible']
     def __init__(self, parent, name,
-            net_class = NetClass.slice_, is_physical = True, is_user_accessible = True):
+            net_class = NetClass.cluster, is_physical = True, is_user_accessible = True):
         super(MockClockPort, self).__init__(parent)
         self.name = name
         self.net_class = net_class
@@ -23,7 +23,7 @@ class MockClockPort(BaseClockPort):
 class MockInputPort(BaseInputPort):
     __slots__ = ['name', 'width', 'net_class', 'is_physical', 'is_user_accessible']
     def __init__(self, parent, name, width,
-            net_class = NetClass.slice_, is_physical = True, is_user_accessible = True):
+            net_class = NetClass.cluster, is_physical = True, is_user_accessible = True):
         super(MockInputPort, self).__init__(parent)
         self.name = name
         self.width = width
@@ -34,7 +34,7 @@ class MockInputPort(BaseInputPort):
 class MockOutputPort(BaseOutputPort):
     __slots__ = ['name', 'width', 'net_class', 'is_physical', 'is_user_accessible']
     def __init__(self, parent, name, width,
-            net_class = NetClass.slice_, is_physical = True, is_user_accessible = True):
+            net_class = NetClass.cluster, is_physical = True, is_user_accessible = True):
         super(MockOutputPort, self).__init__(parent)
         self.name = name
         self.width = width

@@ -56,7 +56,7 @@ class NetClass(Enum):
     primitive = 0           #: user-available primitive ports
     switch = 1              #: switch input/output
     config = 2              #: configuration input/output
-    slice_ = 3              #: user-defined input/output of a slice
+    cluster = 3             #: user-defined input/output of a sub-block cluster
     # routing nodes
     blockport = 4           #: IPIN/OPIN of logic/io block
     segment = 5             #: driving port of a segment
