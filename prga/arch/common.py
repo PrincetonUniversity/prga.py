@@ -145,6 +145,8 @@ class Global(Object):
 
     __slots__ = ['_name', '_width', '_is_clock', '_bound_to_position', '_bound_to_subblock']
     def __init__(self, name, width = 1, is_clock = False):
+        if is_clock and width != 1:
+            raise PRGAInternalError("Clock wire must be 1-bit wide")
         self._name = name
         self._width = width
         self._is_clock = is_clock

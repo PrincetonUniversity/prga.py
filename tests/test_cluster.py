@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function, unicode_literals
 from prga.compatible import *
 
-from prga.arch.primitive.builtin import Flipflop, LUT, Memory
+from prga.arch.primitive.builtin import Flipflop, LUT
 from prga.arch.block.cluster import Cluster
 
 def test_cluster(tmpdir):
@@ -12,9 +12,9 @@ def test_cluster(tmpdir):
     lut = LUT(4)
 
     # 1. add some ports
-    cluster.add_clock('clk')
-    cluster.add_input('I', 4)
-    cluster.add_output('O', 2)
+    cluster.create_clock('clk')
+    cluster.create_input('I', 4)
+    cluster.create_output('O', 2)
 
     # 2. add some instances
     ffinst = cluster.instantiate(ff, 'ff')

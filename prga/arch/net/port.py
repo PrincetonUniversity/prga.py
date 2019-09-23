@@ -8,7 +8,8 @@ from prga.arch.net.bus import BaseClockPort, BaseInputPort, BaseOutputPort
 
 __all__ = ['BaseCustomClockPort', 'BaseCustomInputPort', 'BaseCustomOutputPort',
         'BaseLeafInputPort', 'BaseLeafOutputPort',
-        'ConfigClockPort', 'ConfigInputPort', 'ConfigOutputPort']
+        'ConfigClockPort', 'ConfigInputPort', 'ConfigOutputPort',
+        'BaseGlobalInputPort']
 
 # ----------------------------------------------------------------------------
 # -- Base Class for Clock Ports whose Name Is Customized ---------------------
@@ -158,10 +159,6 @@ class ConfigClockPort(BaseCustomClockPort):
     def net_class(self):
         return NetClass.config
 
-    @property
-    def is_user_accessible(self):
-        return False
-
 # ----------------------------------------------------------------------------
 # -- Config Input Port -------------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -180,10 +177,6 @@ class ConfigInputPort(BaseLeafInputPort):
     @property
     def net_class(self):
         return NetClass.config
-
-    @property
-    def is_user_accessible(self):
-        return False
 
 # ----------------------------------------------------------------------------
 # -- Config Output Port ------------------------------------------------------
@@ -206,6 +199,39 @@ class ConfigOutputPort(BaseLeafOutputPort):
     def net_class(self):
         return NetClass.config
 
+# ----------------------------------------------------------------------------
+# -- Global Input Port -------------------------------------------------------
+# ----------------------------------------------------------------------------
+class BaseGlobalInputPort(BaseInputPort):
+    """Input port connected to a global wire.
+
+    Args:
+        parent (`AbstractModule`): Parent module of this port
+        global_ (`Global`): The global wire that this port is connected to
+        name (:obj:`str`): Name of this port
+    """
+
+    __slots__ = ['_global', '_name']
+    def __init__(self, parent, global_, name = None):
+        super(BaseGlobalInputPort, self).__init__(parent)
+        self._global = global_
+        self._name = name or global_.name
+
+    # == low-level API =======================================================
     @property
-    def is_user_accessible(self):
-        return False
+    def global_(self):
+        """`Global`: The global wire that this port is connected to."""
+        return self._global
+
+    # -- implementing properties/methods required by superclass --------------
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def width(self):
+        return self._global.width
+
+    @property
+    def is_clock(self):
+        return self._global.is_clock

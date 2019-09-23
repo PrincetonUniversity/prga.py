@@ -8,7 +8,7 @@ from prga.arch.module.instance import RegularInstance
 from prga.arch.module.module import AbstractModule
 from prga.arch.block.port import ClusterClockPort, ClusterInputPort, ClusterOutputPort
 from prga.exception import PRGAInternalError
-from prga.util import Object
+from prga.util import Object, ReadonlySequenceProxy
 
 from collections import OrderedDict
 from itertools import product
@@ -34,15 +34,16 @@ class Cluster(Object, AbstractModule):
         name (:obj:`str`): Name of this cluster
     """
 
-    __slots__ = ['_name', '_ports', '_instances', '_verilog_source']
+    __slots__ = ['_name', '_ports', '_instances', '_verilog_source', '_pack_patterns']
     def __init__(self, name):
         super(Cluster, self).__init__()
         self._name = name
         self._ports = OrderedDict()
         self._instances = OrderedDict()
+        self._pack_patterns = []
 
     # == internal API ========================================================
-    def __connect(self, source, sink):
+    def __connect(self, source, sink, pack_pattern):
         if ((source.net_type.is_port and source.parent is not self) or
                 (source.net_type.is_pin and source.parent.parent is not self)):
             raise PRGAInternalError("'{}' is not a net in module '{}'"
@@ -52,8 +53,16 @@ class Cluster(Object, AbstractModule):
             raise PRGAInternalError("'{}' is not a net in module '{}'"
                     .format(sink, self))
         sink.add_user_sources( (source, ) )
+        if pack_pattern and (source, sink) not in self._pack_patterns:
+            self._pack_patterns.append( (source, sink) )
 
     # == low-level API =======================================================
+    @property
+    def pack_patterns(self):
+        """:obj:`Sequence` [:obj:`tuple` [`AbstractSourceBit`, `AbstractSinkBit` ]]): A sequence of pack-pattern
+        connections."""
+        return ReadonlySequenceProxy(self._pack_patterns)
+
     # -- implementing properties/methods required by superclass --------------
     @property
     def all_ports(self):
@@ -88,7 +97,7 @@ class Cluster(Object, AbstractModule):
         self._verilog_source = source
 
     # == high-level API ======================================================
-    def add_clock(self, name):
+    def create_clock(self, name):
         """Create and add a clock input port to this cluster.
 
         Args:
@@ -96,7 +105,7 @@ class Cluster(Object, AbstractModule):
         """
         return self._add_port(ClusterClockPort(self, name))
 
-    def add_input(self, name, width):
+    def create_input(self, name, width):
         """Create and add an input port to this cluster.
 
         Args:
@@ -105,7 +114,7 @@ class Cluster(Object, AbstractModule):
         """
         return self._add_port(ClusterInputPort(self, name, width))
 
-    def add_output(self, name, width):
+    def create_output(self, name, width):
         """Create and add an output port to this cluster.
 
         Args:
@@ -140,11 +149,11 @@ class Cluster(Object, AbstractModule):
         sinks = sinks if isinstance(sinks, Iterable) else (sinks, )
         if fully_connected:
             for source, sink in product(iter(sources), iter(sinks)):
-                self.__connect(source, sink)
+                self.__connect(source, sink, pack_pattern)
         else:
             for source, sink in zip_longest(iter(sources), iter(sinks)):
                 if source is None or sink is None:
                     _logger.warning("Number of sources and number of sinks don't match")
                     _logger.warning("\n" + "".join(tb.format_stack()))
                     return
-                self.__connect(source, sink)
+                self.__connect(source, sink, pack_pattern)

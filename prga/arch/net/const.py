@@ -62,12 +62,12 @@ class ConstBit(Object, AbstractSourceBit):
         return True
 
     @property
-    def physical_cp(self):
-        return self
-
-    @property
     def is_user_accessible(self):
         return False
+
+    @property
+    def physical_cp(self):
+        return self
 
     @property
     def net_type(self):

@@ -173,10 +173,10 @@ class AbstractBus(Abstract, Sequence):
         """:obj:`bool`: Test if this net is physical."""
         raise NotImplementedError
 
-    @abstractproperty
+    @property
     def is_user_accessible(self):
         """:obj:`bool`: Test if this net is user-accessible."""
-        raise NotImplementedError
+        return False
 
     @abstractproperty
     def net_type(self):
