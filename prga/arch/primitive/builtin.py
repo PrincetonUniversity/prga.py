@@ -4,54 +4,36 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from prga.arch.net.port import ConfigInputPort
+from prga.arch.module.module import BaseLeafModule
 from prga.arch.primitive.common import PrimitiveClass, PrimitivePortClass
 from prga.arch.primitive.port import PrimitiveClockPort, PrimitiveInputPort, PrimitiveOutputPort
 from prga.arch.primitive.primitive import AbstractPrimitive
 from prga.exception import PRGAInternalError
-from prga.util import ReadonlyMappingProxy, Object
+from prga.util import ReadonlyMappingProxy
 
 from collections import OrderedDict
 
 __all__ = ['Inpad', 'Outpad', 'Iopad', 'Flipflop', 'LUT', 'SinglePortMemory', 'DualPortMemory']
 
 # ----------------------------------------------------------------------------
-# -- Builtin Primitive -------------------------------------------------------
-# ----------------------------------------------------------------------------
-class BuiltinPrimitive(Object, AbstractPrimitive):
-    """Base class fro builtin primitives."""
-
-    __slots__ = ['_ports']
-    # == internal API ========================================================
-    def _add_port(self):
-        raise PRGAInternalError("Cannot add port to built-in primitive '{}'"
-                .format(self))
-
-    # == low-level API =======================================================
-    # -- implementing properties/methods required by superclass --------------
-    @property
-    def all_ports(self):
-        return ReadonlyMappingProxy(self._ports)
-
-# ----------------------------------------------------------------------------
 # -- Logical-only Inpad ------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Inpad(BuiltinPrimitive):
-    """Logical-only input pad."""
+class Inpad(BaseLeafModule, AbstractPrimitive):
+    """Logical-only input pad.
+    
+    Args:
+        name (:obj:`str`): Name of this primitive
+    """
 
-    def __init__(self):
-        super(Inpad, self).__init__()
-        self._ports = OrderedDict(
-                (('inpad', PrimitiveOutputPort(self, 'inpad', 1)), ))
+    def __init__(self, name = "inpad"):
+        super(Inpad, self).__init__(name)
+        self._add_port(PrimitiveOutputPort(self, 'inpad', 1))
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
     @property
     def is_physical(self):
         return False
-
-    @property
-    def name(self):
-        return 'inpad'
 
     @property
     def primitive_class(self):
@@ -68,23 +50,22 @@ class Inpad(BuiltinPrimitive):
 # ----------------------------------------------------------------------------
 # -- Logical-only Outpad -----------------------------------------------------
 # ----------------------------------------------------------------------------
-class Outpad(BuiltinPrimitive):
-    """Logical-only output pad."""
+class Outpad(BaseLeafModule, AbstractPrimitive):
+    """Logical-only output pad.
 
-    def __init__(self):
-        super(Outpad, self).__init__()
-        self._ports = OrderedDict(
-                (('outpad', PrimitiveInputPort(self, 'outpad', 1)),))
+    Args:
+        name (:obj:`str`): Name of this primitive
+    """
+
+    def __init__(self, name = "outpad"):
+        super(Outpad, self).__init__(name)
+        self._add_port(PrimitiveInputPort(self, 'outpad', 1))
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
     @property
     def is_physical(self):
         return False
-
-    @property
-    def name(self):
-        return 'outpad'
 
     @property
     def primitive_class(self):
@@ -101,26 +82,24 @@ class Outpad(BuiltinPrimitive):
 # ----------------------------------------------------------------------------
 # -- Logical-only Iopad ------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Iopad(BuiltinPrimitive):
-    """Logical-only configurable input/output pad."""
+class Iopad(BaseLeafModule, AbstractPrimitive):
+    """Logical-only configurable input/output pad.
 
-    def __init__(self):
-        super(Iopad, self).__init__()
-        self._ports = OrderedDict((
-            ('outpad', PrimitiveInputPort(self, 'outpad', 1)),
-            ('inpad', PrimitiveOutputPort(self, 'inpad', 1)),
-            ('oe', ConfigInputPort(self, 'oe', 1)),
-            ))
+    Args:
+        name (:obj:`str`): Name of this primitive
+    """
+
+    def __init__(self, name = "iopad"):
+        super(Iopad, self).__init__(name)
+        self._add_port(PrimitiveInputPort(self, 'outpad', 1))
+        self._add_port(PrimitiveOutputPort(self, 'inpad', 1))
+        self._add_port(ConfigInputPort(self, 'oe', 1))
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
     @property
     def is_physical(self):
         return False
-
-    @property
-    def name(self):
-        return 'iopad'
 
     @property
     def primitive_class(self):
@@ -137,29 +116,21 @@ class Iopad(BuiltinPrimitive):
 # ----------------------------------------------------------------------------
 # -- D-Flipflop --------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Flipflop(BuiltinPrimitive):
+class Flipflop(BaseLeafModule, AbstractPrimitive):
     """Non-configurable D-flipflop.
 
     Args:
         name (:obj:`str`): Name of this primitive
     """
 
-    __slots__ = ['_name', '_verilog_source']
     def __init__(self, name = 'flipflop'):
-        super(Flipflop, self).__init__()
-        self._name = name
-        self._ports = OrderedDict((
-            ('clk', PrimitiveClockPort(self, 'clk', port_class = PrimitivePortClass.clock)),
-            ('D', PrimitiveInputPort(self, 'D', 1, clock = 'clk', port_class = PrimitivePortClass.D)),
-            ('Q', PrimitiveOutputPort(self, 'Q', 1, clock = 'clk', port_class = PrimitivePortClass.Q)),
-            ))
+        super(Flipflop, self).__init__(name)
+        self._add_port(PrimitiveClockPort(self, 'clk', port_class = PrimitivePortClass.clock))
+        self._add_port(PrimitiveInputPort(self, 'D', 1, clock = 'clk', port_class = PrimitivePortClass.D))
+        self._add_port(PrimitiveOutputPort(self, 'Q', 1, clock = 'clk', port_class = PrimitivePortClass.Q))
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
-    @property
-    def name(self):
-        return self._name
-
     @property
     def primitive_class(self):
         return PrimitiveClass.flipflop
@@ -168,22 +139,10 @@ class Flipflop(BuiltinPrimitive):
     def verilog_template(self):
         return 'flipflop.tmpl.v'
 
-    @property
-    def verilog_source(self):
-        try:
-            return self._verilog_source
-        except AttributeError:
-            raise PRGAInternalError("Verilog source file not generated for module '{}' yet."
-                    .format(self))
-
-    @verilog_source.setter
-    def verilog_source(self, source):
-        self._verilog_source = source
-
 # ----------------------------------------------------------------------------
 # -- LUT ---------------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class LUT(BuiltinPrimitive):
+class LUT(BaseLeafModule, AbstractPrimitive):
     """Look-up table.
 
     Args:
@@ -191,26 +150,19 @@ class LUT(BuiltinPrimitive):
         name (:obj:`str`): Name of this primitive. Default to 'lut{width}'
     """
 
-    __slots__ = ['_name', '_verilog_source']
     def __init__(self, width, name = None):
         if width < 2 or width > 8:
             raise PRGAInternalError("LUT size '{}' not supported. Supported size: 2 <= width <= 8"
                     .format(width))
-        super(LUT, self).__init__()
-        self._name = name or ("lut" + str(width))
-        self._ports = OrderedDict((
-            ('in', PrimitiveInputPort(self, 'in', width, port_class = PrimitivePortClass.lut_in)),
-            ('out', PrimitiveOutputPort(self, 'out', 1, combinational_sources = ('in', ),
-                port_class = PrimitivePortClass.lut_out)),
-            ('cfg_d', ConfigInputPort(self, 'cfg_d', 2 ** width)),
-            ))
+        name = name or ("lut" + str(width))
+        super(LUT, self).__init__(name)
+        self._add_port(PrimitiveInputPort(self, 'in', width, port_class = PrimitivePortClass.lut_in))
+        self._add_port(PrimitiveOutputPort(self, 'out', 1, combinational_sources = ('in', ),
+                port_class = PrimitivePortClass.lut_out))
+        self._add_port(ConfigInputPort(self, 'cfg_d', 2 ** width))
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
-    @property
-    def name(self):
-        return self._name
-
     @property
     def primitive_class(self):
         return PrimitiveClass.lut
@@ -219,22 +171,10 @@ class LUT(BuiltinPrimitive):
     def verilog_template(self):
         return 'lut.tmpl.v'
 
-    @property
-    def verilog_source(self):
-        try:
-            return self._verilog_source
-        except AttributeError:
-            raise PRGAInternalError("Verilog source file not generated for module '{}' yet."
-                    .format(self))
-
-    @verilog_source.setter
-    def verilog_source(self, source):
-        self._verilog_source = source
-
 # ----------------------------------------------------------------------------
 # -- Memory ------------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Memory(BuiltinPrimitive):
+class Memory(BaseLeafModule, AbstractPrimitive):
     """Memory.
 
     Args:
@@ -245,47 +185,43 @@ class Memory(BuiltinPrimitive):
         transparent (:obj:`bool`): If set, each read/write port is transparent
     """
 
-    __slots__ = ['_name', '_addr_width', '_data_width', '_dualport', '_transparent', '_verilog_source']
+    __slots__ = ['_addr_width', '_data_width', '_dualport', '_transparent']
     def __init__(self, addr_width, data_width, name = None, dualport = False, transparent = False):
-        super(Memory, self).__init__()
+        name = name or '{}p{}ram_a{}_d{}'.format('d' if dualport else 's', 
+                't' if transparent else '', addr_width, data_width)
+        super(Memory, self).__init__(name)
         self._addr_width = addr_width
         self._data_width = data_width
-        self._name = name or '{}p{}ram_a{}_d{}'.format('d' if dualport else 's', 
-                't' if transparent else '', addr_width, data_width)
         self._dualport = dualport
         self._transparent = transparent
         if dualport:
-            self._ports = OrderedDict((
-                ('clk', PrimitiveClockPort(self, 'clk', port_class = PrimitivePortClass.clock)),
-                ('aaddr', PrimitiveInputPort(self, 'aaddr', addr_width, clock = 'clk', port_class =
-                    PrimitivePortClass.address1)),
-                ('adin', PrimitiveInputPort(self, 'adin', data_width, clock = 'clk', port_class =
-                    PrimitivePortClass.data_in1)),
-                ('awe', PrimitiveInputPort(self, 'awe', 1, clock = 'clk', port_class =
-                    PrimitivePortClass.write_en1)),
-                ('adout', PrimitiveOutputPort(self, 'adout', data_width, clock = 'clk', port_class = 
-                    PrimitivePortClass.data_out1)),
-                ('baddr', PrimitiveInputPort(self, 'baddr', addr_width, clock = 'clk', port_class =
-                    PrimitivePortClass.address2)),
-                ('bdin', PrimitiveInputPort(self, 'bdin', data_width, clock = 'clk', port_class =
-                    PrimitivePortClass.data_in2)),
-                ('bwe', PrimitiveInputPort(self, 'bwe', 1, clock = 'clk', port_class =
-                    PrimitivePortClass.write_en2)),
-                ('bdout', PrimitiveOutputPort(self, 'bdout', data_width, clock = 'clk', port_class = 
-                    PrimitivePortClass.data_out2)),
-                ))
+            self._add_port(PrimitiveClockPort(self, 'clk', port_class = PrimitivePortClass.clock))
+            self._add_port(PrimitiveInputPort(self, 'aaddr', addr_width, clock = 'clk', port_class =
+                    PrimitivePortClass.address1))
+            self._add_port(PrimitiveInputPort(self, 'adin', data_width, clock = 'clk', port_class =
+                    PrimitivePortClass.data_in1))
+            self._add_port(PrimitiveInputPort(self, 'awe', 1, clock = 'clk', port_class =
+                    PrimitivePortClass.write_en1))
+            self._add_port(PrimitiveOutputPort(self, 'adout', data_width, clock = 'clk', port_class = 
+                    PrimitivePortClass.data_out1))
+            self._add_port(PrimitiveInputPort(self, 'baddr', addr_width, clock = 'clk', port_class =
+                    PrimitivePortClass.address2))
+            self._add_port(PrimitiveInputPort(self, 'bdin', data_width, clock = 'clk', port_class =
+                    PrimitivePortClass.data_in2))
+            self._add_port(PrimitiveInputPort(self, 'bwe', 1, clock = 'clk', port_class =
+                    PrimitivePortClass.write_en2))
+            self._add_port(PrimitiveOutputPort(self, 'bdout', data_width, clock = 'clk', port_class = 
+                    PrimitivePortClass.data_out2))
         else:
-            self._ports = OrderedDict((
-                ('clk', PrimitiveClockPort(self, 'clk', port_class = PrimitivePortClass.clock)),
-                ('addr', PrimitiveInputPort(self, 'addr', addr_width, clock = 'clk', port_class =
-                    PrimitivePortClass.address)),
-                ('din', PrimitiveInputPort(self, 'din', data_width, clock = 'clk', port_class =
-                    PrimitivePortClass.data_in)),
-                ('we', PrimitiveInputPort(self, 'we', 1, clock = 'clk', port_class =
-                    PrimitivePortClass.write_en)),
-                ('dout', PrimitiveOutputPort(self, 'dout', data_width, clock = 'clk', port_class = 
-                    PrimitivePortClass.data_out)),
-                ))
+            self._add_port(PrimitiveClockPort(self, 'clk', port_class = PrimitivePortClass.clock))
+            self._add_port(PrimitiveInputPort(self, 'addr', addr_width, clock = 'clk', port_class =
+                    PrimitivePortClass.address))
+            self._add_port(PrimitiveInputPort(self, 'din', data_width, clock = 'clk', port_class =
+                    PrimitivePortClass.data_in))
+            self._add_port(PrimitiveInputPort(self, 'we', 1, clock = 'clk', port_class =
+                    PrimitivePortClass.write_en))
+            self._add_port(PrimitiveOutputPort(self, 'dout', data_width, clock = 'clk', port_class = 
+                    PrimitivePortClass.data_out))
 
     # == low-level API =======================================================
     @property
@@ -306,25 +242,9 @@ class Memory(BuiltinPrimitive):
 
     # -- implementing properties/methods required by superclass --------------
     @property
-    def name(self):
-        return self._name
-
-    @property
     def primitive_class(self):
         return PrimitiveClass.memory
 
     @property
     def verilog_template(self):
         return 'memory.tmpl.v'
-
-    @property
-    def verilog_source(self):
-        try:
-            return self._verilog_source
-        except AttributeError:
-            raise PRGAInternalError("Verilog source file not generated for module '{}' yet."
-                    .format(self))
-
-    @verilog_source.setter
-    def verilog_source(self, source):
-        self._verilog_source = source

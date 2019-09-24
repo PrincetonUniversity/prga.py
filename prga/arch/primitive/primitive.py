@@ -4,11 +4,11 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from prga.arch.module.common import ModuleClass
-from prga.arch.module.module import AbstractModule, AbstractLeafModule
+from prga.arch.module.module import AbstractLeafModule, BaseLeafModule
 from prga.arch.primitive.common import PrimitiveClass
 from prga.arch.primitive.port import PrimitiveClockPort, PrimitiveInputPort, PrimitiveOutputPort
 from prga.exception import PRGAInternalError
-from prga.util import ReadonlyMappingProxy, Object
+from prga.util import ReadonlyMappingProxy
 
 from abc import abstractproperty
 from collections import OrderedDict
@@ -36,7 +36,7 @@ class AbstractPrimitive(AbstractLeafModule):
 # ----------------------------------------------------------------------------
 # -- User-Defined Primitive --------------------------------------------------
 # ----------------------------------------------------------------------------
-class CustomPrimitive(Object, AbstractPrimitive):
+class CustomPrimitive(BaseLeafModule, AbstractPrimitive):
     """User-defined primitives.
     
     Args:
@@ -44,24 +44,13 @@ class CustomPrimitive(Object, AbstractPrimitive):
         verilog_template (:obj:`str`): Path to the template (or vanilla Verilog source file)
     """
 
-    __slots__ = ['_name', '_ports', '_verilog_template', '_verilog_source']
+    __slots__ = ['_verilog_template']
     def __init__(self, name, verilog_template):
-        super(CustomPrimitive, self).__init__()
-        self._name = name
-        self._ports = OrderedDict()
+        super(CustomPrimitive, self).__init__(name)
         self._verilog_template = verilog_template
-        self.verilog_source = None
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
-    @property
-    def all_ports(self):
-        return self._ports
-
-    @property
-    def name(self):
-        return self._name
-
     @property
     def verilog_template(self):
         return self._verilog_template
@@ -69,18 +58,6 @@ class CustomPrimitive(Object, AbstractPrimitive):
     @property
     def primitive_class(self):
         return PrimitiveClass.custom
-
-    @property
-    def verilog_source(self):
-        try:
-            return self._verilog_source
-        except AttributeError:
-            raise PRGAInternalError("Verilog source file not generated for module '{}' yet."
-                    .format(self))
-
-    @verilog_source.setter
-    def verilog_source(self, source):
-        self._verilog_source = source
 
     # == high-level API ======================================================
     def add_clock(self, name):

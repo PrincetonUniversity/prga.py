@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from prga.arch.net.port import ConfigInputPort
 from prga.arch.module.common import ModuleClass
-from prga.arch.module.module import AbstractLeafModule
+from prga.arch.module.module import AbstractLeafModule, BaseLeafModule
 from prga.arch.switch.port import SwitchInputPort, SwitchOutputPort
 from prga.exception import PRGAInternalError
 from prga.util import Object, ReadonlyMappingProxy
@@ -42,7 +42,7 @@ class AbstractSwitch(AbstractLeafModule):
 # ----------------------------------------------------------------------------
 # -- Configurable MUX --------------------------------------------------------
 # ----------------------------------------------------------------------------
-class ConfigurableMUX(Object, AbstractSwitch):
+class ConfigurableMUX(BaseLeafModule, AbstractSwitch):
     """Basic type of congigurable MUX.
 
     Args:
@@ -50,36 +50,18 @@ class ConfigurableMUX(Object, AbstractSwitch):
         name (:obj:`int`): Name of this mux
     """
 
-    __slots__ = ['_name', '_ports', '_verilog_source']
     def __init__(self, width, name = None):
         if width < 2:
             raise PRGAInternalError("Configurable MUX size '{}' not supported. Supported size: width >= 2"
                     .format(width))
-        super(ConfigurableMUX, self).__init__()
-        self._name = name or ('cfg_mux' + str(width))
-        self._ports = OrderedDict((
-            ('i', SwitchInputPort(self, 'i', width)),
-            ('o', SwitchOutputPort(self, 'o', 1, combinational_sources = ('i', ))),
-            ('cfg_d', ConfigInputPort(self, 'cfg_d', int(math.ceil(math.log(width, 2))))),
-            ))
-
-    # == internal API ========================================================
-    def _add_port(self):
-        raise PRGAInternalError("Cannot add port to built-in switch '{}'"
-                .format(self))
+        name = name or ('cfg_mux' + str(width))
+        super(ConfigurableMUX, self).__init__(name)
+        self._add_port(SwitchInputPort(self, 'i', width))
+        self._add_port(SwitchOutputPort(self, 'o', 1, combinational_sources = ('i', )))
+        self._add_port(ConfigInputPort(self, 'cfg_d', int(math.ceil(math.log(width, 2)))))
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
-    @property
-    def all_ports(self):
-        return ReadonlyMappingProxy(self._ports)
-
-    # == low-level API =======================================================
-    # -- implementing properties/methods required by superclass --------------
-    @property
-    def name(self):
-        return self._name
-
     @property
     def switch_inputs(self):
         return self._ports['i']
@@ -91,15 +73,3 @@ class ConfigurableMUX(Object, AbstractSwitch):
     @property
     def verilog_template(self):
         return 'cfg_mux.tmpl.v'
-
-    @property
-    def verilog_source(self):
-        try:
-            return self._verilog_source
-        except AttributeError:
-            raise PRGAInternalError("Verilog source file not generated for module '{}' yet."
-                    .format(self))
-
-    @verilog_source.setter
-    def verilog_source(self, source):
-        self._verilog_source = source

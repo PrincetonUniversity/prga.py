@@ -5,12 +5,11 @@ from prga.compatible import *
 
 from prga.arch.module.common import ModuleClass
 from prga.arch.module.instance import RegularInstance
-from prga.arch.module.module import AbstractModule
+from prga.arch.module.module import BaseModule
 from prga.arch.block.port import ClusterClockPort, ClusterInputPort, ClusterOutputPort
 from prga.exception import PRGAInternalError
-from prga.util import Object, ReadonlySequenceProxy
+from prga.util import ReadonlySequenceProxy
 
-from collections import OrderedDict
 from itertools import product
 
 try:
@@ -27,19 +26,16 @@ __all__ = ['Cluster']
 # ----------------------------------------------------------------------------
 # -- Cluster -----------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Cluster(Object, AbstractModule):
+class Cluster(BaseModule):
     """Intermediate-level module in a block.
 
     Args:
         name (:obj:`str`): Name of this cluster
     """
 
-    __slots__ = ['_name', '_ports', '_instances', '_verilog_source', '_pack_patterns']
+    __slots__ = ['_pack_patterns']
     def __init__(self, name):
-        super(Cluster, self).__init__()
-        self._name = name
-        self._ports = OrderedDict()
-        self._instances = OrderedDict()
+        super(Cluster, self).__init__(name)
         self._pack_patterns = []
 
     # == internal API ========================================================
@@ -65,36 +61,12 @@ class Cluster(Object, AbstractModule):
 
     # -- implementing properties/methods required by superclass --------------
     @property
-    def all_ports(self):
-        return self._ports
-
-    @property
-    def all_instances(self):
-        return self._instances
-
-    @property
-    def name(self):
-        return self._name
-
-    @property
     def module_class(self):
         return ModuleClass.cluster
 
     @property
     def verilog_template(self):
         return 'module.tmpl.v'
-
-    @property
-    def verilog_source(self):
-        try:
-            return self._verilog_source
-        except AttributeError:
-            raise PRGAInternalError("Verilog source file not generated for module '{}' yet."
-                    .format(self))
-
-    @verilog_source.setter
-    def verilog_source(self, source):
-        self._verilog_source = source
 
     # == high-level API ======================================================
     def create_clock(self, name):

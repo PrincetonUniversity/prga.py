@@ -5,9 +5,10 @@ from prga.compatible import *
 
 from prga.arch.module.common import ModuleClass
 from prga.exception import PRGAInternalError
-from prga.util import Abstract, ReadonlyMappingProxy
+from prga.util import Abstract, Object, ReadonlyMappingProxy
 
 from abc import abstractproperty, abstractmethod
+from collections import OrderedDict
 
 __all__ = ['AbstractModule']
 
@@ -20,6 +21,16 @@ class AbstractModule(Abstract):
     # == internal API ========================================================
     def __str__(self):
         return self.name
+
+    @abstractproperty
+    def _ports(self):
+        """:obj:`MutableMapping` [:obj:`Hashable`, `AbstractPort` ]: Internal variable holding the ports."""
+        raise NotImplementedError
+
+    @abstractproperty
+    def _instances(self):
+        """:obj:`MutableMapping` [:obj:`Hashable`, `AbstractInstance` ]: Internal variable holding the instances."""
+        raise NotImplementedError
 
     def _add_port(self, port):
         """Add a port to this module.
@@ -36,10 +47,10 @@ class AbstractModule(Abstract):
         elif port.parent is not self:
             raise PRGAInternalError("Module '{}' is not the parent module of port '{}'"
                     .format(self, port))
-        elif port.key in self.all_ports:
+        elif port.key in self._ports:
             raise PRGAInternalError("Key '{}' for port '{}' already exists in module '{}'"
                     .format(port.key, port, self))
-        return self.all_ports.setdefault(port.key, port)
+        return self._ports.setdefault(port.key, port)
 
     def _add_instance(self, instance):
         """Add an instance to this module.
@@ -56,10 +67,10 @@ class AbstractModule(Abstract):
         elif instance.parent is not self:
             raise PRGAInternalError("Module '{}' is not the parent module of instance '{}'"
                     .format(self, instance))
-        elif instance.key in self.all_instances:
+        elif instance.key in self._instances:
             raise PRGAInternalError("Key '{}' for instance '{}' already exists in module '{}'"
                     .format(instance.key, instance, self))
-        return self.all_instances.setdefault(instance.key, instance)
+        return self._instances.setdefault(instance.key, instance)
 
     # == low-level API =======================================================
     @property
@@ -72,20 +83,20 @@ class AbstractModule(Abstract):
     def physical_instances(self):
         """:obj:`Mapping` [:obj:`Hashable`, `AbstractPort` ]: A mapping from some hashable indices to physical
         instances in this module."""
-        return ReadonlyMappingProxy(self.all_instances, lambda kv: kv[1].is_physical)
+        return ReadonlyMappingProxy(self._instances, lambda kv: kv[1].is_physical)
 
     # -- properties/methods to be implemented/overriden by subclasses --------
-    @abstractproperty
+    @property
     def all_ports(self):
-        """:obj:`MutableMapping` [:obj:`Hashable`, `AbstractPort` ]: A mapping from some hashable indices to ports in
+        """:obj:`Mapping` [:obj:`Hashable`, `AbstractPort` ]: A mapping from some hashable indices to ports in
         this module. Note that physical/logical/user ports are mixed together in this mapping."""
-        raise NotImplementedError
+        return ReadonlyMappingProxy(self._ports)
 
-    @abstractproperty
+    @property
     def all_instances(self):
-        """:obj:`MutableMapping` [:obj:`Hashable`, `AbstractInstance` ]: A mapping from some hashable indices to
+        """:obj:`Mapping` [:obj:`Hashable`, `AbstractInstance` ]: A mapping from some hashable indices to
         instances in this module. Note that physical/logical/user instances are mixed together in this mapping."""
-        raise NotImplementedError
+        return ReadonlyMappingProxy(self._instances)
 
     @property
     def is_physical(self):
@@ -122,13 +133,13 @@ class AbstractModule(Abstract):
     def ports(self):
         """:obj:`Mapping` [:obj:`Hashable`, `AbstractPort` ]: A mapping from some hashable indices to user-accessible
         ports."""
-        return ReadonlyMappingProxy(self.all_ports, lambda kv: kv[1].is_user_accessible)
+        return ReadonlyMappingProxy(self._ports, lambda kv: kv[1].is_user_accessible)
 
     @property
     def instances(self):
         """:obj:`Mapping` [:obj:`Hashable`, `AbstractInstance` ]: A mapping from some hashable indices to
         user-accessible instances."""
-        return ReadonlyMappingProxy(self.all_instances, lambda kv: kv[1].is_user_accessible)
+        return ReadonlyMappingProxy(self._instances, lambda kv: kv[1].is_user_accessible)
 
 # ----------------------------------------------------------------------------
 # -- Abstract Leaf Module ----------------------------------------------------
@@ -161,6 +172,10 @@ class AbstractLeafModule(AbstractModule):
                     raise PRGAInternalError("Combinational source '{}' of port '{}' in primitive '{}' is not an input"
                             .format(source_name, port, self))
 
+    @property
+    def _instances(self):
+        return ReadonlyMappingProxy({})
+
     def _add_instance(self):
         raise PRGAInternalError("Cannot add instance to leaf module '{}'"
                 .format(self))
@@ -171,6 +186,71 @@ class AbstractLeafModule(AbstractModule):
     def is_leaf_module(self):
         return True
 
+# ----------------------------------------------------------------------------
+# -- Base Module -------------------------------------------------------------
+# ----------------------------------------------------------------------------
+class BaseModule(Object, AbstractModule):
+    """Base class for non-leaf modules.
+
+    Args:
+        name (:obj:`str`): Name of this module
+    """
+
+    __slots__ = ['_name', '_ports', '_instances', '_verilog_source']
+    def __init__(self, name):
+        super(BaseModule, self).__init__()
+        self._name = name
+        self._ports = OrderedDict()
+        self._instances = OrderedDict()
+
+    # == low-level API =======================================================
+    # -- implementing properties/methods required by superclass --------------
     @property
-    def all_instances(self):
-        return ReadonlyMappingProxy({})
+    def name(self):
+        return self._name
+
+    @property
+    def verilog_source(self):
+        try:
+            return self._verilog_source
+        except AttributeError:
+            raise PRGAInternalError("Verilog source file not generated for module '{}' yet."
+                    .format(self))
+
+    @verilog_source.setter
+    def verilog_source(self, source):
+        self._verilog_source = source
+
+# ----------------------------------------------------------------------------
+# -- Base Leaf Module --------------------------------------------------------
+# ----------------------------------------------------------------------------
+class BaseLeafModule(Object, AbstractLeafModule):
+    """Base class for leaf modules.
+
+    Args:
+        name (:obj:`str`): Name of this module
+    """
+
+    __slots__ = ['_name', '_ports', '_verilog_source']
+    def __init__(self, name):
+        super(BaseLeafModule, self).__init__()
+        self._name = name
+        self._ports = OrderedDict()
+
+    # == low-level API =======================================================
+    # -- implementing properties/methods required by superclass --------------
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def verilog_source(self):
+        try:
+            return self._verilog_source
+        except AttributeError:
+            raise PRGAInternalError("Verilog source file not generated for module '{}' yet."
+                    .format(self))
+
+    @verilog_source.setter
+    def verilog_source(self, source):
+        self._verilog_source = source
