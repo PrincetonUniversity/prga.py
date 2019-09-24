@@ -47,10 +47,10 @@ class _AbstractBlock(AbstractModule):
         return orientation, position
 
 # ----------------------------------------------------------------------------
-# -- Cluster -----------------------------------------------------------------
+# -- IO Block ----------------------------------------------------------------
 # ----------------------------------------------------------------------------
 class IOBlock(Cluster, _AbstractBlock):
-    """An IO Block.
+    """IO block.
 
     Args:
         name (:obj:`str`): Name of this IO block
@@ -90,7 +90,7 @@ class IOBlock(Cluster, _AbstractBlock):
     # == high-level API ======================================================
     @property
     def capacity(self):
-        """:obj:`int`: IO pads per block."""
+        """:obj:`int`: Number of block instances per tile."""
         return self._capacity
 
     @property
@@ -139,5 +139,87 @@ class IOBlock(Cluster, _AbstractBlock):
         """
         orientation, _ = self._validate_orientation_and_position(orientation, Position(0, 0))
         port = IOBlockOutputPort(self, name, width, orientation)
+        self._add_port(port)
+        return port
+
+# ----------------------------------------------------------------------------
+# -- Logic Block -------------------------------------------------------------
+# ----------------------------------------------------------------------------
+class LogicBlock(Cluster, _AbstractBlock):
+    """Logic block.
+
+    Args:
+        name (:obj:`str`): Name of this logic block
+        width (:obj:`int`): Width of this block
+        height (:obj:`int`): Height of this block
+    """
+
+    __slots__ = ['_width', '_height']
+    def __init__(self, name, width = 1, height = 1):
+        super(LogicBlock, self).__init__(name)
+        self._width = width
+        self._height = height
+
+    # == low-level API =======================================================
+    # -- implementing properties/methods required by superclass --------------
+    @property
+    def module_class(self):
+        return ModuleClass.logic_block
+
+    # == high-level API ======================================================
+    @property
+    def capacity(self):
+        """:obj:`int`: Number of block instances per tile."""
+        return 1
+
+    @property
+    def width(self):
+        """:obj:`int`: Width of this block in the number of tiles."""
+        return self._width
+
+    @property
+    def height(self):
+        """:obj:`int`: Height of this block in the number of tiles."""
+        return self._height
+
+    def create_global(self, global_, orientation, name = None, position = None):
+        """Create and add a global input port to this block.
+
+        Args:
+            global_ (`Global`): The global wire this port is connected to
+            orientation (`Orientation`): Orientation of this port
+            name (:obj:`str`): Name of this port
+            position (`Position`): Position of the port in the block. Omittable if the size of the block is 1x1
+        """
+        orientation, _ = self._validate_orientation_and_position(orientation, Position(0, 0))
+        port = LogicBlockGlobalInputPort(self, global_, orientation, name, position)
+        self._add_port(port)
+        return port
+
+    def create_input(self, name, width, orientation, position = None):
+        """Create and add a non-global input port to this block.
+
+        Args:
+            name (:obj:`str`): name of the created port
+            width (:obj:`int`): width of the created port
+            orientation (`Orientation`): orientation of this port
+            position (`Position`): Position of the port in the block. Omittable if the size of the block is 1x1
+        """
+        orientation, _ = self._validate_orientation_and_position(orientation, Position(0, 0))
+        port = LogicBlockInputPort(self, name, width, orientation, position)
+        self._add_port(port)
+        return port
+
+    def create_output(self, name, width, orientation, position = None):
+        """Create and add an output port to this block.
+
+        Args:
+            name (:obj:`str`): name of the created port
+            width (:obj:`int`): width of the created port
+            orientation (`Orientation`): orientation of this port
+            position (`Position`): Position of the port in the block. Omittable if the size of the block is 1x1
+        """
+        orientation, _ = self._validate_orientation_and_position(orientation, Position(0, 0))
+        port = LogicBlockOutputPort(self, name, width, orientation, position)
         self._add_port(port)
         return port

@@ -7,7 +7,7 @@ module {{ module.name }} (
     );
     {% for instance in itervalues(module.physical_instances) %}
         {%- for pin in itervalues(instance.physical_pins) %}
-            {%- if pin.is_output %}
+            {%- if pin.direction.is_output %}
     wire [{{ pin.width - 1 }}:0] {{ instance.name }}__{{ pin.name }};
             {%- endif %}
         {%- endfor %}
@@ -16,7 +16,7 @@ module {{ module.name }} (
     {{ instance.model.name }} {{ instance.name }} (
         {%- set pincomma = joiner(",") %}
         {%- for pin in itervalues(instance.physical_pins) %}{{ pincomma() }}
-            {%- if pin.is_input %}
+            {%- if pin.direction.is_input %}
         .{{ pin.name }}({{ bits2verilog(pin.physical_source) }})
             {%- else %}
         .{{ pin.name }}({{ instance.name }}__{{ pin.name }})
@@ -25,7 +25,7 @@ module {{ module.name }} (
         );
     {%- endfor %}
     {% for port in itervalues(module.physical_ports) %}
-        {%- if port.is_output %}
+        {%- if port.direction.is_output %}
     assign {{ port.name }} = {{ bits2verilog(port.physical_source)|default("{}'bx".format(port.width), true) }};
         {%- endif %}
     {%- endfor %}

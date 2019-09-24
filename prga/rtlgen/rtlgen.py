@@ -89,9 +89,9 @@ class VerilogGenerator(object):
     """
 
     def __init__(self, additional_template_search_paths = tuple()):
-        self.env = jj.Environment(loader =
-                jj.FileSystemLoader([os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')] +
-                    additional_template_search_paths))
+        search_paths = [os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')]
+        search_paths.extend(additional_template_search_paths)
+        self.env = jj.Environment(loader = jj.FileSystemLoader(search_paths))
 
     def bitslice2verilog(self, slice_):
         if slice_.type_.is_const:

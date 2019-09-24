@@ -126,7 +126,7 @@ class AbstractBus(Abstract, Sequence):
 
     # == internal API ========================================================
     def __len__(self):
-        return len(self._bits)
+        return self.width
 
     def __getitem__(self, index):
         try:

@@ -102,7 +102,7 @@ class BaseLeafInputPort(BaseCustomInputPort):
         clock (:obj:`str`): Clock of this port
     """
 
-    __slots__ = ['_name', '_width', '_clock']
+    __slots__ = ['_clock']
     def __init__(self, parent, name, width, clock = None):
         super(BaseLeafInputPort, self).__init__(parent, name, width)
         self._clock = clock
@@ -127,7 +127,7 @@ class BaseLeafOutputPort(BaseCustomOutputPort):
             combinational paths exist to this port
     """
 
-    __slots__ = ['_name', '_width', '_clock', '_combinational_sources']
+    __slots__ = ['_clock', '_combinational_sources']
     def __init__(self, parent, name, width, clock = None, combinational_sources = tuple()):
         super(BaseLeafOutputPort, self).__init__(parent, name, width)
         self._clock = clock

@@ -187,29 +187,25 @@ class LUT(BuiltinPrimitive):
     """Look-up table.
 
     Args:
-        width (:obj:`int`): Width of this LUT
+        width (:obj:`int`): Number of input bits of this LUT
         name (:obj:`str`): Name of this primitive. Default to 'lut{width}'
     """
 
-    __slots__ = ['_name', '_width', '_verilog_source']
+    __slots__ = ['_name', '_verilog_source']
     def __init__(self, width, name = None):
         if width < 2 or width > 8:
             raise PRGAInternalError("LUT size '{}' not supported. Supported size: 2 <= width <= 8"
                     .format(width))
         super(LUT, self).__init__()
         self._name = name or ("lut" + str(width))
-        self._width = width
         self._ports = OrderedDict((
             ('in', PrimitiveInputPort(self, 'in', width, port_class = PrimitivePortClass.lut_in)),
-            ('out', PrimitiveOutputPort(self, 'out', 1, port_class = PrimitivePortClass.lut_out)),
+            ('out', PrimitiveOutputPort(self, 'out', 1, combinational_sources = ('in', ),
+                port_class = PrimitivePortClass.lut_out)),
             ('cfg_d', ConfigInputPort(self, 'cfg_d', 2 ** width)),
             ))
 
     # == low-level API =======================================================
-    @property
-    def width(self):
-        return self._width
-
     # -- implementing properties/methods required by superclass --------------
     @property
     def name(self):

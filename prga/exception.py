@@ -5,9 +5,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from typing import List
-
-__all__ = ["PRGAInternalError", "PRGAAPIError"]     # type: List[str]
+__all__ = ["PRGAInternalError", "PRGAAPIError"]
 
 class PRGAInternalError(RuntimeError):
     '''Critical internal error within PRGA flow.
