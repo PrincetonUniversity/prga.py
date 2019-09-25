@@ -4,7 +4,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from prga.arch.net.port import ConfigInputPort
-from prga.arch.module.module import BaseLeafModule
+from prga.arch.module.module import BaseModule
 from prga.arch.primitive.common import PrimitiveClass, PrimitivePortClass
 from prga.arch.primitive.port import PrimitiveClockPort, PrimitiveInputPort, PrimitiveOutputPort
 from prga.arch.primitive.primitive import AbstractPrimitive
@@ -16,9 +16,24 @@ from collections import OrderedDict
 __all__ = ['Inpad', 'Outpad', 'Iopad', 'Flipflop', 'LUT', 'SinglePortMemory', 'DualPortMemory']
 
 # ----------------------------------------------------------------------------
+# -- Base Class for Built-in Primitives --------------------------------------
+# ----------------------------------------------------------------------------
+class _BaseBuiltinPrimitive(BaseModule, AbstractPrimitive):
+    """Base class for built-in primitives.
+
+    Args:
+        name (:obj:`str`): Name of this primitive
+    """
+
+    __slots__ = ['_ports']
+    def __init__(self, name):
+        super(_BaseBuiltinPrimitive, self).__init__(name)
+        self._ports = OrderedDict()
+
+# ----------------------------------------------------------------------------
 # -- Logical-only Inpad ------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Inpad(BaseLeafModule, AbstractPrimitive):
+class Inpad(_BaseBuiltinPrimitive):
     """Logical-only input pad.
     
     Args:
@@ -50,7 +65,7 @@ class Inpad(BaseLeafModule, AbstractPrimitive):
 # ----------------------------------------------------------------------------
 # -- Logical-only Outpad -----------------------------------------------------
 # ----------------------------------------------------------------------------
-class Outpad(BaseLeafModule, AbstractPrimitive):
+class Outpad(_BaseBuiltinPrimitive):
     """Logical-only output pad.
 
     Args:
@@ -82,7 +97,7 @@ class Outpad(BaseLeafModule, AbstractPrimitive):
 # ----------------------------------------------------------------------------
 # -- Logical-only Iopad ------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Iopad(BaseLeafModule, AbstractPrimitive):
+class Iopad(_BaseBuiltinPrimitive):
     """Logical-only configurable input/output pad.
 
     Args:
@@ -116,7 +131,7 @@ class Iopad(BaseLeafModule, AbstractPrimitive):
 # ----------------------------------------------------------------------------
 # -- D-Flipflop --------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Flipflop(BaseLeafModule, AbstractPrimitive):
+class Flipflop(_BaseBuiltinPrimitive):
     """Non-configurable D-flipflop.
 
     Args:
@@ -142,7 +157,7 @@ class Flipflop(BaseLeafModule, AbstractPrimitive):
 # ----------------------------------------------------------------------------
 # -- LUT ---------------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class LUT(BaseLeafModule, AbstractPrimitive):
+class LUT(_BaseBuiltinPrimitive):
     """Look-up table.
 
     Args:
@@ -174,7 +189,7 @@ class LUT(BaseLeafModule, AbstractPrimitive):
 # ----------------------------------------------------------------------------
 # -- Memory ------------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Memory(BaseLeafModule, AbstractPrimitive):
+class Memory(_BaseBuiltinPrimitive):
     """Memory.
 
     Args:

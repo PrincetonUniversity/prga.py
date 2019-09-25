@@ -8,9 +8,8 @@ from prga.exception import PRGAInternalError
 from prga.util import Abstract, Object, ReadonlyMappingProxy
 
 from abc import abstractproperty, abstractmethod
-from collections import OrderedDict
 
-__all__ = ['AbstractModule']
+__all__ = ['AbstractModule', 'AbstractLeafModule', 'BaseModule']
 
 # ----------------------------------------------------------------------------
 # -- Abstract Module ---------------------------------------------------------
@@ -22,15 +21,15 @@ class AbstractModule(Abstract):
     def __str__(self):
         return self.name
 
-    @abstractproperty
+    @property
     def _ports(self):
-        """:obj:`MutableMapping` [:obj:`Hashable`, `AbstractPort` ]: Internal variable holding the ports."""
-        raise NotImplementedError
+        """:obj:`Mapping` [:obj:`Hashable`, `AbstractPort` ]: Internal variable holding the ports."""
+        return ReadonlyMappingProxy({})
 
-    @abstractproperty
+    @property
     def _instances(self):
-        """:obj:`MutableMapping` [:obj:`Hashable`, `AbstractInstance` ]: Internal variable holding the instances."""
-        raise NotImplementedError
+        """:obj:`Mapping` [:obj:`Hashable`, `AbstractInstance` ]: Internal variable holding the instances."""
+        return ReadonlyMappingProxy({})
 
     def _add_port(self, port):
         """Add a port to this module.
@@ -50,7 +49,11 @@ class AbstractModule(Abstract):
         elif port.key in self._ports:
             raise PRGAInternalError("Key '{}' for port '{}' already exists in module '{}'"
                     .format(port.key, port, self))
-        return self._ports.setdefault(port.key, port)
+        try:
+            return self._ports.setdefault(port.key, port)
+        except AttributeError:
+            raise PRGAInternalError("Cannot add port '{}' to module '{}'. Port mapping is read-only"
+                    .format(port, self))
 
     def _add_instance(self, instance):
         """Add an instance to this module.
@@ -70,7 +73,11 @@ class AbstractModule(Abstract):
         elif instance.key in self._instances:
             raise PRGAInternalError("Key '{}' for instance '{}' already exists in module '{}'"
                     .format(instance.key, instance, self))
-        return self._instances.setdefault(instance.key, instance)
+        try:
+            return self._instances.setdefault(instance.key, instance)
+        except AttributeError:
+            raise PRGAInternalError("Cannot add instance '{}' to module '{}'. Instance mapping is read-only"
+                    .format(instance, self))
 
     # == low-level API =======================================================
     @property
@@ -172,14 +179,6 @@ class AbstractLeafModule(AbstractModule):
                     raise PRGAInternalError("Combinational source '{}' of port '{}' in primitive '{}' is not an input"
                             .format(source_name, port, self))
 
-    @property
-    def _instances(self):
-        return ReadonlyMappingProxy({})
-
-    def _add_instance(self):
-        raise PRGAInternalError("Cannot add instance to leaf module '{}'"
-                .format(self))
-
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
     @property
@@ -196,46 +195,10 @@ class BaseModule(Object, AbstractModule):
         name (:obj:`str`): Name of this module
     """
 
-    __slots__ = ['_name', '_ports', '_instances', '_verilog_source']
+    __slots__ = ['_name', '_verilog_source']
     def __init__(self, name):
         super(BaseModule, self).__init__()
         self._name = name
-        self._ports = OrderedDict()
-        self._instances = OrderedDict()
-
-    # == low-level API =======================================================
-    # -- implementing properties/methods required by superclass --------------
-    @property
-    def name(self):
-        return self._name
-
-    @property
-    def verilog_source(self):
-        try:
-            return self._verilog_source
-        except AttributeError:
-            raise PRGAInternalError("Verilog source file not generated for module '{}' yet."
-                    .format(self))
-
-    @verilog_source.setter
-    def verilog_source(self, source):
-        self._verilog_source = source
-
-# ----------------------------------------------------------------------------
-# -- Base Leaf Module --------------------------------------------------------
-# ----------------------------------------------------------------------------
-class BaseLeafModule(Object, AbstractLeafModule):
-    """Base class for leaf modules.
-
-    Args:
-        name (:obj:`str`): Name of this module
-    """
-
-    __slots__ = ['_name', '_ports', '_verilog_source']
-    def __init__(self, name):
-        super(BaseLeafModule, self).__init__()
-        self._name = name
-        self._ports = OrderedDict()
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------

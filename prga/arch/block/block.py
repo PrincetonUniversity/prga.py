@@ -11,9 +11,11 @@ from prga.arch.primitive.common import PrimitiveClass
 from prga.arch.block.port import (IOBlockGlobalInputPort, IOBlockInputPort, IOBlockOutputPort,
         IOBlockExternalInputPort, IOBlockExternalOutputPort,
         LogicBlockGlobalInputPort, LogicBlockInputPort, LogicBlockOutputPort)
-from prga.arch.block.cluster import Cluster
+from prga.arch.block.cluster import ClusterLike
 from prga.exception import PRGAInternalError
 from prga.util import uno
+
+from collections import OrderedDict
 
 __all__ = ['IOBlock', 'LogicBlock']
 
@@ -49,7 +51,7 @@ class _AbstractBlock(AbstractModule):
 # ----------------------------------------------------------------------------
 # -- IO Block ----------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class IOBlock(Cluster, _AbstractBlock):
+class IOBlock(ClusterLike, _AbstractBlock):
     """IO block.
 
     Args:
@@ -62,9 +64,11 @@ class IOBlock(Cluster, _AbstractBlock):
         only one I/O pad, but ``capacity`` block instances will be put in one tile.
     """
 
-    __slots__ = ['_capacity']
+    __slots__ = ['_ports', '_instances', '_capacity']
     def __init__(self, name, capacity, io_primitive):
         super(IOBlock, self).__init__(name)
+        self._ports = OrderedDict()
+        self._instances = OrderedDict()
         self._capacity = capacity
         instance = RegularInstance(self, io_primitive, 'io')
         self._add_instance(instance)
@@ -145,7 +149,7 @@ class IOBlock(Cluster, _AbstractBlock):
 # ----------------------------------------------------------------------------
 # -- Logic Block -------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class LogicBlock(Cluster, _AbstractBlock):
+class LogicBlock(ClusterLike, _AbstractBlock):
     """Logic block.
 
     Args:
@@ -154,9 +158,11 @@ class LogicBlock(Cluster, _AbstractBlock):
         height (:obj:`int`): Height of this block
     """
 
-    __slots__ = ['_width', '_height']
+    __slots__ = ['_ports', '_instances', '_width', '_height']
     def __init__(self, name, width = 1, height = 1):
         super(LogicBlock, self).__init__(name)
+        self._ports = OrderedDict()
+        self._instances = OrderedDict()
         self._width = width
         self._height = height
 

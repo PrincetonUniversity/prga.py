@@ -4,7 +4,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from prga.arch.module.common import ModuleClass
-from prga.arch.module.module import AbstractLeafModule, BaseLeafModule
+from prga.arch.module.module import AbstractLeafModule, BaseModule
 from prga.arch.primitive.common import PrimitiveClass
 from prga.arch.primitive.port import PrimitiveClockPort, PrimitiveInputPort, PrimitiveOutputPort
 from prga.exception import PRGAInternalError
@@ -36,7 +36,7 @@ class AbstractPrimitive(AbstractLeafModule):
 # ----------------------------------------------------------------------------
 # -- User-Defined Primitive --------------------------------------------------
 # ----------------------------------------------------------------------------
-class CustomPrimitive(BaseLeafModule, AbstractPrimitive):
+class CustomPrimitive(BaseModule, AbstractPrimitive):
     """User-defined primitives.
     
     Args:
@@ -44,9 +44,10 @@ class CustomPrimitive(BaseLeafModule, AbstractPrimitive):
         verilog_template (:obj:`str`): Path to the template (or vanilla Verilog source file)
     """
 
-    __slots__ = ['_verilog_template']
+    __slots__ = ['_ports', '_verilog_template']
     def __init__(self, name, verilog_template):
         super(CustomPrimitive, self).__init__(name)
+        self._ports = OrderedDict()
         self._verilog_template = verilog_template
 
     # == low-level API =======================================================
@@ -60,7 +61,7 @@ class CustomPrimitive(BaseLeafModule, AbstractPrimitive):
         return PrimitiveClass.custom
 
     # == high-level API ======================================================
-    def add_clock(self, name):
+    def create_clock(self, name):
         """Create and add a clock input port to this primitive.
 
         Args:
@@ -68,7 +69,7 @@ class CustomPrimitive(BaseLeafModule, AbstractPrimitive):
         """
         return self._add_port(PrimitiveClockPort(self, name))
 
-    def add_input(self, name, width, clock = None):
+    def create_input(self, name, width, clock = None):
         """Create and add an input port to this primitive.
 
         Args:
@@ -79,7 +80,7 @@ class CustomPrimitive(BaseLeafModule, AbstractPrimitive):
         """
         return self._add_port(PrimitiveInputPort(self, name, width, clock))
 
-    def add_output(self, name, width, clock = None, combinational_sources = tuple()):
+    def create_output(self, name, width, clock = None, combinational_sources = tuple()):
         """Create and add an output port to this primitive.
 
         Args:

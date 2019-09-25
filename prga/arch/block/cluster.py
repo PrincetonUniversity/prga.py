@@ -11,6 +11,7 @@ from prga.exception import PRGAInternalError
 from prga.util import ReadonlySequenceProxy
 
 from itertools import product
+from collections import OrderedDict
 
 try:
     from itertools import izip_longest as zip_longest
@@ -24,10 +25,10 @@ import traceback as tb
 __all__ = ['Cluster']
 
 # ----------------------------------------------------------------------------
-# -- Cluster -----------------------------------------------------------------
+# -- Cluster-like Module -----------------------------------------------------
 # ----------------------------------------------------------------------------
-class Cluster(BaseModule):
-    """Intermediate-level module in a block.
+class ClusterLike(BaseModule):
+    """Base class for modules like a cluster.
 
     Args:
         name (:obj:`str`): Name of this cluster
@@ -35,11 +36,16 @@ class Cluster(BaseModule):
 
     __slots__ = ['_pack_patterns']
     def __init__(self, name):
-        super(Cluster, self).__init__(name)
+        super(ClusterLike, self).__init__(name)
         self._pack_patterns = []
 
     # == internal API ========================================================
-    def __connect(self, source, sink, pack_pattern):
+    def _validate_model(self, model):
+        """Validate if ``model`` can be instantiate in this module."""
+        if model.module_class not in (ModuleClass.primitive, ModuleClass.cluster):
+            raise PRGAInternalError("Only primitives or clusters may be instantiated in a custer/block.")
+
+    def _connect(self, source, sink, pack_pattern):
         if ((source.net_type.is_port and source.parent is not self) or
                 (source.net_type.is_pin and source.parent.parent is not self)):
             raise PRGAInternalError("'{}' is not a net in module '{}'"
@@ -61,12 +67,65 @@ class Cluster(BaseModule):
 
     # -- implementing properties/methods required by superclass --------------
     @property
-    def module_class(self):
-        return ModuleClass.cluster
-
-    @property
     def verilog_template(self):
         return 'module.tmpl.v'
+
+    # == high-level API ======================================================
+    def instantiate(self, model, name):
+        """Instantiate an instance of ``model`` and add to this module.
+
+        Args:
+            model (:obj:`AbstractModule`): A user-accessible module
+            name (:obj:`str`): Name of the instance
+        """
+        self._validate_model(model)
+        instance = RegularInstance(self, model, name)
+        return self._add_instance(instance)
+
+    def connect(self, sources, sinks, fully_connected = False, pack_pattern = False):
+        """Connect a sequence of source net bits to a sequence of sink net bits.
+
+        Args:
+            sources (:obj:`Sequence` [`AbstractSourceBit` ]):
+            sinks (:obj:`Sequence` [`AbstractSinkBit` ]):
+            fully_connected (:obj:`bool`): Connections are created bit-wise by default. If ``fully_connected`` is set,
+                connections are created in an all-to-all manner
+            pack_pattern (:obj:`bool`): An advanced feature in VPR
+        """
+        sources = sources if isinstance(sources, Iterable) else (sources, )
+        sinks = sinks if isinstance(sinks, Iterable) else (sinks, )
+        if fully_connected:
+            for source, sink in product(iter(sources), iter(sinks)):
+                self._connect(source, sink, pack_pattern)
+        else:
+            for source, sink in zip_longest(iter(sources), iter(sinks)):
+                if source is None or sink is None:
+                    _logger.warning("Number of sources and number of sinks don't match")
+                    _logger.warning("\n" + "".join(tb.format_stack()))
+                    return
+                self._connect(source, sink, pack_pattern)
+
+# ----------------------------------------------------------------------------
+# -- Cluster -----------------------------------------------------------------
+# ----------------------------------------------------------------------------
+class Cluster(ClusterLike):
+    """Intermediate-level module in a block.
+
+    Args:
+        name (:obj:`str`): Name of this cluster
+    """
+
+    __slots__ = ['_ports', '_instances']
+    def __init__(self, name):
+        super(Cluster, self).__init__(name)
+        self._ports = OrderedDict()
+        self._instances = OrderedDict()
+
+    # == low-level API =======================================================
+    # -- implementing properties/methods required by superclass --------------
+    @property
+    def module_class(self):
+        return ModuleClass.cluster
 
     # == high-level API ======================================================
     def create_clock(self, name):
@@ -94,38 +153,3 @@ class Cluster(BaseModule):
             width (:obj:`int`): Number of bits in this port
         """
         return self._add_port(ClusterOutputPort(self, name, width))
-
-    def instantiate(self, model, name):
-        """Instantiate an instance of ``model`` and add to this module.
-
-        Args:
-            model (:obj:`AbstractModule`): A user-accessible module
-            name (:obj:`str`): Name of the instance
-        """
-        if model.module_class not in (ModuleClass.primitive, ModuleClass.cluster):
-            raise PRGAInternalError("Only primitives or clusters may be instantiated in a custer/block.")
-        instance = RegularInstance(self, model, name)
-        return self._add_instance(instance)
-
-    def connect(self, sources, sinks, fully_connected = False, pack_pattern = False):
-        """Connect a sequence of source net bits to a sequence of sink net bits.
-
-        Args:
-            sources (:obj:`Sequence` [`AbstractSourceBit` ]):
-            sinks (:obj:`Sequence` [`AbstractSinkBit` ]):
-            fully_connected (:obj:`bool`): Connections are created bit-wise by default. If ``fully_connected`` is set,
-                connections are created in an all-to-all manner
-            pack_pattern (:obj:`bool`): An advanced feature in VPR
-        """
-        sources = sources if isinstance(sources, Iterable) else (sources, )
-        sinks = sinks if isinstance(sinks, Iterable) else (sinks, )
-        if fully_connected:
-            for source, sink in product(iter(sources), iter(sinks)):
-                self.__connect(source, sink, pack_pattern)
-        else:
-            for source, sink in zip_longest(iter(sources), iter(sinks)):
-                if source is None or sink is None:
-                    _logger.warning("Number of sources and number of sinks don't match")
-                    _logger.warning("\n" + "".join(tb.format_stack()))
-                    return
-                self.__connect(source, sink, pack_pattern)

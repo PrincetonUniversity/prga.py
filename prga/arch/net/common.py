@@ -56,15 +56,17 @@ class NetClass(Enum):
     primitive = 0           #: user-available primitive ports
     switch = 1              #: switch input/output
     config = 2              #: configuration input/output
-    cluster = 3             #: user-defined input/output of a sub-block cluster
+    multimode = 3           #: input/output of a multimode primitive
+    mode = 4                #: input/output of a mode of a multimode primitive
+    cluster = 5             #: user-defined input/output of a sub-block cluster
     # routing nodes
-    blockport = 4           #: IPIN/OPIN of logic/io block
-    segment = 5             #: driving port of a segment
+    blockport = 6           #: IPIN/OPIN of logic/io block
+    segment = 7             #: driving port of a segment
     # routing bridges
-    blockport_bridge = 6    #: IPIN/OPIN bridge in cbox/tile/array
-    segment_bridge = 7      #: segment bridge in cbox/sbox/tile/array
+    blockport_bridge = 8    #: IPIN/OPIN bridge in cbox/tile/array
+    segment_bridge = 9      #: segment bridge in cbox/sbox/tile/array
     # other tile/array ports
-    io = 8                  #: IOB/array external ports
-    global_ = 9             #: global wires
+    io = 10                 #: IOB/array external ports
+    global_ = 11            #: global wires
     # extensions
-    extension = 10          #: reserved for extensions
+    extension = 12          #: reserved for extensions
