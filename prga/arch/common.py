@@ -51,11 +51,11 @@ class Direction(Enum):
 # ----------------------------------------------------------------------------
 class Orientation(Enum):
     """Orientation in a 2D grid."""
-    auto = 0        #: automatically determine the orientation. Not valid in some cases
-    north = 1       #: Direction.inc x Dimension.y
-    east = 2        #: Direction.inc x Dimension.x
-    south = 3       #: Direction.dec x Dimension.y
-    west = 4        #: Direction.dec x Dimension.x
+    north = 0       #: Direction.inc x Dimension.y
+    east = 1        #: Direction.inc x Dimension.x
+    south = 2       #: Direction.dec x Dimension.y
+    west = 3        #: Direction.dec x Dimension.x
+    auto = 5       #: automatically determine the orientation. Not valid in some cases
 
     @property
     def dimension(self):
@@ -99,8 +99,8 @@ class Orientation(Enum):
             dimension (`Dimension`):
             direction (`Direction`):
         """
-        return dimension.switch(x = direction.switch(inc = Orientation.east, dec = Orientation.west),
-                                y = direction.switch(inc = Orientation.north, dec = Orientation.south))
+        return dimension.switch(direction.switch(Orientation.east, Orientation.west),
+                                direction.switch(Orientation.north, Orientation.south))
 
 # ----------------------------------------------------------------------------
 # -- Position ----------------------------------------------------------------

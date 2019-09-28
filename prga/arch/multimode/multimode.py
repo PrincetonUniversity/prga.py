@@ -41,7 +41,7 @@ class _ModePortsProxy(Mapping):
         except KeyError:
             raise KeyError(key)
         return self.mode._mapped_ports.setdefault(key,
-                port.direction.switch(input_ = ModeInputPort, output = ModeOutputPort)(self.mode, port))
+                port.direction.switch(ModeInputPort, ModeOutputPort)(self.mode, port))
 
     def __len__(self):
         return len(self.mode.parent.all_ports)

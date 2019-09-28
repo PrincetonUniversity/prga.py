@@ -157,9 +157,12 @@ class Enum(enum.IntEnum):
             except KeyError:
                 raise AttributeError(attr)
 
-    def switch(self, **kwargs):
+    def switch(self, *args, **kwargs):
         """Use this enum as a variable in a switch clause."""
         try:
-            return kwargs[self.name]
-        except KeyError:
-            raise PRGAInternalError("Value unspecified for case {}".format(self))
+            return args[self.value]
+        except IndexError:
+            try:
+                return kwargs[self.name]
+            except KeyError:
+                raise PRGAInternalError("Value unspecified for case {}".format(self))

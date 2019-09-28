@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.arch.module.instance import RegularInstance
+from prga.arch.switch.switch import SwitchInstance
 from prga.exception import PRGAInternalError
 from prga.util import Abstract
 
@@ -48,7 +48,7 @@ def _instantiate_switch(module, switch, name, sources, sink):
         sink (`AbstractSinkBit`): Sink bit to be connected
 
     Returns:
-        `RegularInstance`: Instantiated switch
+        `SwitchInstance`: Instantiated switch
 
     The instantiated switch will NOT be added to ``module``. The logical connection between ``sink`` and the switch
     output will NOT be created either.
@@ -56,9 +56,8 @@ def _instantiate_switch(module, switch, name, sources, sink):
     if len(sources) < 2 or len(sources) > len(switch.switch_inputs):
         raise PRGAInternalError("Invalid number of source bits ({}). Width of the switch module '{}' is {}"
                 .format(len(sources), switch, len(switch.switch_inputs)))
-    instance = RegularInstance(module, switch, name)
-    for source, port_bit in zip(iter(sources), iter(switch.switch_inputs)):
-        pin_bit = instance.all_pins[port_bit.bus.key][port_bit.index]
+    instance = SwitchInstance(module, switch, name)
+    for source, pin_bit in zip(iter(sources), iter(instance.switch_inputs)):
         pin_bit.source = source
         if source.physical_cp is not None:
             pin_bit.physical_cp.physical_source = source.physical_cp
@@ -86,8 +85,7 @@ def switchify(delegate, module):
                         name, sink.user_sources, sink)
                 muxes.append( (mux, sink) )
     for mux, sink in muxes:
-        muxout = mux.all_pins[mux.model.switch_output.bus.key][mux.model.switch_output.index]
-        sink.source = muxout
-        if sink.physical_cp is not None and muxout.physical_cp is not None:
-            sink.physical_cp.physical_source = muxout.physical_cp
+        sink.source = mux.switch_output
+        if sink.physical_cp is not None and mux.switch_output.physical_cp is not None:
+            sink.physical_cp.physical_source = mux.switch_output.physical_cp
         module._add_instance(mux)

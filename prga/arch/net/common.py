@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from prga.util import Enum
 
-__all__ = ['NetType', 'ConstNetType', 'PortDirection', 'NetClass']
+__all__ = ['NetType', 'ConstNetType', 'PortDirection', 'NetClass', 'RoutingNodeType']
 
 # ----------------------------------------------------------------------------
 # -- Net Type ----------------------------------------------------------------
@@ -46,7 +46,7 @@ class PortDirection(Enum):
         Returns:
             `PortDirection`: the enum value of the opposite direction.
         """
-        return self.switch(input_ = PortDirection.output, output = PortDirection.input_)
+        return self.switch(PortDirection.output, PortDirection.input_)
 
 # ----------------------------------------------------------------------------
 # -- Logical Net Class -------------------------------------------------------
@@ -61,12 +61,18 @@ class NetClass(Enum):
     cluster = 5             #: user-defined input/output of a sub-block cluster
     # routing nodes
     blockport = 6           #: IPIN/OPIN of logic/io block
-    segment = 7             #: driving port of a segment
-    # routing bridges
-    blockport_bridge = 8    #: IPIN/OPIN bridge in cbox/tile/array
-    segment_bridge = 9      #: segment bridge in cbox/sbox/tile/array
+    node = 7                #: other routing nodes
     # other tile/array ports
-    io = 10                 #: IOB/array external ports
-    global_ = 11            #: global wires
+    io = 8                  #: IOB/array external ports
+    global_ = 9             #: global wires
     # extensions
-    extension = 12          #: reserved for extensions
+    extension = 10          #: reserved for extensions
+
+# ----------------------------------------------------------------------------
+# -- Routing Node Type -------------------------------------------------------
+# ----------------------------------------------------------------------------
+class RoutingNodeType(Enum):
+    """Routing node type."""
+    segment = 0             #: SegmentID
+    segment_bridge = 1      #: SegmentBridgeID
+    blockport_bridge = 2    #: BlockportBridgeID

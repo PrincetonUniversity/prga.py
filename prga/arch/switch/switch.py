@@ -6,6 +6,7 @@ from prga.compatible import *
 from prga.arch.net.port import ConfigInputPort
 from prga.arch.module.common import ModuleClass
 from prga.arch.module.module import AbstractLeafModule, BaseModule
+from prga.arch.module.instance import RegularInstance
 from prga.arch.switch.port import SwitchInputPort, SwitchOutputPort
 from prga.exception import PRGAInternalError
 from prga.util import Object, ReadonlyMappingProxy
@@ -75,3 +76,24 @@ class ConfigurableMUX(BaseModule, AbstractSwitch):
     @property
     def verilog_template(self):
         return 'cfg_mux.tmpl.v'
+
+# ----------------------------------------------------------------------------
+# -- Switch Instance ---------------------------------------------------------
+# ----------------------------------------------------------------------------
+class SwitchInstance(RegularInstance):
+    """Switch instances.
+
+    Args:
+        parent (`AbstractModule`): parent module of this instance
+        model (`AbstractSwitch`): model of this instance
+        name (:obj:`str`): name of this instance
+    """
+
+    # == low-level API =======================================================
+    @property
+    def switch_inputs(self):
+        return tuple(self.all_pins[bit.bus.key][bit.index] for bit in self.model.switch_inputs)
+
+    @property
+    def switch_output(self):
+        return self.all_pins[self.model.switch_output.bus.key][self.model.switch_output.index]

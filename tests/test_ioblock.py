@@ -7,7 +7,7 @@ from prga.arch.common import Global
 from prga.arch.primitive.builtin import Flipflop, Iopad
 from prga.arch.block.block import IOBlock
 
-def test_cluster(tmpdir):
+def test_io_block(tmpdir):
     io = Iopad()
     ff = Flipflop()
     block = IOBlock('mock_block', 4, io)

@@ -95,7 +95,7 @@ class VerilogGenerator(object):
 
     def bitslice2verilog(self, slice_):
         if slice_.type_.is_const:
-            return str(slice_.width) + "'b" + slice_.bus.switch(unconnected = "x", zero = "0", one = "1")
+            return str(slice_.width) + "'b" + slice_.bus.switch("x", "0", "1")
         elif slice_.type_.is_port:
             if slice_.start == 0 and slice_.stop == slice_.bus.width:
                 return slice_.bus.name

@@ -288,6 +288,14 @@ class DynamicSinkBit(_BaseDynamicBit, AbstractSinkBit):
         # 1. static bits are always created when user sources are involved
         return self._get_or_create_static_cp().add_user_sources(sources)
 
+    def remove_user_sources(self, sources = None):
+        # 0. user sources are only valid if this is a user-accessible net
+        if not self.is_user_accessible:
+            raise PRGAInternalError("'{}' is not a user-accessible sink"
+                    .format(self))
+        # 1. static bits are always created when user sources are involved
+        return self._get_or_create_static_cp().remove_user_sources(sources)
+
 # ----------------------------------------------------------------------------
 # -- Static Source Bit -------------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -406,6 +414,9 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
             return tuple()
 
     def add_user_sources(self, sources):
+        if not self.is_user_accessible:
+            raise PRGAInternalError("'{}' is not a user sink"
+                    .format(self))
         for s in sources:
             if not (s.is_user_accessible and not s.is_sink):
                 raise PRGAInternalError("'{}' is not a user source"
@@ -415,3 +426,20 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
                     self._user_sources.append(s)
             except AttributeError:
                 self._user_sources = [s]
+
+    def remove_user_sources(self, sources = None):
+        if not self.is_user_accessible:
+            raise PRGAInternalError("'{}' is not a user sink"
+                    .format(self))
+        if sources is None:
+            try:
+                del self._user_sources
+            except AttributeError:
+                pass
+        else:
+            for s in sources:
+                try:
+                    self._user_sources.remove(s)
+                except ValueError:
+                    raise PRGAInternalError("'{}' is not a user source of user sink '{}'"
+                            .format(s, self))

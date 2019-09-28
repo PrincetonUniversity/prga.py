@@ -165,8 +165,7 @@ class RegularInstance(BaseInstance):
     # == internal API ========================================================
     # -- implementing properties/methods required by superclass --------------
     def _create_pin(self, port):
-        return port.direction.switch(input_ = InputPin(self, port),
-                output = OutputPin(self, port))
+        return port.direction.switch(InputPin, OutputPin)(self, port)
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------

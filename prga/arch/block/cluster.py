@@ -47,12 +47,14 @@ class ClusterLike(BaseModule):
 
     def _connect(self, source, sink, pack_pattern):
         if ((source.net_type.is_port and source.parent is not self) or
-                (source.net_type.is_pin and source.parent.parent is not self)):
-            raise PRGAInternalError("'{}' is not a net in module '{}'"
+                (source.net_type.is_pin and source.parent.parent is not self) or
+                source.is_sink or not source.is_user_accessible):
+            raise PRGAInternalError("'{}' is not a user-accessible source in module '{}'"
                     .format(source, self))
         if ((sink.net_type.is_port and sink.parent is not self) or
-                (sink.net_type.is_pin and sink.parent.parent is not self)):
-            raise PRGAInternalError("'{}' is not a net in module '{}'"
+                (sink.net_type.is_pin and sink.parent.parent is not self) or
+                not sink.is_sink or not sink.is_user_accessible):
+            raise PRGAInternalError("'{}' is not a user-accessible sink in module '{}'"
                     .format(sink, self))
         sink.add_user_sources( (source, ) )
         if pack_pattern and (source, sink) not in self._pack_patterns:

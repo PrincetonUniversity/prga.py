@@ -113,6 +113,16 @@ class AbstractSinkBit(AbstractBit):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def remove_user_sources(self, sources = None):
+        """Remove user sources to this bit.
+
+        Args:
+            sources (``None`` or :obj:`Iterable` [`AbstractSourceBit` ]): Sources to be removed. If ``None`` is given,
+                all user sources are removed
+        """
+        raise NotImplementedError
+
     # -- implementing properties/methods required by superclass --------------
     @property
     def is_sink(self):

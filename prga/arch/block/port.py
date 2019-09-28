@@ -78,7 +78,7 @@ class ClusterOutputPort(BaseCustomOutputPort):
 # ----------------------------------------------------------------------------
 # -- Abstract Block Port -----------------------------------------------------
 # ----------------------------------------------------------------------------
-class _AbstractBlockPort(AbstractPort):
+class AbstractBlockPort(AbstractPort):
     """Abstract base class for block ports."""
 
     # == low-level API =======================================================
@@ -99,7 +99,7 @@ class _AbstractBlockPort(AbstractPort):
 # ----------------------------------------------------------------------------
 # -- IO Block Global Input Port ----------------------------------------------
 # ----------------------------------------------------------------------------
-class IOBlockGlobalInputPort(BaseGlobalInputPort, _AbstractBlockPort):
+class IOBlockGlobalInputPort(BaseGlobalInputPort, AbstractBlockPort):
     """IO block global input port.
 
     Args:
@@ -123,7 +123,7 @@ class IOBlockGlobalInputPort(BaseGlobalInputPort, _AbstractBlockPort):
 # ----------------------------------------------------------------------------
 # -- IO Block Input Port -----------------------------------------------------
 # ----------------------------------------------------------------------------
-class IOBlockInputPort(BaseCustomInputPort, _AbstractBlockPort):
+class IOBlockInputPort(BaseCustomInputPort, AbstractBlockPort):
     """IO block non-global input port.
 
     Args:
@@ -147,7 +147,7 @@ class IOBlockInputPort(BaseCustomInputPort, _AbstractBlockPort):
 # ----------------------------------------------------------------------------
 # -- IO Block Output Port ----------------------------------------------------
 # ----------------------------------------------------------------------------
-class IOBlockOutputPort(BaseCustomOutputPort, _AbstractBlockPort):
+class IOBlockOutputPort(BaseCustomOutputPort, AbstractBlockPort):
     """IO block non-global input port.
 
     Args:
@@ -215,7 +215,7 @@ class IOBlockExternalOutputPort(BaseCustomOutputPort):
 # ----------------------------------------------------------------------------
 # -- Logic Block Global Input Port -------------------------------------------
 # ----------------------------------------------------------------------------
-class LogicBlockGlobalInputPort(BaseGlobalInputPort, _AbstractBlockPort):
+class LogicBlockGlobalInputPort(BaseGlobalInputPort, AbstractBlockPort):
     """Logic block global input port.
 
     Args:
@@ -246,7 +246,7 @@ class LogicBlockGlobalInputPort(BaseGlobalInputPort, _AbstractBlockPort):
 # ----------------------------------------------------------------------------
 # -- Logic Block Input Port --------------------------------------------------
 # ----------------------------------------------------------------------------
-class LogicBlockInputPort(BaseCustomInputPort, _AbstractBlockPort):
+class LogicBlockInputPort(BaseCustomInputPort, AbstractBlockPort):
     """Logic block non-global input port.
 
     Args:
@@ -277,7 +277,7 @@ class LogicBlockInputPort(BaseCustomInputPort, _AbstractBlockPort):
 # ----------------------------------------------------------------------------
 # -- Logic Block Output Port -------------------------------------------------
 # ----------------------------------------------------------------------------
-class LogicBlockOutputPort(BaseCustomOutputPort, _AbstractBlockPort):
+class LogicBlockOutputPort(BaseCustomOutputPort, AbstractBlockPort):
     """Logic block non-global input port.
 
     Args:
