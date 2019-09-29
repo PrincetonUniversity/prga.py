@@ -7,10 +7,9 @@ from prga.arch.common import Global, Orientation, Dimension
 from prga.arch.primitive.builtin import Iopad
 from prga.arch.block.block import IOBlock
 from prga.arch.routing.common import SegmentPrototype
-from prga.arch.routing.box import ConnectionBox, SwitchBox
+from prga.arch.routing.box import ConnectionBox
 from prga.arch.switch.switch import ConfigurableMUX
-from prga.algorithm.design.routing import (BlockPortFCValue, BlockFCValue, populate_connection_box, generate_fc,
-        SwitchBoxEnvironment, populate_switch_box, WiltonSwitchBoxPattern, generate_wilton)
+from prga.algorithm.design.cbox import BlockPortFCValue, BlockFCValue, populate_connection_box, generate_fc
 from prga.algorithm.design.switch import SwitchLibraryDelegate, switchify
 from prga.rtlgen.rtlgen import VerilogGenerator
 
@@ -46,21 +45,3 @@ def test_connection_box(tmpdir):
 
     # 4. generate files
     gen.generate_module(tmpdir.join(cbox.name + '.v').open(OpenMode.w), cbox)
-
-def test_switch_box(tmpdir):
-    sgmts = [SegmentPrototype('L1', 4, 1), SegmentPrototype('L2', 1, 2)]
-    lib = SwitchLibrary()
-    gen = VerilogGenerator()
-
-    # 1. create a switch box
-    sbox = SwitchBox('mock_sbox')
-
-    # 2. populate and generate connections
-    populate_switch_box(sbox, sgmts)
-    generate_wilton(sbox, sgmts, cycle_free = True)
-
-    # 2.3 switchify!
-    switchify(lib, sbox)
-
-    # 4. generate files
-    gen.generate_module(tmpdir.join(sbox.name + '.v').open(OpenMode.w), sbox)

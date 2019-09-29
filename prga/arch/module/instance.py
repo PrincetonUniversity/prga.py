@@ -135,6 +135,11 @@ class BaseInstance(Object, AbstractInstance):
         self._model = model
         self._pins = {}
 
+    # == internal API ========================================================
+    # -- implementing properties/methods required by superclass --------------
+    def _create_pin(self, port):
+        return port.direction.switch(InputPin, OutputPin)(self, port)
+
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
     @property
@@ -144,6 +149,10 @@ class BaseInstance(Object, AbstractInstance):
     @property
     def model(self):
         return self._model
+
+    @property
+    def is_physical(self):
+        return self.parent.is_physical and self.model.is_physical
 
 # ----------------------------------------------------------------------------
 # -- Regular Instance --------------------------------------------------------
@@ -162,17 +171,8 @@ class RegularInstance(BaseInstance):
         super(RegularInstance, self).__init__(parent, model)
         self._name = name
 
-    # == internal API ========================================================
-    # -- implementing properties/methods required by superclass --------------
-    def _create_pin(self, port):
-        return port.direction.switch(InputPin, OutputPin)(self, port)
-
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
-    @property
-    def is_physical(self):
-        return self.parent.is_physical and self.model.is_physical
-
     @property
     def name(self):
         return self._name

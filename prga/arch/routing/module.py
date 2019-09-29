@@ -14,7 +14,7 @@ from prga.util import ReadonlyMappingProxy, Object
 from abc import abstractmethod, abstractproperty
 from copy import copy
 
-__all__ = ['AbstractRoutingModule', 'RoutingInstance', 'ConnectionBoxInstance']
+__all__ = ['AbstractRoutingModule']
 
 # ----------------------------------------------------------------------------
 # -- Routing Node Ports Proxy ------------------------------------------------
@@ -108,10 +108,10 @@ class AbstractRoutingModule(AbstractModule):
         return _RoutingNodePortsProxy(self.all_ports)
 
 # ----------------------------------------------------------------------------
-# -- Instance for Routing Module ---------------------------------------------
+# -- Base Class for Instances of Routing Module -----------------------------
 # ----------------------------------------------------------------------------
-class RoutingInstance(BaseInstance):
-    """Instance of routing modules.
+class BaseRoutingInstance(BaseInstance):
+    """Base class for instances of routing modules.
 
     Args:
         parent (`AbstractArrayElement`): Parent module of this instance
@@ -121,7 +121,7 @@ class RoutingInstance(BaseInstance):
 
     __slots__ = ['_position']
     def __init__(self, parent, model, position):
-        super(RoutingInstance, self).__init__(parent, model)
+        super(BaseRoutingInstance, self).__init__(parent, model)
         self._position = position
 
     # == internal API ========================================================
@@ -130,7 +130,7 @@ class RoutingInstance(BaseInstance):
         if port.net_class.is_node:
             return port.direction.switch(RoutingNodeInputPin, RoutingNodeOutputPin)(self, port)
         else:
-            return super(RoutingInstance, self)._create_pin(port)
+            return super(BaseRoutingInstance, self)._create_pin(port)
 
     # == low-level API =======================================================
     @property
@@ -142,51 +142,4 @@ class RoutingInstance(BaseInstance):
     def all_nodes(self):
         """:obj:`Mapping` [`AbstractRoutingNodeID`, `AbstractRoutingNodePort` ]: A mapping from routing node IDs to
         routing node ports. Note that this property handles the equivalent routing node IDs well."""
-
-    # -- implementing properties/methods required by superclass --------------
-    @property
-    def name(self):
-        return '{}_{}{}{}{}'.format( self.module_class.switch(
-                    switch_box = 'sbox', tile = 'tile', array = 'tile'),
-                    'x' if self.position.x >= 0 else 'u', self.position.x,
-                    'y' if self.position.y >= 0 else 'v', self.position.y )
-
-    @property
-    def key(self):
-        return (self.module_class, self.position)
-
-# ----------------------------------------------------------------------------
-# -- Instance for Connection Box ---------------------------------------------
-# ----------------------------------------------------------------------------
-class ConnectionBoxInstance(RoutingInstance):
-    """Instance of connection boxes.
-
-    Args:
-        parent (`Tile`): Parent module of this instance
-        model (`ConnectionBox`): Model of this instance
-        position (`Position`): Position of this instance in the parent module
-        orientation (`Orientation`): On which side of a tile is this instance
-    """
-
-    __slots__ = ['_orientation']
-    def __init__(self, parent, model, position, orientation):
-        super(ConnectionBoxInstance, self).__init__(parent, model, position)
-        self._orientation = orientation
-
-    # == low-level API =======================================================
-    @property
-    def orientation(self):
-        """`Orientation`: On which side of a tile is this instance."""
-
-    # -- implementing properties/methods required by superclass --------------
-    @property
-    def name(self):
-        return '{}_{}{}{}{}{}'.format( self.module_class.switch(
-                    switch_box = 'sbox', tile = 'tile', array = 'tile'),
-                    'x' if self.position.x >= 0 else 'u', self.position.x,
-                    'y' if self.position.y >= 0 else 'v', self.position.y,
-                    self.orientation.name[0])
-
-    @property
-    def key(self):
-        return (self.module_class, self.position, self.orientation)
+        return _RoutingNodePortsProxy(self.all_pins)

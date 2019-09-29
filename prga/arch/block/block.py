@@ -22,7 +22,7 @@ __all__ = ['IOBlock', 'LogicBlock']
 # ----------------------------------------------------------------------------
 # -- Abstract Block ----------------------------------------------------------
 # ----------------------------------------------------------------------------
-class _AbstractBlock(AbstractModule):
+class AbstractBlock(AbstractModule):
     """Abstract base class for blocks."""
 
     # == internal API ========================================================
@@ -51,7 +51,7 @@ class _AbstractBlock(AbstractModule):
 # ----------------------------------------------------------------------------
 # -- IO Block ----------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class IOBlock(ClusterLike, _AbstractBlock):
+class IOBlock(ClusterLike, AbstractBlock):
     """IO block.
 
     Args:
@@ -149,7 +149,7 @@ class IOBlock(ClusterLike, _AbstractBlock):
 # ----------------------------------------------------------------------------
 # -- Logic Block -------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class LogicBlock(ClusterLike, _AbstractBlock):
+class LogicBlock(ClusterLike, AbstractBlock):
     """Logic block.
 
     Args:

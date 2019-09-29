@@ -6,7 +6,7 @@ from prga.compatible import *
 from prga.arch.common import Position, Orientation
 from prga.arch.net.common import RoutingNodeType
 from prga.arch.block.port import AbstractBlockPort
-from prga.util import Abstract, Object, Enum
+from prga.util import Abstract, Object, Enum, uno
 from prga.exception import PRGAInternalError
 
 from collections import namedtuple
@@ -202,6 +202,15 @@ class SegmentBridgeID(SegmentID):
     def to_id(self):
         """`SegmentID`: Convert to non-bridge segment ID."""
         return SegmentID(self.position, self.prototype, self.orientation, self.section)
+
+    def to_bridge_id(self, position = None, section = None, bridge_type = None):
+        """`SegmentBridgeID`: Convert to another segment bridge ID."""
+        return SegmentBridgeID(
+                uno(position, self.position),
+                self.prototype,
+                self.orientation,
+                uno(section, self.section),
+                uno(bridge_type, self.bridge_type))
 
     @property
     def node_type(self):
