@@ -8,7 +8,10 @@ from prga.arch.net.common import NetClass
 from prga.arch.net.abc import AbstractPort
 from prga.arch.net.port import BaseCustomClockPort, BaseCustomInputPort, BaseCustomOutputPort, BaseGlobalInputPort
 
-__all__ = ['ClusterClockPort', 'ClusterInputPort', 'ClusterOutputPort']
+__all__ = ['ClusterClockPort', 'ClusterInputPort', 'ClusterOutputPort',
+        'IOBlockGlobalInputPort', 'IOBlockInputPort', 'IOBlockOutputPort',
+        'IOBlockExternalInputPort', 'IOBlockExternalOutputPort',
+        'LogicBlockGlobalInputPort', 'LogicBlockInputPort', 'LogicBlockOutputPort']
 
 # ----------------------------------------------------------------------------
 # -- Cluster Clock Port ------------------------------------------------------
@@ -223,14 +226,14 @@ class LogicBlockGlobalInputPort(BaseGlobalInputPort, AbstractBlockPort):
         global_ (`Global`): The global wire this port is connected to 
         orientation (`Orientation`): Orientation of this port
         name (:obj:`str`): Name of this port
-        position (`Position`): Position of this port in the block
+        position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this port in the block
     """
 
     __slots__ = ['_orientation', '_position']
-    def __init__(self, parent, global_, orientation, name = None, position = Position(0, 0)):
+    def __init__(self, parent, global_, orientation, name = None, position = (0, 0)):
         super(LogicBlockGlobalInputPort, self).__init__(parent, global_, name)
         self._orientation = orientation
-        self._position = position
+        self._position = Position(*position)
 
     # == low-level API =======================================================
     @property
@@ -254,14 +257,14 @@ class LogicBlockInputPort(BaseCustomInputPort, AbstractBlockPort):
         name (:obj:`str`): Name of this port
         width (:obj:`str`): Number of bits int this port
         orientation (`Orientation`): Orientation of this port
-        position (`Position`): Position of this port in the block
+        position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this port in the block
     """
 
     __slots__ = ['_orientation', '_position']
-    def __init__(self, parent, name, width, orientation, position = Position(0, 0)):
+    def __init__(self, parent, name, width, orientation, position = (0, 0)):
         super(LogicBlockInputPort, self).__init__(parent, name, width)
         self._orientation = orientation
-        self._position = position
+        self._position = Position(*position)
 
     # == low-level API =======================================================
     @property
@@ -285,14 +288,14 @@ class LogicBlockOutputPort(BaseCustomOutputPort, AbstractBlockPort):
         name (:obj:`str`): Name of this port
         width (:obj:`str`): Number of bits int this port
         orientation (`Orientation`): Orientation of this port
-        position (`Position`): Position of this port in the block
+        position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this port in the block
     """
 
     __slots__ = ['_orientation', '_position']
-    def __init__(self, parent, name, width, orientation, position = Position(0, 0)):
+    def __init__(self, parent, name, width, orientation, position = (0, 0)):
         super(LogicBlockOutputPort, self).__init__(parent, name, width)
         self._orientation = orientation
-        self._position = position
+        self._position = Position(*position)
 
     # == low-level API =======================================================
     @property

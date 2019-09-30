@@ -117,8 +117,7 @@ class IOBlock(ClusterLike, AbstractBlock):
         """
         orientation, _ = self._validate_orientation_and_position(orientation, Position(0, 0))
         port = IOBlockGlobalInputPort(self, global_, orientation, name)
-        self._add_port(port)
-        return port
+        return self._add_port(port)
 
     def create_input(self, name, width, orientation = Orientation.auto):
         """Create and add a non-global input port to this block.
@@ -130,8 +129,7 @@ class IOBlock(ClusterLike, AbstractBlock):
         """
         orientation, _ = self._validate_orientation_and_position(orientation, Position(0, 0))
         port = IOBlockInputPort(self, name, width, orientation)
-        self._add_port(port)
-        return port
+        return self._add_port(port)
 
     def create_output(self, name, width, orientation = Orientation.auto):
         """Create and add an output port to this block.
@@ -143,8 +141,7 @@ class IOBlock(ClusterLike, AbstractBlock):
         """
         orientation, _ = self._validate_orientation_and_position(orientation, Position(0, 0))
         port = IOBlockOutputPort(self, name, width, orientation)
-        self._add_port(port)
-        return port
+        return self._add_port(port)
 
 # ----------------------------------------------------------------------------
 # -- Logic Block -------------------------------------------------------------
@@ -195,12 +192,12 @@ class LogicBlock(ClusterLike, AbstractBlock):
             global_ (`Global`): The global wire this port is connected to
             orientation (`Orientation`): Orientation of this port
             name (:obj:`str`): Name of this port
-            position (`Position`): Position of the port in the block. Omittable if the size of the block is 1x1
+            position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of the port in the block. Omittable if the
+                size of the block is 1x1
         """
-        orientation, _ = self._validate_orientation_and_position(orientation, Position(0, 0))
+        orientation, position = self._validate_orientation_and_position(orientation, Position(0, 0))
         port = LogicBlockGlobalInputPort(self, global_, orientation, name, position)
-        self._add_port(port)
-        return port
+        return self._add_port(port)
 
     def create_input(self, name, width, orientation, position = None):
         """Create and add a non-global input port to this block.
@@ -209,12 +206,12 @@ class LogicBlock(ClusterLike, AbstractBlock):
             name (:obj:`str`): name of the created port
             width (:obj:`int`): width of the created port
             orientation (`Orientation`): orientation of this port
-            position (`Position`): Position of the port in the block. Omittable if the size of the block is 1x1
+            position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of the port in the block. Omittable if the
+                size of the block is 1x1
         """
         orientation, _ = self._validate_orientation_and_position(orientation, Position(0, 0))
         port = LogicBlockInputPort(self, name, width, orientation, position)
-        self._add_port(port)
-        return port
+        return self._add_port(port)
 
     def create_output(self, name, width, orientation, position = None):
         """Create and add an output port to this block.
@@ -223,9 +220,9 @@ class LogicBlock(ClusterLike, AbstractBlock):
             name (:obj:`str`): name of the created port
             width (:obj:`int`): width of the created port
             orientation (`Orientation`): orientation of this port
-            position (`Position`): Position of the port in the block. Omittable if the size of the block is 1x1
+            position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of the port in the block. Omittable if the
+                size of the block is 1x1
         """
         orientation, _ = self._validate_orientation_and_position(orientation, Position(0, 0))
         port = LogicBlockOutputPort(self, name, width, orientation, position)
-        self._add_port(port)
-        return port
+        return self._add_port(port)

@@ -7,7 +7,9 @@ from prga.arch.common import Dimension
 from prga.arch.routing.common import SegmentBridgeType
 from prga.arch.routing.module import AbstractRoutingModule
 from prga.arch.array.common import ChannelCoverage
+from prga.arch.array.port import ArrayGlobalInputPort
 from prga.exception import PRGAInternalError
+from prga.util import uno
 
 from abc import abstractproperty
 
@@ -78,6 +80,19 @@ class AbstractArrayElement(AbstractRoutingModule):
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
         """
         return self.covers_channel(position, Dimension.x) and self.covers_channel(position, Dimension.y)
+
+    def get_or_create_global_input(self, global_, name = None):
+        """Get or create a global input port.
+
+        Args:
+            global_ (`Global`):
+            name (:obj:`str`):
+        """
+        name = uno(name, global_.name)
+        try:
+            return self.all_ports[name]
+        except KeyError:
+            return self._add_port(ArrayGlobalInputPort(self, global_, name))
 
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractproperty

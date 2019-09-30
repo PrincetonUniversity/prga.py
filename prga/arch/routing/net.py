@@ -23,7 +23,7 @@ class AbstractRoutingNodePort(AbstractPort):
     # == low-level API =======================================================
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractproperty
-    def node_id(self):
+    def node(self):
         """`AbstractRoutingNodeID`: Node ID of this port."""
         raise NotImplementedError
 
@@ -34,16 +34,16 @@ class AbstractRoutingNodePort(AbstractPort):
 
     @property
     def name(self):
-        if self.node_id.node_type.is_blockport_bridge:
+        if self.node.node_type.is_blockport_bridge:
             return 'blkp_{}_{}{}{}{}_{}{}'.format(
-                self.node_id.prototype.parent.name,
-                'x' if self.node_id.position.x >= 0 else 'u', abs(self.node_id.position.x),
-                'y' if self.node_id.position.y >= 0 else 'v', abs(self.node_id.position.y),
-                ('{}_'.format(self.node_id.subblock) if self.node_id.prototype.parent.capacity > 1 else ''),
-                self.node_id.prototype.name)
+                self.node.prototype.parent.name,
+                'x' if self.node.position.x >= 0 else 'u', abs(self.node.position.x),
+                'y' if self.node.position.y >= 0 else 'v', abs(self.node.position.y),
+                ('{}_'.format(self.node.subblock) if self.node.prototype.parent.capacity > 1 else ''),
+                self.node.prototype.name)
         else:
-            prefix = ('sgmt' if self.node_id.node_type.is_segment else
-                    self.node_id.bridge_type.switch(
+            prefix = ('sgmt' if self.node.node_type.is_segment else
+                    self.node.bridge_type.switch(
                         sboxin_regular = 'sbir',
                         sboxin_cboxout = 'sbic',
                         sboxin_cboxout2 = 'sbid',
@@ -54,24 +54,24 @@ class AbstractRoutingNodePort(AbstractPort):
                         array_cboxout2 = 'ard'))
             return '{}_{}_{}{}{}{}{}{}'.format(
                     prefix,
-                    self.node_id.prototype.name,
-                    'x' if self.node_id.position.x >= 0 else 'u', abs(self.node_id.position.x),
-                    'y' if self.node_id.position.y >= 0 else 'v', abs(self.node_id.position.y),
-                    self.node_id.orientation.name[0],
-                    ('_{}'.format(self.node_id.section) if self.node_id.prototype.length > 1 else ''))
+                    self.node.prototype.name,
+                    'x' if self.node.position.x >= 0 else 'u', abs(self.node.position.x),
+                    'y' if self.node.position.y >= 0 else 'v', abs(self.node.position.y),
+                    self.node.orientation.name[0],
+                    ('_{}'.format(self.node.section) if self.node.prototype.length > 1 else ''))
 
     @property
     def width(self):
-        return self.node_id.prototype.width
+        return self.node.prototype.width
 
     @property
     def key(self):
-        return self.node_id
+        return self.node
 
     @property
     def is_user_accessible(self):
-        return (self.node_id.node_type.is_segment or self.node_id.node_type.is_blockport_bridge or
-                (self.node_id.node_type.is_segment_bridge and self.node_id.bridge_type in
+        return (self.node.node_type.is_segment or self.node.node_type.is_blockport_bridge or
+                (self.node.node_type.is_segment_bridge and self.node.bridge_type in
                     (SegmentBridgeType.sboxin_regular, SegmentBridgeType.cboxin, SegmentBridgeType.cboxout)))
 
 # ----------------------------------------------------------------------------
@@ -82,19 +82,19 @@ class RoutingNodeInputPort(BaseInputPort, AbstractRoutingNodePort):
 
     Args:
         parent (`AbstractRoutingModule`): Parent connection box, switch box, tile or array of this port
-        node_id (`AbstractRoutingNodeID`): Node ID of this port
+        node (`AbstractRoutingNodeID`): Node ID of this port
     """
 
-    __slots__ = ['_node_id']
-    def __init__(self, parent, node_id):
+    __slots__ = ['_node']
+    def __init__(self, parent, node):
         super(RoutingNodeInputPort, self).__init__(parent)
-        self._node_id = node_id
+        self._node = node
 
     # == low-level API =======================================================
     @property
-    def node_id(self):
+    def node(self):
         """`AbstractRoutingNodeID`: Node ID of this port."""
-        return self._node_id
+        return self._node
 
 # ----------------------------------------------------------------------------
 # -- Routing Node Output Port ------------------------------------------------
@@ -104,19 +104,19 @@ class RoutingNodeOutputPort(BaseOutputPort, AbstractRoutingNodePort):
 
     Args:
         parent (`AbstractRoutingModule`): Parent connection box, switch box, tile or array of this port
-        node_id (`AbstractRoutingNodeID`): Node ID of this port
+        node (`AbstractRoutingNodeID`): Node ID of this port
     """
 
-    __slots__ = ['_node_id']
-    def __init__(self, parent, node_id):
+    __slots__ = ['_node']
+    def __init__(self, parent, node):
         super(RoutingNodeOutputPort, self).__init__(parent)
-        self._node_id = node_id
+        self._node = node
 
     # == low-level API =======================================================
     @property
-    def node_id(self):
+    def node(self):
         """`AbstractRoutingNodeID`: Node ID of this port."""
-        return self._node_id
+        return self._node
 
 # ----------------------------------------------------------------------------
 # -- Routing Node Input Pin --------------------------------------------------
@@ -131,9 +131,9 @@ class RoutingNodeInputPin(InputPin):
 
     # == low-level API =======================================================
     @property
-    def node_id(self):
+    def node(self):
         """`AbstractRoutingNodeID`: Node ID of this pin."""
-        return self.model.node_id.move(self.parent.position)
+        return self.model.node.move(self.parent.position)
 
 # ----------------------------------------------------------------------------
 # -- Routing Node Output Pin -------------------------------------------------
@@ -148,6 +148,6 @@ class RoutingNodeOutputPin(OutputPin):
 
     # == low-level API =======================================================
     @property
-    def node_id(self):
+    def node(self):
         """`AbstractRoutingNodeID`: Node ID of this pin."""
-        return self.model.node_id.move(self.parent.position)
+        return self.model.node.move(self.parent.position)

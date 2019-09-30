@@ -5,7 +5,8 @@ from prga.compatible import *
 
 from prga.arch.common import Dimension, Direction, Orientation
 from prga.arch.net.common import PortDirection
-from prga.arch.routing.common import SegmentBridgeID, SegmentBridgeType
+from prga.arch.routing.common import SegmentBridgeID, SegmentBridgeType, BlockPortID
+from prga.arch.array.port import ArrayExternalInputPort, ArrayExternalOutputPort
 from prga.util import Abstract
 
 from abc import abstractmethod
@@ -62,30 +63,20 @@ def cboxify(lib, tile, orientation = Orientation.auto):
             ports, orientation is required
     """
     if orientation is Orientation.auto:
-        if tile.block.is_io_block:
+        if tile.block.module_class.is_io_block:
             raise PRGAInternalError("Non-'Orientation.auto' value is required for IO blocks.")
-        # horizontal
-        for dir_ in Direction:
-            x = dir_.switch(0, tile.width - 1)
-            ori = Orientation.compose(Dimension.x, dir_)
-            for y in range(tile.height):
-                tile.instantiate_cbox(lib.get_cbox(tile.block, ori, (x, y), (dir_.switch(0, -1), 0)), ori, (x, y))
-        # vertical
-        for dir_ in Direction:
-            y = dir_.switch(0, tile.height - 1)
-            ori = Orientation.compose(Dimension.y, dir_)
-            for x in range(tile.width):
-                tile.instantiate_cbox(lib.get_cbox(tile.block, ori, (x, y), (0, dir_.switch(0, -1))), ori, (x, y))
-    elif orientation.dimension.is_x:
-        x = orientation.direction.switch(tile.width - 1, 0)
-        for y in range(tile.height):
-            tile.instantiate_cbox(lib.get_cbox(tile.block, orientation, (x, y),
-                (orientation.direction.switch(0, -1), 0)), orientation, (x, y))
-    else:
-        y = orientation.direction.switch(tile.height - 1, 0)
-        for x in range(tile.width):
-            tile.instantiate_cbox(lib.get_cbox(tile.block, orientation, (x, y),
-                (0, orientation.direction.switch(0, -1))), orientation, (x, y))
+    # scan positions and orientations
+    sides = set()
+    for port in itervalues(tile.block.ports):
+        if port.net_class.is_blockport:
+            sides.add( (port.orientation, port.position) )
+    # instantiate cboxes
+    for ori, position in sides:
+        if ori.is_auto:
+            ori = orientation
+        if orientation in (ori, Orientation.auto):
+            tile.instantiate_cbox(lib.get_cbox(tile.block, ori, position,
+                ori.switch((0, 0), (0, 0), (0, -1), (-1, 0))), ori, position)
 
 # ----------------------------------------------------------------------------
 # -- Algorithms for Exposing Ports and Connect Nets in Tiles -----------------
@@ -104,16 +95,18 @@ def netify_tile(tile):
                 west = x != 0,
                 auto = True):
             continue
-        cboxinst = tile.cbox_instances.get( ((x, y), orientation.dimension.perpendicular), None )
+        cboxinst = tile.cbox_instances.get( ((x, y), orientation), None )
         if cboxinst is None:
             continue
-        for node, boxpin in iteritems(cboxinst.all_nodes):
+        for boxpin in itervalues(cboxinst.all_nodes):
+            node = boxpin.node
             if node.node_type.is_blockport_bridge:
-                port = tile.block.ports.get(node.prototype.name, None)
-                if (port is None or port.position + node.position != (0, 0) or
+                port = tile.block.ports.get(node.prototype.key, None)
+                if (port is None or port.position != node.position or
                         port.orientation not in (Orientation.auto, orientation)):
+                    raise RuntimeError
                     continue
-                blockpin = tile.block_instances[node.subblock].all_pins[port.name]
+                blockpin = tile.block_instances[node.subblock].all_pins[port.key]
                 if port.direction.is_input:
                     blockpin.source = boxpin
                 else:
@@ -121,9 +114,21 @@ def netify_tile(tile):
             elif node.node_type.is_segment_bridge:
                 if node.bridge_type.is_cboxin:
                     boxpin.source = tile.get_or_create_node(
-                            boxpin.node_id.to_bridge_id(bridge_type = SegmentBridgeType.array_regular),
+                            node.to_bridge_id(bridge_type = SegmentBridgeType.array_regular),
                             PortDirection.input_)
                 elif node.bridge_type.is_cboxout:
                     tile.get_or_create_node(
-                            boxpin.node_id.to_bridge_id(bridge_type = SegmentBridgeType.array_cboxout),
+                            node.to_bridge_id(bridge_type = SegmentBridgeType.array_cboxout),
                             PortDirection.output).source = boxpin
+    # external ports
+    for subblock, blkinst in iteritems(tile.block_instances):
+        for pin in itervalues(blkinst.all_pins):
+            if pin.net_class.is_io:
+                if pin.direction.is_input:
+                    pin.source = tile._add_port(ArrayExternalInputPort(tile,
+                        BlockPortID((0, 0), pin.model, subblock)))
+                else:
+                    tile._add_port(ArrayExternalOutputPort(tile,
+                        BlockPortID((0, 0), pin.model, subblock))).source = pin
+            elif pin.net_class.is_global:
+                pin.source = tile.get_or_create_global_input(pin.model.global_)

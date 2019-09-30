@@ -235,3 +235,7 @@ class BaseGlobalInputPort(BaseInputPort):
     @property
     def is_clock(self):
         return self._global.is_clock
+
+    @property
+    def net_class(self):
+        return NetClass.global_

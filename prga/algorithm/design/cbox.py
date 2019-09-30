@@ -120,16 +120,15 @@ def populate_connection_box(box, segments, block, orientation, position = None, 
             box.get_or_create_node(SegmentBridgeID(channel, sgmt, Orientation.compose(box.dimension, direction),
                 section, SegmentBridgeType.cboxin))
     # 2. block port bridges
-    # channel position relative to block
-    pos_channel_rel_to_block = position + orientation.switch(
+    # port position relative to cbox
+    pos_port_rel_to_cbox = channel - orientation.switch(
             north = (0, 0), east = (0, 0), south = (0, -1), west = (-1, 0))
-    # block position relative to cbox
-    pos_block_rel_to_cbox = channel - pos_channel_rel_to_block
     for port in itervalues(block.ports):
-        if port.is_clock or not (port.position == position and port.orientation in (orientation, Orientation.auto)):
+        if not (port.net_class.is_blockport and port.position == position and
+                port.orientation in (orientation, Orientation.auto)):
             continue
         for subblock in range(block.capacity):
-            box.get_or_create_node(BlockPortID(pos_block_rel_to_cbox, port, subblock))
+            box.get_or_create_node(BlockPortID(pos_port_rel_to_cbox, port, subblock))
 
 def generate_fc(box, segments, block, orientation, fc, position = None, channel = (0, 0)): 
     """Add port-segment connections using FC values.
@@ -149,16 +148,15 @@ def generate_fc(box, segments, block, orientation, fc, position = None, channel 
                 .format(box, box.dimension.switch("horizontal", "vertical"), orientation))
     orientation, position = block._validate_orientation_and_position(orientation, position)
     channel = Position(*channel)
-    # channel position relative to block
-    pos_channel_rel_to_block = position + orientation.switch(
+    # port position relative to cbox
+    pos_port_rel_to_cbox = channel - orientation.switch(
             north = (0, 0), east = (0, 0), south = (0, -1), west = (-1, 0))
-    # block position relative to cbox
-    pos_block_rel_to_cbox = channel - pos_channel_rel_to_block
     # start generation
     iti = [0 for _ in segments]     # input-to-track index
     oti = [0 for _ in segments]     # output-to-track index
     for port in itervalues(block.ports):
-        if port.is_clock or not (port.position == position and port.orientation in (orientation, Orientation.auto)):
+        if not (port.net_class.is_blockport and port.position == position and
+                port.orientation in (orientation, Orientation.auto)):
             continue
         for sgmt_idx, sgmt in enumerate(segments):
             nc = fc.port_fc(port, sgmt, port.direction.is_input)  # number of connections
@@ -171,7 +169,7 @@ def generate_fc(box, segments, block, orientation, fc, position = None, channel 
                 section = port.direction.switch(iti[sgmt_idx] % sgmt.length, 0)
                 track_idx = port.direction.switch(iti[sgmt_idx] // sgmt.length, oti[sgmt_idx])
                 for sgmt_dir in iter(Direction):
-                    port_node = BlockPortID(pos_block_rel_to_cbox, port, subblock)
+                    port_node = BlockPortID(pos_port_rel_to_cbox, port, subblock)
                     sgmt_node = SegmentBridgeID(
                             channel,
                             sgmt,

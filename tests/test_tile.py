@@ -4,8 +4,8 @@ from __future__ import division, absolute_import, print_function, unicode_litera
 from prga.compatible import *
 
 from prga.arch.common import Global, Orientation, Dimension
-from prga.arch.primitive.builtin import Iopad
-from prga.arch.block.block import IOBlock
+from prga.arch.primitive.builtin import Iopad, Memory
+from prga.arch.block.block import IOBlock, LogicBlock
 from prga.arch.routing.common import SegmentPrototype
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.arch.routing.box import ConnectionBox
@@ -62,6 +62,43 @@ def test_io_tile(tmpdir):
 
     # 5 switchify!
     switchify(lib, block)
+
+    # 6. netify
+    netify_tile(tile)
+
+    # 7. generate files
+    for module in chain(itervalues(lib.switches), itervalues(lib.cboxes), iter((tile, ))):
+        gen.generate_module(tmpdir.join(module.name + '.v').open(OpenMode.w), module)
+
+def test_logic_tile(tmpdir):
+    mem = Memory(10, 8, 'mem8Kb')
+    block = LogicBlock('mock_block', 1, 3)
+    clk = Global('clk', is_clock = True)
+    sgmts = [SegmentPrototype('L1', 4, 1), SegmentPrototype('L2', 1, 2)]
+    lib = Library()
+    gen = VerilogGenerator()
+
+    # 1. add some ports
+    block.create_global(clk, Orientation.south, position = (0, 0))
+    block.create_input('addr', 10, Orientation.west, (0, 0))
+    block.create_input('din', 8, Orientation.west, (0, 1))
+    block.create_input('we', 1, Orientation.west, (0, 2))
+    block.create_output('dout', 8, Orientation.east, (0, 0))
+
+    # 2. create tile
+    tile = Tile('mock_tile', block)
+
+    # 3. cboxify
+    cboxify(lib, tile)
+
+    # 4. populate and generate connections
+    for (position, orientation), cbox_inst in iteritems(tile.cbox_instances):
+        populate_connection_box(cbox_inst.model, sgmts, tile.block, orientation, position,
+                orientation.switch((0, 0), (0, 0), (0, -1), (-1, 0)))
+        generate_fc(cbox_inst.model, sgmts, tile.block, orientation,
+                BlockFCValue(BlockPortFCValue(0.5), BlockPortFCValue(1.0)), position,
+                orientation.switch((0, 0), (0, 0), (0, -1), (-1, 0)))
+        switchify(lib, cbox_inst.model)
 
     # 6. netify
     netify_tile(tile)
