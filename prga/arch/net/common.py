@@ -46,7 +46,7 @@ class PortDirection(Enum):
         Returns:
             `PortDirection`: the enum value of the opposite direction.
         """
-        return self.switch(PortDirection.output, PortDirection.input_)
+        return self.case(PortDirection.output, PortDirection.input_)
 
 # ----------------------------------------------------------------------------
 # -- Logical Net Class -------------------------------------------------------
@@ -73,6 +73,6 @@ class NetClass(Enum):
 # ----------------------------------------------------------------------------
 class RoutingNodeType(Enum):
     """Routing node type."""
-    segment = 0             #: SegmentID
+    segment_driver = 0      #: SegmentID
     segment_bridge = 1      #: SegmentBridgeID
     blockport_bridge = 2    #: BlockportBridgeID

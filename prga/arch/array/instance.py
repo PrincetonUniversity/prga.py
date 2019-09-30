@@ -3,6 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
+from prga.arch.module.common import ModuleClass
 from prga.arch.module.instance import BaseInstance
 from prga.arch.routing.module import BaseRoutingInstance
 
@@ -97,7 +98,7 @@ class SwitchBoxInstance(BaseRoutingInstance):
 
     @property
     def key(self):
-        return (self.module_class, self.position)
+        return (ModuleClass.switch_box, self.position)
 
 # ----------------------------------------------------------------------------
 # -- Array Element Instance --------------------------------------------------
@@ -120,4 +121,4 @@ class ArrayElementInstance(BaseRoutingInstance):
 
     @property
     def key(self):
-        return (self.module_class, self.position)
+        return (ModuleClass.tile, self.position)

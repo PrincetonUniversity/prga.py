@@ -120,25 +120,25 @@ class SegmentID(Object, AbstractRoutingNodeID):
                 self.position.x, self.position.y, self.prototype.name, self.orientation.name, self.section)
 
     def __add__(self, n):
-        return type(self)(self.position + self.orientation.switch( (0, n), (n, 0), (0, -n), (-n, 0)),
+        return type(self)(self.position + self.orientation.case( (0, n), (n, 0), (0, -n), (-n, 0)),
                 self.prototype, self.orientation, self.section + n)
 
     def __iadd__(self, n):
-        self.position += self.orientation.switch( (0, n), (n, 0), (0, -n), (-n, 0) )
+        self.position += self.orientation.case( (0, n), (n, 0), (0, -n), (-n, 0) )
         self.section += n
         return self
 
     def __sub__(self, n):
-        return type(self)(self.position - self.orientation.switch( (0, n), (n, 0), (0, -n), (-n, 0)),
+        return type(self)(self.position - self.orientation.case( (0, n), (n, 0), (0, -n), (-n, 0)),
                 self.prototype, self.orientation, self.section - n)
 
     def __isub__(self, n):
-        self.position -= self.orientation.switch( (0, n), (n, 0), (0, -n), (-n, 0) )
+        self.position -= self.orientation.case( (0, n), (n, 0), (0, -n), (-n, 0) )
         self.section -= n
         return self
 
     def __eq__(self, other):
-        return (other.node_type.is_segment and
+        return (other.node_type.is_segment_driver and
                 self.position == other.position and
                 self.prototype is other.prototype and
                 self.orientation is other.orientation and
@@ -147,13 +147,28 @@ class SegmentID(Object, AbstractRoutingNodeID):
     def __ne__(self, other):
         return not self.__eq__(other)
 
-    def to_bridge_id(self, bridge_type):
-        """`SegmentBridgeID`: Convert to a ``bridge_type``-typed bridge ID."""
-        return SegmentBridgeID(self.position, self.prototype, self.orientation, self.section, bridge_type)
+    def to_driver_id(self, position = None, section = None):
+        """`SegmentID`: Convert to segment driver ID."""
+        return SegmentID(
+                uno(position, self.position),
+                self.prototype,
+                self.orientation,
+                uno(section, self.section))
+
+    def to_bridge_id(self, position = None, section = None, bridge_type = None):
+        """`SegmentBridgeID`: Convert to another segment bridge ID."""
+        if self.node_type.is_segment_driver and bridge_type is None:
+            raise PRGAInternalError("'bridge_type' required when converting segment driver to segment bridge ID")
+        return SegmentBridgeID(
+                uno(position, self.position),
+                self.prototype,
+                self.orientation,
+                uno(section, self.section),
+                uno(bridge_type, getattr(self, "bridge_type", None)))
 
     @property
     def node_type(self):
-        return RoutingNodeType.segment
+        return RoutingNodeType.segment_driver
 
 # ----------------------------------------------------------------------------
 # -- Segment Bridge ID -------------------------------------------------------
@@ -184,11 +199,11 @@ class SegmentBridgeID(SegmentID):
                 self.section)
 
     def __add__(self, n):
-        return type(self)(self.position + self.orientation.switch( (0, n), (n, 0), (0, -n), (-n, 0)),
+        return type(self)(self.position + self.orientation.case( (0, n), (n, 0), (0, -n), (-n, 0)),
                 self.prototype, self.orientation, self.section + n, self.bridge_type)
 
     def __sub__(self, n):
-        return type(self)(self.position - self.orientation.switch( (0, n), (n, 0), (0, -n), (-n, 0)),
+        return type(self)(self.position - self.orientation.case( (0, n), (n, 0), (0, -n), (-n, 0)),
                 self.prototype, self.orientation, self.section - n, self.bridge_type)
 
     def __eq__(self, other):
@@ -198,19 +213,6 @@ class SegmentBridgeID(SegmentID):
                 self.orientation is other.orientation and
                 self.section == other.section and
                 self.bridge_type is other.bridge_type)
-
-    def to_id(self):
-        """`SegmentID`: Convert to non-bridge segment ID."""
-        return SegmentID(self.position, self.prototype, self.orientation, self.section)
-
-    def to_bridge_id(self, position = None, section = None, bridge_type = None):
-        """`SegmentBridgeID`: Convert to another segment bridge ID."""
-        return SegmentBridgeID(
-                uno(position, self.position),
-                self.prototype,
-                self.orientation,
-                uno(section, self.section),
-                uno(bridge_type, self.bridge_type))
 
     @property
     def node_type(self):

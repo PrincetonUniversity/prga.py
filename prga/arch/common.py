@@ -99,8 +99,8 @@ class Orientation(Enum):
             dimension (`Dimension`):
             direction (`Direction`):
         """
-        return dimension.switch(direction.switch(Orientation.east, Orientation.west),
-                                direction.switch(Orientation.north, Orientation.south))
+        return dimension.case(direction.case(Orientation.east, Orientation.west),
+                direction.case(Orientation.north, Orientation.south))
 
 # ----------------------------------------------------------------------------
 # -- Position ----------------------------------------------------------------

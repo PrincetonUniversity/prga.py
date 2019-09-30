@@ -2,7 +2,7 @@
 module {{ module.name }} (
     {%- set portcomma = joiner(",") %}
     {%- for port in itervalues(module.physical_ports) %}{{ portcomma() }}
-    {{ port.direction.switch('input', 'output') }} wire [{{ port.width - 1}}:0] {{ port.name }}
+    {{ port.direction.case('input', 'output') }} wire [{{ port.width - 1}}:0] {{ port.name }}
     {%- endfor %}
     );
     {% for instance in itervalues(module.physical_instances) %}

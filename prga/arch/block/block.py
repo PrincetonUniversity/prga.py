@@ -40,7 +40,7 @@ class AbstractBlock(AbstractModule):
                 return orientation, position
             else:
                 raise PRGAInternalError("'Orientation.auto' can only ued on IO blocks")
-        elif orientation.switch(north = position.y != self.height - 1,
+        elif orientation.case(north = position.y != self.height - 1,
                 east = position.x != self.width - 1,
                 south = position.y != 0,
                 west = position.x != 0):
@@ -195,7 +195,7 @@ class LogicBlock(ClusterLike, AbstractBlock):
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of the port in the block. Omittable if the
                 size of the block is 1x1
         """
-        orientation, position = self._validate_orientation_and_position(orientation, Position(0, 0))
+        orientation, position = self._validate_orientation_and_position(orientation, position)
         port = LogicBlockGlobalInputPort(self, global_, orientation, name, position)
         return self._add_port(port)
 
@@ -209,7 +209,7 @@ class LogicBlock(ClusterLike, AbstractBlock):
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of the port in the block. Omittable if the
                 size of the block is 1x1
         """
-        orientation, _ = self._validate_orientation_and_position(orientation, Position(0, 0))
+        orientation, position = self._validate_orientation_and_position(orientation, position)
         port = LogicBlockInputPort(self, name, width, orientation, position)
         return self._add_port(port)
 
@@ -223,6 +223,6 @@ class LogicBlock(ClusterLike, AbstractBlock):
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of the port in the block. Omittable if the
                 size of the block is 1x1
         """
-        orientation, _ = self._validate_orientation_and_position(orientation, Position(0, 0))
+        orientation, position = self._validate_orientation_and_position(orientation, position)
         port = LogicBlockOutputPort(self, name, width, orientation, position)
         return self._add_port(port)

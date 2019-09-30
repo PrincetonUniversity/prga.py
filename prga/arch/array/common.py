@@ -25,7 +25,7 @@ class ChannelCoverage(namedtuple('ChannelCoverage', 'north east south west')):
 
     def __getitem__(self, key):
         if isinstance(key, Orientation):
-            return key.switch(north = self.north, east = self.east,
+            return key.case(north = self.north, east = self.east,
                     south = self.south, west = self.west)
         else:
             return super(ChannelCoverage, self).__getitem__(key)

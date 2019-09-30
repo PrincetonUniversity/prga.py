@@ -3,6 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
+from prga.arch.common import Position
 from prga.arch.net.common import PortDirection, NetClass
 from prga.arch.module.module import AbstractModule
 from prga.arch.module.instance import BaseInstance
@@ -97,7 +98,7 @@ class AbstractRoutingModule(AbstractModule):
             return self.all_nodes[node]
         except KeyError:
             direction = self._validate_node(node, direction)
-            port = direction.switch(RoutingNodeInputPort, RoutingNodeOutputPort)(self, node)
+            port = direction.case(RoutingNodeInputPort, RoutingNodeOutputPort)(self, node)
             return self._add_port(port)
 
     # -- properties/methods to be overriden by subclasses --------------------
@@ -122,13 +123,13 @@ class BaseRoutingInstance(BaseInstance):
     __slots__ = ['_position']
     def __init__(self, parent, model, position):
         super(BaseRoutingInstance, self).__init__(parent, model)
-        self._position = position
+        self._position = Position(*position)
 
     # == internal API ========================================================
     # -- implementing properties/methods required by superclass --------------
     def _create_pin(self, port):
-        if port.net_class.is_node:
-            return port.direction.switch(RoutingNodeInputPin, RoutingNodeOutputPin)(self, port)
+        if port.net_class.is_node or port.net_class.is_io:
+            return port.direction.case(RoutingNodeInputPin, RoutingNodeOutputPin)(self, port)
         else:
             return super(BaseRoutingInstance, self)._create_pin(port)
 

@@ -57,10 +57,10 @@ class Tile(BaseModule, AbstractArrayElement):
     def instantiate_cbox(self, box, orientation, position = None):
         """Instantiate connection box in this tile."""
         orientation, position = self.block._validate_orientation_and_position(orientation, position)
-        dim = orientation.switch(Dimension.x, Dimension.y, Dimension.x, Dimension.y)
+        dim = orientation.case(Dimension.x, Dimension.y, Dimension.x, Dimension.y)
         if box.dimension is not dim:
             raise PRGAInternalError("Connection box '{}' is not {}, conflicting with orientation '{}'"
-                    .format(box, dim.switch('horizontal', 'vertical'), orientation.name))
+                    .format(box, dim.case('horizontal', 'vertical'), orientation.name))
         return self._add_instance(ConnectionBoxInstance(self, box, position, orientation))
 
     # -- implementing properties/methods required by superclass --------------

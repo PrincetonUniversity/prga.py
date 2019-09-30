@@ -87,7 +87,7 @@ class BlockFCValue(namedtuple('BlockFCValue', 'default_in default_out overrides'
         Returns:
             :obj:`int`: the calculated FC value
         """
-        return self.overrides.get(port.name, port.direction.switch(self.default_in, self.default_out)).segment_fc(
+        return self.overrides.get(port.name, port.direction.case(self.default_in, self.default_out)).segment_fc(
                 segment, all_sections)
 
 # ----------------------------------------------------------------------------
@@ -107,7 +107,7 @@ def populate_connection_box(box, segments, block, orientation, position = None, 
     """
     if orientation.dimension.perpendicular is not box.dimension:
         raise PRGAInternalError("Connection box '{}' is {} and cannot be populated for '{}'"
-                .format(box, box.dimension.switch("horizontal", "vertical"), orientation))
+                .format(box, box.dimension.case("horizontal", "vertical"), orientation))
     orientation, position = block._validate_orientation_and_position(orientation, position)
     channel = Position(*channel)
     # 1. segment bridges
@@ -121,7 +121,7 @@ def populate_connection_box(box, segments, block, orientation, position = None, 
                 section, SegmentBridgeType.cboxin))
     # 2. block port bridges
     # port position relative to cbox
-    pos_port_rel_to_cbox = channel - orientation.switch(
+    pos_port_rel_to_cbox = channel - orientation.case(
             north = (0, 0), east = (0, 0), south = (0, -1), west = (-1, 0))
     for port in itervalues(block.ports):
         if not (port.net_class.is_blockport and port.position == position and
@@ -145,11 +145,11 @@ def generate_fc(box, segments, block, orientation, fc, position = None, channel 
     """
     if orientation.dimension.perpendicular is not box.dimension:
         raise PRGAInternalError("Connection box '{}' is {} and cannot be populated for '{}'"
-                .format(box, box.dimension.switch("horizontal", "vertical"), orientation))
+                .format(box, box.dimension.case("horizontal", "vertical"), orientation))
     orientation, position = block._validate_orientation_and_position(orientation, position)
     channel = Position(*channel)
     # port position relative to cbox
-    pos_port_rel_to_cbox = channel - orientation.switch(
+    pos_port_rel_to_cbox = channel - orientation.case(
             north = (0, 0), east = (0, 0), south = (0, -1), west = (-1, 0))
     # start generation
     iti = [0 for _ in segments]     # input-to-track index
@@ -162,12 +162,12 @@ def generate_fc(box, segments, block, orientation, fc, position = None, channel 
             nc = fc.port_fc(port, sgmt, port.direction.is_input)  # number of connections
             if nc == 0:
                 continue
-            imax = port.direction.switch(sgmt.length * sgmt.width, sgmt.width)
+            imax = port.direction.case(sgmt.length * sgmt.width, sgmt.width)
             istep = max(1, imax // nc)                  # index step
             for _, port_idx, subblock in product(range(nc), range(port.width), range(block.capacity)):
                 # get the section and track id to be connected
-                section = port.direction.switch(iti[sgmt_idx] % sgmt.length, 0)
-                track_idx = port.direction.switch(iti[sgmt_idx] // sgmt.length, oti[sgmt_idx])
+                section = port.direction.case(iti[sgmt_idx] % sgmt.length, 0)
+                track_idx = port.direction.case(iti[sgmt_idx] // sgmt.length, oti[sgmt_idx])
                 for sgmt_dir in iter(Direction):
                     port_node = BlockPortID(pos_port_rel_to_cbox, port, subblock)
                     sgmt_node = SegmentBridgeID(
@@ -175,7 +175,7 @@ def generate_fc(box, segments, block, orientation, fc, position = None, channel 
                             sgmt,
                             Orientation.compose(box.dimension, sgmt_dir),
                             section,
-                            port.direction.switch(SegmentBridgeType.cboxin, SegmentBridgeType.cboxout))
+                            port.direction.case(SegmentBridgeType.cboxin, SegmentBridgeType.cboxout))
                     # get the bits
                     port_bus = box.ports.get(port_node)
                     sgmt_bus = box.ports.get(sgmt_node)
@@ -185,7 +185,7 @@ def generate_fc(box, segments, block, orientation, fc, position = None, channel 
                         box.connect(sgmt_bus[track_idx], port_bus[port_idx])
                     else:
                         box.connect(port_bus[port_idx], sgmt_bus[track_idx])
-                ni = port.direction.switch(iti, oti)[sgmt_idx] + istep    # next index
+                ni = port.direction.case(iti, oti)[sgmt_idx] + istep    # next index
                 if istep > 1 and ni >= imax:
                     ni += 1
-                port.direction.switch(iti, oti)[sgmt_idx] = ni % imax
+                port.direction.case(iti, oti)[sgmt_idx] = ni % imax

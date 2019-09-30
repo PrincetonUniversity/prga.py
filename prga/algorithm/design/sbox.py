@@ -30,7 +30,7 @@ class SwitchBoxEnvironment(namedtuple('SwitchBoxEnvironment', 'north east south 
 
     def __getitem__(self, key):
         if isinstance(key, Orientation):
-            return key.switch(north = self.north, east = self.east,
+            return key.case(north = self.north, east = self.east,
                     south = self.south, west = self.west)
         else:
             return super(SwitchBoxEnvironment, self).__getitem__(key)
@@ -39,11 +39,11 @@ class SwitchBoxEnvironment(namedtuple('SwitchBoxEnvironment', 'north east south 
 # -- Algorithms for switch boxes ---------------------------------------------
 # ----------------------------------------------------------------------------
 def _innode(segment, orientation, section = 0):
-    return SegmentBridgeID(orientation.switch((0, 0), (0, 0), (0, 1), (1, 0)),
+    return SegmentBridgeID(orientation.case((0, 0), (0, 0), (0, 1), (1, 0)),
             segment, orientation, section, SegmentBridgeType.sboxin_regular)
 
 def _outnode(segment, orientation, section = 0):
-    return SegmentID(orientation.switch((0, 1), (1, 0), (0, 0), (0, 0)),
+    return SegmentID(orientation.case((0, 1), (1, 0), (0, 0), (0, 0)),
             segment, orientation, section)
 
 def populate_switch_box(box, segments, env = SwitchBoxEnvironment(), drive_truncated = True):

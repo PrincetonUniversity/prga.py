@@ -76,19 +76,19 @@ def cboxify(lib, tile, orientation = Orientation.auto):
             ori = orientation
         if orientation in (ori, Orientation.auto):
             tile.instantiate_cbox(lib.get_cbox(tile.block, ori, position,
-                ori.switch((0, 0), (0, 0), (0, -1), (-1, 0))), ori, position)
+                ori.case((0, 0), (0, 0), (0, -1), (-1, 0))), ori, position)
 
 # ----------------------------------------------------------------------------
-# -- Algorithms for Exposing Ports and Connect Nets in Tiles -----------------
+# -- Algorithms for Creating Ports and Connecting Nets in Tiles --------------
 # ----------------------------------------------------------------------------
 def netify_tile(tile):
-    """Expose ports and connect nets in tile.
+    """Create ports and connect nets in tile.
 
     Args:
         tile (`Tile`):
     """
     for orientation, x, y in product(iter(Orientation), range(tile.width), range(tile.height)):
-        if orientation.switch(
+        if orientation.case(
                 north = y != tile.height - 1,
                 east = x != tile.width - 1,
                 south = y != 0,
@@ -102,9 +102,10 @@ def netify_tile(tile):
             node = boxpin.node
             if node.node_type.is_blockport_bridge:
                 port = tile.block.ports.get(node.prototype.key, None)
-                if (port is None or port.position != node.position or
-                        port.orientation not in (Orientation.auto, orientation)):
-                    raise RuntimeError
+                if (port is None or
+                        port.orientation not in (Orientation.auto, orientation) or
+                        node.position - port.position != (0, 0)):
+                    # TODO: for block not positioned at (0, 0), create ports
                     continue
                 blockpin = tile.block_instances[node.subblock].all_pins[port.key]
                 if port.direction.is_input:

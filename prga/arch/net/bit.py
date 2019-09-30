@@ -418,8 +418,11 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
             raise PRGAInternalError("'{}' is not a user sink"
                     .format(self))
         for s in sources:
-            if not (s.is_user_accessible and not s.is_sink):
-                raise PRGAInternalError("'{}' is not a user source"
+            if s.is_sink:
+                # we allow non-user sources to be added to this list
+                # this is only used for connection box - switch box bridges
+                # in other cases, checks are done by caller of this function
+                raise PRGAInternalError("'{}' is not a source"
                         .format(s))
             try:
                 if s not in self._user_sources:

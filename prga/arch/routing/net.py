@@ -42,8 +42,8 @@ class AbstractRoutingNodePort(AbstractPort):
                 ('{}_'.format(self.node.subblock) if self.node.prototype.parent.capacity > 1 else ''),
                 self.node.prototype.name)
         else:
-            prefix = ('sgmt' if self.node.node_type.is_segment else
-                    self.node.bridge_type.switch(
+            prefix = ('sgmt' if self.node.node_type.is_segment_driver else
+                    self.node.bridge_type.case(
                         sboxin_regular = 'sbir',
                         sboxin_cboxout = 'sbic',
                         sboxin_cboxout2 = 'sbid',
@@ -70,7 +70,7 @@ class AbstractRoutingNodePort(AbstractPort):
 
     @property
     def is_user_accessible(self):
-        return (self.node.node_type.is_segment or self.node.node_type.is_blockport_bridge or
+        return (self.node.node_type.is_segment_driver or self.node.node_type.is_blockport_bridge or
                 (self.node.node_type.is_segment_bridge and self.node.bridge_type in
                     (SegmentBridgeType.sboxin_regular, SegmentBridgeType.cboxin, SegmentBridgeType.cboxout)))
 

@@ -138,7 +138,7 @@ class BaseInstance(Object, AbstractInstance):
     # == internal API ========================================================
     # -- implementing properties/methods required by superclass --------------
     def _create_pin(self, port):
-        return port.direction.switch(InputPin, OutputPin)(self, port)
+        return port.direction.case(InputPin, OutputPin)(self, port)
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------

@@ -49,17 +49,17 @@ class _RoutingBoxNodesProxy(Mapping):
         try:
             if key.node_type.is_block_bridge and self.box.module_class.is_connection_box:
                 return self.box.all_nodes[key]
-            elif key.node_type.is_segment:
+            elif key.node_type.is_segment_driver:
                 if self.box.module_class.is_switch_box:
                     if self.direction is PortDirection.output:
                         return self.box.all_nodes[key]
                     else:
-                        return self.box.all_nodes[key.to_bridge_id(SegmentBridgeType.sboxin_regular)]
+                        return self.box.all_nodes[key.to_bridge_id(bridge_type = SegmentBridgeType.sboxin_regular)]
                 else:
                     if self.direction is PortDirection.output:
-                        return self.box.all_nodes[key.to_bridge_id(SegmentBridgeType.cboxout)]
+                        return self.box.all_nodes[key.to_bridge_id(bridge_type = SegmentBridgeType.cboxout)]
                     else:
-                        return self.box.all_nodes[key.to_bridge_id(SegmentBridgeType.cboxin)]
+                        return self.box.all_nodes[key.to_bridge_id(bridge_type = SegmentBridgeType.cboxin)]
             raise KeyError(key)
         except KeyError:
             raise KeyError(key)
@@ -67,7 +67,7 @@ class _RoutingBoxNodesProxy(Mapping):
     def __iter__(self):
         for key, _ in filter(self.__filter, iteritems(self.box.all_nodes)):
             if key.node_type.is_segment_bridge:
-                yield key.to_id()
+                yield key.to_driver_id()
             else:
                 yield key
 
@@ -79,12 +79,13 @@ class AbstractRoutingBox(AbstractRoutingModule):
 
     # == internal API ========================================================
     def _connect(self, source, sink):
-        if (not source.net_type.is_port or source.parent is not self or
-                source.is_sink or not source.is_user_accessible):
+        if not (source.parent is self and not source.is_sink and source.net_class.is_node and
+                (source.is_user_accessible or (source.bus.node.node_type.is_segment_bridge and
+                    (source.bus.node.bridge_type.is_sboxin_cboxout or
+                        source.bus.node.bridge_type.is_sboxin_cboxout2)))):
             raise PRGAInternalError("'{}' is not a user-accessible sink node in routing box '{}'"
                     .format(source, self))
-        if (not sink.net_type.is_port or sink.parent is not self or
-                not sink.is_sink or not sink.is_user_accessible):
+        if not (sink.parent is self and sink.is_sink and sink.net_class.is_node and sink.is_user_accessible):
             raise PRGAInternalError("'{}' is not a user-accessible source node in routing box '{}'"
                     .format(sink, self))
         sink.add_user_sources( (source, ) )
@@ -194,7 +195,7 @@ class SwitchBox(BaseModule, AbstractRoutingBox):
     # == internal API ========================================================
     # -- implementing properties/methods required by superclass --------------
     def _validate_node(self, node, direction = None):
-        if node.node_type.is_segment:
+        if node.node_type.is_segment_driver:
             if direction is PortDirection.input_:
                 raise PRGAInternalError("Invalid port direction '{}' for node '{}' in switch box '{}'"
                         .format(direction.name, node, self))
@@ -219,6 +220,6 @@ class SwitchBox(BaseModule, AbstractRoutingBox):
         port = super(SwitchBox, self).get_or_create_node(node, direction)
         if node.node_type.is_segment_bridge and node.bridge_type in (SegmentBridgeType.sboxin_cboxout,
                 SegmentBridgeType.sboxin_cboxout2):
-            out = super(SwitchBox, self).get_or_create_node(node.to_id())
+            out = super(SwitchBox, self).get_or_create_node(node.to_driver_id())
             self.connect(port, out)
         return port
