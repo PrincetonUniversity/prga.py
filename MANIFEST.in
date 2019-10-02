@@ -1,5 +1,6 @@
 include MANIFEST.in
 graft tests
 graft prga/rtlgen/templates
+graft prga/config/bitchain/design/templates
 global-exclude __pycache__
 global-exclude *.pyc

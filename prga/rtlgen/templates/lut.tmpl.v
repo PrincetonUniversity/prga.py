@@ -2,7 +2,7 @@
 module {{ module.name }} (
     {% set width = module.all_ports.in|length -%}
     input wire [{{ width - 1 }}:0] in,
-    output wire [0:0] out,
+    output reg [0:0] out,
     input wire [{{ 2 ** width - 1 }}:0] cfg_d
     );
 

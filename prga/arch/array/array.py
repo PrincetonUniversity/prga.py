@@ -70,7 +70,7 @@ class _GridInstancesProxy(Object, Mapping):
 # ----------------------------------------------------------------------------
 # -- Array Instances Proxy ---------------------------------------------------
 # ----------------------------------------------------------------------------
-class _ArrayInstancesProxy(Object, Mapping):
+class _ArrayInstancesProxy(Object, MutableMapping):
     """Helper class for `Array._instances` property."""
     
     __slots__ = ['array']
@@ -95,6 +95,12 @@ class _ArrayInstancesProxy(Object, Mapping):
                 raise KeyError(key)
         except KeyError:
             raise KeyError(key)
+
+    def __setitem__(self, key, value):
+        self.array._nongrid_instances[key] = value
+
+    def __delitem__(self, key):
+        raise PRGAInternalError("Cannot delete from instance mapping")
 
     def __iter__(self):
         for x, y in product(range(-1, self.array.width), range(-1, self.array.height)):

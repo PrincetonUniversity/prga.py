@@ -130,7 +130,7 @@ def populate_connection_box(box, segments, block, orientation, position = None, 
         for subblock in range(block.capacity):
             box.get_or_create_node(BlockPortID(pos_port_rel_to_cbox, port, subblock))
 
-def generate_fc(box, segments, block, orientation, fc, position = None, channel = (0, 0)): 
+def generate_fc(box, segments, block, orientation, fc, position = None, channel = (0, 0), create_nets_if_absent = True): 
     """Add port-segment connections using FC values.
 
     Args:
@@ -142,6 +142,7 @@ def generate_fc(box, segments, block, orientation, fc, position = None, channel 
         position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): position of the ports in ``block`` that are connected by
             this cbox. This argument can be omitted if ``block`` is 1x1
         channel (:obj:`tuple` [:obj:`int`, :obj:`int` ]): position of the routing channel relative to this cbox
+        create_nets_if_absent (:obj:`bool`): If set, node ports are created if not found
     """
     if orientation.dimension.perpendicular is not box.dimension:
         raise PRGAInternalError("Connection box '{}' is {} and cannot be populated for '{}'"
@@ -177,8 +178,8 @@ def generate_fc(box, segments, block, orientation, fc, position = None, channel 
                             section,
                             port.direction.case(SegmentBridgeType.cboxin, SegmentBridgeType.cboxout))
                     # get the bits
-                    port_bus = box.ports.get(port_node)
-                    sgmt_bus = box.ports.get(sgmt_node)
+                    port_bus = box.get_or_create_node(port_node) if create_nets_if_absent else box.ports.get(port_node)
+                    sgmt_bus = box.get_or_create_node(sgmt_node) if create_nets_if_absent else box.ports.get(sgmt_node)
                     if port_bus is None or sgmt_bus is None:
                         continue
                     if port.direction.is_input:

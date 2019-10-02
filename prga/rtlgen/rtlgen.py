@@ -102,15 +102,14 @@ class VerilogGenerator(object):
             elif slice_.width == 1:
                 return '{}[{}]'.format(slice_.bus.name, slice_.start)
             else:
-                return '{}[{}:{}]'.format(slice_.bus.name, slice_.start, slice_.stop - 1)
+                return '{}[{}:{}]'.format(slice_.bus.name, slice_.stop - 1, slice_.start)
         else:
             if slice_.start == 0 and slice_.stop == slice_.bus.width:
                 return '{}__{}'.format(slice_.bus.parent.name, slice_.bus.name)
             elif slice_.width == 1:
                 return '{}__{}[{}]'.format(slice_.bus.parent.name, slice_.bus.name, slice_.start)
             else:
-                return '{}__{}[{}:{}]'.format(slice_.bus.parent.name, slice_.bus.name, slice_.start,
-                        slice_.stop - 1)
+                return '{}__{}[{}:{}]'.format(slice_.bus.parent.name, slice_.bus.name, slice_.stop - 1, slice_.start)
 
     def bits2verilog(self, bits):
         slices = NetSlice.Create(bits)
