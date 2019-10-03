@@ -11,6 +11,7 @@ from prga.arch.routing.common import AbstractRoutingNodeID
 from prga.arch.routing.net import (RoutingNodeInputPort, RoutingNodeOutputPort, RoutingNodeInputPin,
         RoutingNodeOutputPin)
 from prga.util import ReadonlyMappingProxy, Object
+from prga.exception import PRGAInternalError
 
 from abc import abstractmethod, abstractproperty
 from copy import copy
@@ -95,7 +96,11 @@ class AbstractRoutingModule(AbstractModule):
                 direction of the port
         """
         try:
-            return self.all_nodes[node]
+            port = self.all_nodes[node]
+            if direction not in (None, port.direction):
+                raise PRGAInternalError("Direction hint '{}' conflicts with the direction of existing node '{}'"
+                        .format(direction.name, node))
+            return port
         except KeyError:
             direction = self._validate_node(node, direction)
             port = direction.case(RoutingNodeInputPort, RoutingNodeOutputPort)(self, node)

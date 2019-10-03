@@ -11,7 +11,7 @@ from prga.arch.array.port import ArrayGlobalInputPort
 from prga.exception import PRGAInternalError
 from prga.util import uno
 
-from abc import abstractproperty
+from abc import abstractproperty, abstractmethod
 
 __all__ = ['AbstractArrayElement']
 
@@ -108,4 +108,14 @@ class AbstractArrayElement(AbstractRoutingModule):
     @abstractproperty
     def channel_coverage(self):
         """`ChannelCoverage`: Which routing channels are covered by this array element."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def runs_channel(self, position, dimension):
+        """Test if the ``dimension`` routing channel in ``position`` has wire segments running in it.
+
+        Args:
+            position (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
+            dimension (`Dimension`):
+        """
         raise NotImplementedError

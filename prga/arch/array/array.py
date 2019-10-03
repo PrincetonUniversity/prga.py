@@ -273,3 +273,15 @@ class Array(BaseModule, AbstractArrayElement):
     @property
     def module_class(self):
         return ModuleClass.array
+
+    def runs_channel(self, position, dimension):
+        if not self.covers_channel(position, dimension):
+            return False
+        position = Position(*position)
+        instance = self.get_root_element(position)
+        if instance is not None and instance.model.covers_channel(position - instance.position, dimension):
+            return instance.model.runs_channel(position - instance.position, dimension)
+        instance = self.get_root_element(position + dimension.case((0, 1), (1, 0)))
+        if instance is not None and instance.model.covers_channel(position - instance.position, dimension):
+            return instance.model.runs_channel(position - instance.position, dimension)
+        return True

@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.arch.common import Orientation
+from prga.arch.common import Orientation, Dimension
 from prga.arch.net.common import PortDirection
 from prga.arch.net.const import UNCONNECTED
 from prga.arch.routing.common import SegmentBridgeID, SegmentBridgeType
@@ -14,6 +14,7 @@ from prga.exception import PRGAInternalError
 
 from abc import abstractmethod
 from itertools import product
+from collections import OrderedDict
 
 __all__ = ['SwitchBoxLibraryDelegate', 'sboxify', 'netify_array']
 
@@ -45,8 +46,13 @@ def sboxify(lib, array):
     for x, y in product(range(-1, array.width), range(-1, array.height)):
         pos = (x, y)
         if array.covers_sbox( pos ) and array.get_root_element_for_sbox( pos ) is None:
-            # TODO: environment!
-            array.instantiate_sbox(lib.get_sbox(), pos)
+            env = SwitchBoxEnvironment(
+                    not array.covers_channel( (x, y+1), Dimension.y ) or array.runs_channel( (x, y+1), Dimension.y ),
+                    not array.covers_channel( (x+1, y), Dimension.x ) or array.runs_channel( (x+1, y), Dimension.x ),
+                    not array.covers_channel( (x, y), Dimension.y ) or array.runs_channel( (x, y), Dimension.y ),
+                    not array.covers_channel( (x, y), Dimension.x ) or array.runs_channel( (x, y), Dimension.x )
+                    )
+            array.instantiate_sbox(lib.get_sbox(env), pos)
 
 # ----------------------------------------------------------------------------
 # -- Algorithms for Exposing Ports and Connecting Nets in Arrays -------------
@@ -61,6 +67,17 @@ def find_segment_driver(array, node, create_input = True):
     """
     for sec in range(node.section + 1):
         equiv_node = node - sec
+        # 1. is the channel covered?
+        if not array.covers_channel(equiv_node.position, node.orientation.dimension):
+            if create_input:
+                return array.get_or_create_node(equiv_node.to_bridge_id(
+                    bridge_type = SegmentBridgeType.array_regular), PortDirection.input_)
+            else:
+                return None
+        # 2. are there wire segments in the channel? 
+        if not array.runs_channel(equiv_node.position, node.orientation.dimension):
+            return None
+        # 3. find the switch box driving the segment
         pos_sbox = equiv_node.position - equiv_node.orientation.case(
                 (0, 1), (1, 0), (0, 0), (0, 0))
         if not array.covers_sbox(pos_sbox):
@@ -80,6 +97,8 @@ def find_segment_driver(array, node, create_input = True):
                 continue
         elif sbox.module_class.is_array:
             subnode = equiv_node.move(-sbox.position) 
+            if not sbox.model.runs_channel(subnode.position, node.orientation.dimension):
+                return None
             arraynode = subnode.to_bridge_id(bridge_type = SegmentBridgeType.array_regular)
             pin = sbox.all_nodes.get(arraynode)
             if pin is None:
@@ -115,7 +134,7 @@ def create_and_connect_cs_bridge(array, source):
         return
     if sbox.module_class.is_switch_box:
         for type_ in (SegmentBridgeType.sboxin_cboxout, SegmentBridgeType.sboxin_cboxout2):
-            sboxnode = node.to_bridge_id(bridge_type = type_)
+            sboxnode = node.move(-sbox.position).to_bridge_id(bridge_type = type_)
             sboxpin = sbox.all_nodes.get(sboxnode, None)
             if sboxpin is None:
                 sbox.model.get_or_create_node(sboxnode)
@@ -126,17 +145,18 @@ def create_and_connect_cs_bridge(array, source):
                 return
     else:
         for type_ in (SegmentBridgeType.array_cboxout, SegmentBridgeType.array_cboxout2):
-            sboxnode = node.to_bridge_id(bridge_type = type_)
+            sboxnode = node.move(-sbox.position).to_bridge_id(bridge_type = type_)
             sboxpin = sbox.all_nodes.get(sboxnode, None)
             if sboxpin is None:
                 arrayport = sbox.model.get_or_create_node(sboxnode, PortDirection.input_)
                 create_and_connect_cs_bridge(sbox.model, arrayport)
                 sbox.all_nodes[sboxnode].source = source
+                return
             elif all(bit is UNCONNECTED for bit in sboxpin.source) or sboxpin.source is source:
                 sboxpin.source = source
                 return
-    raise PRGAInternalError("Got the third connection box - switch box bridge: {} in array '{}'"
-            .format(node, array))
+        raise PRGAInternalError("Got the third connection box - switch box bridge: {} in array '{}'"
+                .format(node, array))
 
 def netify_array(array):
     """Expose ports and connect nets in ``array``.
@@ -147,7 +167,8 @@ def netify_array(array):
     for x, y in product(range(-1, array.width), range(-1, array.height)):
         element = array.element_instances.get( (x, y), None )
         if element is not None:
-            for pin in itervalues(element.all_pins):
+            snapshot = OrderedDict(iteritems(element.all_pins))
+            for pin in itervalues(snapshot):
                 if pin.net_class.is_node:
                     node = pin.node
                     if node.node_type.is_segment_bridge:
@@ -170,6 +191,7 @@ def netify_array(array):
                     pin.source = array.get_or_create_global_input(pin.model.global_)
         sbox = array.sbox_instances.get( (x, y), None )
         if sbox is not None:
+            snapshot = OrderedDict(iteritems(sbox.all_pins))
             for sboxpin in itervalues(sbox.all_nodes):
                 node = sboxpin.node
                 if not (node.node_type.is_segment_bridge and node.bridge_type.is_sboxin_regular):

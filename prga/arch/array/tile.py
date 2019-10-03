@@ -79,3 +79,6 @@ class Tile(BaseModule, AbstractArrayElement):
     @property
     def module_class(self):
         return ModuleClass.tile
+
+    def runs_channel(self, position, dimension):
+        return False
