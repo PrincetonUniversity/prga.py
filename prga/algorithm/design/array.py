@@ -12,7 +12,7 @@ from prga.algorithm.design.sbox import SwitchBoxEnvironment
 from prga.util import Abstract
 from prga.exception import PRGAInternalError
 
-from abc import abstractmethod
+from abc import abstractmethod, abstractproperty
 from itertools import product
 from collections import OrderedDict
 
@@ -24,13 +24,20 @@ __all__ = ['SwitchBoxLibraryDelegate', 'sboxify', 'netify_array']
 class SwitchBoxLibraryDelegate(Abstract):
     """Switch box library supplying switch box modules for instantiation."""
 
+    # == low-level API =======================================================
+    # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractmethod
-    def get_sbox(self, env = SwitchBoxEnvironment(), drive_truncated = True):
+    def get_or_create_sbox(self, env = SwitchBoxEnvironment(), drive_truncated = True):
         """Get a switch box module.
 
         Args:
             env (`SwitchBoxEnvironment`):
         """
+        raise NotImplementedError
+
+    @abstractproperty
+    def is_empty(self):
+        """:obj:`bool`: Test if the library is empty."""
         raise NotImplementedError
 
 # ----------------------------------------------------------------------------
@@ -52,7 +59,7 @@ def sboxify(lib, array):
                     not array.covers_channel( (x, y), Dimension.y ) or array.runs_channel( (x, y), Dimension.y ),
                     not array.covers_channel( (x, y), Dimension.x ) or array.runs_channel( (x, y), Dimension.x )
                     )
-            array.instantiate_sbox(lib.get_sbox(env), pos)
+            array.instantiate_sbox(lib.get_or_create_sbox(env), pos)
 
 # ----------------------------------------------------------------------------
 # -- Algorithms for Exposing Ports and Connecting Nets in Arrays -------------

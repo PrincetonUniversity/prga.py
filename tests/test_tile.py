@@ -22,17 +22,17 @@ class Library(SwitchLibraryDelegate, ConnectionBoxLibraryDelegate):
         self.switches = {}
         self.cboxes = {}
 
-    def get_switch(self, width, module):
+    def get_or_create_switch(self, width, module):
         return self.switches.setdefault(width, ConfigurableMUX(width))
 
-    def get_cbox(self, block, orientation, position = None, channel = (0, 0)):
+    def get_or_create_cbox(self, block, orientation, position = None, channel = (0, 0)):
         orientation, position = block._validate_orientation_and_position(orientation, position)
         name = 'mock_cbox_{}_x{}y{}{}'.format(block.name, position.x, position.y, orientation.name[0])
         return self.cboxes.setdefault(name, ConnectionBox(name, orientation.dimension.perpendicular))
 
-    def get_cbox_double_sided(self, dimension,
-            block_ne = None, position_ne = None, block_sw = None, position_sw = None):
-        raise NotImplementedError
+    @property
+    def is_empty(self):
+        return False
 
 def test_io_tile(tmpdir):
     io = Iopad()

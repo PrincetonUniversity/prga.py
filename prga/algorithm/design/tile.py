@@ -9,7 +9,7 @@ from prga.arch.routing.common import SegmentBridgeID, SegmentBridgeType, BlockPo
 from prga.arch.array.port import ArrayExternalInputPort, ArrayExternalOutputPort
 from prga.util import Abstract
 
-from abc import abstractmethod
+from abc import abstractmethod, abstractproperty
 from itertools import product
 
 __all__ = ['ConnectionBoxLibraryDelegate', 'cboxify', 'netify_tile'] #, 'cboxify_double_sided']
@@ -20,8 +20,10 @@ __all__ = ['ConnectionBoxLibraryDelegate', 'cboxify', 'netify_tile'] #, 'cboxify
 class ConnectionBoxLibraryDelegate(Abstract):
     """Connection box library supplying connection box modules for instantiation."""
 
+    # == low-level API =======================================================
+    # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractmethod
-    def get_cbox(self, block, orientation, position = None, channel = (0, 0)):
+    def get_or_create_cbox(self, block, orientation, position = None, channel = (0, 0)):
         """Get a single-sided connection box module.
 
         Args:
@@ -32,8 +34,12 @@ class ConnectionBoxLibraryDelegate(Abstract):
         """
         raise NotImplementedError
 
-    @abstractmethod
-    def get_cbox_double_sided(self, dimension,
+    @abstractproperty
+    def is_empty(self):
+        """:obj:`bool`: Test if the library is empty."""
+        raise NotImplementedError
+
+    def get_or_create_cbox_double_sided(self, dimension,
             block_ne = None, position_ne = None, block_sw = None, position_sw = None):
         """Get a double-sided connection box module.
 
@@ -48,7 +54,7 @@ class ConnectionBoxLibraryDelegate(Abstract):
             position_sw (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this connection box relative to
                 ``block_sw``
         """
-        raise NotImplementedError
+        raise NotImplementedError("Double-sided connection box not supported yet""")
 
 # ----------------------------------------------------------------------------
 # -- Algorithms for Instantiating Connection Boxes in Tiles ------------------
@@ -75,7 +81,7 @@ def cboxify(lib, tile, orientation = Orientation.auto):
         if ori.is_auto:
             ori = orientation
         if orientation in (ori, Orientation.auto):
-            tile.instantiate_cbox(lib.get_cbox(tile.block, ori, position,
+            tile.instantiate_cbox(lib.get_or_create_cbox(tile.block, ori, position,
                 ori.case((0, 0), (0, 0), (0, -1), (-1, 0))), ori, position)
 
 # ----------------------------------------------------------------------------

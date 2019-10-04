@@ -13,9 +13,10 @@ from prga.arch.primitive.primitive import AbstractPrimitive, CustomPrimitive
 import os
 from collections import OrderedDict
 
-__all__ = ['CONFIG_BITCHAIN_SEARCH_PATH', 'ConfigBitchain', 'FracturableLUT6', 'SynchronousSRFlipflop']
+__all__ = ['CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH',
+        'ConfigBitchain', 'FracturableLUT6', 'SynchronousSRFlipflop']
 
-CONFIG_BITCHAIN_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
+CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
 
 # ----------------------------------------------------------------------------
 # -- Configuration Bitchain Module -------------------------------------------

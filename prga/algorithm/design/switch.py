@@ -7,7 +7,7 @@ from prga.arch.switch.switch import SwitchInstance
 from prga.exception import PRGAInternalError
 from prga.util import Abstract
 
-from abc import abstractmethod
+from abc import abstractmethod, abstractproperty
 from itertools import chain
 
 __all__ = ['SwitchLibraryDelegate', 'switchify']
@@ -18,8 +18,10 @@ __all__ = ['SwitchLibraryDelegate', 'switchify']
 class SwitchLibraryDelegate(Abstract):
     """Switch library supplying switch modules for instantiation."""
 
+    # == low-level API =======================================================
+    # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractmethod
-    def get_switch(self, width, module):
+    def get_or_create_switch(self, width, module):
         """Get a switch module with ``width`` input bits for ``module``.
 
         Args:
@@ -32,6 +34,11 @@ class SwitchLibraryDelegate(Abstract):
         Note:
             The returned switch could have more than ``width`` input bits
         """
+        raise NotImplementedError
+
+    @abstractproperty
+    def is_empty(self):
+        """:obj:`bool`: Test if the library is empty."""
         raise NotImplementedError
 
 # ----------------------------------------------------------------------------
@@ -81,7 +88,7 @@ def switchify(delegate, module):
             elif len(sink.user_sources) > 1:
                 name = ('sw_{}_{}_{}'.format(sink.parent.name, sink.bus.name, sink.index) if sink.net_type.is_pin else
                         'sw_{}_{}'.format(sink.bus.name, sink.index))
-                mux = _instantiate_switch(module, delegate.get_switch(len(sink.user_sources), module),
+                mux = _instantiate_switch(module, delegate.get_or_create_switch(len(sink.user_sources), module),
                         name, sink.user_sources, sink)
                 muxes.append( (mux, sink) )
     for mux, sink in muxes:

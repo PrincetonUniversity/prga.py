@@ -17,8 +17,12 @@ class SwitchLibrary(SwitchLibraryDelegate):
     def __init__(self):
         self.switches = {}
 
-    def get_switch(self, width, module):
+    def get_or_create_switch(self, width, module):
         return self.switches.setdefault(width, ConfigurableMUX(width))
+
+    @property
+    def is_empty(self):
+        return False
 
 def test_rtlgen(tmpdir):
     gen = VerilogGenerator()

@@ -20,7 +20,7 @@ class ConfigBitchainLibraryDelegate(Abstract):
     """Configuration bitchain library supplying configuration bitchain modules for instantiation."""
 
     @abstractmethod
-    def get_bitchain(self, width):
+    def get_or_create_bitchain(self, width):
         """Get a configuration bitchain module.
 
         Args:
@@ -56,7 +56,7 @@ def inject_config_chain(lib, module, top = True):
     if len(sinks) > 0:
         sources = tuple()
         if top:
-            instance = module._add_instance(RegularInstance(module, lib.get_bitchain(len(sinks)), 'cfg_bitchain_inst'))
+            instance = module._add_instance(RegularInstance(module, lib.get_or_create_bitchain(len(sinks)), 'cfg_bitchain_inst'))
             sources = instance.all_pins['cfg_d']
             instances_with_chains.insert(0, instance)
         else:
