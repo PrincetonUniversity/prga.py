@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function, unicode_literals
 from prga.compatible import *
 
-from prga.arch.routing.common import SegmentPrototype
+from prga.arch.routing.common import Segment
 from prga.arch.routing.box import SwitchBox
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.algorithm.design.sbox import (SwitchBoxEnvironment, populate_switch_box,
@@ -23,7 +23,7 @@ class SwitchLibrary(SwitchLibraryDelegate):
         return False
 
 def test_switch_box(tmpdir):
-    sgmts = [SegmentPrototype('L1', 4, 1), SegmentPrototype('L2', 1, 2)]
+    sgmts = [Segment('L1', 4, 1, 0), Segment('L2', 1, 2, 1)]
     lib = SwitchLibrary()
     gen = VerilogGenerator()
 

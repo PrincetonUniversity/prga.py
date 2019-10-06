@@ -171,7 +171,7 @@ class Global(Object):
     @property
     def is_bound(self):
         """:obj:`bool`: Test if this global wire is already bound to a specific IOB."""
-        return self._bound_to_position is None
+        return self._bound_to_position is not None
 
     @property
     def bound_to_position(self):
@@ -183,7 +183,6 @@ class Global(Object):
         """:obj:`int` or ``None``: The sub-IOB in which the global wire is bound to."""
         return self._bound_to_subblock
 
-    @property
     def bind(self, position, subblock):
         """Bind the global wire to the ``subblock``-th IOB at ``position``.
         

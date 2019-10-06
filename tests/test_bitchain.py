@@ -8,7 +8,7 @@ from prga.arch.primitive.builtin import Flipflop, LUT
 from prga.arch.module.common import ModuleClass
 from prga.arch.block.cluster import Cluster
 from prga.arch.block.block import LogicBlock
-from prga.arch.routing.common import SegmentPrototype
+from prga.arch.routing.common import Segment
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.arch.routing.box import ConnectionBox, SwitchBox
 from prga.arch.array.common import ChannelCoverage
@@ -53,7 +53,7 @@ class Library(SwitchLibraryDelegate, ConnectionBoxLibraryDelegate, ConfigBitchai
 def test_bitchain(tmpdir):
     clk = Global('clk', is_clock = True)
     rst = Global('rst')
-    sgmts = [SegmentPrototype('L1', 64, 1)]
+    sgmts = [Segment('L1', 64, 1, 0)]
     lib = Library()
     gen = VerilogGenerator( (CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH, ) )
 
@@ -132,11 +132,9 @@ def test_bitchain(tmpdir):
     tile = lib.add_module(Tile('tile', block))
     cboxify(lib, tile)
     for (position, orientation), cbox_inst in iteritems(tile.cbox_instances):
-        # populate_connection_box(cbox_inst.model, sgmts, tile.block, orientation, position,
-        #         orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
         generate_fc(cbox_inst.model, sgmts, tile.block, orientation,
-                BlockFCValue(BlockPortFCValue(0.25), BlockPortFCValue(0.5)), position,
-                orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
+                BlockFCValue(BlockPortFCValue(0.25), BlockPortFCValue(0.5)),
+                tile.capacity, position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
         switchify(lib, cbox_inst.model)
     netify_tile(tile)
 

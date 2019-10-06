@@ -39,7 +39,7 @@ class AbstractRoutingNodePort(AbstractPort):
                 self.node.prototype.parent.name,
                 'x' if self.node.position.x >= 0 else 'u', abs(self.node.position.x),
                 'y' if self.node.position.y >= 0 else 'v', abs(self.node.position.y),
-                ('{}_'.format(self.node.subblock) if self.node.prototype.parent.capacity > 1 else ''),
+                ('{}_'.format(self.node.subblock) if self.node.prototype.parent.module_class.is_io_block else ''),
                 self.node.prototype.name)
         else:
             prefix = ('sgmt' if self.node.node_type.is_segment_driver else

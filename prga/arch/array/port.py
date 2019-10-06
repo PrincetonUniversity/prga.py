@@ -38,7 +38,7 @@ class _AbstractArrayExternalPort(AbstractPort):
 
     @property
     def name(self):
-        if self.node.prototype.parent.capacity > 1:
+        if self.node.prototype.parent.module_class.is_io_block:
             return 'ext_{}_x{}y{}_{}_{}'.format(self.node.prototype.parent.name,
                     self.node.position.x, self.node.position.y,
                     self.node.subblock, self.node.prototype.name)

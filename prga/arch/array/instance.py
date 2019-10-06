@@ -35,7 +35,7 @@ class BlockInstance(BaseInstance):
     # -- implementing properties/methods required by superclass --------------
     @property
     def name(self):
-        return 'blkinst' + ('' if self.model.capacity == 1 else ('_' + str(self.subblock)))
+        return 'blkinst' + (('_' + str(self.subblock)) if self.model.module_class.is_io_block else '')
 
     @property
     def key(self):

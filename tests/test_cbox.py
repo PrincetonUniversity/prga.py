@@ -6,7 +6,7 @@ from prga.compatible import *
 from prga.arch.common import Global, Orientation, Dimension
 from prga.arch.primitive.builtin import Iopad
 from prga.arch.block.block import IOBlock
-from prga.arch.routing.common import SegmentPrototype
+from prga.arch.routing.common import Segment
 from prga.arch.routing.box import ConnectionBox
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.algorithm.design.cbox import BlockPortFCValue, BlockFCValue, populate_connection_box, generate_fc
@@ -26,9 +26,9 @@ class SwitchLibrary(SwitchLibraryDelegate):
 
 def test_connection_box(tmpdir):
     io = Iopad()
-    block = IOBlock('mock_block', 4, io)
+    block = IOBlock('mock_block', io)
     glb = Global('clk', is_clock = True)
-    sgmts = [SegmentPrototype('L1', 4, 1), SegmentPrototype('L2', 1, 2)]
+    sgmts = [Segment('L1', 4, 1, 0), Segment('L2', 1, 2, 1)]
     lib = SwitchLibrary()
     gen = VerilogGenerator()
 
@@ -41,8 +41,8 @@ def test_connection_box(tmpdir):
     cbox = ConnectionBox('mock_cbox', Dimension.x)
 
     # 3. populate and generate connections
-    populate_connection_box(cbox, sgmts, block, Orientation.south)
-    generate_fc(cbox, sgmts, block, Orientation.south, BlockFCValue(BlockPortFCValue(0.5), BlockPortFCValue(1.0)))
+    populate_connection_box(cbox, sgmts, block, Orientation.south, 4)
+    generate_fc(cbox, sgmts, block, Orientation.south, BlockFCValue(BlockPortFCValue(0.5), BlockPortFCValue(1.0)), 4)
 
     # 2.3 switchify!
     switchify(lib, cbox)

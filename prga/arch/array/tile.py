@@ -26,17 +26,27 @@ class Tile(BaseModule, AbstractArrayElement):
     Args:
         name (:obj:`str`): Name of the tile
         block (`AbstractBlock`): The block to be instantiated in this tile
+        capacity (:obj:`int`): Number of block instances in this tile
     """
 
-    __slots__ = ['_ports', '_instances']
-    def __init__(self, name, block):
+    __slots__ = ['_ports', '_instances', '_capacity']
+    def __init__(self, name, block, capacity = 1):
+        if capacity != 1 and not block.module_class.is_io_block:
+            raise PRGAInternalError("'capacity' must be set to 1 since block '{}' is not an IO block"
+                    .format(block))
         super(Tile, self).__init__(name)
         self._ports = OrderedDict()
         self._instances = OrderedDict()
-        for subblock in range(block.capacity):
+        self._capacity = capacity
+        for subblock in range(capacity):
             self._add_instance(BlockInstance(self, block, subblock))
 
     # == low-level API =======================================================
+    @property
+    def capacity(self):
+        """:obj:`int`: Number of block instances in this tile"""
+        return self._capacity
+
     @property
     def block_instances(self):
         """:obj:`Mapping` [:obj:`int`, `BlockInstance` ]: A mapping from sub-block IDs to block instances."""

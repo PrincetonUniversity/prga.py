@@ -3,10 +3,10 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.arch.common import Orientation, Dimension
+from prga.arch.common import Orientation, Dimension, Global
 from prga.arch.net.common import PortDirection
 from prga.arch.net.const import UNCONNECTED
-from prga.arch.routing.common import SegmentBridgeID, SegmentBridgeType
+from prga.arch.routing.common import SegmentBridgeID, SegmentBridgeType, BlockPortID
 from prga.arch.array.port import ArrayExternalInputPort, ArrayExternalOutputPort
 from prga.algorithm.design.sbox import SwitchBoxEnvironment
 from prga.util import Abstract
@@ -165,12 +165,15 @@ def create_and_connect_cs_bridge(array, source):
         raise PRGAInternalError("Got the third connection box - switch box bridge: {} in array '{}'"
                 .format(node, array))
 
-def netify_array(array):
+def netify_array(array, top = False):
     """Expose ports and connect nets in ``array``.
 
     Args:
         array (`Array`):
+        top (:obj:`bool`): If set, ``array`` is treated as the top array. Global wires are connected to the bound
+            external input port, instead of a hierarchical global input port
     """
+    extinputs = [[{} for _ in range(array.height)] for _ in range(array.width)]
     for x, y in product(range(-1, array.width), range(-1, array.height)):
         element = array.element_instances.get( (x, y), None )
         if element is not None:
@@ -191,11 +194,10 @@ def netify_array(array):
                 elif pin.net_class.is_io:
                     node = pin.node
                     if pin.direction.is_input:
-                        pin.source = array._add_port(ArrayExternalInputPort(array, node))
+                        exti = pin.source = array._add_port(ArrayExternalInputPort(array, node))
+                        extinputs[x][y].setdefault(node.subblock, []).append(exti)
                     else:
                         array._add_port(ArrayExternalOutputPort(array, node)).source = pin
-                elif pin.net_class.is_global:
-                    pin.source = array.get_or_create_global_input(pin.model.global_)
         sbox = array.sbox_instances.get( (x, y), None )
         if sbox is not None:
             snapshot = OrderedDict(iteritems(sbox.all_pins))
@@ -207,3 +209,34 @@ def netify_array(array):
                 if driver is None:
                     continue
                 sboxpin.source = driver
+    for x, y in product(range(-1, array.width), range(-1, array.height)):
+        element = array.element_instances.get( (x, y), None )
+        if element is not None:
+            for pin in itervalues(element.all_pins):
+                if pin.net_class.is_global:
+                    global_ = pin.model.global_
+                    if top:
+                        if not global_.is_bound:
+                            raise PRGAInternalError("Global wire '{}' is not bound to an IOB yet"
+                                    .format(global_.name))
+                        drivers = extinputs[global_.bound_to_position.x][global_.bound_to_position.y].get(
+                                global_.bound_to_subblock, tuple())
+                        if len(drivers) == 0:
+                            raise PRGAInternalError(
+                                    "Global wire '{}' bound to ({}, {}, {}), but no external input found"
+                                    .format(global_.name, global_.bound_to_position.x, global_.bound_to_position.y,
+                                        global_.bound_to_subblock))
+                        elif len(drivers) > 1:
+                            raise PRGAInternalError(
+                                    "Global wire '{}' bound to ({}, {}, {}), but multiple external inputs found"
+                                    .format(global_.name, global_.bound_to_position.x, global_.bound_to_position.y,
+                                        global_.bound_to_subblock))
+                        elif drivers[0].width != global_.width:
+                            raise PRGAInternalError(
+                                    ("Global wire '{}' bound to ({}, {}, {}), but its width ({}) does not match the "
+                                        "width ({}) of the external input port '{}'")
+                                    .format(global_.name, global_.bound_to_position.x, global_.bound_to_position.y,
+                                        global_.bound_to_subblock, global_.width, drivers[0].width, drivers[0]))
+                        pin.source = drivers[0]
+                    else:
+                        pin.source = array.get_or_create_global_input(pin.model.global_)

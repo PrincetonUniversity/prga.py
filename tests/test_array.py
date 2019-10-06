@@ -6,7 +6,7 @@ from prga.compatible import *
 from prga.arch.common import Global, Orientation, Dimension
 from prga.arch.primitive.builtin import Iopad, Memory
 from prga.arch.block.block import IOBlock, LogicBlock
-from prga.arch.routing.common import SegmentPrototype
+from prga.arch.routing.common import Segment
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.arch.routing.box import ConnectionBox, SwitchBox
 from prga.arch.array.common import ChannelCoverage
@@ -46,9 +46,9 @@ class Library(SwitchLibraryDelegate, ConnectionBoxLibraryDelegate):
 
 def test_io_leaf_array(tmpdir):
     io = Iopad()
-    block = IOBlock('mock_block', 4, io)
+    block = IOBlock('mock_block', io)
     glb = Global('clk', is_clock = True)
-    sgmts = [SegmentPrototype('L1', 4, 1)]
+    sgmts = [Segment('L1', 4, 1, 0)]
     lib = Library()
     gen = VerilogGenerator()
 
@@ -58,16 +58,18 @@ def test_io_leaf_array(tmpdir):
     block.create_output('inpad', 1)
 
     # 2. create tile
-    tile = Tile('mock_tile', block)
+    tile = Tile('mock_tile', block, 4)
 
     # 3. cboxify
     cboxify(lib, tile, Orientation.east)
 
     # 4. populate and generate connections
     for (position, orientation), cbox_inst in iteritems(tile.cbox_instances):
-        populate_connection_box(cbox_inst.model, sgmts, tile.block, orientation, position)
+        populate_connection_box(cbox_inst.model, sgmts, tile.block, orientation,
+                tile.capacity, position)
         generate_fc(cbox_inst.model, sgmts, tile.block, orientation,
-                BlockFCValue(BlockPortFCValue(0.5), BlockPortFCValue(1.0)), position)
+                BlockFCValue(BlockPortFCValue(0.5), BlockPortFCValue(1.0)),
+                tile.capacity, position)
 
     # 5. netify
     netify_tile(tile)
@@ -100,12 +102,13 @@ def test_io_leaf_array(tmpdir):
 def test_complex_array(tmpdir):
     io = Iopad()
     clk = Global('clk', is_clock = True)
-    sgmts = [SegmentPrototype('L1', 4, 1), SegmentPrototype('L2', 1, 2)]
+    clk.bind((0, 1), 0)
+    sgmts = [Segment('L1', 4, 1, 0), Segment('L2', 1, 2, 1)]
     lib = Library()
     gen = VerilogGenerator()
 
     # 1. create IOB
-    iob = IOBlock('mock_iob', 4, io)
+    iob = IOBlock('mock_iob', io)
     iob.create_global(clk)
     iob.create_input('outpad', 1)
     iob.create_output('inpad', 1)
@@ -115,12 +118,12 @@ def test_complex_array(tmpdir):
     for ori in Orientation:
         if ori.is_auto:
             continue
-        tile = iob_tiles[ori] = Tile('mock_tile_io' + ori.name[0], iob)
+        tile = iob_tiles[ori] = Tile('mock_tile_io' + ori.name[0], iob, 4)
         cboxify(lib, tile, ori.opposite)
         for (position, orientation), cbox_inst in iteritems(tile.cbox_instances):
             generate_fc(cbox_inst.model, sgmts, tile.block, orientation,
-                    BlockFCValue(BlockPortFCValue(0.5), BlockPortFCValue(1.0)), position,
-                    orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
+                    BlockFCValue(BlockPortFCValue(0.5), BlockPortFCValue(1.0)),
+                    tile.capacity, position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
         netify_tile(tile)
 
     # 3. create CLB
@@ -136,8 +139,8 @@ def test_complex_array(tmpdir):
     cboxify(lib, clb_tile)
     for (position, orientation), cbox_inst in iteritems(clb_tile.cbox_instances):
         generate_fc(cbox_inst.model, sgmts, clb_tile.block, orientation,
-                BlockFCValue(BlockPortFCValue(0.25), BlockPortFCValue(0.5)), position,
-                orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
+                BlockFCValue(BlockPortFCValue(0.25), BlockPortFCValue(0.5)),
+                clb_tile.capacity, position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
     netify_tile(clb_tile)
 
     # 5. create BRAM
@@ -154,9 +157,8 @@ def test_complex_array(tmpdir):
     cboxify(lib, bram_tile)
     for (position, orientation), cbox_inst in iteritems(bram_tile.cbox_instances):
         generate_fc(cbox_inst.model, sgmts, bram_tile.block, orientation,
-                BlockFCValue(BlockPortFCValue(0.25, {'din': 0.5, 'we': 0.5}),
-                    BlockPortFCValue(0.5)), position,
-                orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
+                BlockFCValue(BlockPortFCValue(0.25, {'din': 0.5, 'we': 0.5}), BlockPortFCValue(0.5)),
+                bram_tile.capacity, position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
     netify_tile(bram_tile)
 
     # 7. repetitive sub-array
@@ -183,7 +185,7 @@ def test_complex_array(tmpdir):
         populate_switch_box(sbox, sgmts, env)
         generate_wilton(sbox, sgmts, cycle_free = True)
     netify_array(subarray)
-    netify_array(array)
+    netify_array(array, True)
 
     # 10. switchify!
     for box in chain(itervalues(lib.cboxes), itervalues(lib.sboxes)):

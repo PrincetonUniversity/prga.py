@@ -56,20 +56,14 @@ class IOBlock(ClusterLike, AbstractBlock):
 
     Args:
         name (:obj:`str`): Name of this IO block
-        capacity (:obj:`int`): IO pads per block
         io_primitive (`Inpad`, `Outpad` or `Iopad`): IO primitive to instantiate in this block
-
-    Notes:
-        See VPR's documentation for more information about ``capacity``. To summarize, each block instance may contain
-        only one I/O pad, but ``capacity`` block instances will be put in one tile.
     """
 
-    __slots__ = ['_ports', '_instances', '_capacity']
-    def __init__(self, name, capacity, io_primitive):
+    __slots__ = ['_ports', '_instances']
+    def __init__(self, name, io_primitive):
         super(IOBlock, self).__init__(name)
         self._ports = OrderedDict()
         self._instances = OrderedDict()
-        self._capacity = capacity
         instance = RegularInstance(self, io_primitive, 'io')
         self._add_instance(instance)
         if io_primitive.primitive_class in (PrimitiveClass.inpad, PrimitiveClass.iopad):
@@ -92,11 +86,6 @@ class IOBlock(ClusterLike, AbstractBlock):
         return ModuleClass.io_block
 
     # == high-level API ======================================================
-    @property
-    def capacity(self):
-        """:obj:`int`: Number of block instances per tile."""
-        return self._capacity
-
     @property
     def width(self):
         """:obj:`int`: Width of this block in the number of tiles."""
@@ -170,11 +159,6 @@ class LogicBlock(ClusterLike, AbstractBlock):
         return ModuleClass.logic_block
 
     # == high-level API ======================================================
-    @property
-    def capacity(self):
-        """:obj:`int`: Number of block instances per tile."""
-        return 1
-
     @property
     def width(self):
         """:obj:`int`: Width of this block in the number of tiles."""

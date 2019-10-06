@@ -4,7 +4,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from prga.arch.common import Direction, Orientation, Position
-from prga.arch.routing.common import SegmentPrototype, SegmentBridgeType, SegmentBridgeID, BlockPortID
+from prga.arch.routing.common import Segment, SegmentBridgeType, SegmentBridgeID, BlockPortID
 from prga.util import uno
 from prga.exception import PRGAInternalError
 
@@ -43,7 +43,7 @@ class BlockPortFCValue(namedtuple('BlockPortFCValue', 'default overrides')):
         """Get the FC value for a specific segment.
 
         Args:
-            segment (`SegmentPrototype`):
+            segment (`Segment`):
             all_sections (:obj:`bool`): if all sections of a segment longer than 1 should be taken into consideration
 
         Returns:
@@ -81,7 +81,7 @@ class BlockFCValue(namedtuple('BlockFCValue', 'default_in default_out overrides'
 
         Args:
             port (`AbstractBlockPort`): 
-            segment (`SegmentPrototype`):
+            segment (`Segment`):
             all_sections (:obj:`bool`): if all sections of a segment longer than 1 should be taken into consideration
 
         Returns:
@@ -93,14 +93,16 @@ class BlockFCValue(namedtuple('BlockFCValue', 'default_in default_out overrides'
 # ----------------------------------------------------------------------------
 # -- Algorithms for connection boxes -----------------------------------------
 # ----------------------------------------------------------------------------
-def populate_connection_box(box, segments, block, orientation, position = None, channel = (0, 0)):
+def populate_connection_box(box, segments, block, orientation,
+        capacity = 1, position = None, channel = (0, 0)):
     """Populate connection box.
 
     Args:
         box (`ConnectionBox`):
-        segments (:obj:`Sequence` [`SegmentPrototype` ]):
+        segments (:obj:`Sequence` [`Segment` ]):
         block (`AbstractBlock`):
         orientation (`Orientation`):
+        capacity (:obj:`int`): Number of blocks connected to this box
         position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): position of the ports in ``block`` that are connected by
             this cbox. This argument can be omitted if ``block`` is 1x1
         channel (:obj:`tuple` [:obj:`int`, :obj:`int` ]): position of the routing channel relative to this cbox
@@ -127,18 +129,20 @@ def populate_connection_box(box, segments, block, orientation, position = None, 
         if not (port.net_class.is_blockport and port.position == position and
                 port.orientation in (orientation, Orientation.auto)):
             continue
-        for subblock in range(block.capacity):
+        for subblock in range(capacity):
             box.get_or_create_node(BlockPortID(pos_port_rel_to_cbox, port, subblock))
 
-def generate_fc(box, segments, block, orientation, fc, position = None, channel = (0, 0), create_nets_if_absent = True): 
+def generate_fc(box, segments, block, orientation, fc,
+        capacity = 1, position = None, channel = (0, 0), create_nets_if_absent = True): 
     """Add port-segment connections using FC values.
 
     Args:
         box (`AbstractConnectionBox`):
-        segments (:obj:`Sequence` [`SegmentPrototype` ]):
+        segments (:obj:`Sequence` [`Segment` ]):
         block (`AbstractBlock`):
         orientation (`Orientation`):
         fc (`BlockFCValue`):
+        capacity (:obj:`int`): Number of blocks connected to this box
         position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): position of the ports in ``block`` that are connected by
             this cbox. This argument can be omitted if ``block`` is 1x1
         channel (:obj:`tuple` [:obj:`int`, :obj:`int` ]): position of the routing channel relative to this cbox
@@ -165,7 +169,7 @@ def generate_fc(box, segments, block, orientation, fc, position = None, channel 
                 continue
             imax = port.direction.case(sgmt.length * sgmt.width, sgmt.width)
             istep = max(1, imax // nc)                  # index step
-            for _, port_idx, subblock in product(range(nc), range(port.width), range(block.capacity)):
+            for _, port_idx, subblock in product(range(nc), range(port.width), range(capacity)):
                 # get the section and track id to be connected
                 section = port.direction.case(iti[sgmt_idx] % sgmt.length, 0)
                 track_idx = port.direction.case(iti[sgmt_idx] // sgmt.length, oti[sgmt_idx])

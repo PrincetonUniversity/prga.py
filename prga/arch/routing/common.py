@@ -13,25 +13,21 @@ from collections import namedtuple
 from abc import abstractproperty
 from copy import copy
 
-__all__ = ['SegmentPrototype', 'SegmentBridgeType', 'SegmentID', 'BlockPortID']
+__all__ = ['Segment', 'SegmentBridgeType', 'SegmentID', 'BlockPortID']
 
 # ----------------------------------------------------------------------------
 # -- Segment Prototype -------------------------------------------------------
 # ----------------------------------------------------------------------------
-class SegmentPrototype(Object):
+class Segment(namedtuple('Segment', 'name width length id_')):
     """Defining a segment prototype.
 
     Args:
         name (:obj:`str`): Name of this segment
         width (:obj:`int`): Number of wire segments originated from one tile to one orientation
         length (:obj:`int`): Length of this segment
+        id_ (:obj:`int`): ID of this segment
     """
-
-    __slots__ = ['name', 'width', 'length']
-    def __init__(self, name, width, length):
-        self.name = name
-        self.width = width
-        self.length = length
+    pass
 
 # ----------------------------------------------------------------------------
 # -- Segment Bridge Type -----------------------------------------------------
@@ -71,7 +67,7 @@ class AbstractRoutingNodeID(Hashable, Abstract):
 
     @abstractproperty
     def prototype(self):
-        """`AbstractBlockPort` or `SegmentPrototype`: Prototype of this routing node ID."""
+        """`AbstractBlockPort` or `Segment`: Prototype of this routing node ID."""
         raise NotImplementedError
 
     @abstractproperty
@@ -87,7 +83,7 @@ class SegmentID(Object, AbstractRoutingNodeID):
 
     Args:
         position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): anchor position
-        prototype (`SegmentPrototype`):
+        prototype (`Segment`):
         orientation (`Orientation`): orientation
         section (:obj:`int`): section of the segment if longer than 1
 
@@ -178,7 +174,7 @@ class SegmentBridgeID(SegmentID):
 
     Args:
         position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): anchor position
-        prototype (`SegmentPrototype`):
+        prototype (`Segment`):
         orientation (`Orientation`): orientation
         section (:obj:`int`): section of the segment if longer than 1
         bridge_type (`SegmentBridgeType`): type of this segment bridge
