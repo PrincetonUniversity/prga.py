@@ -54,7 +54,7 @@ class Flow(Object):
         """
         self._passes.append(pass_)
 
-    def run(self):
+    def run(self, context):
         """Run the flow."""
         # 1. resolve dependences/conflicts
         passes = OrderedDict()
@@ -117,8 +117,8 @@ class Flow(Object):
         for pass_ in passes:
             _logger.info("running pass '%s'", pass_.key)
             t = time.time()
-            pass_.run(self.__context)
-            # self.__context._passes_applied.add(pass_.key)
+            pass_.run(context)
+            # context._passes_applied.add(pass_.key)
             _logger.info("pass '%s' took %f seconds", pass_.key, time.time() - t)
         if self._drop_cache_after_end:
             context._cache = {}

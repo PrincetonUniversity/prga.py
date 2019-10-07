@@ -119,20 +119,25 @@ def find_segment_driver(array, node, create_input = True):
                 return pin
     return None
 
-def create_and_connect_cs_bridge(array, source):
+def create_and_connect_cs_bridge(array, source, create_output = True):
     """Create and connect connection box - switch box bridges recursively.
 
     Args:
         array (`Array`): Parent array of the bridge
         source (`RoutingNodeOutputPin` or `RoutingNodeInputPort`): Bridge driver
+        create_output (:obj:`bool`): If no sink pin found, an output port will be created
     """
     node = source.node
     pos_sbox = node.position - node.orientation.case((0, 1), (1, 0), (0, 0), (0, 0))
     if not array.covers_sbox(pos_sbox):
         for type_ in (SegmentBridgeType.array_cboxout, SegmentBridgeType.array_cboxout2):
-            arrayport = array.get_or_create_node(node.to_bridge_id(bridge_type = type_), PortDirection.output)
-            if all(bit is UNCONNECTED for bit in arrayport.source) or arrayport.source is source:
-                arrayport.source = source
+            arraynode = node.to_bridge_id(bridge_type = type_)
+            arrayport = array.all_nodes.get(arraynode, None)
+            if arrayport is None:
+                if create_output:
+                    array.get_or_create_node(arraynode, PortDirection.output).source = source
+                return
+            elif arrayport.source is source:
                 return
         raise PRGAInternalError("Got the third connection box - switch box bridge: {} in array '{}'"
                 .format(node, array))
@@ -184,13 +189,13 @@ def netify_array(array, top = False):
                     if node.node_type.is_segment_bridge:
                         if node.bridge_type.is_array_regular and pin.direction.is_input:
                             # search for segment driver
-                            driver = find_segment_driver(array, node.to_driver_id())
+                            driver = find_segment_driver(array, node.to_driver_id(), not top)
                             if driver is None:
                                 continue
                             pin.source = driver
                         elif ((node.bridge_type.is_array_cboxout or node.bridge_type.is_array_cboxout2) and
                                 pin.direction.is_output):
-                            create_and_connect_cs_bridge(array, pin)
+                            create_and_connect_cs_bridge(array, pin, not top)
                 elif pin.net_class.is_io:
                     node = pin.node
                     if pin.direction.is_input:
@@ -205,7 +210,7 @@ def netify_array(array, top = False):
                 node = sboxpin.node
                 if not (node.node_type.is_segment_bridge and node.bridge_type.is_sboxin_regular):
                     continue
-                driver = find_segment_driver(array, node.to_driver_id())
+                driver = find_segment_driver(array, node.to_driver_id(), not top)
                 if driver is None:
                     continue
                 sboxpin.source = driver

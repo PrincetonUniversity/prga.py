@@ -5,7 +5,11 @@ from prga.compatible import *
 
 from prga.arch.common import Orientation
 from prga.arch.array.common import ChannelCoverage
+from prga.algorithm.design.cbox import BlockPortFCValue, BlockFCValue
 from prga.flow.context import BaseArchitectureContext
+from prga.flow.flow import Flow
+from prga.flow.design import CompleteRoutingBox, CompleteSwitch, CompleteConnection
+from prga.flow.rtlgen import GenerateVerilog
 
 def test_flow(tmpdir):
     context = BaseArchitectureContext('mock_array', 8, 8)
@@ -91,3 +95,15 @@ def test_flow(tmpdir):
 
     # 8. create a pickled version
     context.pickle(tmpdir.join('ctx.pickled').open(OpenMode.w))
+
+    # 9. flow
+    flow = Flow((
+        CompleteRoutingBox(BlockFCValue(BlockPortFCValue(0.25), BlockPortFCValue(0.1))),
+        CompleteSwitch(),
+        CompleteConnection(),
+        GenerateVerilog()
+            ))
+
+    # 10. run flow
+    oldcwd = tmpdir.chdir()
+    flow.run(context)

@@ -15,12 +15,12 @@ def analyze_hierarchy(context, drop_cache = False):
         if cache is not None:
             return cache
     hierarchy = context._cache['hierarchy'] = {}
-    modules = {context.top}
+    modules = {context.top.name: context.top}
     while modules:
-        module = modules.pop()
-        subhierarchy = hierarchy.setdefault(module.name, {})
-        for instance in module.all_instances:
+        name, module = modules.popitem()
+        subhierarchy = hierarchy.setdefault(name, {})
+        for instance in itervalues(module.all_instances):
             if instance.model.name not in hierarchy:
-                modules.add(instance.model)
+                modules[instance.model.name] = instance.model
             subhierarchy[instance.model.name] = instance.model
     return hierarchy
