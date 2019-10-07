@@ -18,16 +18,16 @@ from prga.exception import PRGAInternalError
 from collections import OrderedDict
 from abc import abstractmethod
 
-__all__ = ['BaseMultimode']
+__all__ = ['Multimode']
 
 # ----------------------------------------------------------------------------
 # -- Mode Ports Proxy --------------------------------------------------------
 # ----------------------------------------------------------------------------
 class _ModePortsProxy(Mapping):
-    """Helper class for `BaseMode._ports` property.
+    """Helper class for `Mode._ports` property.
 
     Args:
-        mode (`BaseMode`): Parent mode
+        mode (`Mode`): Parent mode
     """
 
     __slots__ = ["mode"]
@@ -52,12 +52,12 @@ class _ModePortsProxy(Mapping):
 # ----------------------------------------------------------------------------
 # -- Mode --------------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class BaseMode(ClusterLike):
+class Mode(ClusterLike):
     """One mode of a multi-mode primitive.
 
     Args:
         name (:obj:`str`): Name of the mode
-        parent (`BaseMultimode`): Parent multi-mode primitive of this mode
+        parent (`Multimode`): Parent multi-mode primitive of this mode
 
     Note:
         This class and its API are not enough to describe a mode. Since multi-mode modules
@@ -67,7 +67,7 @@ class BaseMode(ClusterLike):
 
     __slots__ = ['_parent', '_mapped_ports', '_instances']
     def __init__(self, name, parent):
-        super(BaseMode, self).__init__(name)
+        super(Mode, self).__init__(name)
         self._parent = parent
         self._mapped_ports = {}
         self._instances = OrderedDict()
@@ -78,23 +78,13 @@ class BaseMode(ClusterLike):
         return _ModePortsProxy(self)
 
     def _validate_model(self, model):
-        if not (model.module_class.is_primitive and
-                model.primitive_class in (PrimitiveClass.lut, PrimitiveClass.flipflop, PrimitiveClass.memory,
-                    PrimitiveClass.custom)):
-            raise PRGAInternalError("Only primitives may be instantiated in a mode.")
-
-    def _connect(self, source, sink, pack_pattern):
-        if sink.source is not UNCONNECTED:
-            raise PRGAInternalError(
-                    "'{}' is already connected to '{}'. Cannot add configurable connections in mode '{}'"
-                    .format(sink, sink.source, self))
-        super(BaseMode, self)._connect(source, sink, pack_pattern)
-        sink.source = source
+        if not (model.module_class.is_primitive or model.module_class.is_cluster):
+            raise PRGAInternalError("Only primitives and clusters may be instantiated in a mode.")
 
     # == low-level API =======================================================
     @property
     def parent(self):
-        """`BaseMultimode`: Parent multi-mode primitive of this mode."""
+        """`Multimode`: Parent multi-mode primitive of this mode."""
         return self._parent
 
     # -- implementing properties/methods required by superclass --------------
@@ -109,7 +99,7 @@ class BaseMode(ClusterLike):
 # ----------------------------------------------------------------------------
 # -- Multi-mode Primitive ----------------------------------------------------
 # ----------------------------------------------------------------------------
-class BaseMultimode(BaseModule, AbstractPrimitive):
+class Multimode(BaseModule, AbstractPrimitive):
     """Multi-mode primitve.
 
     Args:
@@ -123,7 +113,7 @@ class BaseMultimode(BaseModule, AbstractPrimitive):
 
     __slots__ = ['_ports', '_modes', '_verilog_template']
     def __init__(self, name, verilog_template):
-        super(BaseMultimode, self).__init__(name)
+        super(Multimode, self).__init__(name)
         self._ports = OrderedDict()
         self._modes = OrderedDict()
         self._verilog_template = verilog_template
@@ -133,7 +123,7 @@ class BaseMultimode(BaseModule, AbstractPrimitive):
         """Add a mode to this primitive.
 
         Args:
-            mode (`BaseMode`):
+            mode (`Mode`):
         """
         if mode.name in self._modes:
             raise PRGAInternalError("Mode '{}' already exist in multi-mode primitive '{}'"
@@ -143,7 +133,7 @@ class BaseMultimode(BaseModule, AbstractPrimitive):
     # == low-level API =======================================================
     @property
     def modes(self):
-        """:obj:`Mapping`: [:obj:`str`, `BaseMode` ]: A mapping from mode names to modes."""
+        """:obj:`Mapping`: [:obj:`str`, `Mode` ]: A mapping from mode names to modes."""
         return self._modes
 
     def create_clock(self, name):
@@ -178,14 +168,13 @@ class BaseMultimode(BaseModule, AbstractPrimitive):
         """
         return self._add_port(MultimodeOutputPort(self, name, width, clock, combinational_sources))
 
-    @abstractmethod
     def create_mode(self, name):
         """Create a mode in this multi-mode primitive.
 
         Args:
             name (:obj:`str`): Name of the mode to create
         """
-        raise NotImplementedError
+        return self._add_mode(Mode(name, self))
 
     # -- implementing properties/methods required by superclass --------------
     @property

@@ -17,7 +17,7 @@ class MultimodeClockPort(BaseCustomClockPort):
     """Multimode module's clock port.
 
     Args:
-        parent (`BaseMultimode`): Parent module of this port
+        parent (`Multimode`): Parent module of this port
         name (:obj:`str`): Name of this port
     """
 
@@ -38,7 +38,7 @@ class MultimodeInputPort(BaseLeafInputPort):
     """Multimode module's input port.
 
     Args:
-        parent (`BaseMultimode`): Parent module of this port
+        parent (`Multimode`): Parent module of this port
         name (:obj:`str`): Name of this port
         width (:obj:`int`): Width of this port
         clock (:obj:`str`): Clock of this port
@@ -61,7 +61,7 @@ class MultimodeOutputPort(BaseLeafOutputPort):
     """Multimode module's output port.
 
     Args:
-        parent (`BaseMultimode`): Parent module of this port
+        parent (`Multimode`): Parent module of this port
         name (:obj:`str`): Name of this port
         width (:obj:`int`): Width of this port
         clock (:obj:`str`): Clock of this port
@@ -86,7 +86,7 @@ class ModeInputPort(BaseInputPort):
     """Multimode module's input port mapped into a mode.
 
     Args:
-        parent (`BaseMode`): Parent mode of this port
+        parent (`Mode`): Parent mode of this port
         model (`MultimodeClockPort` or `MultimodeInputPort`): The port in the multimode module that is mapped to this
             port
     """
@@ -140,7 +140,7 @@ class ModeOutputPort(BaseOutputPort):
     """Multimode module's output port mapped into a mode.
 
     Args:
-        parent (`BaseMode`): Parent mode of this port
+        parent (`Mode`): Parent mode of this port
         model (`MultimodeClockPort` or `MultimodeInputPort`): The port in the multimode module that is mapped to this
             port
     """

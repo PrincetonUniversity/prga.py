@@ -4,15 +4,11 @@ from __future__ import division, absolute_import, print_function, unicode_litera
 from prga.compatible import *
 
 from prga.arch.primitive.builtin import LUT
-from prga.arch.multimode.multimode import BaseMode, BaseMultimode
+from prga.arch.multimode.multimode import Mode, Multimode
 from prga.arch.net.port import ConfigInputPort
 
-class MockMultimode(BaseMultimode):
-    def create_mode(self, name):
-        return self._add_mode(BaseMode(name, self))
-
 def test_multimode():
-    mm = MockMultimode('mock_multimode', 'fake_template')
+    mm = Multimode('mock_multimode', 'fake_template')
     lut5 = LUT(5)
     lut6 = LUT(6)
 
