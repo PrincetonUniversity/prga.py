@@ -10,7 +10,7 @@ from prga.arch.routing.common import Segment
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.arch.routing.box import ConnectionBox, SwitchBox
 from prga.arch.array.common import ChannelCoverage
-from prga.arch.array.tile import Tile
+from prga.arch.array.tile import Tile, IOTile
 from prga.arch.array.array import Array
 from prga.algorithm.design.cbox import BlockPortFCValue, BlockFCValue, populate_connection_box, generate_fc
 from prga.algorithm.design.sbox import SwitchBoxEnvironment, populate_switch_box, generate_wilton
@@ -58,7 +58,7 @@ def test_io_leaf_array(tmpdir):
     block.create_output('inpad', 1)
 
     # 2. create tile
-    tile = Tile('mock_tile', block, 4)
+    tile = IOTile('mock_tile', block, 4, Orientation.west)
 
     # 3. cboxify
     cboxify(lib, tile, Orientation.east)
@@ -118,7 +118,7 @@ def test_complex_array(tmpdir):
     for ori in Orientation:
         if ori.is_auto:
             continue
-        tile = iob_tiles[ori] = Tile('mock_tile_io' + ori.name[0], iob, 4)
+        tile = iob_tiles[ori] = IOTile('mock_tile_io' + ori.name[0], iob, 4, ori)
         cboxify(lib, tile, ori.opposite)
         for (position, orientation), cbox_inst in iteritems(tile.cbox_instances):
             generate_fc(cbox_inst.model, sgmts, tile.block, orientation,

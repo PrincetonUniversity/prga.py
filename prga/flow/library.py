@@ -11,6 +11,7 @@ from prga.arch.common import Orientation
 from prga.arch.primitive.builtin import Inpad, Outpad, Iopad, Flipflop, LUT
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.arch.routing.box import ConnectionBox, SwitchBox
+from prga.algorithm.design.sbox import SwitchBoxEnvironment, populate_switch_box
 from prga.algorithm.design.switch import SwitchLibraryDelegate
 from prga.algorithm.design.array import SwitchBoxLibraryDelegate
 from prga.algorithm.design.tile import ConnectionBoxLibraryDelegate
@@ -18,7 +19,7 @@ from prga.util import Abstract, Object
 from prga.exception import PRGAInternalError
 
 import re
-from abc import abstractproperty
+from abc import abstractproperty, abstractmethod
 
 __all__ = ['BuiltinPrimitiveLibrary', 'BuiltinSwitchLibrary', 'BuiltinConnectionBoxLibrary', 'BuiltinSwitchBoxLibrary']
 
@@ -164,7 +165,7 @@ class BuiltinConnectionBoxLibrary(_BaseLibrary, ConnectionBoxLibraryDelegate):
 # ----------------------------------------------------------------------------
 # -- Switch Box Library ------------------------------------------------------
 # ----------------------------------------------------------------------------
-class BuiltinSwitchBoxLibrary(_BaseLibrary, SwitchLibraryDelegate):
+class BuiltinSwitchBoxLibrary(_BaseLibrary, SwitchBoxLibraryDelegate):
     """Built-in switch box library."""
 
     __slots__ = ['_sboxes']
@@ -181,6 +182,7 @@ class BuiltinSwitchBoxLibrary(_BaseLibrary, SwitchLibraryDelegate):
         name = 'sbox_{}'.format(''.join(map(lambda d: d.name[0],
             filter(lambda d: not d.is_auto and env[d], Orientation))))
         sbox = self._sboxes.setdefault( (env, drive_truncated), SwitchBox(name))
+        populate_switch_box(sbox, itervalues(self.context.segments), env, drive_truncated)
         return self.context._modules.setdefault(name, sbox)
 
     @property

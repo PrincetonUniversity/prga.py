@@ -9,7 +9,7 @@ from prga.arch.block.block import IOBlock, LogicBlock
 from prga.arch.routing.common import Segment
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.arch.routing.box import ConnectionBox
-from prga.arch.array.tile import Tile
+from prga.arch.array.tile import Tile, IOTile
 from prga.algorithm.design.cbox import BlockPortFCValue, BlockFCValue, populate_connection_box, generate_fc
 from prga.algorithm.design.tile import ConnectionBoxLibraryDelegate, cboxify, netify_tile
 from prga.algorithm.design.switch import SwitchLibraryDelegate, switchify
@@ -48,7 +48,7 @@ def test_io_tile(tmpdir):
     block.create_output('inpad', 1)
 
     # 2. create tile
-    tile = Tile('mock_tile', block, 4)
+    tile = IOTile('mock_tile', block, 4, Orientation.west)
 
     # 3. cboxify
     cboxify(lib, tile, Orientation.east)

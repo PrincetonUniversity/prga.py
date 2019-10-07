@@ -88,6 +88,8 @@ class Orientation(Enum):
             return Orientation.north
         elif self is Orientation.west:
             return Orientation.east
+        elif self is Orientation.auto:
+            return Orientation.auto
         else:
             raise PRGAInternalError("{} does not have an opposite Orientation".format(self))
 

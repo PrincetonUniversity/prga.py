@@ -51,7 +51,7 @@ def populate_switch_box(box, segments, env = SwitchBoxEnvironment(), drive_trunc
 
     Args:
         box (`SwitchBox`):
-        segments (:obj:`Sequence` [`Segment` ]):
+        segments (:obj:`Iterable` [`Segment` ]):
         env (`SwitchBoxEnvironment`):
         drive_truncated (:obj:`bool`): if truncated segments should be driven by this switch box
     """
@@ -116,7 +116,7 @@ def generate_wilton(box, segments, pattern = None, cycle_free = False):
 
     Args:
         box (`SwitchBox`):
-        segments (:obj:`Sequence` [`Segment` ]):
+        segments (:obj:`Iterable` [`Segment` ]):
         pattern (:obj:`Mapping` [:obj:`tuple` [`Orientation`, `Orientation` ], :obj:`int` ]): switch block pattern, a
             mapping from turns \(from_orientation, to_orientation\) to offsets. Note that U-turn and straight
             connection patterns will be ignored

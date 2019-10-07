@@ -3,19 +3,18 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.arch.common import Global
+from prga.arch.common import Global, Orientation
 from prga.arch.block.cluster import Cluster
 from prga.arch.block.block import IOBlock, LogicBlock
 from prga.arch.routing.common import Segment
 from prga.arch.array.common import ChannelCoverage
-from prga.arch.array.tile import Tile
+from prga.arch.array.tile import Tile, IOTile
 from prga.arch.array.array import Array
 from prga.algorithm.design.switch import SwitchLibraryDelegate
 from prga.algorithm.design.tile import ConnectionBoxLibraryDelegate
 from prga.algorithm.design.array import SwitchBoxLibraryDelegate
 from prga.flow.library import (PrimitiveLibraryDelegate,
         BuiltinPrimitiveLibrary, BuiltinSwitchLibrary, BuiltinConnectionBoxLibrary, BuiltinSwitchBoxLibrary)
-from prga.rtlgen.rtlgen import VerilogGenerator
 from prga.util import Object, uno, ReadonlyMappingProxy
 from prga.exception import PRGAAPIError, PRGAInternalError
 
@@ -73,11 +72,12 @@ class BaseArchitectureContext(Object):
             '_globals',             # global wire prototypes
             '_segments',            # wire segment prototypes
             '_modules',             # all created modules
-            '_vgen',                # verilog generator
+            '_additional_template_search_paths',
             '_primitive_lib',       # primitive library
             '_switch_lib',          # switch library
             '_cbox_lib',            # connection box library
             '_sbox_lib',            # switch box library
+            '_cache',               # non-pickled stuff
             ]
 
     def __init__(self, name, width, height,
@@ -92,22 +92,18 @@ class BaseArchitectureContext(Object):
         self._globals = OrderedDict()
         self._segments = OrderedDict()
         self._modules = OrderedDict()
-        self._vgen = VerilogGenerator(additional_template_search_paths)
+        self._additional_template_search_paths = additional_template_search_paths
         self._primitive_lib = uno(primitive_library, BuiltinPrimitiveLibrary(self))
         self._switch_lib = uno(switch_library, BuiltinSwitchLibrary(self))
         self._cbox_lib = uno(connection_box_library, BuiltinConnectionBoxLibrary(self))
         self._sbox_lib = uno(switch_box_library, BuiltinSwitchBoxLibrary(self))
+        self._cache = {}
 
     # == low-level API =======================================================
     @property
     def modules(self):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to modules."""
         return ReadonlyMappingProxy(self._modules)
-
-    @property
-    def verilog_generator(self):
-        """`VerilogGenerator`: Verilog generator."""
-        return self._vgen
 
     @property
     def primitive_library(self):
@@ -254,19 +250,34 @@ class BaseArchitectureContext(Object):
             raise PRGAAPIError("Module '{}' is already created".format(name))
         return self._modules.setdefault(name, LogicBlock(name, width, height))
 
+    # -- Connection Boxes ----------------------------------------------------
+    @property
+    def connection_boxes(self):
+        """:obj:`Mapping` [:obj:`str`, `ConnectionBox` ]: A mapping from names to connection boxes."""
+        return ReadonlyMappingProxy(self._modules, lambda kv: kv[1].module_class.is_connection_box)
+
+    # -- Switch Boxes --------------------------------------------------------
+    @property
+    def switch_boxes(self):
+        """:obj:`Mapping` [:obj:`str`, `SwitchBox` ]: A mapping from names to switch boxes."""
+        return ReadonlyMappingProxy(self._modules, lambda kv: kv[1].module_class.is_switch_box)
+
     # -- Tiles ---------------------------------------------------------------
     @property
     def tiles(self):
         """:obj:`Mapping` [:obj:`str`, `Tile` ]: A mapping from names to tiles."""
         return ReadonlyMappingProxy(self._modules, lambda kv: kv[1].module_class.is_tile)
 
-    def create_tile(self, name, block, capacity = 1):
+    def create_tile(self, name, block, capacity = None, orientation = None):
         """Create a tile.
 
         Args:
             name (:obj:`str`): Name of the tile
             block (`IOBlock` or `LogicBlock`): Block in this tile
-            capacity (:obj:`int`): Number of block instances in this tile
+            capacity (:obj:`int`): Number of block instances in this tile. Required and only used if ``block`` is
+                an `IOBlock`
+            orientation (`Orientation`): On which side of the top-level array should the tile be placed on. Required
+                and only used if ``block`` is an `IOBlock`
 
         Returns:
             `Tile`: The created tile
@@ -276,7 +287,13 @@ class BaseArchitectureContext(Object):
         """
         if name in self._modules:
             raise PRGAAPIError("Module '{}' is already created".format(name))
-        return self._modules.setdefault(name, Tile(name, block, capacity))
+        if block.module_class.is_io_block:
+            if capacity is None or orientation in (None, Orientation.auto):
+                raise PRGAAPIError("'capacity' and 'orientation' are required since '{}' is an IO block"
+                        .format(block))
+            return self._modules.setdefault(name, IOTile(name, block, capacity, orientation))
+        else:
+            return self._modules.setdefault(name, Tile(name, block))
 
     # -- Arrays --------------------------------------------------------------
     @property
@@ -307,19 +324,24 @@ class BaseArchitectureContext(Object):
         return self._modules.setdefault(name, Array(name, width, height, coverage))
 
     # -- Serialization -------------------------------------------------------
-    def pickle(self, filename):
+    def pickle(self, file_):
         """Pickle the architecture context into a file.
 
         Args:
-            filename (:obj:`str`): name of the output file
+            file_ (file-like object): output file
         """
-        pickle.dump(self, open(filename, OpenMode.w), 2)
+        # drop cache before pickling
+        cache = self._cache
+        self._cache = {}
+        pickle.dump(self, file_, 2)
+        # put cache back
+        self._cache = cache
 
     @staticmethod
-    def unpickle(filename):
+    def unpickle(file_):
         """Unpickle a pickled architecture context.
 
         Args:
-            filename (:obj:`str`): name of the pickled file
+            file_ (file-like object): the pickled file
         """
-        return pickle.load(open(filename, OpenMode.r))
+        return pickle.load(file_)
