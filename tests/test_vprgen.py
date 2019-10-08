@@ -8,7 +8,8 @@ from prga.arch.primitive.builtin import LUT, Flipflop
 from prga.arch.multimode.multimode import Multimode
 from prga.arch.block.cluster import Cluster
 from prga.arch.block.block import LogicBlock
-from prga.vprgen.block import vpr_arch_block
+from prga.arch.array.tile import Tile
+from prga.vprgen.arch import vpr_arch_tile
 from prga.xml import XMLGenerator
 
 def test_vprgen(tmpdir):
@@ -54,5 +55,7 @@ def test_vprgen(tmpdir):
         block.connect(inst.pins['o6'], outport[2 * i])
         block.connect(inst.pins['o5'], outport[2 * i + 1])
 
+    tile = Tile('clb_tile', block)
+
     with XMLGenerator(tmpdir.join('block.xml').open(OpenMode.w), True) as xmlgen:
-        vpr_arch_block(xmlgen, block)
+        vpr_arch_tile(xmlgen, tile)

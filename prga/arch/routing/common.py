@@ -18,14 +18,13 @@ __all__ = ['Segment', 'SegmentBridgeType', 'SegmentID', 'BlockPortID']
 # ----------------------------------------------------------------------------
 # -- Segment Prototype -------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Segment(namedtuple('Segment', 'name width length id_')):
+class Segment(namedtuple('Segment', 'name width length')):
     """Defining a segment prototype.
 
     Args:
         name (:obj:`str`): Name of this segment
         width (:obj:`int`): Number of wire segments originated from one tile to one orientation
         length (:obj:`int`): Length of this segment
-        id_ (:obj:`int`): ID of this segment
     """
     pass
 

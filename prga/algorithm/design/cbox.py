@@ -100,7 +100,7 @@ def populate_connection_box(box, segments, block, orientation,
     Args:
         box (`ConnectionBox`):
         segments (:obj:`Sequence` [`Segment` ]):
-        block (`AbstractBlock`):
+        block (`BaseBlock`):
         orientation (`Orientation`):
         capacity (:obj:`int`): Number of blocks connected to this box
         position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): position of the ports in ``block`` that are connected by
@@ -139,7 +139,7 @@ def generate_fc(box, segments, block, orientation, fc,
     Args:
         box (`AbstractConnectionBox`):
         segments (:obj:`Sequence` [`Segment` ]):
-        block (`AbstractBlock`):
+        block (`BaseBlock`):
         orientation (`Orientation`):
         fc (`BlockFCValue`):
         capacity (:obj:`int`): Number of blocks connected to this box

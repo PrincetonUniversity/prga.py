@@ -177,7 +177,7 @@ class BaseArchitectureContext(Object):
         """
         if name in self._segments:
             raise PRGAAPIError("Wire segment named '{}' is already created".format(name))
-        return self._segments.setdefault(name, Segment(name, width, length, len(self._segments)))
+        return self._segments.setdefault(name, Segment(name, width, length))
 
     # -- Primitives ----------------------------------------------------------
     @property

@@ -5,7 +5,6 @@ from prga.compatible import *
 
 from prga.arch.common import Orientation, Position
 from prga.arch.module.common import ModuleClass
-from prga.arch.module.module import AbstractModule
 from prga.arch.module.instance import RegularInstance
 from prga.arch.primitive.common import PrimitiveClass
 from prga.arch.block.port import (IOBlockGlobalInputPort, IOBlockInputPort, IOBlockOutputPort,
@@ -20,10 +19,16 @@ from collections import OrderedDict
 __all__ = ['IOBlock', 'LogicBlock']
 
 # ----------------------------------------------------------------------------
-# -- Abstract Block ----------------------------------------------------------
+# -- Base Class for Blocks ---------------------------------------------------
 # ----------------------------------------------------------------------------
-class AbstractBlock(AbstractModule):
-    """Abstract base class for blocks."""
+class BaseBlock(ClusterLike):
+    """Base class for blocks."""
+
+    __slots__ = ['_ports', '_instances']
+    def __init__(self, name):
+        super(BaseBlock, self).__init__(name)
+        self._ports = OrderedDict()
+        self._instances = OrderedDict()
 
     # == internal API ========================================================
     def _validate_orientation_and_position(self, orientation, position):
@@ -51,7 +56,7 @@ class AbstractBlock(AbstractModule):
 # ----------------------------------------------------------------------------
 # -- IO Block ----------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class IOBlock(ClusterLike, AbstractBlock):
+class IOBlock(BaseBlock):
     """IO block.
 
     Args:
@@ -59,11 +64,8 @@ class IOBlock(ClusterLike, AbstractBlock):
         io_primitive (`Inpad`, `Outpad` or `Iopad`): IO primitive to instantiate in this block
     """
 
-    __slots__ = ['_ports', '_instances']
     def __init__(self, name, io_primitive):
         super(IOBlock, self).__init__(name)
-        self._ports = OrderedDict()
-        self._instances = OrderedDict()
         instance = RegularInstance(self, io_primitive, 'io')
         self._add_instance(instance)
         if io_primitive.primitive_class in (PrimitiveClass.inpad, PrimitiveClass.iopad):
@@ -135,7 +137,7 @@ class IOBlock(ClusterLike, AbstractBlock):
 # ----------------------------------------------------------------------------
 # -- Logic Block -------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class LogicBlock(ClusterLike, AbstractBlock):
+class LogicBlock(BaseBlock):
     """Logic block.
 
     Args:
@@ -144,11 +146,9 @@ class LogicBlock(ClusterLike, AbstractBlock):
         height (:obj:`int`): Height of this block
     """
 
-    __slots__ = ['_ports', '_instances', '_width', '_height']
+    __slots__ = ['_width', '_height']
     def __init__(self, name, width = 1, height = 1):
         super(LogicBlock, self).__init__(name)
-        self._ports = OrderedDict()
-        self._instances = OrderedDict()
         self._width = width
         self._height = height
 

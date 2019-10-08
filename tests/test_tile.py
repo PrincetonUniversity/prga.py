@@ -38,7 +38,7 @@ def test_io_tile(tmpdir):
     io = Iopad()
     block = IOBlock('mock_block', io)
     glb = Global('clk', is_clock = True)
-    sgmts = [Segment('L1', 4, 1, 0), Segment('L2', 1, 2, 1)]
+    sgmts = [Segment('L1', 4, 1), Segment('L2', 1, 2)]
     lib = Library()
     gen = VerilogGenerator()
 
@@ -76,7 +76,7 @@ def test_logic_tile(tmpdir):
     mem = Memory(10, 8, 'mem8Kb')
     block = LogicBlock('mock_block', 1, 3)
     clk = Global('clk', is_clock = True)
-    sgmts = [Segment('L1', 4, 1, 0), Segment('L2', 1, 2, 1)]
+    sgmts = [Segment('L1', 4, 1), Segment('L2', 1, 2)]
     lib = Library()
     gen = VerilogGenerator()
 

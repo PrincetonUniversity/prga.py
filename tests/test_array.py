@@ -48,7 +48,7 @@ def test_io_leaf_array(tmpdir):
     io = Iopad()
     block = IOBlock('mock_block', io)
     glb = Global('clk', is_clock = True)
-    sgmts = [Segment('L1', 4, 1, 0)]
+    sgmts = [Segment('L1', 4, 1)]
     lib = Library()
     gen = VerilogGenerator()
 
@@ -103,7 +103,7 @@ def test_complex_array(tmpdir):
     io = Iopad()
     clk = Global('clk', is_clock = True)
     clk.bind((0, 1), 0)
-    sgmts = [Segment('L1', 4, 1, 0), Segment('L2', 1, 2, 1)]
+    sgmts = [Segment('L1', 4, 1), Segment('L2', 1, 2)]
     lib = Library()
     gen = VerilogGenerator()
 

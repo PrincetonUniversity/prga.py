@@ -27,7 +27,7 @@ class ConnectionBoxLibraryDelegate(Abstract):
         """Get a single-sided connection box module.
 
         Args:
-            block (`AbstractBlock`):
+            block (`BaseBlock`):
             orientation (`Orientation`):
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
             channal (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
@@ -45,11 +45,11 @@ class ConnectionBoxLibraryDelegate(Abstract):
 
         Args:
             dimension (`Dimension`): Dimension of the connectio box
-            block_ne (`AbstractBlock` or ``None``): Block to the north of this connection box if ``dimension`` is
+            block_ne (`BaseBlock` or ``None``): Block to the north of this connection box if ``dimension`` is
                 horizontal, or block to the east of this connection box if ``dimension`` is vertical
             position_ne (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this connection box relative to
                 ``block_ne``
-            block_sw (`AbstractBlock` or ``None``): Block to the south of this connection box if ``dimension`` is
+            block_sw (`BaseBlock` or ``None``): Block to the south of this connection box if ``dimension`` is
                 horizontal, or block to the west of this connection box if ``dimension`` is vertical
             position_sw (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this connection box relative to
                 ``block_sw``

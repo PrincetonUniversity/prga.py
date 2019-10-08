@@ -28,7 +28,7 @@ def test_connection_box(tmpdir):
     io = Iopad()
     block = IOBlock('mock_block', io)
     glb = Global('clk', is_clock = True)
-    sgmts = [Segment('L1', 4, 1, 0), Segment('L2', 1, 2, 1)]
+    sgmts = [Segment('L1', 4, 1), Segment('L2', 1, 2)]
     lib = SwitchLibrary()
     gen = VerilogGenerator()
 

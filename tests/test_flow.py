@@ -10,7 +10,8 @@ from prga.flow.context import BaseArchitectureContext
 from prga.flow.flow import Flow
 from prga.flow.design import CompleteRoutingBox, CompleteSwitch, CompleteConnection
 from prga.flow.rtlgen import GenerateVerilog
-from prga.vprgen.vprgen import vpr_arch_xml
+from prga.vprgen.arch import vpr_arch_xml
+from prga.vprgen.rrg import vpr_rrg_xml
 from prga.xml import XMLGenerator
 
 def test_flow(tmpdir):
@@ -113,3 +114,5 @@ def test_flow(tmpdir):
     # 11. generate VPR files
     with XMLGenerator(tmpdir.join('arch.xml').open(OpenMode.w), True) as xmlgen:
         vpr_arch_xml(xmlgen, context)
+    with XMLGenerator(tmpdir.join('rrg.xml').open(OpenMode.w), True) as xmlgen:
+        vpr_rrg_xml(xmlgen, context)

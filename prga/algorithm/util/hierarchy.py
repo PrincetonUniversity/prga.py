@@ -59,7 +59,7 @@ def hierarchical_net(net, hierarchy = None, inplace = False):
 # ----------------------------------------------------------------------------
 def hierarchical_position(instance):
     """Calculate the position of ``instance`` in the top-level array."""
-    return sum(inst.position for inst in instance)
+    return sum(iter(inst.position for inst in instance), Position(0, 0))
 
 # ----------------------------------------------------------------------------
 # -- Iterate Combinational Upstream of a Hierarchical Net --------------------

@@ -3,9 +3,13 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
+from prga.arch.common import Position
+from prga.flow.util import iter_all_tiles
+
 from itertools import chain, count, product
 
-__all__ = ['vpr_arch_primitive', 'vpr_arch_instance', 'vpr_arch_block']
+__all__ = ['vpr_arch_primitive', 'vpr_arch_instance', 'vpr_arch_tile', 'vpr_arch_layout',
+        'vpr_arch_segment', 'vpr_arch_default_switch', 'vpr_arch_xml']
 
 # ----------------------------------------------------------------------------
 # -- Primitive Model to VPR Architecture Description -------------------------
@@ -38,7 +42,7 @@ def vpr_arch_primitive(xmlgen, primitive):
                 xmlgen.element_leaf('port', attrs)
 
 # ----------------------------------------------------------------------------
-# -- Block to VPR Architecture Description -----------------------------------
+# -- Tile to VPR Architecture Description ------------------------------------
 # ----------------------------------------------------------------------------
 def _bit2vpr(bit, parent = None):
     if bit.net_type.is_port:
@@ -196,17 +200,21 @@ def vpr_arch_instance(xmlgen, instance):
     elif instance.model.module_class.is_primitive:  # primitive
         _vpr_arch_primitive_instance(xmlgen, instance)
 
-def vpr_arch_block(xmlgen, block, name = None):
-    """Convert a block into VPR architecture description.
+def vpr_arch_tile(xmlgen, tile):
+    """Convert a tile into VPR architecture description.
     
     Args:
         xmlgen (`XMLGenerator`):
-        instance (`AbstractBlock`):
-        name (:obj:`str`): Name of the tile this block sits in
+        tile (`Tile`):
     """
-    with xmlgen.element('pb_type', {'name': name or block.name}):
+    with xmlgen.element('pb_type', {
+        'name': tile.name,
+        'capacity': tile.capacity,
+        'width': tile.width,
+        'height': tile.height,
+        }):
         # 1. emit ports
-        for port in itervalues(block.ports):
+        for port in itervalues(tile.block.ports):
             attrs = {'name': port.name, 'num_pins': port.width}
             if port.net_class.is_global and not port.is_clock:
                 attrs['is_non_clock_global'] = "true"
@@ -214,4 +222,157 @@ def vpr_arch_block(xmlgen, block, name = None):
                     'clock' if port.is_clock else port.direction.case('input', 'output'),
                     attrs)
         # 2. do the rest of the cluster
-        _vpr_arch_clusterlike(xmlgen, block, name)
+        _vpr_arch_clusterlike(xmlgen, tile.block, tile.name)
+        # 3. for test only
+        if tile.block.module_class.is_io_block:
+            with xmlgen.element('pinlocations', {'pattern': 'custom'}):
+                xmlgen.element_leaf('loc', {'side': tile.orientation.case('bottom', 'left', 'top', 'right')},
+                        ' '.join('{}.{}'.format(tile.name, port) for port in tile.block.ports))
+
+# # ----------------------------------------------------------------------------
+# # -- Tile to VPR Architecture Description ------------------------------------
+# # ----------------------------------------------------------------------------
+# def vpr_arch_tile(xmlgen, tile):
+#     """Convert a tile into VPR architecture description.
+#     
+#     Args:
+#         xmlgen (`XMLGenerator`):
+#         tile (`Tile`):
+#     """
+#     with xmlgen.element('tile', {
+#         'name': tile.name,
+#         'capacity': tile.capacity,
+#         'width': tile.width,
+#         'height': tile.height,
+#         }):
+#         # 1. emit ports
+#         for port in itervalues(tile.block.ports):
+#             attrs = {'name': port.name, 'num_pins': port.width}
+#             if port.net_class.is_global and not port.is_clock:
+#                 attrs['is_non_clock_global'] = "true"
+#             xmlgen.element_leaf(
+#                     'clock' if port.is_clock else port.direction.case('input', 'output'),
+#                     attrs)
+#         # 2. equivalent sites
+#         with xmlgen.element('equivalent_sites'):
+#             xmlgen.element_leaf('site', {'pb_type': tile.name})
+
+# ----------------------------------------------------------------------------
+# -- Layout to VPR Architecture Description ----------------------------------
+# ----------------------------------------------------------------------------
+def _vpr_arch_array(xmlgen, array, position = (0, 0)):
+    """Convert an array to 'single' elements.
+
+    Args:
+        xmlgen (`XMLGenerator`):
+        array (`Array`):
+        position (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
+    """
+    position = Position(*position)
+    for pos, instance in iteritems(array.element_instances):
+        pos += position
+        if instance.module_class.is_tile:
+            xmlgen.element_leaf('single', {
+                'type': instance.model.name,
+                'priority': '1',
+                'x': pos.x,
+                'y': pos.y,
+                })
+        else:
+            _vpr_arch_array(xmlgen, instance.model, pos)
+
+def vpr_arch_layout(xmlgen, array):
+    """Convert a top-level array to VPR architecture description.
+
+    Args:
+        xmlgen (`XMLGenerator`):
+        array (`Array`):
+    """
+    with xmlgen.element('layout'):
+        with xmlgen.element('fixed_layout', {'name': array.name, 'width': array.width, 'height': array.height}):
+            _vpr_arch_array(xmlgen, array)
+
+# ----------------------------------------------------------------------------
+# -- Segment to VPR Architecture Description ---------------------------------
+# ----------------------------------------------------------------------------
+def vpr_arch_segment(xmlgen, segment):
+    """Convert a segment to VPR architecture description.
+
+    Args:
+        xmlgen (`XMLGenerator`):
+        segment (`Segment`):
+    """
+    with xmlgen.element('segment', {
+        'name': segment.name,
+        'freq': '1.0',
+        'length': str(segment.length),
+        'type': 'unidir',
+        'Rmetal': '0.0',
+        'Cmetal': '0.0',
+        }):
+        # fake switch
+        xmlgen.element_leaf('mux', {'name': 'default'})
+        xmlgen.element_leaf('sb', {'type': 'pattern'}, ' '.join(iter('1' for i in range(segment.length + 1))))
+        xmlgen.element_leaf('cb', {'type': 'pattern'}, ' '.join(iter('1' for i in range(segment.length))))
+
+def vpr_arch_default_switch(xmlgen):
+    """Generate a default switch tag to VPR architecture description.
+
+    Args:
+        xmlgen (`XMLGenerator`):
+    """
+    xmlgen.element_leaf('switch', {
+        'type': 'mux',
+        'name': 'default',
+        'R': '0.0',
+        'Cin': '0.0',
+        'Cout': '0.0',
+        'Tdel': '1e-11',
+        'mux_trans_size': '0.0',
+        'buf_size': '0.0',
+        })
+
+# ----------------------------------------------------------------------------
+# -- Generate Full VPR Architecture XML --------------------------------------
+# ----------------------------------------------------------------------------
+def vpr_arch_xml(xmlgen, context):
+    """Generate the full VPR architecture XML for ``context``.
+
+    Args:
+        xmlgen (`XMLGenerator`):
+        context (`BaseArchitectureContext`):
+    """
+    with xmlgen.element('architecture'):
+        # models
+        with xmlgen.element('models'):
+            for primitive in itervalues(context.primitives):
+                if primitive.primitive_class.is_custom or primitive.primitive_class.is_memory:
+                    vpr_arch_primitive(xmlgen, primitive)
+        # # tiles
+        # with xmlgen.element('tiles'):
+        #     for tile in iter_all_tiles(context):
+        #         vpr_arch_tile(xmlgen, tile)
+        # layout
+        vpr_arch_layout(xmlgen, context.top)
+        # device: faked
+        with xmlgen.element('device'):
+            xmlgen.element_leaf('sizing', {'R_minW_nmos': '0.0', 'R_minW_pmos': '0.0'})
+            xmlgen.element_leaf('connection_block', {'input_switch_name': 'default'})
+            xmlgen.element_leaf('area', {'grid_logic_tile_area': '0.0'})
+            xmlgen.element_leaf('switch_block', {'type': 'wilton', 'fs': '3'})
+            xmlgen.element_leaf('default_fc',
+                    {'in_type': 'frac', 'in_val': '1.0', 'out_type': 'frac', 'out_val': '1.0'})
+            with xmlgen.element('chan_width_distr'):
+                xmlgen.element_leaf('x', {'distr': 'uniform', 'peak': '1.0'})
+                xmlgen.element_leaf('y', {'distr': 'uniform', 'peak': '1.0'})
+        # switchlist
+        with xmlgen.element('switchlist'):
+            vpr_arch_default_switch(xmlgen)
+        # segmentlist
+        with xmlgen.element('segmentlist'):
+            for segment in itervalues(context.segments):
+                vpr_arch_segment(xmlgen, segment)
+        # complexblocklist
+        with xmlgen.element('complexblocklist'):
+            for tile in iter_all_tiles(context):
+                vpr_arch_tile(xmlgen, tile)

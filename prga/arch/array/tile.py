@@ -6,7 +6,6 @@ from prga.compatible import *
 from prga.arch.common import Dimension, Orientation
 from prga.arch.module.common import ModuleClass
 from prga.arch.module.module import BaseModule
-from prga.arch.block.block import AbstractBlock
 from prga.arch.array.common import ChannelCoverage
 from prga.arch.array.module import AbstractArrayElement
 from prga.arch.array.instance import BlockInstance, ConnectionBoxInstance
@@ -51,7 +50,7 @@ class Tile(BaseModule, AbstractArrayElement):
 
     @property
     def block(self):
-        """`AbstractBlock`: The block instantiated in this tile."""
+        """`BaseBlock`: The block instantiated in this tile."""
         return self.all_instances[0].model
 
     def instantiate_cbox(self, box, orientation, position = None):

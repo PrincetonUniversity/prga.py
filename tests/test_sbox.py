@@ -23,7 +23,7 @@ class SwitchLibrary(SwitchLibraryDelegate):
         return False
 
 def test_switch_box(tmpdir):
-    sgmts = [Segment('L1', 4, 1, 0), Segment('L2', 1, 2, 1)]
+    sgmts = [Segment('L1', 4, 1), Segment('L2', 1, 2)]
     lib = SwitchLibrary()
     gen = VerilogGenerator()
 

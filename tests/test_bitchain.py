@@ -53,7 +53,7 @@ class Library(SwitchLibraryDelegate, ConnectionBoxLibraryDelegate, ConfigBitchai
 def test_bitchain(tmpdir):
     clk = Global('clk', is_clock = True)
     rst = Global('rst')
-    sgmts = [Segment('L1', 64, 1, 0)]
+    sgmts = [Segment('L1', 64, 1)]
     lib = Library()
     gen = VerilogGenerator( (CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH, ) )
 

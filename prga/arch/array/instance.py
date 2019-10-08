@@ -17,7 +17,7 @@ class BlockInstance(BaseInstance):
 
     Args:
         parent (`Tile`): Parent tile of this instance
-        model (`AbstractBlock`): Model of this instance
+        model (`BaseBlock`): Model of this instance
         subblock (:obj:`int`): Sub-block ID of this instance in the tile
     """
 
