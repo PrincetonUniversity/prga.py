@@ -5,15 +5,48 @@ from prga.compatible import *
 
 from itertools import chain, count, product
 
-__all__ = ['vpr_arch_instance', 'vpr_arch_block']
+__all__ = ['vpr_arch_primitive', 'vpr_arch_instance', 'vpr_arch_block']
 
 # ----------------------------------------------------------------------------
-# -- Instance to VPR Architecture Description --------------------------------
+# -- Primitive Model to VPR Architecture Description -------------------------
 # ----------------------------------------------------------------------------
-def _bit2vpr(bit):
-    return '{}.{}[{}]'.format(bit.parent.name, bit.bus.name, bit.index)
+def vpr_arch_primitive(xmlgen, primitive):
+    with xmlgen.element('model', {'name': primitive.name}):
+        with xmlgen.element('input_ports'):
+            for iname, input_ in iteritems(primitive.ports):
+                if not input_.direction.is_input:
+                    continue
+                attrs = {'name': iname}
+                combinational_sink_ports = ' '.join(iter(oname for oname, output in iteritems(primitive.ports)
+                    if output.direction.is_output and iname in output.combinational_sources))
+                if combinational_sink_ports:
+                    attrs['combinational_sink_ports'] = combinational_sink_ports
+                if input_.is_clock:
+                    attrs['is_clock'] = '1'
+                elif input_.clock:
+                    attrs['clock'] = input_.clock
+                xmlgen.element_leaf('port', attrs)
+        with xmlgen.element('output_ports'):
+            for oname, output in iteritems(primitive.ports):
+                if not output.direction.is_output:
+                    continue
+                attrs = {'name': oname}
+                if output.is_clock:
+                    attrs['is_clock'] = '1'
+                elif output.clock:
+                    attrs['clock'] = output.clock
+                xmlgen.element_leaf('port', attrs)
 
-def _vpr_arch_clusterlike(xmlgen, module):
+# ----------------------------------------------------------------------------
+# -- Block to VPR Architecture Description -----------------------------------
+# ----------------------------------------------------------------------------
+def _bit2vpr(bit, parent = None):
+    if bit.net_type.is_port:
+        return '{}.{}[{}]'.format(parent or bit.parent.name, bit.bus.name, bit.index)
+    else:
+        return '{}.{}[{}]'.format(bit.parent.name, bit.bus.name, bit.index)
+
+def _vpr_arch_clusterlike(xmlgen, module, parent = None):
     """Emit ``"pb_type"`` content for cluster-like modules."""
     # 1. emit sub-instances
     for instance in itervalues(module.instances):
@@ -30,27 +63,27 @@ def _vpr_arch_clusterlike(xmlgen, module):
                 elif len(sources) == 1:
                     with xmlgen.element('direct', {
                         'name': 'direct_{}_{}_{}'.format(sink.parent.name, sink.bus.name, sink.index),
-                        'input': _bit2vpr(sources[0]),
-                        'output': _bit2vpr(sink),
+                        'input': _bit2vpr(sources[0], parent),
+                        'output': _bit2vpr(sink, parent),
                         }):
                         if (sources[0], sink) in module.pack_patterns:
                             xmlgen.element_leaf('pack_pattern', {
                                 'name': 'pack_{}_{}_{}'.format(sink.parent.name, sink.bus.name, sink.index),
-                                'in_port': _bit2vpr(sources[0]),
-                                'out_port': _bit2vpr(sink),
+                                'in_port': _bit2vpr(sources[0], parent),
+                                'out_port': _bit2vpr(sink, parent),
                                 })
                 else:
                     with xmlgen.element('mux', {
                         'name': 'mux_{}_{}_{}'.format(sink.parent.name, sink.bus.name, sink.index),
-                        'input': ' '.join(map(_bit2vpr, sources)),
-                        'output': _bit2vpr(sink),
+                        'input': ' '.join(map(lambda x: _bit2vpr(x, parent), sources)),
+                        'output': _bit2vpr(sink, parent),
                         }):
                         # fake timing
                         for source in sources:
                             xmlgen.element_leaf('delay_constant', {
                                 'max': '1e-11',
-                                'in_port': _bit2vpr(source),
-                                'out_port': _bit2vpr(sink),
+                                'in_port': _bit2vpr(source, parent),
+                                'out_port': _bit2vpr(sink, parent),
                                 })
 
 def _vpr_arch_cluster_instance(xmlgen, instance):
@@ -63,7 +96,7 @@ def _vpr_arch_cluster_instance(xmlgen, instance):
                     'clock' if port.is_clock else port.direction.case('input', 'output'),
                     {'name': port.name, 'num_pins': port.width})
         # 2. do the rest of the cluster
-        _vpr_arch_clusterlike(xmlgen, cluster)
+        _vpr_arch_clusterlike(xmlgen, cluster, instance.name)
 
 def _vpr_arch_primitive_instance(xmlgen, instance):
     """Emit ``"pb_type"`` for primitive instance."""
@@ -99,7 +132,7 @@ def _vpr_arch_primitive_instance(xmlgen, instance):
             # 2. emit modes
             for mode in itervalues(instance.model.modes):
                 with xmlgen.element('mode', {'name': mode.name}):
-                    _vpr_arch_clusterlike(xmlgen, mode)
+                    _vpr_arch_clusterlike(xmlgen, mode, instance.name)
         return
     attrs = {'name': instance.name, 'num_pb': '1'}
     if primitive.primitive_class.is_lut:
@@ -131,14 +164,14 @@ def _vpr_arch_primitive_instance(xmlgen, instance):
                 if port.direction.is_input:
                     for bit in port:
                         xmlgen.element_leaf('T_setup', {
-                            'port': _bit2vpr(bit),
+                            'port': _bit2vpr(bit, instance.name),
                             'value': '1e-11',
                             'clock': port.clock,
                             })
                 else:
                     for bit in port:
                         xmlgen.element_leaf('T_clock_to_Q', {
-                            'port': _bit2vpr(bit),
+                            'port': _bit2vpr(bit, instance.name),
                             'max': '1e-11',
                             'clock': port.clock,
                             })
@@ -147,22 +180,38 @@ def _vpr_arch_primitive_instance(xmlgen, instance):
                     for src, sink in product(iter(primitive.ports[source]), iter(port)):
                         xmlgen.element_leaf('delay_constant', {
                             'max': '1e-11',
-                            'in_port': _bit2vpr(src),
-                            'out_port': _bit2vpr(sink),
+                            'in_port': _bit2vpr(src, instance.name),
+                            'out_port': _bit2vpr(sink, instance.name),
                             })
 
 def vpr_arch_instance(xmlgen, instance):
+    """Convert an instance in a block into VPR architecture description.
+    
+    Args:
+        xmlgen (`XMLGenerator`):
+        instance (`RegularInstance`):
+    """
     if instance.model.module_class.is_cluster:      # cluster
         _vpr_arch_cluster_instance(xmlgen, instance)
     elif instance.model.module_class.is_primitive:  # primitive
         _vpr_arch_primitive_instance(xmlgen, instance)
 
-def vpr_arch_block(xmlgen, block):
-    with xmlgen.element('pb_type', {'name': block.name}):
+def vpr_arch_block(xmlgen, block, name = None):
+    """Convert a block into VPR architecture description.
+    
+    Args:
+        xmlgen (`XMLGenerator`):
+        instance (`AbstractBlock`):
+        name (:obj:`str`): Name of the tile this block sits in
+    """
+    with xmlgen.element('pb_type', {'name': name or block.name}):
         # 1. emit ports
         for port in itervalues(block.ports):
+            attrs = {'name': port.name, 'num_pins': port.width}
+            if port.net_class.is_global and not port.is_clock:
+                attrs['is_non_clock_global'] = "true"
             xmlgen.element_leaf(
                     'clock' if port.is_clock else port.direction.case('input', 'output'),
-                    {'name': port.name, 'num_pins': port.width})
+                    attrs)
         # 2. do the rest of the cluster
-        _vpr_arch_clusterlike(xmlgen, block)
+        _vpr_arch_clusterlike(xmlgen, block, name)

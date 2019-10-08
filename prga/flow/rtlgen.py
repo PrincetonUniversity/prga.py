@@ -24,13 +24,13 @@ class GenerateVerilog(Object, AbstractPass):
     def run(self, context):
         vgen = VerilogGenerator(context._additional_template_search_paths)
         hierarchy = analyze_hierarchy(context)
-        queue = [context.top]
-        generated = set()
+        visited = set()
+        queue = {context.top.name: context.top}
         while queue:
-            module = queue.pop(0)
-            for name, sub in iteritems(hierarchy[module.name]):
-                if name in generated or not sub.is_physical:
+            name, module = queue.popitem()
+            visited.add(name)
+            vgen.generate_module(open(name + '.v', OpenMode.w), module)
+            for subname, sub in iteritems(hierarchy[name]):
+                if subname in visited or subname in queue or not sub.is_physical:
                     continue
-                queue.append(sub)
-            vgen.generate_module(open(module.name + '.v', OpenMode.w), module)
-            generated.add(module.name)
+                queue[subname] = sub
