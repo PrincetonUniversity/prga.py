@@ -139,7 +139,7 @@ def test_bitchain(tmpdir):
     netify_tile(tile)
 
     # 4. array
-    array = lib.add_module(Array('macrotile', 1, 1, ChannelCoverage(north = True, east = True)))
+    array = lib.add_module(Array('macrotile', 1, 1, coverage = ChannelCoverage(north = True, east = True)))
     array.instantiate_element(tile, (0, 0))
     sboxify(lib, array)
     for sbox_inst in itervalues(array.sbox_instances):

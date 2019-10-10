@@ -88,7 +88,7 @@ class BaseArchitectureContext(Object):
             switch_box_library = None
             ):
         super(BaseArchitectureContext, self).__init__()
-        self._top = Array(name, width, height)
+        self._top = Array(name, width, height, True)
         self._globals = OrderedDict()
         self._segments = OrderedDict()
         self._modules = OrderedDict()
@@ -321,7 +321,7 @@ class BaseArchitectureContext(Object):
         """
         if name in self._modules:
             raise PRGAAPIError("Module '{}' is already created".format(name))
-        return self._modules.setdefault(name, Array(name, width, height, coverage))
+        return self._modules.setdefault(name, Array(name, width, height, False, coverage))
 
     # -- Serialization -------------------------------------------------------
     def pickle(self, file_):

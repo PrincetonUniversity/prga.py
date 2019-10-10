@@ -223,11 +223,30 @@ def vpr_arch_tile(xmlgen, tile):
                     attrs)
         # 2. do the rest of the cluster
         _vpr_arch_clusterlike(xmlgen, tile.block, tile.name)
-        # 3. for test only
-        if tile.block.module_class.is_io_block:
-            with xmlgen.element('pinlocations', {'pattern': 'custom'}):
+        # 3. pin locations
+        with xmlgen.element('pinlocations', {'pattern': 'custom'}):
+            if tile.block.module_class.is_io_block:
                 xmlgen.element_leaf('loc', {'side': tile.orientation.case('bottom', 'left', 'top', 'right')},
                         ' '.join('{}.{}'.format(tile.name, port) for port in tile.block.ports))
+            else:
+                for y in range(tile.height):
+                    # left
+                    xmlgen.element_leaf('loc', {'side': 'left', 'xoffset': '0', 'yoffset': str(y)},
+                        ' '.join('{}.{}'.format(tile.name, name) for name, port in iteritems(tile.block.ports)
+                            if port.position == (0, y) and port.orientation.is_west))
+                    # right
+                    xmlgen.element_leaf('loc', {'side': 'right', 'xoffset': str(tile.width - 1), 'yoffset': str(y)},
+                        ' '.join('{}.{}'.format(tile.name, name) for name, port in iteritems(tile.block.ports)
+                            if port.position == (tile.width - 1, y) and port.orientation.is_east))
+                for x in range(tile.width):
+                    # bottom
+                    xmlgen.element_leaf('loc', {'side': 'bottom', 'xoffset': str(x), 'yoffset': '0'},
+                        ' '.join('{}.{}'.format(tile.name, name) for name, port in iteritems(tile.block.ports)
+                            if port.position == (x, 0) and port.orientation.is_south))
+                    # right
+                    xmlgen.element_leaf('loc', {'side': 'top', 'xoffset': str(x), 'yoffset': str(tile.height - 1)},
+                        ' '.join('{}.{}'.format(tile.name, name) for name, port in iteritems(tile.block.ports)
+                            if port.position == (x, tile.height - 1) and port.orientation.is_north))
 
 # # ----------------------------------------------------------------------------
 # # -- Tile to VPR Architecture Description ------------------------------------

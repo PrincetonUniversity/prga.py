@@ -75,7 +75,7 @@ def test_io_leaf_array(tmpdir):
     netify_tile(tile)
 
     # 6. create array
-    array = Array('mock_array', tile.width, tile.height, ChannelCoverage(north = True, east = True))
+    array = Array('mock_array', tile.width, tile.height, coverage = ChannelCoverage(north = True, east = True))
 
     # 7. place tile
     array.instantiate_element(tile, (0, 0))
@@ -162,7 +162,7 @@ def test_complex_array(tmpdir):
     netify_tile(bram_tile)
 
     # 7. repetitive sub-array
-    subarray = Array('mock_sub_array', 3, 3, ChannelCoverage(north = True, east = True))
+    subarray = Array('mock_sub_array', 3, 3, coverage = ChannelCoverage(north = True, east = True))
     subarray.instantiate_element(bram_tile, (2, 0))
     for x in range(2):
         for y in range(3):

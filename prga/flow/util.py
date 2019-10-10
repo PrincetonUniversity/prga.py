@@ -54,3 +54,20 @@ def iter_all_tiles(context, drop_cache = False):
             elif sub.module_class.is_tile:
                 yield sub
                 visited.add(subname)
+
+def iter_all_sboxes(context, drop_cache = False):
+    """Iterate through all switch boxes in use in ``context``."""
+    hierarchy = analyze_hierarchy(context, drop_cache)
+    visited = set()
+    queue = {context.top.name: context.top}
+    while queue:
+        name, array = queue.popitem()
+        visited.add(name)
+        for subname, sub in iteritems(hierarchy[name]):
+            if subname in visited or subname in queue:
+                continue
+            elif sub.module_class.is_array:
+                queue[subname] = sub
+            elif sub.module_class.is_switch_box:
+                yield sub
+                visited.add(subname)

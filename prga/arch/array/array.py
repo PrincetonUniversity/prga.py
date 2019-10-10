@@ -124,14 +124,18 @@ class Array(BaseModule, AbstractArrayElement):
         name (:obj:`str`): Name of the array
         width (:obj:`int`): Width of the array
         height (:obj:`int`): Height of the array
+        is_top (:obj:`bool`): If this is the top-level array
         coverage (`ChannelCoverage`): Coverage of the adjacent channels surrouding this array
     """
 
-    __slots__ = ['_width', '_height', '_coverage', '_ports', '_sbox_grid', '_element_grid', '_nongrid_instances']
-    def __init__(self, name, width, height, coverage = ChannelCoverage()):
+    __slots__ = ['_width', '_height', '_is_top', '_coverage', '_ports', '_sbox_grid', '_element_grid', '_nongrid_instances']
+    def __init__(self, name, width, height, is_top = False, coverage = ChannelCoverage()):
+        if is_top and any(coverage):
+            raise PRGAInternalError("Top-level array cannot cover any surrouding routing channels")
         super(Array, self).__init__(name)
         self._width = width
         self._height = height
+        self._is_top = is_top
         self._coverage = coverage
         self._ports = OrderedDict()
         self._sbox_grid = [[None for _0 in range(height + 1)] for _1 in range(width + 1)]
@@ -145,6 +149,11 @@ class Array(BaseModule, AbstractArrayElement):
         return _ArrayInstancesProxy(self)
 
     # == low-level API =======================================================
+    @property
+    def is_top(self):
+        """:obj:`bool`: Test if this is a top-level array."""
+        return self._is_top
+
     @property
     def element_instances(self):
         """:obj:`Mapping` [:obj:`tuple` [:obj:`int`, :obj:`int` ], `ArrayElementInstance` ]: A mapping from tile
@@ -284,4 +293,5 @@ class Array(BaseModule, AbstractArrayElement):
         instance = self.get_root_element(position + dimension.case((0, 1), (1, 0)))
         if instance is not None and instance.model.covers_channel(position - instance.position, dimension):
             return instance.model.runs_channel(position - instance.position, dimension)
-        return True
+        return not self.is_top or (position.x < self.width - 1 and position.y < self.height - 1 and
+                dimension.case(position.x > 0, position.y > 0))
