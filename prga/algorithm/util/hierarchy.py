@@ -18,7 +18,7 @@ from prga.util import uno
 from prga.exception import PRGAInternalError
 from copy import copy
 
-__all__ = ['hierarchical_instance', 'hierarchical_net', 'hierarchical_position', 'iter_combinatinal_sources']
+__all__ = ['hierarchical_instance', 'hierarchical_net', 'hierarchical_position', 'hierarchical_source']
 
 # ----------------------------------------------------------------------------
 # -- Convert Regular Instance to Hierarchical Instance -----------------------
@@ -42,7 +42,7 @@ def hierarchical_net(net, hierarchy = None, inplace = False):
     If ``net`` is a pin bus/bit, it will be converted to one level of hierarchical instance and the corresponding
     port bus/bit.
     """
-    if net.is_pin:
+    if net.net_type.is_pin:
         if net.is_bus:
             return hierarchical_instance(net.parent, hierarchy, inplace), net.model
         else:
@@ -64,8 +64,8 @@ def hierarchical_position(instance):
 # ----------------------------------------------------------------------------
 # -- Iterate Combinational Upstream of a Hierarchical Net --------------------
 # ----------------------------------------------------------------------------
-def iter_combinatinal_sources(net, inplace = False):
-    """Iterate the direct driver of hierarchical bit, ``net``."""
+def hierarchical_source(net, inplace = False):
+    """Get the direct driver of hierarchical bit, ``net``."""
     instance, bit = net
     if bit.is_bus:
         raise PRGAInternalError("'{}' is a bus".format(net))
@@ -75,21 +75,18 @@ def iter_combinatinal_sources(net, inplace = False):
         if bit.parent.is_leaf_module or bit.source is UNCONNECTED:
             # we don't search combinational paths through a leaf module here.
             # do that in the caller's context
-            return
-            yield
+            return None
         else:
-            yield hierarchical_net(bit.source, instance, inplace)
+            return hierarchical_net(bit.source, instance, inplace)
     elif len(instance) == 0:
-        return
-        yield
+        return None
     else:
         if inplace:
             leaf = instance.pop()
         else:
             instance, leaf = instance[:-1], instance[-1]
-        source_bit = leaf.all_pins[bit.key][bit.index].source
+        source_bit = leaf.all_pins[bit.bus.key][bit.index].source
         if source_bit is UNCONNECTED:
-            return
-            yield
+            return None
         else:
-            yield hierarchical_net(source_bit, instance, inplace)
+            return hierarchical_net(source_bit, instance, inplace)

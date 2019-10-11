@@ -69,6 +69,34 @@ class CompleteRoutingBox(Object, AbstractPass):
         self.__process_array(context, context.top, tuple(itervalues(context.segments)))
 
 # ----------------------------------------------------------------------------
+# -- Create and Connect Ports/Pins in Tiles & Arrays -------------------------
+# ----------------------------------------------------------------------------
+class CompleteConnection(Object, AbstractPass):
+    """Create and connect ports/pins in tiles & arrays."""
+
+    @property
+    def key(self):
+        """Key of this pass."""
+        return "completion.connection"
+
+    @property
+    def passes_after_self(self):
+        """Passes that should be run after this pass."""
+        return ("completion.switch", "rtl", "vpr", "config", "asicflow")
+
+    def __process_array(self, context, array, top = False):
+        hierarchy = analyze_hierarchy(context)
+        for module in itervalues(hierarchy[array.name]):
+            if module.module_class.is_tile:
+                netify_tile(module)
+            elif module.module_class.is_array:
+                self.__process_array(context, module)
+        netify_array(array, top)
+
+    def run(self, context):
+        self.__process_array(context, context.top, True)
+
+# ----------------------------------------------------------------------------
 # -- Convert User-defined Connections to Switches ----------------------------
 # ----------------------------------------------------------------------------
 class CompleteSwitch(Object, AbstractPass):
@@ -82,7 +110,7 @@ class CompleteSwitch(Object, AbstractPass):
     @property
     def passes_after_self(self):
         """Passes that should be run after this pass."""
-        return ("completion.connection", "rtl", "vpr", "config", "asicflow")
+        return ("rtl", "vpr", "config", "asicflow")
 
     def run(self, context):
         hierarchy = analyze_hierarchy(context)
@@ -97,31 +125,3 @@ class CompleteSwitch(Object, AbstractPass):
                 if inst.module_class.is_switch:
                     hierarchy.setdefault(inst.model.name, {})
                     hierarchy[module.name][inst.model.name] = inst.model
-
-# ----------------------------------------------------------------------------
-# -- Create and Connect Ports/Pins in Tiles & Arrays -------------------------
-# ----------------------------------------------------------------------------
-class CompleteConnection(Object, AbstractPass):
-    """Create and connect ports/pins in tiles & arrays."""
-
-    @property
-    def key(self):
-        """Key of this pass."""
-        return "completion.connection"
-
-    @property
-    def passes_after_self(self):
-        """Passes that should be run after this pass."""
-        return ("rtl", "vpr", "config", "asicflow")
-
-    def __process_array(self, context, array, top = False):
-        hierarchy = analyze_hierarchy(context)
-        for module in itervalues(hierarchy[array.name]):
-            if module.module_class.is_tile:
-                netify_tile(module)
-            elif module.module_class.is_array:
-                self.__process_array(context, module)
-        netify_array(array, top)
-
-    def run(self, context):
-        self.__process_array(context, context.top, True)

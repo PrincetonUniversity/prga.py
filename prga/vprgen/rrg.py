@@ -7,13 +7,14 @@ from prga.arch.common import Position, Dimension, Direction, Orientation
 from prga.arch.routing.common import SegmentID, BlockPortID
 from prga.arch.array.tile import Tile
 from prga.flow.util import iter_all_tiles
-from prga.algorithm.util.hierarchy import hierarchical_position
-from prga.algorithm.util.array import get_hierarchical_tile
+from prga.algorithm.util.hierarchy import hierarchical_position, hierarchical_net, hierarchical_source
+from prga.algorithm.util.array import get_hierarchical_tile, get_hierarchical_sbox
 
 from prga.exception import PRGAInternalError
 
 from itertools import product
 from collections import OrderedDict
+from copy import copy
 
 __all__ = ['vpr_rrg_xml']
 
@@ -145,7 +146,8 @@ class _VPRRoutingResourceGraph(object):
             for dim in Dimension:
                 node_id_base, before, after = dim.case(self.chanx_node_id_base, self.chany_node_id_base)[x][y]
                 if node_id_base is not None:
-                    for name, dir_ in product(self.segment_id, Direction):
+                    dim.case(self.chanx_node_id_base, self.chany_node_id_base)[x][y] = (self.num_nodes, before, after)
+                    for dir_, name in product(Direction, self.segment_id):
                         segment = self.context.segments[name]
                         ori = Orientation.compose(dim, dir_)
                         for section, i in product(range(1 if dir_.case(before, after) > 0 else segment.length),
@@ -185,33 +187,67 @@ class _VPRRoutingResourceGraph(object):
         return (node_id_base + self.block_num_pins[tile.name] * node.subblock + 
                 self.block_pin_ptc[tile.name][node.prototype.name] + i)
 
-    # def calc_track_id(self, node, i):
-    #     (x, y), segment, orientation, section = node
-    #     node_id_base, before, after = orientation.dimension.case(
-    #             self.chanx_node_id_base, self.chany_node_id_base)[x][y]
-    #     if node_id_base is None:
-    #         raise PRGAInternalError("Node ID not assigned for node '{}'".format(node))
-    #     elif section > 0 and orientation.direction.case(before, after):
-    #         raise PRGAInternalError("Truncated segment found in consecutive routing channels: {}".format(node))
-    #     segment_node_id_base = (self.segment_node_id_base if orientation.direction.case(before, after) else
-    #             self.segment_node_id_base_truncated)[segment.name]
-    #     return node_id_base + segment_node_id_base + i + orientation.direction.case(0,
-    #             self.channel_nodes if before else self.channel_nodes_truncated)
+    def calc_track_id(self, node, i):
+        node_id_base, before, after = node.orientation.dimension.case(
+                self.chanx_node_id_base, self.chany_node_id_base)[node.position.x][node.position.y]
+        if node_id_base is None:
+            raise PRGAInternalError("Node ID not assigned for node '{}'".format(node))
+        elif node.section > 0 and node.orientation.direction.case(before, after):
+            raise PRGAInternalError("Truncated segment found in consecutive routing channels: {}".format(node))
+        segment_node_id_base = (self.segment_node_id_base if node.orientation.direction.case(before, after) else
+                self.segment_node_id_base_truncated)[node.prototype.name]
+        return (node_id_base +
+                node.orientation.direction.case(0, self.channel_nodes if before else self.channel_nodes_truncated) +
+                segment_node_id_base +
+                node.section * node.prototype.width + i)
 
-    # def calc_track_ptc(self, node, i):
-    #     (x, y), segment, orientation, section = node
-    #     section = orientation.case(
-    #             y - section - 1 + segment.length,
-    #             x - section - 1 + segment.length, 
-    #             y + section + 1,
-    #             x + section + 1) % segment.length
-    #     ptc_base = self.segment_ptc[segment.name]
-    #     ptc_offset = 2 * (section * segment.width + i) + orientation.direction.case(1, 0)
-    #     return ptc_base + ptc_offset
+    def calc_track_ptc(self, node, i):
+        remainder = ori.case(
+                node.position.y - node.section + node.prototype.length - 1,
+                node.position.x - node.section + node.prototype.length - 1,
+                node.position.y + node.section,
+                node.position.x + node.section) % node.prototype.length
+        return (self.segment_ptc[name] + 2 * (remainder * node.prototype.width + i) +
+                node.orientation.direction.case(0, 1))
 
 # ----------------------------------------------------------------------------
 # -- Generate Full VPR Routing Resource Graph XML ----------------------------
 # ----------------------------------------------------------------------------
+def _vpr_rrg_edges(xmlgen, rrg, sink_bit, sink_node_id, sink_node_str):
+    stack = [sink_bit]
+    while stack:
+        prev = hierarchical_source(stack.pop(), True)
+        if prev is None:
+            continue
+        prevhier, prevbit = prev
+        if prevbit.net_type.is_const:
+            continue
+        elif prevbit.net_class.is_switch:
+            stack.extend(hierarchical_net(input_bit, prevhier)
+                    for input_bit in prevbit.parent.switch_inputs)
+        elif prevbit.net_class.is_blockport:
+            prevtilehier, prevblkinst = prevhier[:-1], prevhier[-1]
+            source_node = BlockPortID(hierarchical_position(prevtilehier),
+                        prevbit.bus,
+                        prevblkinst.subblock)
+            xmlgen.element_leaf('edge', {
+                'src_node': rrg.calc_iopin_id(prevtilehier[-1].model,
+                    source_node, prevbit.index),
+                'sink_node': sink_node_id,
+                'switch_id': '0',
+                # 'note': '{}[{}] - {}'.format(source_node, prevbit.index, sink_node_str),
+                })
+        elif prevbit.net_class.is_node and prevbit.bus.node.node_type.is_segment_driver:
+            source_node = prevbit.bus.node.move(hierarchical_position(prevhier))
+            xmlgen.element_leaf('edge', {
+                'src_node': rrg.calc_track_id(source_node, prevbit.index),
+                'sink_node': sink_node_id,
+                'switch_id': '0',
+                # 'note': '{}[{}] - {}'.format(source_node, prevbit.index, sink_node_str),
+                })
+        else:
+            stack.append(prev)
+
 def vpr_rrg_xml(xmlgen, context):
     """Generate full VPR's routing resource graph XML.
 
@@ -323,24 +359,38 @@ def vpr_rrg_xml(xmlgen, context):
                         xmlgen.element_leaf('segment', {'segment_id': str(segment_id)})
         # routing edges
         with xmlgen.element('rr_edges'):
-            # source/sink <-> ipin/opin
             for x, y in product(range(context.top.width), range(context.top.height)):
-                tile, (xx, yy) = rrg.get_tile(x, y)
-                if tile is not None and xx == 0 and yy == 0:
-                    for subblock, name in product(range(tile.capacity), rrg.block_pin_ptc[tile.name]):
-                        port = tile.block.ports[name]
-                        node = BlockPortID((x, y), port, subblock)
-                        for i in range(port.width):
-                            if port.direction.is_input:
-                                xmlgen.element_leaf('edge', {
-                                    'src_node': str(rrg.calc_iopin_id(tile, node, i)),
-                                    'sink_node': str(rrg.calc_srcsink_id(tile, node, i)),
-                                    'switch_id': '0',
-                                    })
+                hiertile = get_hierarchical_tile(context.top, (x, y))
+                if hiertile is not None:
+                    tile = hiertile[-1].model
+                    for subblock, blkinst in iteritems(tile.block_instances):
+                        # source/sink <-> ipin/opin
+                        for name, pin in iteritems(blkinst.pins):
+                            node = BlockPortID((x, y), pin.model, subblock)
+                            if pin.direction.is_output:
+                                for i, bit in enumerate(pin):
+                                    xmlgen.element_leaf('edge', {
+                                        'src_node': str(rrg.calc_srcsink_id(tile, node, i)),
+                                        'sink_node': str(rrg.calc_iopin_id(tile, node, i)),
+                                        'switch_id': '0',
+                                        })
                             else:
-                                xmlgen.element_leaf('edge', {
-                                    'src_node': str(rrg.calc_srcsink_id(tile, node, i)),
-                                    'sink_node': str(rrg.calc_iopin_id(tile, node, i)),
-                                    'switch_id': '0',
-                                    })
+                                for i, bit in enumerate(pin):
+                                    sink_node_id = rrg.calc_iopin_id(tile, node, i)
+                                    xmlgen.element_leaf('edge', {
+                                        'src_node': str(sink_node_id),
+                                        'sink_node': str(rrg.calc_srcsink_id(tile, node, i)),
+                                        'switch_id': '0',
+                                        })
+                                    _vpr_rrg_edges(xmlgen, rrg, hierarchical_net(bit, hiertile), sink_node_id,
+                                            '{}[{}]'.format(node, i))
+                hiersbox = get_hierarchical_sbox(context.top, (x, y))
+                if hiersbox is not None:
+                    for node, pin in iteritems(hiersbox[-1].all_nodes):
+                        if not node.node_type.is_segment_driver:
+                            continue
+                        for i, bit in enumerate(pin):
+                            sink_node_id = rrg.calc_track_id(node.move(hierarchical_position(hiersbox)), i)
+                            _vpr_rrg_edges(xmlgen, rrg, hierarchical_net(bit, hiersbox[:-1]), sink_node_id,
+                                    '{}[{}]'.format(node.move(hierarchical_position(hiersbox)), i))
         xmlgen.element_leaf('num_nodes', {'v': str(rrg.num_nodes)})
