@@ -5,10 +5,11 @@ from prga.compatible import *
 
 from prga.arch.common import Position
 from prga.flow.util import iter_all_tiles
+from prga.vprgen.delegate import FASMDelegate
 
 from itertools import chain, count, product
 
-__all__ = ['vpr_arch_primitive', 'vpr_arch_instance', 'vpr_arch_tile', 'vpr_arch_layout',
+__all__ = ['vpr_arch_primitive', 'vpr_arch_instance', 'vpr_arch_block', 'vpr_arch_layout',
         'vpr_arch_segment', 'vpr_arch_default_switch', 'vpr_arch_xml']
 
 # ----------------------------------------------------------------------------
@@ -42,7 +43,7 @@ def vpr_arch_primitive(xmlgen, primitive):
                 xmlgen.element_leaf('port', attrs)
 
 # ----------------------------------------------------------------------------
-# -- Tile to VPR Architecture Description ------------------------------------
+# -- Block to VPR Architecture Description -----------------------------------
 # ----------------------------------------------------------------------------
 def _bit2vpr(bit, parent = None):
     if bit.net_type.is_port:
@@ -200,8 +201,8 @@ def vpr_arch_instance(xmlgen, instance):
     elif instance.model.module_class.is_primitive:  # primitive
         _vpr_arch_primitive_instance(xmlgen, instance)
 
-def vpr_arch_tile(xmlgen, tile):
-    """Convert a tile into VPR architecture description.
+def vpr_arch_block(xmlgen, tile):
+    """Convert the block used in ``tile`` into VPR architecture description.
     
     Args:
         xmlgen (`XMLGenerator`):
@@ -247,34 +248,6 @@ def vpr_arch_tile(xmlgen, tile):
                     xmlgen.element_leaf('loc', {'side': 'top', 'xoffset': str(x), 'yoffset': str(tile.height - 1)},
                         ' '.join('{}.{}'.format(tile.name, name) for name, port in iteritems(tile.block.ports)
                             if port.position == (x, tile.height - 1) and port.orientation.is_north))
-
-# # ----------------------------------------------------------------------------
-# # -- Tile to VPR Architecture Description ------------------------------------
-# # ----------------------------------------------------------------------------
-# def vpr_arch_tile(xmlgen, tile):
-#     """Convert a tile into VPR architecture description.
-#     
-#     Args:
-#         xmlgen (`XMLGenerator`):
-#         tile (`Tile`):
-#     """
-#     with xmlgen.element('tile', {
-#         'name': tile.name,
-#         'capacity': tile.capacity,
-#         'width': tile.width,
-#         'height': tile.height,
-#         }):
-#         # 1. emit ports
-#         for port in itervalues(tile.block.ports):
-#             attrs = {'name': port.name, 'num_pins': port.width}
-#             if port.net_class.is_global and not port.is_clock:
-#                 attrs['is_non_clock_global'] = "true"
-#             xmlgen.element_leaf(
-#                     'clock' if port.is_clock else port.direction.case('input', 'output'),
-#                     attrs)
-#         # 2. equivalent sites
-#         with xmlgen.element('equivalent_sites'):
-#             xmlgen.element_leaf('site', {'pb_type': tile.name})
 
 # ----------------------------------------------------------------------------
 # -- Layout to VPR Architecture Description ----------------------------------
@@ -394,4 +367,4 @@ def vpr_arch_xml(xmlgen, context):
         # complexblocklist
         with xmlgen.element('complexblocklist'):
             for tile in iter_all_tiles(context):
-                vpr_arch_tile(xmlgen, tile)
+                vpr_arch_block(xmlgen, tile)

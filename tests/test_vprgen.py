@@ -9,7 +9,7 @@ from prga.arch.multimode.multimode import Multimode
 from prga.arch.block.cluster import Cluster
 from prga.arch.block.block import LogicBlock
 from prga.arch.array.tile import Tile
-from prga.vprgen.arch import vpr_arch_tile
+from prga.vprgen.arch import vpr_arch_block
 from prga.xml import XMLGenerator
 
 def test_vprgen(tmpdir):
@@ -58,4 +58,4 @@ def test_vprgen(tmpdir):
     tile = Tile('clb_tile', block)
 
     with XMLGenerator(tmpdir.join('block.xml').open(OpenMode.w), True) as xmlgen:
-        vpr_arch_tile(xmlgen, tile)
+        vpr_arch_block(xmlgen, tile)
