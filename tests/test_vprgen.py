@@ -9,6 +9,7 @@ from prga.arch.multimode.multimode import Multimode
 from prga.arch.block.cluster import Cluster
 from prga.arch.block.block import LogicBlock
 from prga.arch.array.tile import Tile
+from prga.flow.delegate import ConfigCircuitryDelegate
 from prga.vprgen.arch import vpr_arch_block
 from prga.xml import XMLGenerator
 
@@ -17,6 +18,7 @@ def test_vprgen(tmpdir):
     lut6 = LUT(6)
     ff = Flipflop()
     clk = Global('clk', is_clock = True)
+    delegate = ConfigCircuitryDelegate(None)
 
     mm = Multimode('fle', 'fake_template')
     mm.create_clock('clk')
@@ -58,4 +60,4 @@ def test_vprgen(tmpdir):
     tile = Tile('clb_tile', block)
 
     with XMLGenerator(tmpdir.join('block.xml').open(OpenMode.w), True) as xmlgen:
-        vpr_arch_block(xmlgen, tile)
+        vpr_arch_block(xmlgen, delegate, tile)

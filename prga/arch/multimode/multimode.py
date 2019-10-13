@@ -4,7 +4,6 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from prga.arch.net.const import UNCONNECTED
-from prga.arch.net.port import ConfigInputPort
 from prga.arch.module.common import ModuleClass
 from prga.arch.module.module import BaseModule
 from prga.arch.module.instance import RegularInstance
@@ -71,6 +70,9 @@ class Mode(ClusterLike):
         self._parent = parent
         self._mapped_ports = {}
         self._instances = OrderedDict()
+
+    def __str__(self):
+        return '{}[{}]'.format(self.parent, self.name)
 
     # == internal API ========================================================
     @property

@@ -10,11 +10,6 @@ from prga.arch.routing.common import Segment
 from prga.arch.array.common import ChannelCoverage
 from prga.arch.array.tile import Tile, IOTile
 from prga.arch.array.array import Array
-from prga.algorithm.design.switch import SwitchLibraryDelegate
-from prga.algorithm.design.tile import ConnectionBoxLibraryDelegate
-from prga.algorithm.design.array import SwitchBoxLibraryDelegate
-from prga.flow.library import (PrimitiveLibraryDelegate,
-        BuiltinPrimitiveLibrary, BuiltinSwitchLibrary, BuiltinConnectionBoxLibrary, BuiltinSwitchBoxLibrary)
 from prga.util import Object, uno, ReadonlyMappingProxy
 from prga.exception import PRGAAPIError, PRGAInternalError
 
@@ -72,31 +67,28 @@ class BaseArchitectureContext(Object):
             '_globals',             # global wire prototypes
             '_segments',            # wire segment prototypes
             '_modules',             # all created modules
-            '_additional_template_search_paths',
+            '_config_lib',          # configuration circuitry library
             '_primitive_lib',       # primitive library
             '_switch_lib',          # switch library
             '_cbox_lib',            # connection box library
             '_sbox_lib',            # switch box library
             '_cache',               # non-pickled stuff
+            '_additional_template_search_paths',
             ]
 
-    def __init__(self, name, width, height,
-            additional_template_search_paths = tuple(),
-            primitive_library = None,
-            switch_library = None,
-            connection_box_library = None,
-            switch_box_library = None
-            ):
+    def __init__(self, name, width, height, config_circuitry_delegate_class,
+            additional_template_search_paths = tuple()):
         super(BaseArchitectureContext, self).__init__()
         self._top = Array(name, width, height, True)
         self._globals = OrderedDict()
         self._segments = OrderedDict()
         self._modules = OrderedDict()
+        cfg = self._config_lib = config_circuitry_delegate_class(self)
+        self._primitive_lib = cfg.get_primitive_library(self)
+        self._switch_lib = cfg.get_switch_library(self)
+        self._cbox_lib = cfg.get_connection_box_library(self)
+        self._sbox_lib = cfg.get_switch_box_library(self)
         self._additional_template_search_paths = additional_template_search_paths
-        self._primitive_lib = uno(primitive_library, BuiltinPrimitiveLibrary(self))
-        self._switch_lib = uno(switch_library, BuiltinSwitchLibrary(self))
-        self._cbox_lib = uno(connection_box_library, BuiltinConnectionBoxLibrary(self))
-        self._sbox_lib = uno(switch_box_library, BuiltinSwitchBoxLibrary(self))
         self._cache = {}
 
     # == low-level API =======================================================
@@ -104,6 +96,11 @@ class BaseArchitectureContext(Object):
     def modules(self):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to modules."""
         return ReadonlyMappingProxy(self._modules)
+
+    @property
+    def config_circuitry_delegate(self):
+        """`ConfigCircuitryDelegate`: Configuration circuitry delegate."""
+        return self._config_lib
 
     @property
     def primitive_library(self):

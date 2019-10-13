@@ -4,7 +4,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 __doc__ = """
-builtin library delegates.
+Builtin library delegates.
 """
 
 from prga.arch.common import Orientation
@@ -15,7 +15,8 @@ from prga.algorithm.design.sbox import SwitchBoxEnvironment, populate_switch_box
 from prga.algorithm.design.switch import SwitchLibraryDelegate
 from prga.algorithm.design.array import SwitchBoxLibraryDelegate
 from prga.algorithm.design.tile import ConnectionBoxLibraryDelegate
-from prga.util import Abstract, Object
+from prga.vprgen.delegate import FASMDelegate
+from prga.util import Object, Abstract
 from prga.exception import PRGAInternalError
 
 import re
@@ -188,3 +189,35 @@ class BuiltinSwitchBoxLibrary(_BaseLibrary, SwitchBoxLibraryDelegate):
     @property
     def is_empty(self):
         return len(self._sboxes) == 0
+
+# ----------------------------------------------------------------------------
+# -- Configuration Circuitry Delegate ----------------------------------------
+# ----------------------------------------------------------------------------
+class ConfigCircuitryDelegate(FASMDelegate):
+    """Configuration circuitry delegate supplying other libraries and configuration circuitry-specific methods."""
+
+    def __init__(self, context):
+        pass
+
+    # == low-level API =======================================================
+    # -- implementing properties/methods required by superclass --------------
+    @property
+    def additional_template_search_paths(self):
+        """:obj:`Iterable` [:obj:`str` ]: Additional search paths for Verilog templates."""
+        return tuple()
+
+    def get_primitive_library(self, context):
+        """Get the primitive library for ``context``."""
+        return BuiltinPrimitiveLibrary(context)
+
+    def get_switch_library(self, context):
+        """Get the switch library for ``context``."""
+        return BuiltinSwitchLibrary(context)
+
+    def get_connection_box_library(self, context):
+        """Get the connection box library for ``context``."""
+        return BuiltinConnectionBoxLibrary(context)
+
+    def get_switch_box_library(self, context):
+        """Get the switch box library for ``context``."""
+        return BuiltinSwitchBoxLibrary(context)

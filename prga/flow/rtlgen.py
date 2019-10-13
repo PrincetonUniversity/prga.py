@@ -22,7 +22,8 @@ class GenerateVerilog(Object, AbstractPass):
         return "rtl.verilog"
 
     def run(self, context):
-        vgen = VerilogGenerator(context._additional_template_search_paths)
+        vgen = VerilogGenerator(context._additional_template_search_paths +
+                context.config_circuitry_delegate.additional_template_search_paths)
         hierarchy = analyze_hierarchy(context)
         visited = set()
         queue = {context.top.name: context.top}

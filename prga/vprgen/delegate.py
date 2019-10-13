@@ -3,23 +3,20 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.util import Abstract
-
-from abc import abstractproperty
+from prga.util import Object
 
 __all__ = ['FASMDelegate', 'VPRTimingDelegate']
 
 # ----------------------------------------------------------------------------
 # -- VPR Metadata Generation Delegate for Configuration Circuitry ------------
 # ----------------------------------------------------------------------------
-class FASMDelegate(Abstract):
+class FASMDelegate(Object):
     """Delegate supplying metadata for configuration circuitry for VPR files generation."""
 
     # == low-level API =======================================================
     # -- properties/methods to be implemented/overriden by subclasses --------
-    @abstractmethod
     def fasm_prefix_for_tile(self, hierarchical_tile_instance):
-        """Get the ``fasm_prefix`` string for ``hierarchical_tile_instance``.
+        """Get the ``fasm_prefix`` feature for ``hierarchical_tile_instance``.
 
         Args:
             hierarchical_tile_instance (:obj:`Sequence` [`AbstractInstance` ]): Full hierarchy from top-level array to
@@ -28,9 +25,8 @@ class FASMDelegate(Abstract):
         Returns:
             :obj:`str`: ``fasm_prefix`` for this tile
         """
-        raise NotImplementedError
+        return ''
 
-    @abstractmethod
     def fasm_features_for_clusterlike(self, cluster, hierarchy = tuple()):
         """Get the ``fasm_features`` for ``cluster``.
 
@@ -41,11 +37,10 @@ class FASMDelegate(Abstract):
         Returns:
             :obj:`Sequence` [:obj:`str` ]: ``fasm_features`` to be emitted when this cluster is selected
         """
-        raise NotImplementedError
+        return tuple()
 
-    @abstractmethod
     def fasm_lut(self, hierarchical_lut_instance):
-        """Get the ``fasm_lut`` string for ``hierarchical_lut_instance``.
+        """Get the ``fasm_lut`` feature for ``hierarchical_lut_instance``.
 
         Args:
             lut_instanceshierarchical_lut_instance (:obj:`Sequence` [`AbstractInstance` ]): Full hierarchy from the
@@ -55,11 +50,10 @@ class FASMDelegate(Abstract):
         Returns:
             :obj:`str`: ``fasm_lut`` target bits for the lut instance
         """
-        raise NotImplementedError
+        return ''
 
-    @abstractmethod
     def fasm_mux(self, hierarchical_mux_input):
-        """Get the ``fasm_mux`` mapping for ``hierarchical_mux_input``.
+        """Get the ``fasm_mux`` features for ``hierarchical_mux_input``.
 
         Args:
             hierarchical_mux_input (:obj:`tuple` [:obj:`Sequence` [`AbstractInstance` ], `AbstractBit` ]): Full
@@ -68,9 +62,8 @@ class FASMDelegate(Abstract):
         Returns:
             :obj:`Sequence` [:obj:`str` ]: ``fasm_features`` to be emitted
         """
-        raise NotImplementedError
+        return tuple()
 
-    @abstractmethod
     def fasm_features_for_rr_edge_switch(self, hierarchical_mux_input):
         """Get the ``fasm_features`` when the ``hierarchical_mux_input`` is selected/
 
@@ -81,4 +74,4 @@ class FASMDelegate(Abstract):
         Returns:
             :obj:`Sequence` [:obj:`str` ]: ``fasm_features`` to be emitted when this switch input is selected
         """
-        raise NotImplementedError
+        return tuple()

@@ -10,12 +10,13 @@ from prga.flow.context import BaseArchitectureContext
 from prga.flow.flow import Flow
 from prga.flow.design import CompleteRoutingBox, CompleteSwitch, CompleteConnection
 from prga.flow.rtlgen import GenerateVerilog
+from prga.flow.delegate import ConfigCircuitryDelegate
 from prga.vprgen.arch import vpr_arch_xml
 from prga.vprgen.rrg import vpr_rrg_xml
 from prga.xml import XMLGenerator
 
 def test_flow(tmpdir):
-    context = BaseArchitectureContext('mock_array', 8, 8)
+    context = BaseArchitectureContext('mock_array', 8, 8, ConfigCircuitryDelegate)
 
     # 1. routing stuff
     clk = context.create_global('clk', is_clock = True, bind_to_position = (0, 1))
