@@ -3,7 +3,10 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-__all__ = ['analyze_hierarchy', 'iter_all_arrays', 'iter_all_tiles', 'iter_all_sboxes']
+from prga.exception import PRGAInternalError
+
+__all__ = ['analyze_hierarchy', 'iter_all_arrays', 'iter_all_tiles', 'iter_all_sboxes',
+        'get_switch_path']
 
 # ----------------------------------------------------------------------------
 # -- Helper Function ---------------------------------------------------------
@@ -11,10 +14,10 @@ __all__ = ['analyze_hierarchy', 'iter_all_arrays', 'iter_all_tiles', 'iter_all_s
 def analyze_hierarchy(context, drop_cache = False):
     """Analyze the hierarchy of the top-level array of ``context``."""
     if not drop_cache:
-        cache = context._cache.get('hierarchy', None)
+        cache = context._cache.get('util.hierarchy', None)
         if cache is not None:
             return cache
-    hierarchy = context._cache['hierarchy'] = {}
+    hierarchy = context._cache['util.hierarchy'] = {}
     modules = {context.top.name: context.top}
     while modules:
         name, module = modules.popitem()
@@ -71,3 +74,55 @@ def iter_all_sboxes(context, drop_cache = False):
             elif sub.module_class.is_switch_box:
                 yield sub
                 visited.add(subname)
+
+# ----------------------------------------------------------------------------
+# -- Switch Path -------------------------------------------------------------
+# ----------------------------------------------------------------------------
+def _in_cache_bit_id(bit):
+    return id(bit.bus), bit.index
+
+def get_switch_path(context, source, sink, drop_cache = False):
+    """Get the switch path from ``source`` to ``sink``.
+
+    Args:
+        context (`ArchitectureContext`):
+        source (`AbstractSourceBit`):
+        sink (`AbstractSinkBit`):
+        drop_cache (:obj:`bool`):
+
+    Returns:
+        :obj:`Sequence` [`AbstractSinkBit` ]: A sequence of switch input bits
+    """
+    if sink.source is source:
+        return tuple()
+    module = source.parent if source.net_type.is_port else source.parent.parent
+    if not drop_cache:
+        cache = context._cache.get('util.switch_path', {}).get(module.name, {}).get(
+                _in_cache_bit_id(sink), None)
+        if cache is not None:
+            path = cache.get(_in_cache_bit_id(source))
+            if path is None:
+                raise PRGAInternalError("No path from '{}' to '{}' in module '{}'"
+                        .format(source, sink, module))
+            else:
+                return path
+    # map all sources of sink
+    sink_id = _in_cache_bit_id(sink)
+    stack = [(sink, tuple())]
+    cache = context._cache.setdefault('util.switch_path', {}).setdefault(module.name, {}).setdefault(
+            _in_cache_bit_id(sink), {})
+    while stack:
+        cur_sink, cur_path = stack.pop()
+        cur_source = cur_sink.source
+        if cur_source.net_type.is_const:    # UNCONNECTED or CONSTANT connection
+            continue
+        if cur_source.net_type.is_pin and cur_source.net_class.is_switch:       # switch output
+            for next_sink in cur_source.parent.switch_inputs:
+                stack.append( (next_sink, cur_path + (next_sink, )) )
+        else:                                                                   # other stuff
+            cache[_in_cache_bit_id(cur_source)] = cur_path
+    try:
+        return cache[_in_cache_bit_id(cur_source)]
+    except KeyError:
+        raise PRGAInternalError("No path from '{}' to '{}' in module '{}'"
+                .format(source, sink, module))

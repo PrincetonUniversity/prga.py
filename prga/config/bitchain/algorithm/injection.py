@@ -45,7 +45,7 @@ def inject_config_chain(lib, module, top = True):
     # Injection: Intermediate-level modules have cfg_i (serial configuration input port) exclusive-or cfg_d (parallel
     # configuration input port
     instances_requiring_serial_config_port = []
-    instances_requiring_parallel_config_port = []
+    parallel_config_sinks = []
     for instance in itervalues(module.all_instances):
         if instance.module_class in (ModuleClass.config, ModuleClass.extension):
             continue    # no configuration circuitry for config and extension module types
@@ -56,22 +56,23 @@ def inject_config_chain(lib, module, top = True):
                 continue
         if 'cfg_i' in instance.all_pins:                    # check for serial ports
             # flush pending parallel ports
-            for cfg_inst in instances_requiring_parallel_config_port:
-                sink = cfg_inst.all_pins['cfg_d']
+            for sink in parallel_config_sinks:
                 bitchain = module._add_instance(RegularInstance(module,
-                    lib.get_or_create_bitchain(len(sink)), 'cfg_chain_{}'.format(cfg_inst.name)))
+                    lib.get_or_create_bitchain(len(sink)), 'cfg_chain_{}'.format(sink.parent.name)))
                 sink.source = bitchain.all_pins['cfg_d']
                 instances_requiring_serial_config_port.append(bitchain)
-            instances_requiring_parallel_config_port = []
+            parallel_config_sinks = []
             instances_requiring_serial_config_port.append(instance)
         elif 'cfg_d' in instance.all_pins:                  # check for parallel ports
-            instances_requiring_parallel_config_port.append(instance)
+            parallel_config_sinks.append(instance.all_pins['cfg_d'])
+    # check for I/O enable
+    if module.module_class.is_io_block:
+        parallel_config_sinks.append(module.all_ports['extoe'])
     if instances_requiring_serial_config_port or top:
         # flush pending parallel ports
-        for cfg_inst in instances_requiring_parallel_config_port:
-            sink = cfg_inst.all_pins['cfg_d']
+        for sink in parallel_config_sinks:
             bitchain = module._add_instance(RegularInstance(module,
-                lib.get_or_create_bitchain(len(sink)), 'cfg_chain_{}'.format(cfg_inst.name)))
+                lib.get_or_create_bitchain(len(sink)), 'cfg_chain_{}'.format(sink.parent.name)))
             sink.source = bitchain.all_pins['cfg_d']
             instances_requiring_serial_config_port.append(bitchain)
         if not instances_requiring_serial_config_port:
@@ -87,9 +88,8 @@ def inject_config_chain(lib, module, top = True):
             instance.all_pins['cfg_i'].source = cfg_i
             cfg_i = instance.all_pins['cfg_o']
         module._add_port(ConfigOutputPort(module, 'cfg_o', 1)).source = cfg_i
-    elif instances_requiring_parallel_config_port:
-        cfg_pins = [bit for instance in instances_requiring_parallel_config_port
-                for bit in instance.all_pins['cfg_d']]
+    elif parallel_config_sinks:
+        cfg_pins = [bit for sink in parallel_config_sinks for bit in sink]
         cfg_d = module._add_port(ConfigInputPort(module, 'cfg_d', len(cfg_pins)))
         for source, sink in zip(cfg_d, cfg_pins):
             sink.source = source

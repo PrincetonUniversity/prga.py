@@ -121,6 +121,6 @@ def test_flow(tmpdir):
 
     # 11. generate VPR files
     with XMLGenerator(tmpdir.join('arch.xml').open(OpenMode.w), True) as xmlgen:
-        vpr_arch_xml(xmlgen, context)
+        vpr_arch_xml(xmlgen, context.config_circuitry_delegate, context)
     with XMLGenerator(tmpdir.join('rrg.xml').open(OpenMode.w), True) as xmlgen:
         vpr_rrg_xml(xmlgen, context)

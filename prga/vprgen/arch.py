@@ -53,37 +53,49 @@ def _bit2vpr(bit, parent = None):
     else:
         return '{}.{}[{}]'.format(bit.parent.name, bit.bus.name, bit.index)
 
-def _vpr_arch_interconnect(xml, sources, sink, module, parent = None):
+def _vpr_arch_interconnect(xml, delegate, sources, sink, module, parent = None, hierarchy = None):
     """Emit contents of an interconnect tag."""
+    fasm_muxes = {}
+    parent = uno(parent, None if hierarchy is None else hierarchy[-1].name)
     for source in sources:
+        source_vpr = _bit2vpr(source, parent)
+        sink_vpr = _bit2vpr(sink, parent)
         # fake timing
         xml.element_leaf('delay_constant', {
             'max': '1e-11',
-            'in_port': _bit2vpr(source, parent),
-            'out_port': _bit2vpr(sink, parent),
+            'in_port': source_vpr,
+            'out_port': sink_vpr,
             })
         # pack pattern
         if (source, sink) in module.pack_patterns:
             xml.element_leaf('pack_pattern', {
                 'name': 'pack_{}_{}_{}'.format(sink.parent.name, sink.bus.name, sink.index),
-                'in_port': _bit2vpr(source, parent),
-                'out_port': _bit2vpr(sink, parent),
+                'in_port': source_vpr,
+                'out_port': sink_vpr,
                 })
-    with xml.element('metadata'):
-        xml.element_leaf('meta', {'name': 'fasm_mux'}, '\n'.join(
-            '{} : {}.{}[{}]-switchinput'.format(_bit2vpr(source, parent),
-                source.parent.name, source.bus.name, source.index)
-            for source in sources))
+        fasm_mux = delegate.fasm_mux_for_intrablock_switch(source, sink, hierarchy)
+        if fasm_mux:
+            fasm_muxes[source_vpr] = ', '.join(fasm_mux)
+        elif len(sources) > 1:
+            fasm_muxes[source_vpr] = 'ignored'    # ignored
+    if fasm_muxes:
+        with xml.element('metadata'):
+            xml.element_leaf('meta', {'name': 'fasm_mux'}, '\n'.join(
+                '{} : {}'.format(source, features) for source, features in iteritems(fasm_muxes)))
 
-def _vpr_arch_clusterlike(xml, module, instance = None, parent = None):
+def _vpr_arch_clusterlike(xml, delegate, module, parent = None, hierarchy = None):
     """Emit ``"pb_type"`` content for cluster-like modules."""
-    parent = uno(parent, None if instance is None else instance.name)
+    parent = uno(parent, None if hierarchy is None else hierarchy[-1].name)
     # 1. emit sub-instances
-    lut_instances = {}
+    fasm_luts = {}
     for inst in itervalues(module.instances):
-        vpr_arch_instance(xml, inst)
+        vpr_arch_instance(xml, delegate, hierarchical_instance(inst, hierarchy))
         if inst.module_class.is_primitive and inst.model.primitive_class.is_lut:
-            lut_instances[inst.name] = len(inst.all_pins['in'])
+            fasm_lut = delegate.fasm_lut(hierarchical_instance(inst, hierarchy))
+            if fasm_lut:
+                fasm_luts[inst.name] = fasm_lut
+            else:
+                fasm_luts[inst.name] = 'ignored[{}:0]'.format(2 ** len(inst.all_pins['in']) - 1)
     # 2. emit interconnect
     with xml.element('interconnect'):
         for pin in chain(iter(port for port in itervalues(module.ports) if port.direction.is_output),
@@ -99,45 +111,48 @@ def _vpr_arch_clusterlike(xml, module, instance = None, parent = None):
                         'input': _bit2vpr(sources[0], parent),
                         'output': _bit2vpr(sink, parent),
                         }):
-                        _vpr_arch_interconnect(xml, sources, sink, module, parent)
+                        _vpr_arch_interconnect(xml, delegate, sources, sink, module, parent, hierarchy)
                 else:
                     with xml.element('mux', {
                         'name': 'mux_{}_{}_{}'.format(sink.parent.name, sink.bus.name, sink.index),
                         'input': ' '.join(map(lambda x: _bit2vpr(x, parent), sources)),
                         'output': _bit2vpr(sink, parent),
                         }):
-                        _vpr_arch_interconnect(xml, sources, sink, module, parent)
+                        _vpr_arch_interconnect(xml, delegate, sources, sink, module, parent, hierarchy)
     # 3. fasm metadata
-    if instance is None and len(lut_instances) == 0:
+    fasm_features = '\n'.join(delegate.fasm_mode(hierarchy, module.name)) if module.module_class.is_mode else ''
+    fasm_prefix = delegate.fasm_prefix_for_intrablock_module(module, hierarchy)
+    if not (fasm_features or fasm_prefix or fasm_luts):
         return
     with xml.element('metadata'):
-        if instance is not None:
-            xml.element_leaf('meta', {'name': 'fasm_prefix'}, instance.name)
-        # xml.element_leaf('meta', {'name': 'fasm_features'}, module.name)
-        if len(lut_instances) > 1:
+        if fasm_features:
+            xml.element_leaf('meta', {'name': 'fasm_features'}, fasm_features)
+        if fasm_prefix:
+            xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefix)
+        if len(fasm_luts) > 1:
             xml.element_leaf('meta', {'name': 'fasm_type'}, 'SPLIT_LUT')
-            xml.element_leaf('meta', {'name': 'fasm_lut'}, '\n'.join(
-                '{}-lutcontent[{}:0] = {}'.format(name, 2 ** width - 1, name)
-                for name, width in iteritems(lut_instances)))
-        elif len(lut_instances) == 1:
-            name, width = next(iteritems(lut_instances))
+            xml.element_leaf('meta', {'name': 'fasm_lut'},
+                    '\n'.join('{} = {}'.format(lut, name) for name, lut in iteritems(fasm_luts)))
+        elif len(fasm_luts) == 1:
+            name, lut = next(iter(iteritems(fasm_luts)))
             xml.element_leaf('meta', {'name': 'fasm_type'}, 'LUT')
             xml.element_leaf('meta', {'name': 'fasm_lut'},
-                    '{}-lutcontent[{}:0]'.format(name, 2 ** width - 1))
+                    '{} = {}'.format(lut, name))
 
-def _vpr_arch_cluster_instance(xml, instance):
+def _vpr_arch_cluster_instance(xml, delegate, hierarchical_instance):
     """Emit ``"pb_type"`` for cluster instance."""
-    cluster = instance.model
-    with xml.element('pb_type', {'name': instance.name, 'num_pb': '1'}):
+    cluster = hierarchical_instance[-1].model
+    with xml.element('pb_type', {'name': hierarchical_instance[-1].name, 'num_pb': '1'}):
         # 1. emit ports
         for port in itervalues(cluster.ports):
             xml.element_leaf(
                     'clock' if port.is_clock else port.direction.case('input', 'output'),
                     {'name': port.name, 'num_pins': port.width})
         # 2. do the rest of the cluster
-        _vpr_arch_clusterlike(xml, cluster, instance)
+        _vpr_arch_clusterlike(xml, delegate, cluster, hierarchy = hierarchical_instance)
 
-def _vpr_arch_primitive(xml, instance):
+def _vpr_arch_primitive(xml, delegate, hierarchical_instance):
+    instance = hierarchical_instance[-1]
     primitive = instance.model
     parent = instance.name
     # 1. emit ports
@@ -175,17 +190,17 @@ def _vpr_arch_primitive(xml, instance):
                         'in_port': _bit2vpr(src, parent),
                         'out_port': _bit2vpr(sink, parent),
                         })
-    # 3. FASM metadata
-    # with xml.element('metadata'):
-    #     xml.element_leaf('meta', {'name': 'fasm_features'}, primitive.name)
 
-def _vpr_arch_primitive_instance(xml, instance):
+def _vpr_arch_primitive_instance(xml, delegate, hierarchical_instance):
     """Emit ``"pb_type"`` for primitive instance."""
+    instance = hierarchical_instance[-1]
     primitive = instance.model
     if primitive.primitive_class.is_iopad:
         with xml.element('pb_type', {'name': instance.name, 'num_pb': '1'}):
+            # ports
             xml.element_leaf('input', {'name': 'outpad', 'num_pins': '1'})
             xml.element_leaf('output', {'name': 'inpad', 'num_pins': '1'})
+            # mode: inpad
             with xml.element('mode', {'name': 'inpad'}):
                 with xml.element('pb_type', {'name': 'inpad', 'blif_model': '.input', 'num_pb': '1'}):
                     xml.element_leaf('output', {'name': 'inpad', 'num_pins': '1'})
@@ -194,8 +209,11 @@ def _vpr_arch_primitive_instance(xml, instance):
                         'input': 'inpad.inpad', 'output': '{}.inpad'.format(instance.name)}):
                         xml.element_leaf('delay_constant', {'max': '1e-11',
                             'in_port': 'inpad.inpad', 'out_port': '{}.inpad'.format(instance.name)})
-                with xml.element('metadata'):
-                    xml.element_leaf('meta', {'name': 'fasm_features'}, 'inpad-modeselect')
+                fasm_features = delegate.fasm_mode(hierarchical_instance, 'inpad')
+                if fasm_features:
+                    with xml.element('metadata'):
+                        xml.element_leaf('meta', {'name': 'fasm_features'}, '\n'.join(fasm_features))
+            # mode: outpad
             with xml.element('mode', {'name': 'outpad'}):
                 with xml.element('pb_type', {'name': 'outpad', 'blif_model': '.output', 'num_pb': '1'}):
                     xml.element_leaf('input', {'name': 'outpad', 'num_pins': '1'})
@@ -204,11 +222,15 @@ def _vpr_arch_primitive_instance(xml, instance):
                         'output': 'outpad.outpad', 'input': '{}.outpad'.format(instance.name)}):
                         xml.element_leaf('delay_constant', {'max': '1e-11',
                             'out_port': 'outpad.outpad', 'in_port': '{}.outpad'.format(instance.name)})
+                fasm_features = delegate.fasm_mode(hierarchical_instance, 'outpad')
+                if fasm_features:
+                    with xml.element('metadata'):
+                        xml.element_leaf('meta', {'name': 'fasm_features'}, '\n'.join(fasm_features))
+            # fasm prefix
+            fasm_prefix = delegate.fasm_prefix_for_intrablock_module(primitive, hierarchical_instance)
+            if fasm_prefix:
                 with xml.element('metadata'):
-                    xml.element_leaf('meta', {'name': 'fasm_features'}, 'outpad-modeselect')
-            with xml.element('metadata'):
-                xml.element_leaf('meta', {'name': 'fasm_prefix'}, instance.name)
-                # xml.element_leaf('meta', {'name': 'fasm_features'}, instance.model.name)
+                    xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefix)
         return
     elif primitive.primitive_class.is_multimode:
         with xml.element('pb_type', {'name': instance.name, 'num_pb': '1'}):
@@ -218,12 +240,14 @@ def _vpr_arch_primitive_instance(xml, instance):
                         'clock' if port.is_clock else port.direction.case('input', 'output'),
                         {'name': port.name, 'num_pins': port.width})
             # 2. emit modes
-            for mode in itervalues(primitive.modes):
-                with xml.element('mode', {'name': mode.name}):
-                    _vpr_arch_clusterlike(xml, mode, instance)
-            with xml.element('metadata'):
-                xml.element_leaf('meta', {'name': 'fasm_prefix'}, instance.name)
-                # xml.element_leaf('meta', {'name': 'fasm_features'}, instance.model.name)
+            for mode_name, mode in iteritems(primitive.modes):
+                with xml.element('mode', {'name': mode_name}):
+                    _vpr_arch_clusterlike(xml, delegate, mode, hierarchy = hierarchical_instance)
+            # 3. fasm prefix
+            fasm_prefix = delegate.fasm_prefix_for_intrablock_module(primitive, hierarchical_instance)
+            if fasm_prefix:
+                with xml.element('metadata'):
+                    xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefix)
         return
     attrs = {'name': instance.name, 'num_pb': '1'}
     if primitive.primitive_class.is_lut:
@@ -239,25 +263,27 @@ def _vpr_arch_primitive_instance(xml, instance):
     elif primitive.primitive_class.is_custom:
         attrs.update({"blif_model": ".subckt " + primitive.name})
     with xml.element('pb_type', attrs):
-        _vpr_arch_primitive(xml, instance)
+        _vpr_arch_primitive(xml, delegate, hierarchical_instance)
 
-def vpr_arch_instance(xml, instance):
+def vpr_arch_instance(xml, delegate, hierarchical_instance):
     """Convert an instance in a block into VPR architecture description.
     
     Args:
         xml (`XMLGenerator`):
-        instance (`AbstractInstance`):
+        delegate (`FASMDelegate`):
+        hierarchical_instance (:obj:`Sequence` [`AbstractInstance` ]): Hierarchical instance from block level
     """
-    if instance.module_class.is_cluster:      # cluster
-        _vpr_arch_cluster_instance(xml, instance)
-    elif instance.module_class.is_primitive:  # primitive
-        _vpr_arch_primitive_instance(xml, instance)
+    if hierarchical_instance[-1].module_class.is_cluster:      # cluster
+        _vpr_arch_cluster_instance(xml, delegate, hierarchical_instance)
+    elif hierarchical_instance[-1].module_class.is_primitive:  # primitive
+        _vpr_arch_primitive_instance(xml, delegate, hierarchical_instance)
 
-def vpr_arch_block(xml, tile):
+def vpr_arch_block(xml, delegate, tile):
     """Convert the block used in ``tile`` into VPR architecture description.
     
     Args:
         xml (`XMLGenerator`):
+        delegate (`FASMDelegate`):
         tile (`Tile`):
     """
     with xml.element('pb_type', {
@@ -275,7 +301,7 @@ def vpr_arch_block(xml, tile):
                     'clock' if port.is_clock else port.direction.case('input', 'output'),
                     attrs)
         # 2. do the rest of the cluster
-        _vpr_arch_clusterlike(xml, tile.block, parent = tile.name)
+        _vpr_arch_clusterlike(xml, delegate, tile.block, tile.name)
         # 4. pin locations
         with xml.element('pinlocations', {'pattern': 'custom'}):
             if tile.block.module_class.is_io_block:
@@ -304,11 +330,12 @@ def vpr_arch_block(xml, tile):
 # ----------------------------------------------------------------------------
 # -- Layout to VPR Architecture Description ----------------------------------
 # ----------------------------------------------------------------------------
-def _vpr_arch_array(xml, array, hierarchy = None):
+def _vpr_arch_array(xml, delegate, array, hierarchy = None):
     """Convert an array to 'single' elements.
 
     Args:
         xml (`XMLGenerator`):
+        delegate (`FASMDelegate`):
         array (`Array`):
         hierarchy (:obj:`Sequence` [`AbstractInstance` ]):
     """
@@ -316,29 +343,31 @@ def _vpr_arch_array(xml, array, hierarchy = None):
     for pos, instance in iteritems(array.element_instances):
         pos += position
         if instance.module_class.is_tile:
-            fasm_prefix = '.'.join(inst.name for inst in hierarchical_instance(instance, hierarchy))
-            with xml.element('single', {
-                'type': instance.model.name,
-                'priority': '1',
-                'x': pos.x,
-                'y': pos.y,
-                }):
-                with xml.element('metadata'):
-                    xml.element_leaf('meta', {'name': 'fasm_prefix'},
-                            '\n'.join('{}[{}]'.format(fasm_prefix, idx) for idx in instance.model.block_instances))
+            fasm_prefix = '\n'.join(delegate.fasm_prefix_for_tile(hierarchical_instance(instance, hierarchy)))
+            attrs = {   'type': instance.model.name,
+                        'priority': '1',
+                        'x': pos.x,
+                        'y': pos.y, }
+            if fasm_prefix:
+                with xml.element('single', attrs):
+                    with xml.element('metadata'):
+                        xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefix)
+            else:
+                xml.element_leaf('single', attrs)
         else:
             _vpr_arch_array(xml, instance.model, hierarchical_instance(instance, hierarchy))
 
-def vpr_arch_layout(xml, array):
+def vpr_arch_layout(xml, delegate, array):
     """Convert a top-level array to VPR architecture description.
 
     Args:
         xml (`XMLGenerator`):
+        delegate (`FASMDelegate`):
         array (`Array`):
     """
     with xml.element('layout'):
         with xml.element('fixed_layout', {'name': array.name, 'width': array.width, 'height': array.height}):
-            _vpr_arch_array(xml, array)
+            _vpr_arch_array(xml, delegate, array)
 
 # ----------------------------------------------------------------------------
 # -- Segment to VPR Architecture Description ---------------------------------
@@ -383,11 +412,12 @@ def vpr_arch_default_switch(xml):
 # ----------------------------------------------------------------------------
 # -- Generate Full VPR Architecture XML --------------------------------------
 # ----------------------------------------------------------------------------
-def vpr_arch_xml(xml, context):
+def vpr_arch_xml(xml, delegate, context):
     """Generate the full VPR architecture XML for ``context``.
 
     Args:
         xml (`XMLGenerator`):
+        delegate (`FASMDelegate`):
         context (`BaseArchitectureContext`):
     """
     with xml.element('architecture'):
@@ -401,7 +431,7 @@ def vpr_arch_xml(xml, context):
         #     for tile in iter_all_tiles(context):
         #         vpr_arch_tile(xml, tile)
         # layout
-        vpr_arch_layout(xml, context.top)
+        vpr_arch_layout(xml, delegate, context.top)
         # device: faked
         with xml.element('device'):
             xml.element_leaf('sizing', {'R_minW_nmos': '0.0', 'R_minW_pmos': '0.0'})
@@ -423,4 +453,4 @@ def vpr_arch_xml(xml, context):
         # complexblocklist
         with xml.element('complexblocklist'):
             for tile in iter_all_tiles(context):
-                vpr_arch_block(xml, tile)
+                vpr_arch_block(xml, delegate, tile)
