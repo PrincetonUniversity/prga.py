@@ -15,7 +15,6 @@ from prga.algorithm.design.sbox import SwitchBoxEnvironment, populate_switch_box
 from prga.algorithm.design.switch import SwitchLibraryDelegate
 from prga.algorithm.design.array import SwitchBoxLibraryDelegate
 from prga.algorithm.design.tile import ConnectionBoxLibraryDelegate
-from prga.vprgen.delegate import FASMDelegate
 from prga.util import Object, Abstract
 from prga.exception import PRGAInternalError
 
@@ -193,11 +192,8 @@ class BuiltinSwitchBoxLibrary(_BaseLibrary, SwitchBoxLibraryDelegate):
 # ----------------------------------------------------------------------------
 # -- Configuration Circuitry Delegate ----------------------------------------
 # ----------------------------------------------------------------------------
-class ConfigCircuitryDelegate(FASMDelegate):
+class ConfigCircuitryDelegate(_BaseLibrary):
     """Configuration circuitry delegate supplying other libraries and configuration circuitry-specific methods."""
-
-    def __init__(self, context):
-        pass
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------

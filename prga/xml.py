@@ -72,9 +72,19 @@ class XMLGenerator(object):
     def element(self, tag, attrs = None):
         return self.__XMLElementContextManager(self, tag, self._stringify(attrs or {}))
 
-    def element_leaf(self, tag, attrs = None, text = None):
+    def element_leaf(self, tag, attrs = None, text = ''):
         self._indent()
         with self._xf.element(tag, self._stringify(attrs or {})):
-            if text:
-                self._xf.write(text)
+            lines = text.splitlines()
+            if len(lines) > 1:  # multiple lines
+                self._newline()
+                self._depth += 1
+                for line in lines:
+                    self._indent()
+                    self._xf.write(line.strip())
+                    self._newline()
+                self._depth -= 1
+                self._indent()
+            elif len(lines) == 1:
+                self._xf.write(lines[0].strip())
         self._newline()

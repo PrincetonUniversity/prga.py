@@ -60,4 +60,4 @@ def test_vprgen(tmpdir):
     tile = Tile('clb_tile', block)
 
     with XMLGenerator(tmpdir.join('block.xml').open(OpenMode.w), True) as xmlgen:
-        vpr_arch_block(xmlgen, delegate, tile)
+        vpr_arch_block(xmlgen, tile)

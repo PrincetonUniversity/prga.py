@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-__all__ = ['analyze_hierarchy']
+__all__ = ['analyze_hierarchy', 'iter_all_arrays', 'iter_all_tiles', 'iter_all_sboxes']
 
 # ----------------------------------------------------------------------------
 # -- Helper Function ---------------------------------------------------------
