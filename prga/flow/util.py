@@ -122,7 +122,7 @@ def get_switch_path(context, source, sink, drop_cache = False):
         else:                                                                   # other stuff
             cache[_in_cache_bit_id(cur_source)] = cur_path
     try:
-        return cache[_in_cache_bit_id(cur_source)]
+        return cache[_in_cache_bit_id(source)]
     except KeyError:
         raise PRGAInternalError("No path from '{}' to '{}' in module '{}'"
                 .format(source, sink, module))

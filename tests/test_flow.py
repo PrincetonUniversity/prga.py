@@ -11,6 +11,7 @@ from prga.flow.flow import Flow
 from prga.flow.design import CompleteRoutingBox, CompleteSwitch, CompleteConnection
 from prga.flow.rtlgen import GenerateVerilog
 from prga.flow.vprgen import GenerateVPRXML
+from prga.flow.opt import ZeroingUnusedLUTInputs
 from prga.config.bitchain.flow import BitchainConfigCircuitryDelegate, InjectBitchainConfigCircuitry
 
 def test_flow(tmpdir):
@@ -106,6 +107,7 @@ def test_flow(tmpdir):
         GenerateVerilog(),
         InjectBitchainConfigCircuitry(),
         GenerateVPRXML(),
+        ZeroingUnusedLUTInputs(),
             ))
 
     # 10. run flow
