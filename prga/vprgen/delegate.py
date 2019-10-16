@@ -75,3 +75,15 @@ class FASMDelegate(Object):
             :obj:`Sequence` [:obj:`str` ]: "fasm_prefix" for the block instances
         """
         return tuple()
+
+    def fasm_features_for_routing_switch(self, hierarchical_switch_input):
+        """Get the "fasm_features" strings for selecting ``hierarchical_switch_input``.
+
+        Args:
+            hierarchical_switch_input (:obj:`Sequence` [`AbstractInstance` ], `AbstractSourceBit`): Hierarchical
+                switch input bit
+        
+        Returns:
+            :obj:`Sequence` [:obj:`str` ]: "fasm_features" features
+        """
+        return tuple()

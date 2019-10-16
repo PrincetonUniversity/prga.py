@@ -213,53 +213,62 @@ class _VPRRoutingResourceGraph(object):
 # ----------------------------------------------------------------------------
 # -- Generate Full VPR Routing Resource Graph XML ----------------------------
 # ----------------------------------------------------------------------------
-def _vpr_rrg_edges(xmlgen, rrg, sink_bit, sink_node_id, sink_node_str):
-    stack = [sink_bit]
+def _vpr_rrg_edges(xml, delegate, rrg, sink_bit, sink_node_id, sink_node_str):
+    stack = [(sink_bit, tuple())]
     while stack:
-        prev = hierarchical_source(stack.pop(), True)
+        cur, fasm_features = stack.pop()
+        prev = hierarchical_source(cur, True)
         if prev is None:
             continue
         prevhier, prevbit = prev
         if prevbit.net_type.is_const:
             continue
         elif prevbit.net_class.is_switch:
-            stack.extend(hierarchical_net(input_bit, prevhier)
-                    for input_bit in prevbit.parent.switch_inputs)
+            for input_bit in prevbit.parent.switch_inputs:
+                next_ = hierarchical_net(input_bit, prevhier)
+                stack.append( (next_, fasm_features + delegate.fasm_features_for_routing_switch(next_)) )
         elif prevbit.net_class.is_blockport:
             prevtilehier, prevblkinst = prevhier[:-1], prevhier[-1]
             source_node = BlockPortID(hierarchical_position(prevtilehier),
                         prevbit.bus,
                         prevblkinst.subblock)
-            xmlgen.element_leaf('edge', {
-                'src_node': rrg.calc_iopin_id(prevtilehier[-1].model,
-                    source_node, prevbit.index),
-                'sink_node': sink_node_id,
-                'switch_id': '0',
-                # 'note': '{}[{}] - {}'.format(source_node, prevbit.index, sink_node_str),
-                })
+            attrs = { 'src_node': rrg.calc_iopin_id(prevtilehier[-1].model, source_node, prevbit.index),
+                    'sink_node': sink_node_id,
+                    'switch_id': '0', }
+            if not fasm_features:
+                xml.element_leaf('edge', attrs)
+            else:
+                with xml.element('edge', attrs):
+                    with xml.element('metadata'):
+                        xml.element_leaf('meta', {'name': 'fasm_features'},
+                                '\n'.join(fasm_features))
         elif prevbit.net_class.is_node and prevbit.bus.node.node_type.is_segment_driver:
             source_node = prevbit.bus.node.move(hierarchical_position(prevhier))
-            xmlgen.element_leaf('edge', {
-                'src_node': rrg.calc_track_id(source_node, prevbit.index),
-                'sink_node': sink_node_id,
-                'switch_id': '0',
-                # 'note': '{}[{}] - {}'.format(source_node, prevbit.index, sink_node_str),
-                })
+            attrs = { 'src_node': rrg.calc_track_id(source_node, prevbit.index),
+                    'sink_node': sink_node_id,
+                    'switch_id': '0', }
+            if not fasm_features:
+                xml.element_leaf('edge', attrs)
+            else:
+                with xml.element('edge', attrs):
+                    with xml.element('metadata'):
+                        xml.element_leaf('meta', {'name': 'fasm_features'},
+                                '\n'.join(fasm_features))
         else:
-            stack.append(prev)
+            stack.append( (prev, fasm_features) )
 
-def vpr_rrg_xml(xmlgen, context):
+def vpr_rrg_xml(xml, delegate, context):
     """Generate full VPR's routing resource graph XML.
 
     Args:
-        xmlgen (`XMLGenerator`):
+        xml (`XMLGenerator`):
         context (`BaseArchitectureContext`):
     """
     rrg = _VPRRoutingResourceGraph(context)
-    with xmlgen.element('rr_graph'):
+    with xml.element('rr_graph'):
         # channels
-        with xmlgen.element('channels'):
-            xmlgen.element_leaf('channel', {
+        with xml.element('channels'):
+            xml.element_leaf('channel', {
                 'chan_width_max':   str(rrg.channel_width),
                 'x_min':            str(rrg.channel_width),
                 'y_min':            str(rrg.channel_width),
@@ -267,40 +276,40 @@ def vpr_rrg_xml(xmlgen, context):
                 'y_max':            str(rrg.channel_width),
                 })
             for x in range(context.top.width - 1):
-                xmlgen.element_leaf('y_list', {'index': str(x), 'info': str(rrg.channel_width)})
+                xml.element_leaf('y_list', {'index': str(x), 'info': str(rrg.channel_width)})
             for y in range(context.top.height - 1):
-                xmlgen.element_leaf('x_list', {'index': str(y), 'info': str(rrg.channel_width)})
+                xml.element_leaf('x_list', {'index': str(y), 'info': str(rrg.channel_width)})
         # switches: fake
-        with xmlgen.element('switches'):
-            with xmlgen.element('switch', {
+        with xml.element('switches'):
+            with xml.element('switch', {
                 'id': '0',
                 'type': 'mux',
                 'name': 'default',
                 }):
-                xmlgen.element_leaf('timing', {
+                xml.element_leaf('timing', {
                     'R': '0.0',
                     'Cin': '0.0',
                     'Cout': '0.0',
                     'Tdel': '1e-11',
                     })
-                xmlgen.element_leaf('sizing', {
+                xml.element_leaf('sizing', {
                     'mux_trans_size': '0.0',
                     'buf_size': '0.0',
                     })
         # segments
-        with xmlgen.element('segments'):
+        with xml.element('segments'):
             for name, segment_id in iteritems(rrg.segment_id):
-                with xmlgen.element('segment', {
+                with xml.element('segment', {
                     'name': name,
                     'id': str(segment_id),
                     }):
-                    xmlgen.element_leaf('timing', {
+                    xml.element_leaf('timing', {
                         'R_per_meter': "0.0",
                         'C_per_meter': "0.0",
                         })
         # block types
-        with xmlgen.element('block_types'):
-            xmlgen.element_leaf('block_type', {
+        with xml.element('block_types'):
+            xml.element_leaf('block_type', {
                 'id': '0',
                 'name': 'EMPTY',
                 'width': '1',
@@ -308,7 +317,7 @@ def vpr_rrg_xml(xmlgen, context):
                 })
             for name, block_type_id in iteritems(rrg.block_type_id):
                 tile = context.tiles[name]
-                with xmlgen.element('block_type', {
+                with xml.element('block_type', {
                     'id': str(block_type_id),
                     'name': name,
                     'width': str(tile.width),
@@ -319,15 +328,15 @@ def vpr_rrg_xml(xmlgen, context):
                         ptc_base += subblock * rrg.block_num_pins[tile.name]
                         port = tile.block.ports[name]
                         for i in range(port.width):
-                            with xmlgen.element('pin_class', {'type': port.direction.case('INPUT', 'OUTPUT')}):
-                                xmlgen.element_leaf('pin', {'ptc': str(ptc_base + i)},
+                            with xml.element('pin_class', {'type': port.direction.case('INPUT', 'OUTPUT')}):
+                                xml.element_leaf('pin', {'ptc': str(ptc_base + i)},
                                         '{}[{}].{}[{}]'.format(tile.name, subblock, name, i)
                                         if tile.block.module_class.is_io_block else
                                         '{}.{}[{}]'.format(tile.name, name, i))
         # grid
-        with xmlgen.element('grid'):
+        with xml.element('grid'):
             for (x, y), tile, (xoffset, yoffset) in rrg.iter_tiles():
-                xmlgen.element_leaf('grid_loc', {
+                xml.element_leaf('grid_loc', {
                     'x': str(x),
                     'y': str(y),
                     'block_type_id': '0' if tile is None else str(rrg.block_type_id[tile.name]),
@@ -335,30 +344,30 @@ def vpr_rrg_xml(xmlgen, context):
                     'height_offset': str(yoffset),
                     })
         # routing resource nodes
-        with xmlgen.element('rr_nodes'):
+        with xml.element('rr_nodes'):
             for node in rrg.iter_nodes():
                 id_, type_, info = node
                 if type_ in ('SOURCE', 'SINK'):
                     x, y, ptc = info
-                    with xmlgen.element('node', {'id': str(id_), 'type': type_, 'capacity': '1'}):
-                        xmlgen.element_leaf('loc', {'xlow': str(x), 'xhigh': str(x), 'ylow': str(y), 'yhigh': str(y),
+                    with xml.element('node', {'id': str(id_), 'type': type_, 'capacity': '1'}):
+                        xml.element_leaf('loc', {'xlow': str(x), 'xhigh': str(x), 'ylow': str(y), 'yhigh': str(y),
                             'ptc': str(ptc)})
-                        xmlgen.element_leaf('timing', {'R': '0', 'C': '0'})
+                        xml.element_leaf('timing', {'R': '0', 'C': '0'})
                 elif type_ in ('IPIN', 'OPIN'):
                     x, y, ptc, ori = info
-                    with xmlgen.element('node', {'id': str(id_), 'type': type_, 'capacity': '1'}):
-                        xmlgen.element_leaf('loc', {'xlow': str(x), 'xhigh': str(x), 'ylow': str(y), 'yhigh': str(y),
+                    with xml.element('node', {'id': str(id_), 'type': type_, 'capacity': '1'}):
+                        xml.element_leaf('loc', {'xlow': str(x), 'xhigh': str(x), 'ylow': str(y), 'yhigh': str(y),
                             'side': ori.case('TOP', 'RIGHT', 'BOTTOM', 'LEFT'), 'ptc': str(ptc)})
-                        xmlgen.element_leaf('timing', {'R': '0', 'C': '0'})
+                        xml.element_leaf('timing', {'R': '0', 'C': '0'})
                 elif type_ in ('CHANX', 'CHANY'):
                     dir_, xlow, xhigh, ylow, yhigh, ptc, segment_id = info
-                    with xmlgen.element('node', {'id': str(id_), 'type': type_, 'capacity': '1', 'direction': dir_}):
-                        xmlgen.element_leaf('loc', {'xlow': str(xlow), 'xhigh': str(xhigh),
+                    with xml.element('node', {'id': str(id_), 'type': type_, 'capacity': '1', 'direction': dir_}):
+                        xml.element_leaf('loc', {'xlow': str(xlow), 'xhigh': str(xhigh),
                             'ylow': str(ylow), 'yhigh': str(yhigh), 'ptc': str(ptc)})
-                        xmlgen.element_leaf('timing', {'R': '0', 'C': '0'})
-                        xmlgen.element_leaf('segment', {'segment_id': str(segment_id)})
+                        xml.element_leaf('timing', {'R': '0', 'C': '0'})
+                        xml.element_leaf('segment', {'segment_id': str(segment_id)})
         # routing edges
-        with xmlgen.element('rr_edges'):
+        with xml.element('rr_edges'):
             for x, y in product(range(context.top.width), range(context.top.height)):
                 hiertile = get_hierarchical_tile(context.top, (x, y))
                 if hiertile is not None:
@@ -369,7 +378,7 @@ def vpr_rrg_xml(xmlgen, context):
                             node = BlockPortID((x, y), pin.model, subblock)
                             if pin.direction.is_output:
                                 for i, bit in enumerate(pin):
-                                    xmlgen.element_leaf('edge', {
+                                    xml.element_leaf('edge', {
                                         'src_node': str(rrg.calc_srcsink_id(tile, node, i)),
                                         'sink_node': str(rrg.calc_iopin_id(tile, node, i)),
                                         'switch_id': '0',
@@ -377,13 +386,13 @@ def vpr_rrg_xml(xmlgen, context):
                             else:
                                 for i, bit in enumerate(pin):
                                     sink_node_id = rrg.calc_iopin_id(tile, node, i)
-                                    xmlgen.element_leaf('edge', {
+                                    xml.element_leaf('edge', {
                                         'src_node': str(sink_node_id),
                                         'sink_node': str(rrg.calc_srcsink_id(tile, node, i)),
                                         'switch_id': '0',
                                         })
-                                    _vpr_rrg_edges(xmlgen, rrg, hierarchical_net(bit, hiertile), sink_node_id,
-                                            '{}[{}]'.format(node, i))
+                                    _vpr_rrg_edges(xml, delegate, rrg, hierarchical_net(bit, hiertile),
+                                            sink_node_id, '{}[{}]'.format(node, i))
                 hiersbox = get_hierarchical_sbox(context.top, (x, y))
                 if hiersbox is not None:
                     for node, pin in iteritems(hiersbox[-1].all_nodes):
@@ -391,6 +400,6 @@ def vpr_rrg_xml(xmlgen, context):
                             continue
                         for i, bit in enumerate(pin):
                             sink_node_id = rrg.calc_track_id(node.move(hierarchical_position(hiersbox)), i)
-                            _vpr_rrg_edges(xmlgen, rrg, hierarchical_net(bit, hiersbox[:-1]), sink_node_id,
-                                    '{}[{}]'.format(node.move(hierarchical_position(hiersbox)), i))
-        xmlgen.element_leaf('num_nodes', {'v': str(rrg.num_nodes)})
+                            _vpr_rrg_edges(xml, delegate, rrg, hierarchical_net(bit, hiersbox[:-1]),
+                                    sink_node_id, '{}[{}]'.format(node.move(hierarchical_position(hiersbox)), i))
+        xml.element_leaf('num_nodes', {'v': str(rrg.num_nodes)})

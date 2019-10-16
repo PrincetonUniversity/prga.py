@@ -99,3 +99,22 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
                 config_bits /= 2
                 config_bit_offset += 1
         return retval
+
+    def fasm_features_for_routing_switch(self, hierarchical_switch_input):
+        hierarchy, input_port = hierarchical_switch_input
+        switch_instance = hierarchy[-1]
+        hierarchy = hierarchy[:-1]
+        module = hierarchy[-1].model
+        config_bit_base = self.__config_bit_offset_for_intrablock_instance(hierarchy)
+        config_bit_offset = get_config_bit_offset(self.context, module).get(switch_instance.name)
+        config_bits = input_port.index
+        if config_bit_offset is None:
+            raise PRGAInternalError("No configuration circuitry for switch '{}'"
+                    .format(switch_instance))
+        retval = []
+        while config_bits:
+            if config_bits % 2 == 1:
+                retval.append('b' + str(config_bit_base + config_bit_offset))
+            config_bits /= 2
+            config_bit_offset += 1
+        return tuple(iter(retval))
