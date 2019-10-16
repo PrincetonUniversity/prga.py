@@ -10,11 +10,8 @@ from prga.flow.context import BaseArchitectureContext
 from prga.flow.flow import Flow
 from prga.flow.design import CompleteRoutingBox, CompleteSwitch, CompleteConnection
 from prga.flow.rtlgen import GenerateVerilog
-from prga.vprgen.arch import vpr_arch_xml
-from prga.vprgen.rrg import vpr_rrg_xml
-from prga.config.bitchain.algorithm.injection import inject_config_chain
-from prga.config.bitchain.flow.delegate import BitchainConfigCircuitryDelegate
-from prga.xml import XMLGenerator
+from prga.flow.vprgen import GenerateVPRXML
+from prga.config.bitchain.flow import BitchainConfigCircuitryDelegate, InjectBitchainConfigCircuitry
 
 def test_flow(tmpdir):
     context = BaseArchitectureContext('mock_array', 8, 8, BitchainConfigCircuitryDelegate)
@@ -106,21 +103,11 @@ def test_flow(tmpdir):
         CompleteRoutingBox(BlockFCValue(BlockPortFCValue(0.25), BlockPortFCValue(0.1))),
         CompleteSwitch(),
         CompleteConnection(),
-        # GenerateVerilog()
+        GenerateVerilog(),
+        InjectBitchainConfigCircuitry(),
+        GenerateVPRXML(),
             ))
 
     # 10. run flow
     oldcwd = tmpdir.chdir()
     flow.run(context)
-
-    # 11. inject configuration circuitry
-    inject_config_chain(context.config_circuitry_delegate, context.top)
-
-    # 12 generate verilog
-    Flow((GenerateVerilog(), )).run(context)
-
-    # 11. generate VPR files
-    with XMLGenerator(tmpdir.join('arch.xml').open(OpenMode.w), True) as xmlgen:
-        vpr_arch_xml(xmlgen, context.config_circuitry_delegate, context)
-    with XMLGenerator(tmpdir.join('rrg.xml').open(OpenMode.w), True) as xmlgen:
-        vpr_rrg_xml(xmlgen, context.config_circuitry_delegate, context)

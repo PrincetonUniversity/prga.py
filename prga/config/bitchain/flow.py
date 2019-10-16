@@ -3,21 +3,23 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
+from prga.flow.flow import AbstractPass
 from prga.flow.delegate import ConfigCircuitryDelegate
 from prga.flow.util import get_switch_path
 from prga.config.bitchain.design.primitive import CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH, ConfigBitchain
 from prga.config.bitchain.algorithm.injection import ConfigBitchainLibraryDelegate, inject_config_chain
 from prga.config.bitchain.algorithm.bitstream import get_config_bit_count, get_config_bit_offset
 from prga.exception import PRGAInternalError
+from prga.util import Object
 
-__all__ = ['BitchainConfigCircuitryDelegate']
+__all__ = ['BitchainConfigCircuitryDelegate', 'InjectBitchainConfigCircuitry']
 
 # ----------------------------------------------------------------------------
 # -- Configuration Circuitry Delegate for Bitchain-based configuration -------
 # ----------------------------------------------------------------------------
 class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircuitryDelegate):
 
-    __slots__ = ['_bitchains']
+    __slots__ = ['_bitchains', '_total_config_bits']
     def __init__(self, context):
         super(BitchainConfigCircuitryDelegate, self).__init__(context)
         self._bitchains = {}
@@ -33,6 +35,14 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
         return total
 
     # == low-level API =======================================================
+    @property
+    def total_config_bits(self):
+        """:obj:`int`: Total number of configuration bits."""
+        try:
+            return self._total_config_bits
+        except AttributeError:
+            raise PRGAInternalError("Total number of configuration bits not set yet.""")
+
     # -- implementing properties/methods required by superclass --------------
     @property
     def additional_template_search_paths(self):
@@ -118,3 +128,25 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
             config_bits /= 2
             config_bit_offset += 1
         return tuple(iter(retval))
+
+# ----------------------------------------------------------------------------
+# -- Configuration Circuitry Injection Pass ----------------------------------
+# ----------------------------------------------------------------------------
+class InjectBitchainConfigCircuitry(Object, AbstractPass):
+    """Inject bitchain configuration circuitry."""
+
+    @property
+    def key(self):
+        return "config.injection"
+
+    @property
+    def passes_before_self(self):
+        return ("completion", )
+
+    @property
+    def passes_after_self(self):
+        return ("rtl", "vpr")
+
+    def run(self, context):
+        inject_config_chain(context.config_circuitry_delegate, context.top)
+        context.config_circuitry_delegate._total_config_bits = get_config_bit_count(context, context.top)

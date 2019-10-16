@@ -8,7 +8,7 @@ from prga.flow.flow import AbstractPass
 from prga.flow.util import analyze_hierarchy
 from prga.util import Object
 
-__all__ = ['VerilogGeneration']
+__all__ = ['GenerateVerilog']
 
 # ----------------------------------------------------------------------------
 # -- Generate Verilog --------------------------------------------------------
@@ -31,6 +31,7 @@ class GenerateVerilog(Object, AbstractPass):
             name, module = queue.popitem()
             visited.add(name)
             vgen.generate_module(open(name + '.v', OpenMode.w), module)
+            module.verilog_source = name + '.v'
             for subname, sub in iteritems(hierarchy[name]):
                 if subname in visited or subname in queue or not sub.is_physical:
                     continue
