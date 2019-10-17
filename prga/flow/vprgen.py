@@ -9,6 +9,8 @@ from prga.flow.flow import AbstractPass
 from prga.util import Object
 from prga.xml import XMLGenerator
 
+import os
+
 __all__ = ['GenerateVPRXML']
 
 # ----------------------------------------------------------------------------
@@ -17,12 +19,19 @@ __all__ = ['GenerateVPRXML']
 class GenerateVPRXML(Object, AbstractPass):
     """Generate XML input files for VPR."""
 
+    __slots__ = ['prefix']
+    def __init__(self, prefix = ''):
+        self.prefix = prefix
+
     @property
     def key(self):
         return "vpr.xml"
 
     def run(self, context):
-        with XMLGenerator(open('arch.xml', OpenMode.w), True) as xml:
+        makedirs(self.prefix)
+        arch = os.path.join(self.prefix, 'arch.xml')
+        with XMLGenerator(open(arch, OpenMode.w), True) as xml:
             vpr_arch_xml(xml, context.config_circuitry_delegate, context)
-        with XMLGenerator(open('rrg.xml', OpenMode.w), True) as xml:
+        rrg = os.path.join(self.prefix, 'rrg.xml')
+        with XMLGenerator(open(rrg, OpenMode.w), True) as xml:
             vpr_rrg_xml(xml, context.config_circuitry_delegate, context)

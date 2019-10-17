@@ -8,13 +8,23 @@ from prga.flow.flow import AbstractPass
 from prga.flow.util import analyze_hierarchy
 from prga.util import Object
 
+import os
+
 __all__ = ['GenerateVerilog']
 
 # ----------------------------------------------------------------------------
 # -- Generate Verilog --------------------------------------------------------
 # ----------------------------------------------------------------------------
 class GenerateVerilog(Object, AbstractPass):
-    """Generate Verilog for all physical modules."""
+    """Generate Verilog for all physical modules.
+    
+    Args:
+        prefix (:obj:`str`): Prefix to the verilog files
+    """
+
+    __slots__ = ['prefix']
+    def __init__(self, prefix = ''):
+        self.prefix = prefix
 
     @property
     def key(self):
@@ -22,6 +32,7 @@ class GenerateVerilog(Object, AbstractPass):
         return "rtl.verilog"
 
     def run(self, context):
+        makedirs(self.prefix)
         vgen = VerilogGenerator(context._additional_template_search_paths +
                 context.config_circuitry_delegate.additional_template_search_paths)
         hierarchy = analyze_hierarchy(context)
@@ -30,8 +41,8 @@ class GenerateVerilog(Object, AbstractPass):
         while queue:
             name, module = queue.popitem()
             visited.add(name)
-            vgen.generate_module(open(name + '.v', OpenMode.w), module)
-            module.verilog_source = name + '.v'
+            f = module.verilog_source = os.path.abspath(os.path.join(self.prefix, name + '.v'))
+            vgen.generate_module(open(f, OpenMode.w), module)
             for subname, sub in iteritems(hierarchy[name]):
                 if subname in visited or subname in queue or not sub.is_physical:
                     continue

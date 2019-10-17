@@ -101,9 +101,9 @@ def test_flow(tmpdir):
         CompleteRoutingBox(BlockFCValue(BlockPortFCValue(0.25), BlockPortFCValue(0.1))),
         CompleteSwitch(),
         CompleteConnection(),
-        GenerateVerilog(),
+        GenerateVerilog('rtl'),
         InjectBitchainConfigCircuitry(),
-        GenerateVPRXML(),
+        GenerateVPRXML('vpr'),
         ZeroingUnusedLUTInputs(),
             ))
 

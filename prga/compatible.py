@@ -4,10 +4,10 @@
 
 from __future__ import division, absolute_import, print_function
 
-import sys
+import sys as _sys, os as _os, errno as _errno
 
-if ((sys.version_info > (3, ) and sys.version_info < (3, 3)) or
-        (sys.version_info > (2, ) and sys.version_info < (2, 7))):
+if ((_sys.version_info > (3, ) and _sys.version_info < (3, 3)) or
+        (_sys.version_info > (2, ) and _sys.version_info < (2, 7))):
     raise RuntimeError("Python 2.7+ or 3.3+ is required to run PRGA")
 
 from future.utils import with_metaclass, raise_from, iteritems, itervalues, string_types
@@ -35,5 +35,16 @@ class OpenMode(object):
     def __new__(cls):
         raise RuntimeError("Cannot instantiate '{}'".format(cls.__name__))
 
-    r = "rb" if sys.version_info > (3, ) else "r"
-    w = "wb" if sys.version_info > (3, ) else "w"
+    r = "rb" if _sys.version_info > (3, ) else "r"
+    w = "wb" if _sys.version_info > (3, ) else "w"
+
+if _sys.version_info >= (3, 2):
+    def makedirs(directory):
+        return _os.makedirs(directory, exist_ok=True)
+else:
+    def makedirs(directory):
+        try:
+            return _os.makedirs(directory)
+        except OSError as e:
+            if e.errno != _errno.EEXIST:
+                raise
