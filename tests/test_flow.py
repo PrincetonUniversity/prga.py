@@ -6,7 +6,7 @@ from prga.compatible import *
 from prga.arch.common import Orientation
 from prga.arch.array.common import ChannelCoverage
 from prga.algorithm.design.cbox import BlockPortFCValue, BlockFCValue
-from prga.flow.context import BaseArchitectureContext
+from prga.flow.context import ArchitectureContext
 from prga.flow.flow import Flow
 from prga.flow.design import CompleteRoutingBox, CompleteSwitch, CompleteConnection
 from prga.flow.rtlgen import GenerateVerilog
@@ -15,7 +15,7 @@ from prga.flow.opt import ZeroingUnusedLUTInputs
 from prga.config.bitchain.flow import BitchainConfigCircuitryDelegate, InjectBitchainConfigCircuitry
 
 def test_flow(tmpdir):
-    context = BaseArchitectureContext('mock_array', 8, 8, BitchainConfigCircuitryDelegate)
+    context = ArchitectureContext('mock_array', 8, 8, BitchainConfigCircuitryDelegate)
 
     # 1. routing stuff
     clk = context.create_global('clk', is_clock = True, bind_to_position = (0, 1))
@@ -96,10 +96,7 @@ def test_flow(tmpdir):
             else:
                 context.top.instantiate_element(clbtile, (x, y))
 
-    # 8. create a pickled version
-    context.pickle(tmpdir.join('ctx.pickled').open(OpenMode.w))
-
-    # 9. flow
+    # 8. flow
     flow = Flow((
         CompleteRoutingBox(BlockFCValue(BlockPortFCValue(0.25), BlockPortFCValue(0.1))),
         CompleteSwitch(),
@@ -110,6 +107,9 @@ def test_flow(tmpdir):
         ZeroingUnusedLUTInputs(),
             ))
 
-    # 10. run flow
+    # 9. run flow
     oldcwd = tmpdir.chdir()
     flow.run(context)
+
+    # 10. create a pickled version
+    context.pickle(tmpdir.join('ctx.pickled').open(OpenMode.w))

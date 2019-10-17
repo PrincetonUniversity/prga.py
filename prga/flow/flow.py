@@ -139,7 +139,7 @@ class AbstractPass(Abstract):
         """Run the pass.
 
         Args:
-            context (`BaseArchitectureContext`): the context which holds all the internal data
+            context (`ArchitectureContext`): the context which holds all the internal data
         """
         pass
 

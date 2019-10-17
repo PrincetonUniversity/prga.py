@@ -15,18 +15,21 @@ from prga.exception import PRGAAPIError, PRGAInternalError
 
 from collections import OrderedDict
 
+import sys
+sys.setrecursionlimit(2**16)
+
 try:
     import cPickle as pickle
 except ImportError:
     import pickle
 
-__all__ = ['BaseArchitectureContext']
+__all__ = ['ArchitectureContext']
 
 # ----------------------------------------------------------------------------
 # -- Primitives Proxy --------------------------------------------------------
 # ----------------------------------------------------------------------------
 class _PrimitivesProxy(Object, Mapping):
-    """Helper class for `BaseArchitectureContext.primitives` property."""
+    """Helper class for `ArchitectureContext.primitives` property."""
 
     __slots__ = ['context']
     def __init__(self, context):
@@ -54,12 +57,11 @@ class _PrimitivesProxy(Object, Mapping):
 # ----------------------------------------------------------------------------
 # -- Base Architecture Context -----------------------------------------------
 # ----------------------------------------------------------------------------
-class BaseArchitectureContext(Object):
-    """Base class for main interface to PRGA architecture description.
+class ArchitectureContext(Object):
+    """The main interface to PRGA architecture description.
 
     Architecture context manages all resources created/added to the FPGA, including all modules, the
-    routing graph, configration circuitry and more. Each configuration circuitry type should inherit this class to
-    create its own type of architecture context.
+    routing graph, configration circuitry and more.
     """
 
     __slots__ = [
@@ -78,7 +80,7 @@ class BaseArchitectureContext(Object):
 
     def __init__(self, name, width, height, config_circuitry_delegate_class,
             additional_template_search_paths = tuple()):
-        super(BaseArchitectureContext, self).__init__()
+        super(ArchitectureContext, self).__init__()
         self._top = Array(name, width, height, True)
         self._globals = OrderedDict()
         self._segments = OrderedDict()

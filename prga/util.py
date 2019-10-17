@@ -7,8 +7,11 @@ from prga.exception import PRGAInternalError
 
 from abc import ABCMeta
 import enum
+import logging
+import sys
 
-__all__ = ["ReadonlyMappingProxy", "ReadonlySequenceProxy", "uno", "Abstract", "Object", "Enum"]
+__all__ = ["ReadonlyMappingProxy", "ReadonlySequenceProxy", "uno", "Abstract", "Object", "Enum",
+        'enable_stdout_logging']
 
 class ReadonlyMappingProxy(Mapping):
     """A read-only proxy of a :obj:`Mapping` implementation object.
@@ -166,3 +169,13 @@ class Enum(enum.IntEnum):
                 return kwargs[self.name]
             except KeyError:
                 raise PRGAInternalError("Value unspecified for case {}".format(self))
+
+def enable_stdout_logging(name, level=logging.WARNING, verbose=False):
+    hdl = logging.StreamHandler(sys.stdout)
+    if verbose:
+        hdl.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s'))
+    else:
+        hdl.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+    logger = logging.getLogger(name)
+    logger.addHandler(hdl)
+    logger.setLevel(level)

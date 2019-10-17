@@ -25,7 +25,7 @@ class _VPRRoutingResourceGraph(object):
     """Helper class for generating VPR's routing resource graph XML.
 
     Args:
-        context (`BaseArchitectureContext`):
+        context (`ArchitectureContext`):
     """
 
     def __init__(self, context):
@@ -262,7 +262,7 @@ def vpr_rrg_xml(xml, delegate, context):
 
     Args:
         xml (`XMLGenerator`):
-        context (`BaseArchitectureContext`):
+        context (`ArchitectureContext`):
     """
     rrg = _VPRRoutingResourceGraph(context)
     with xml.element('rr_graph'):

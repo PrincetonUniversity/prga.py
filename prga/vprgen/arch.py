@@ -418,7 +418,7 @@ def vpr_arch_xml(xml, delegate, context):
     Args:
         xml (`XMLGenerator`):
         delegate (`FASMDelegate`):
-        context (`BaseArchitectureContext`):
+        context (`ArchitectureContext`):
     """
     with xml.element('architecture'):
         # models
