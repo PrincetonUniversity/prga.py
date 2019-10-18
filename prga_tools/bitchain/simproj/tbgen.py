@@ -16,9 +16,11 @@ import jinja2 as jj
 import os
 import re
 import logging
+from copy import copy
 
 _logger = logging.getLogger(__name__)
 _reprog_width = re.compile('^.*?\[\s*(?P<start>\d+)\s*:\s*(?P<end>\d+)\s*\].*?$')
+_reprog_bit = re.compile('^(?P<name>.*?)(?:\[(?P<index>\d+)\])?$')
 
 __all__ = ['generate_testbench_wrapper']
 
@@ -95,14 +97,22 @@ def generate_testbench_wrapper(context, ostream, tb_top, behav_top, io_bindings)
         if name.startswith('out:'):
             name = name[4:]
             direction = 'output'
+        matched = _reprog_bit.match(name)
+        port_name = matched.group('name')
+        index = matched.group('index')
+        if index is not None:
+            index = int(index)
         # 1. is it a valid port in the behavioral model?
-        behav_port = behav_info['ports'].get(name)
+        behav_port = behav_info['ports'].get(port_name)
         if behav_port is None:
             raise PRGAAPIError("Port '{}' is not found in design '{}'"
-                    .format(name, behav_top.name))
+                    .format(port_name, behav_top.name))
         elif behav_port['direction'] != direction:
             raise PRGAAPIError("Direction mismatch: port '{}' is {} in behavioral model but {} in IO bindings"
-                    .format(name, behav_port.direction, direction))
+                    .format(port_name, behav_port.direction, direction))
+        elif index is not None and (index >= behav_port.get('width', index)):
+            raise PRGAAPIError("Bit index '{}' exceeds the width of port '{}'"
+                    .format(index, port_name))
         # 2. is (x, y, subblock) an IO block?
         port = get_external_port(context.top, (x, y), subblock,
                 PortDirection.input_ if direction == 'input' else PortDirection.output)
@@ -110,6 +120,8 @@ def generate_testbench_wrapper(context, ostream, tb_top, behav_top, io_bindings)
             raise PRGAAPIError("No {} IO port found at position ({}, {}, {})"
                     .format(direction, x, y, subblock))
         # 3. bind
+        behav_port = copy(behav_port)
+        behav_port['name'] = name
         ports[port.name] = behav_port
 
     # configuration info

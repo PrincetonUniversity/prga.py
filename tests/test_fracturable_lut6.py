@@ -19,8 +19,8 @@ def test_fracturable_lut6(tmpdir):
 
     # 1. routing stuff
     clk = context.create_global('clk', is_clock = True, bind_to_position = (0, 1))
-    context.create_segment('L1', 4, 1)
-    context.create_segment('L2', 1, 2)
+    context.create_segment('L1', 12, 1)
+    context.create_segment('L2', 4, 2)
 
     # 2. create IOB
     iob = context.create_io_block('mock_iob')

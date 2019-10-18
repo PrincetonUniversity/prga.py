@@ -82,8 +82,8 @@ class FracturableLUT6(BitchainMultimode):
             {"lut5x2_lutinst_0": 0, "lut5x2_lutinst_1": 32}, (64, )))
         lutinst0 = mode_lut5x2.instantiate(lut5, 'lut5x2_lutinst_0')
         lutinst1 = mode_lut5x2.instantiate(lut5, 'lut5x2_lutinst_1')
-        mode_lut5x2.connect(mode_lut5x2.ports['in'][0:4], lutinst0.pins['in'])
-        mode_lut5x2.connect(mode_lut5x2.ports['in'][0:4], lutinst1.pins['in'])
+        mode_lut5x2.connect(mode_lut5x2.ports['in'][0:5], lutinst0.pins['in'])
+        mode_lut5x2.connect(mode_lut5x2.ports['in'][0:5], lutinst1.pins['in'])
         mode_lut5x2.connect(lutinst0.pins['out'], mode_lut5x2.ports['o6'])
         mode_lut5x2.connect(lutinst1.pins['out'], mode_lut5x2.ports['o5'])
 

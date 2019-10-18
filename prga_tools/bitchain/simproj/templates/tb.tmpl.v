@@ -187,7 +187,8 @@ module {{ behav.name }}_tb_wrapper;
             {%- for name, port in iteritems(behav.ports) %}
                 {%- if port.direction == 'output' %}
             if (verbose && impl_{{ name }} !== behav_{{ name }}) begin
-                $display("[WARNING] Output mismatch: impl (%h) != behav (%h)", impl_{{ name }}, behav_{{ name }});
+                $display("[WARNING] [Cycle %04d] Output mismatch: {{ name }}, impl (%h) != behav (%h)",
+                    cycle_count, impl_{{ name }}, behav_{{ name }});
             end
                 {%- endif %}
             {%- endfor %}
