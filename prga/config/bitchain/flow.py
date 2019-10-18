@@ -24,7 +24,7 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
         super(BitchainConfigCircuitryDelegate, self).__init__(context)
         self._bitchains = {}
 
-    def __config_bit_offset_for_intrablock_instance(self, hierarchy):
+    def __config_bit_offset_instance(self, hierarchy):
         total = 0
         for instance in hierarchy:
             config_bit_offsets = get_config_bit_offset(self.context, instance.parent)
@@ -73,7 +73,7 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
         return tuple(iter(prefix))
 
     def fasm_mode(self, hierarchical_instance, mode):
-        config_bit_base = self.__config_bit_offset_for_intrablock_instance(hierarchical_instance)
+        config_bit_base = self.__config_bit_offset_instance(hierarchical_instance)
         if config_bit_base is None:
             return tuple()
         if hierarchical_instance[-1].model.primitive_class.is_iopad:
@@ -85,7 +85,7 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
             raise NotImplementedError
 
     def fasm_lut(self, hierarchical_instance):
-        config_bit_base = self.__config_bit_offset_for_intrablock_instance(hierarchical_instance)
+        config_bit_base = self.__config_bit_offset_instance(hierarchical_instance)
         if config_bit_base is None:
             return ''
         return 'b{}[{}:0]'.format(str(config_bit_base),
@@ -93,7 +93,7 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
 
     def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy):
         module = source.parent if source.net_type.is_port else source.parent.parent
-        config_bit_base = 0 if not hierarchy else self.__config_bit_offset_for_intrablock_instance(hierarchy)
+        config_bit_base = 0 if not hierarchy else self.__config_bit_offset_instance(hierarchy)
         config_bit_offsets = get_config_bit_offset(self.context, module)
         path = get_switch_path(self.context, source, sink)
         retval = []
@@ -103,10 +103,11 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
             if config_bit_offset is None:
                 raise PRGAInternalError("No configuration circuitry for switch '{}'"
                         .format(bit.parent))
+            config_bit_offset += config_bit_base
             while config_bits:
                 if config_bits % 2 == 1:
-                    retval.append('b' + str(config_bit_base + config_bit_offset))
-                config_bits /= 2
+                    retval.append('b' + str(config_bit_offset))
+                config_bits = config_bits // 2
                 config_bit_offset += 1
         return retval
 
@@ -115,17 +116,17 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
         switch_instance = hierarchy[-1]
         hierarchy = hierarchy[:-1]
         module = hierarchy[-1].model
-        config_bit_base = self.__config_bit_offset_for_intrablock_instance(hierarchy)
+        config_bit_base = self.__config_bit_offset_instance(hierarchy)
         config_bit_offset = get_config_bit_offset(self.context, module).get(switch_instance.name)
-        config_bits = input_port.index
         if config_bit_offset is None:
             raise PRGAInternalError("No configuration circuitry for switch '{}'"
                     .format(switch_instance))
+        config_bits = input_port.index
         retval = []
         while config_bits:
             if config_bits % 2 == 1:
                 retval.append('b' + str(config_bit_base + config_bit_offset))
-            config_bits /= 2
+            config_bits = config_bits // 2
             config_bit_offset += 1
         return tuple(iter(retval))
 
@@ -150,3 +151,5 @@ class InjectBitchainConfigCircuitry(Object, AbstractPass):
     def run(self, context):
         inject_config_chain(context.config_circuitry_delegate, context.top)
         context.config_circuitry_delegate._total_config_bits = get_config_bit_count(context, context.top)
+        # clear out hierarchy cache
+        del context._cache['util.hierarchy']

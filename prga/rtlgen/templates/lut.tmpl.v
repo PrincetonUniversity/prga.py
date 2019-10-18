@@ -10,7 +10,7 @@ module {{ module.name }} (
         out = 1'b0;
         case (in)    // synopsys infer_mux
             {%- for idx in range(2 ** width) %}
-            {{ width }}'d{{ idx }}: out = in[{{ idx }}];
+            {{ width }}'d{{ idx }}: out = cfg_d[{{ idx }}];
             {%- endfor %}
         endcase
     end
