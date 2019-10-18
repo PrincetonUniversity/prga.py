@@ -18,8 +18,14 @@ module fraclut6 (
     localparam MODE_LUT5X2 = 1'd1;
 
     // prog bits
-    reg [63:0] data;
-    reg [0:0] mode;
+    reg [64:0] cfg_d;
+
+    // decode prog bits
+    wire mode;
+    wire [63:0] data;
+
+    assign mode = cfg_d[64];
+    assign data = cfg_d[63:0];
 
     // lut5 output
     reg [1:0] internal_lut5;
@@ -57,10 +63,10 @@ module fraclut6 (
 
     always @(posedge cfg_clk) begin
         if (cfg_e && cfg_we) begin    // configuring
-            {mode, data} <= {mode, data, cfg_i};
+            cfg_d <= {cfg_d, cfg_i};
         end
     end
 
-    assign cfg_o = mode[0];
+    assign cfg_o = cfg_d[64];
 
 endmodule

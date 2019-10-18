@@ -120,7 +120,9 @@ def _vpr_arch_clusterlike(xml, delegate, module, parent = None, hierarchy = None
                         }):
                         _vpr_arch_interconnect(xml, delegate, sources, sink, module, parent, hierarchy)
     # 3. fasm metadata
-    fasm_features = '\n'.join(delegate.fasm_mode(hierarchy, module.name)) if module.module_class.is_mode else ''
+    fasm_features = ''
+    if module.module_class.is_mode:
+        fasm_features = '\n'.join(delegate.fasm_mode(hierarchy, module.name))
     fasm_prefix = delegate.fasm_prefix_for_intrablock_module(module, hierarchy)
     if not (fasm_features or fasm_prefix or fasm_luts):
         return
@@ -132,7 +134,7 @@ def _vpr_arch_clusterlike(xml, delegate, module, parent = None, hierarchy = None
         if len(fasm_luts) > 1:
             xml.element_leaf('meta', {'name': 'fasm_type'}, 'SPLIT_LUT')
             xml.element_leaf('meta', {'name': 'fasm_lut'},
-                    '\n'.join('{} = {}'.format(lut, name) for name, lut in iteritems(fasm_luts)))
+                    '\n'.join('{} = {}[0]'.format(lut, name) for name, lut in iteritems(fasm_luts)))
         elif len(fasm_luts) == 1:
             name, lut = next(iter(iteritems(fasm_luts)))
             xml.element_leaf('meta', {'name': 'fasm_type'}, 'LUT')

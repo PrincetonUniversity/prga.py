@@ -20,8 +20,8 @@ def get_config_bit_count(context, module, drop_cache = False):
         return len(cfg_d)
     elif 'cfg_i' in module.all_ports:   # serial configuration port
         if module.is_leaf_module:
-            context._cache.setdefault('config.bitchain.bit_count', {})[module.name] = len(module.config_bits)
-            return len(module.config_bits)
+            context._cache.setdefault('config.bitchain.bit_count', {})[module.name] = module.config_bit_count
+            return module.config_bit_count
         else:
             get_config_bit_offset(context, module, drop_cache)
             return context._cache['config.bitchain.bit_count'][module.name]
@@ -42,6 +42,8 @@ def get_config_bit_offset(context, module, drop_cache = False):
         cache = context._cache.get('config.bitchain.bit_offset', {}).get(key)
         if cache is not None:
             return cache
+    if module.module_class.is_mode:
+        return context._cache.setdefault('config.bitchain.bit_offset', {}).setdefault(key, module.config_bit_offset)
     entry = context._cache.setdefault('config.bitchain.bit_offset', {})[key] = {}
     cfg_d = module.all_ports.get('cfg_d')
     if cfg_d is not None:               # parallel configuration port. No sub-instances on the "configuration" side

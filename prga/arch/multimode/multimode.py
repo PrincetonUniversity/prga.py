@@ -80,7 +80,7 @@ class Mode(ClusterLike):
         return _ModePortsProxy(self)
 
     def _validate_model(self, model):
-        if not (model.module_class.is_primitive or model.module_class.is_cluster):
+        if model.module_class not in (ModuleClass.primitive, ModuleClass.cluster):
             raise PRGAInternalError("Only primitives and clusters may be instantiated in a mode.")
 
     # == low-level API =======================================================
@@ -106,19 +106,17 @@ class Multimode(BaseModule, AbstractPrimitive):
 
     Args:
         name (:obj:`str`): Name of this module
-        verilog_template (:obj:`str`): Path to the template (or vanilla Verilog source file)
 
     Note:
         This class and its API are not enough to describe a multi-mode primitive. Since multi-mode modules
         are usually highly coupled with the configuration circuitry, special ports or more may be needed.
     """
 
-    __slots__ = ['_ports', '_modes', '_verilog_template']
-    def __init__(self, name, verilog_template):
+    __slots__ = ['_ports', '_modes']
+    def __init__(self, name):
         super(Multimode, self).__init__(name)
         self._ports = OrderedDict()
         self._modes = OrderedDict()
-        self._verilog_template = verilog_template
 
     # == internal API ========================================================
     def _add_mode(self, mode):
@@ -138,51 +136,7 @@ class Multimode(BaseModule, AbstractPrimitive):
         """:obj:`Mapping`: [:obj:`str`, `Mode` ]: A mapping from mode names to modes."""
         return self._modes
 
-    def create_clock(self, name):
-        """Create and add a clock input port to this multimode primitive.
-
-        Args:
-            name (:obj:`str`): Name of this clock
-        """
-        return self._add_port(MultimodeClockPort(self, name))
-
-    def create_input(self, name, width, clock = None):
-        """Create and add an input port to this multimode primitive.
-
-        Args:
-            name (:obj:`str`): Name of this port
-            width (:obj:`int`): Number of bits in this port
-            clock (:obj:`str`): If set, this port will be treated as a sequential endpoint sampled at the rising edge
-                of ``clock``
-        """
-        return self._add_port(MultimodeInputPort(self, name, width, clock))
-
-    def create_output(self, name, width, clock = None, combinational_sources = tuple()):
-        """Create and add an output port to this multimode primitive.
-
-        Args:
-            name (:obj:`str`): Name of this port
-            width (:obj:`int`): Number of bits in this port
-            clock (:obj:`str`): If set, this port will be treated as a sequential startpoint sampled at the rising edge
-                of ``clock``
-            combinational_sources (:obj:`Iterable` [:obj:`str` ]): Input ports in the parent primitive from which
-                combinational paths exist to this port
-        """
-        return self._add_port(MultimodeOutputPort(self, name, width, clock, combinational_sources))
-
-    def create_mode(self, name):
-        """Create a mode in this multi-mode primitive.
-
-        Args:
-            name (:obj:`str`): Name of the mode to create
-        """
-        return self._add_mode(Mode(name, self))
-
     # -- implementing properties/methods required by superclass --------------
-    @property
-    def verilog_template(self):
-        return self._verilog_template
-
     @property
     def primitive_class(self):
         return PrimitiveClass.multimode

@@ -4,15 +4,38 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from prga.flow.flow import AbstractPass
-from prga.flow.delegate import ConfigCircuitryDelegate
+from prga.flow.delegate import ConfigCircuitryDelegate, BuiltinPrimitiveLibrary
 from prga.flow.util import get_switch_path
-from prga.config.bitchain.design.primitive import CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH, ConfigBitchain
+from prga.config.bitchain.design.primitive import (CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH, ConfigBitchain,
+        FracturableLUT6)
 from prga.config.bitchain.algorithm.injection import ConfigBitchainLibraryDelegate, inject_config_chain
 from prga.config.bitchain.algorithm.bitstream import get_config_bit_count, get_config_bit_offset
 from prga.exception import PRGAInternalError
 from prga.util import Object
 
 __all__ = ['BitchainConfigCircuitryDelegate', 'InjectBitchainConfigCircuitry']
+
+# ----------------------------------------------------------------------------
+# -- Primitive Library for Bitchain-based configuration ----------------------
+# ----------------------------------------------------------------------------
+class BitchainPrimitiveLibrary(BuiltinPrimitiveLibrary):
+    """Primitive library for bitchain-based configuration circuitry."""
+
+    # == low-level API =======================================================
+    # -- implementing properties/methods required by superclass --------------
+    def get_or_create_primitive(self, name):
+        module = self.context._modules.get(name)
+        if module is not None:
+            if not module.module_class.is_primitve:
+                raise PRGAInternalError("Existing module named '{}' is not a primitive"
+                        .format(name))
+            return module
+        if name == 'fraclut6':
+            return self.context._modules.setdefault(name, FracturableLUT6(
+                self.get_or_create_primitive('lut5'),
+                self.get_or_create_primitive('lut6')))
+        else:
+            return super(BitchainPrimitiveLibrary, self).get_or_create_primitive(name)
 
 # ----------------------------------------------------------------------------
 # -- Configuration Circuitry Delegate for Bitchain-based configuration -------
@@ -48,6 +71,9 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
     def additional_template_search_paths(self):
         return (CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH, )
 
+    def get_primitive_library(self, context):
+        return BitchainPrimitiveLibrary(context)
+
     def get_or_create_bitchain(self, width):
         try:
             return self._bitchains[width]
@@ -76,11 +102,14 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
         config_bit_base = self.__config_bit_offset_instance(hierarchical_instance)
         if config_bit_base is None:
             return tuple()
-        if hierarchical_instance[-1].model.primitive_class.is_iopad:
+        primitive = hierarchical_instance[-1].model
+        if primitive.primitive_class.is_iopad:
             if mode == 'outpad':
                 return ('b' + str(config_bit_base), )
             else:
                 return tuple()
+        elif primitive.primitive_class.is_multimode:
+            return tuple('b' + str(config_bit_base + bit) for bit in primitive.modes[mode].mode_enabling_bits)
         else:
             raise NotImplementedError
 
@@ -93,6 +122,8 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
 
     def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy):
         module = source.parent if source.net_type.is_port else source.parent.parent
+        if module.module_class.is_mode:     # temporary patch
+            return []
         config_bit_base = 0 if not hierarchy else self.__config_bit_offset_instance(hierarchy)
         config_bit_offsets = get_config_bit_offset(self.context, module)
         path = get_switch_path(self.context, source, sink)
