@@ -40,7 +40,8 @@ def parse_io_bindings(file_):
         io_bindings (:obj:`str`):
 
     Returns:
-        :obj:`dict`: a mapping from \(x, y, subblock\) to pin name
+        :obj:`Mapping` [:obj:`str` ], :obj:`tuple` [:obj:`int`, :obj:`int`, :obj:`int`]: Mapping from
+           port name in the behavioral model to \(x, y, subblock\)
     """
     io_bindings = {}
     for line in open(file_):

@@ -10,7 +10,7 @@ from prga.flow.context import ArchitectureContext
 from prga.exception import PRGAAPIError
 from prga.util import enable_stdout_logging
 
-from prga_tools.util.verilog import find_verilog_top, parse_io_bindings
+from prga_tools.util import find_verilog_top, parse_io_bindings
 
 import jinja2 as jj
 import os
@@ -58,8 +58,8 @@ def generate_testbench_wrapper(context, ostream, tb_top, behav_top, io_bindings)
         ostream (file-like object): Output file
         tb_top (``VerilogModule``): Top-level module of the testbench of the behavioral model
         behav_top (``VerilogModule``): Top-level module of the behavioral model
-        io_bindings (:obj:`Mapping` [:obj:`tuple` [:obj:`int`, :obj:`int`, :obj:`int`], :obj:`str` ]): Mapping from
-            \(x, y, subblock\) to port name in the behavioral model
+        io_bindings (:obj:`Mapping` [:obj:`str` ], :obj:`tuple` [:obj:`int`, :obj:`int`, :obj:`int`]): Mapping from
+           port name in the behavioral model to \(x, y, subblock\)
 
     See `hdlparse <//kevinpt.github.io/hdlparse/apidoc/hdlparse.html#hdlparse.verilog_parser.VerilogModule>`_ for info
     on ``VerilogModule``.
