@@ -27,11 +27,26 @@ module fraclut6 (
     assign mode = cfg_d[64];
     assign data = cfg_d[63:0];
 
+    // convert 'x' inputs to '0' in simulation
+    reg [5:0] internal_in;
+
+    always @* begin
+        internal_in = in;
+
+        // synopsys translate off
+        {%- for i in range(6) %}
+        if (in[{{ i }}] === 1'bx || in[{{ i }}] === 1'bz) begin
+            internal_in[{{ i }}] = 1'b0;
+        end
+        {%- endfor %}
+        // synopsys translate on
+    end
+
     // lut5 output
     reg [1:0] internal_lut5;
     {%- for i in range(2) %}
     always @* begin
-        case (in[4:0])  // synopsys infer_mux
+        case (internal_in[4:0])  // synopsys infer_mux
             {%- for j in range(32) %}
             32'd{{ j }}: begin
                 internal_lut5[{{ i }}] = data[{{ 32 * i + j }}];
@@ -49,7 +64,7 @@ module fraclut6 (
                 o6 = internal_lut5[0];
             end
             MODE_LUT6: begin
-                case (in[5])    // synopsys infer_mux
+                case (internal_in[5])    // synopsys infer_mux
                     1'b0: begin
                         o6 = internal_lut5[0];
                     end

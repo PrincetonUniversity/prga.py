@@ -11,42 +11,17 @@ module {{ behav.name }}_tb_wrapper;
     reg sys_clk, sys_rst;
     wire sys_success, sys_fail;
 
-    // configuration (programming) control 
-    localparam  INIT            = 3'd0,
-                RESET           = 3'd1,
-                PROGRAMMING     = 3'd2,
-                PROG_DONE       = 3'd3,
-                PROG_STABLIZING = 3'd4,
-                IMPL_RUNNING    = 3'd5;
-
-    reg [2:0]       state, state_next;
-    reg [0:256*8-1] bs_file;
-    reg [63:0]      cfg_m [0:bs_num_qwords - 1];
-    reg             cfg_i;
-    reg             cfg_e;
-    reg             cfg_we;
-    wire            cfg_clk;
-    reg [63:0]      cfg_progress;
-    reg [7:0]       cfg_percentage;
-
-    assign cfg_clk = cfg_e && sys_clk;
-
     // logging 
     reg             verbose;
     reg [0:256*8-1] waveform_dump;
     reg [31:0]      cycle_count, max_cycle_count;
 
     // testbench wires
-    wire tb_rst;
+    reg             tb_rst;
 
-    assign tb_rst = sys_rst || state != IMPL_RUNNING;
-
-    // behavioral model & FPGA implementation wires
+    // behavioral model wires
     {%- for name, port in iteritems(behav.ports) %}
     wire {% if port.width %}[{{ port.width - 1 }}:0] {% endif %}behav_{{ name }};
-        {%- if port.direction == 'output' %}
-    wire {% if port.width %}[{{ port.width - 1 }}:0] {% endif %}impl_{{ name }};
-        {%- endif %}
     {%- endfor %}
 
     // testbench
@@ -66,6 +41,7 @@ module {{ behav.name }}_tb_wrapper;
         {%- endfor %}
         );
 
+`ifndef USE_POST_PAR_BEHAVIORAL_MODEL
     // behavioral model
     {{ behav.name }} {% if behav.parameters %}#(
         {%- set comma1 = joiner(",") -%}
@@ -78,28 +54,24 @@ module {{ behav.name }}_tb_wrapper;
         {{ comma2() }}.{{ name }}(behav_{{ name }})
         {%- endfor %}
         );
-
-    // FPGA implementation
-    {{ impl.name }} impl (
-        .cfg_clk(cfg_clk)
-        ,.cfg_i(cfg_i)
-        ,.cfg_e(cfg_e)
-        ,.cfg_we(cfg_we)
-        {%- for name, port in iteritems(impl.ports) %}
-            {%- if port.direction == 'input' %}
-        ,.{{ name }}(behav_{{ port.name }})
+`else
+    // post-PAR simulation
+    {{ behav.name }} behav (
+        {%- set comma3 = joiner(",") -%}
+        {%- for name, port in iteritems(behav.ports) %}
+            {%- if port.width %}
+                {%- for i in range(port.width) %}
+        {{ comma3() }}.{{ "\\" ~ port.name ~ "[" ~ i ~ "]" }} (behav_{{ name ~ "[" ~ i ~ "]" }})
+                {%- endfor %}
             {%- else %}
-        ,.{{ name }}(impl_{{ port.name }})
+        {{ comma3() }}.{{ "\\" ~ name }} (behav_{{ name }})
             {%- endif %}
         {%- endfor %}
         );
+`endif
 
     // test setup
     initial begin
-        state = INIT;
-        cfg_e = 1'b0;
-        cfg_we = 1'b0;
-
         verbose = 1'b1;
         if ($test$plusargs("quiet")) begin
             verbose = 1'b0;
@@ -119,35 +91,14 @@ module {{ behav.name }}_tb_wrapper;
         if (verbose)
             $display("[INFO] Max cycle count: %d", max_cycle_count);
 
-        if (!$value$plusargs("bitstream_memh=%s", bs_file)) begin
-            if (verbose)
-                $display("[ERROR] Missing required argument: bitstream_memh");
-            $finish;
-        end
-
-        $readmemh(bs_file, cfg_m);
-
-        {%- for mem, addr, low, high in impl.config %}
-        impl.{{ mem }} = cfg_m[{{ addr }}][{{ high }}:{{ low }}];
-        {%- endfor %}
-
         sys_clk = 1'b0;
         sys_rst = 1'b0;
-
         #{{ (clk_period|default(10)) * 0.25 }} sys_rst = 1'b1;
-
         #{{ (clk_period|default(10)) * 100 }} sys_rst = 1'b0;
     end
 
     // system clock generator
     always #{{ (clk_period|default(10)) / 2.0 }} sys_clk = ~sys_clk;
-
-    // configuration
-    always @(posedge sys_clk) begin
-        if (sys_rst) begin
-            state <= IMPL_RUNNING;
-        end
-    end
 
     // cycle count tracking
     always @(posedge sys_clk) begin
@@ -179,6 +130,87 @@ module {{ behav.name }}_tb_wrapper;
                 $finish;
             end
         end
+    end
+
+    // configuration (programming) control 
+    localparam  INIT            = 3'd0,
+                RESET           = 3'd1,
+                PROGRAMMING     = 3'd2,
+                PROG_DONE       = 3'd3,
+                PROG_STABLIZING = 3'd4,
+                IMPL_RUNNING    = 3'd5;
+
+    reg [2:0]       state, state_next;
+    reg [0:256*8-1] bs_file;
+    reg [63:0]      cfg_m [0:bs_num_qwords - 1];
+    reg             cfg_i;
+    reg             cfg_e;
+    reg             cfg_we;
+    wire            cfg_clk;
+    reg [63:0]      cfg_progress;
+    reg [7:0]       cfg_percentage;
+
+    assign cfg_clk = cfg_e && sys_clk;
+
+    // FPGA implementation wires
+    {%- for name, port in iteritems(behav.ports) %}
+        {%- if port.direction == 'output' %}
+    wire {% if port.width %}[{{ port.width - 1 }}:0] {% endif %}impl_{{ name }};
+        {%- endif %}
+    {%- endfor %}
+
+    // FPGA implementation
+    {{ impl.name }} impl (
+        .cfg_clk(cfg_clk)
+        ,.cfg_i(cfg_i)
+        ,.cfg_e(cfg_e)
+        ,.cfg_we(cfg_we)
+        {%- for name, port in iteritems(impl.ports) %}
+            {%- if port.direction == 'input' %}
+        ,.{{ name }}(behav_{{ port.name }})
+            {%- else %}
+        ,.{{ name }}(impl_{{ port.name }})
+            {%- endif %}
+        {%- endfor %}
+        );
+
+    // test setup
+    initial begin
+        state = INIT;
+        cfg_e = 1'b0;
+        cfg_we = 1'b0;
+
+        if (!$value$plusargs("bitstream_memh=%s", bs_file)) begin
+            if (verbose)
+                $display("[ERROR] Missing required argument: bitstream_memh");
+            $finish;
+        end
+
+        $readmemh(bs_file, cfg_m);
+        {% for mem, addr, low, high in impl.config %}
+        impl.{{ mem }} = cfg_m[{{ addr }}][{{ high }}:{{ low }}];
+        {%- endfor %}
+    end
+
+    // configuration
+    always @(posedge sys_clk) begin
+        if (sys_rst) begin
+            state <= PROGRAMMING;
+        end else begin
+            case (state)
+                PROGRAMMING:
+                    state <= PROG_DONE;
+                PROG_DONE:
+                    state <= PROG_STABLIZING;
+                PROG_STABLIZING:
+                    state <= IMPL_RUNNING;
+            endcase
+        end
+    end
+
+    always @* begin
+        cfg_e = state == PROGRAMMING;
+        tb_rst = sys_rst || state != IMPL_RUNNING;
     end
 
     // output tracking

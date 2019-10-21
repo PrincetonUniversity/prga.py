@@ -11,7 +11,6 @@ from prga.flow.flow import Flow
 from prga.flow.design import CompleteRoutingBox, CompleteSwitch, CompleteConnection
 from prga.flow.rtlgen import GenerateVerilog
 from prga.flow.vprgen import GenerateVPRXML
-from prga.flow.opt import ZeroingUnusedLUTInputs
 from prga.config.bitchain.flow import BitchainConfigCircuitryDelegate, InjectBitchainConfigCircuitry
 
 def test_fracturable_lut6(tmpdir):
@@ -109,7 +108,6 @@ def test_fracturable_lut6(tmpdir):
         GenerateVerilog('rtl'),
         InjectBitchainConfigCircuitry(),
         GenerateVPRXML('vpr'),
-        ZeroingUnusedLUTInputs(),
             ))
 
     # 9. run flow

@@ -6,9 +6,24 @@ module {{ module.name }} (
     input wire [{{ 2 ** width - 1 }}:0] cfg_d
     );
 
+    // convert 'x' inputs to '0' in simulation
+    reg [{{ width - 1}}:0] internal_in;
+
+    always @* begin
+        internal_in = in;
+
+        // synopsys translate off
+        {%- for i in range(width) %}
+        if (in[{{ i }}] === 1'bx || in[{{ i }}] === 1'bz) begin
+            internal_in[{{ i }}] = 1'b0;
+        end
+        {%- endfor %}
+        // synopsys translate on
+    end
+
     always @* begin
         out = 1'b0;
-        case (in)    // synopsys infer_mux
+        case (internal_in)    // synopsys infer_mux
             {%- for idx in range(2 ** width) %}
             {{ width }}'d{{ idx }}: out = cfg_d[{{ idx }}];
             {%- endfor %}

@@ -42,7 +42,9 @@ def bitgen_bitchain(context     # architecture context
         if '[' in segments[-1]:
             matched = _reprog_lut.match(segments[-1])
             base += int(matched.group('offset'))
-            bits[base: base + int(matched.group('width'))] = bitarray(matched.group('content'))
+            segment = bitarray(matched.group('content'))
+            segment.reverse()
+            bits[base: base + int(matched.group('width'))] = segment
         else:
             bits[base + int(segments[-1][1:])] = True
     # emit lines in quad words
