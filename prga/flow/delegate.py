@@ -8,7 +8,7 @@ Builtin library delegates.
 """
 
 from prga.arch.common import Orientation
-from prga.arch.primitive.builtin import Inpad, Outpad, Iopad, Flipflop, LUT
+from prga.arch.primitive.builtin import Inpad, Outpad, Iopad, Flipflop, LUT, Memory
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.arch.routing.box import ConnectionBox, SwitchBox
 from prga.algorithm.design.sbox import SwitchBoxEnvironment, populate_switch_box
@@ -62,6 +62,19 @@ class PrimitiveLibraryDelegate(Abstract):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def get_or_create_memory(self, addr_width, data_width, name = None, dualport = False, transparent = False):
+        """Get or create a memory module.
+
+        Args:
+            addr_width (:obj:`int`): Width of the address bus
+            data_width (:obj:`int`): Width of the data bus
+            name (:obj:`str`): Name of this memory
+            dualport (:obj:`bool`): If set, two set of read/write port are be generated
+            transparent (:obj:`bool`): If set, each read/write port is transparent
+        """
+        raise NotImplementedError
+
     @abstractproperty
     def is_empty(self):
         """:obj:`bool`: Test if the library is empty."""
@@ -73,10 +86,11 @@ class PrimitiveLibraryDelegate(Abstract):
 class BuiltinPrimitiveLibrary(_BaseLibrary, PrimitiveLibraryDelegate):
     """Built-in primitive library."""
 
-    __slots__ = ['_is_empty']
+    __slots__ = ['_is_empty', '_memories']
     def __init__(self, context):
         super(BuiltinPrimitiveLibrary, self).__init__(context)
         self._is_empty = True
+        self._memories = {}
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
@@ -101,6 +115,15 @@ class BuiltinPrimitiveLibrary(_BaseLibrary, PrimitiveLibraryDelegate):
             return self.context._modules.setdefault(name, LUT(int(matched.group('width'))))
         raise PRGAInternalError("No built-in primitive named '{}'"
                 .format(name))
+
+    def get_or_create_memory(self, addr_width, data_width, name = None, dualport = False, transparent = False):
+        try:
+            return self._memories[addr_width, data_width, dualport, transparent]
+        except KeyError:
+            self._is_empty = False
+            module = self._memories.setdefault( (addr_width, data_width, dualport, transparent),
+                    Memory(addr_width, data_width, name, dualport, transparent))
+            return self.context._modules.setdefault(module.name, module)
 
     @property
     def is_empty(self):

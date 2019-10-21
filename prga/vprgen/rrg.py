@@ -130,7 +130,7 @@ class _VPRRoutingResourceGraph(object):
                     port = tile.block.ports[name]
                     for i in range(port.width):
                         yield (self.num_nodes, port.direction.case('SINK', 'SOURCE'),
-                                (x + port.position.x, y + port.position.y, ptc_base + i))
+                                (x, x + tile.width - 1, y, y + tile.height - 1, ptc_base + i))
                         self.num_nodes += 1
                 self.iopin_node_id_base[x][y] = self.num_nodes
                 for subblock, (name, ptc_base) in product(range(tile.capacity), iteritems(self.block_pin_ptc[tile.name])):
@@ -348,9 +348,10 @@ def vpr_rrg_xml(xml, delegate, context):
             for node in rrg.iter_nodes():
                 id_, type_, info = node
                 if type_ in ('SOURCE', 'SINK'):
-                    x, y, ptc = info
+                    xlow, xhigh, ylow, yhigh, ptc = info
                     with xml.element('node', {'id': str(id_), 'type': type_, 'capacity': '1'}):
-                        xml.element_leaf('loc', {'xlow': str(x), 'xhigh': str(x), 'ylow': str(y), 'yhigh': str(y),
+                        xml.element_leaf('loc', {'xlow': str(xlow), 'xhigh': str(xhigh),
+                            'ylow': str(ylow), 'yhigh': str(yhigh),
                             'ptc': str(ptc)})
                         xml.element_leaf('timing', {'R': '0', 'C': '0'})
                 elif type_ in ('IPIN', 'OPIN'):
@@ -370,7 +371,7 @@ def vpr_rrg_xml(xml, delegate, context):
         with xml.element('rr_edges'):
             for x, y in product(range(context.top.width), range(context.top.height)):
                 hiertile = get_hierarchical_tile(context.top, (x, y))
-                if hiertile is not None:
+                if hiertile is not None and hierarchical_position(hiertile) == (x, y):
                     tile = hiertile[-1].model
                     for subblock, blkinst in iteritems(tile.block_instances):
                         # source/sink <-> ipin/opin

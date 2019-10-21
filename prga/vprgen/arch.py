@@ -47,19 +47,25 @@ def vpr_arch_primitive(xml, primitive):
 # ----------------------------------------------------------------------------
 # -- Block to VPR Architecture Description -----------------------------------
 # ----------------------------------------------------------------------------
-def _bit2vpr(bit, parent = None):
-    if bit.net_type.is_port:
-        return '{}.{}[{}]'.format(parent or bit.parent.name, bit.bus.name, bit.index)
+def _net2vpr(net, parent = None):
+    if net.is_bus:
+        if net.net_type.is_port:
+            return '{}.{}'.format(parent or net.parent.name, net.name)
+        else:
+            return '{}.{}'.format(net.parent.name, net.name)
     else:
-        return '{}.{}[{}]'.format(bit.parent.name, bit.bus.name, bit.index)
+        if net.net_type.is_port:
+            return '{}.{}[{}]'.format(parent or net.parent.name, net.bus.name, net.index)
+        else:
+            return '{}.{}[{}]'.format(net.parent.name, net.bus.name, net.index)
 
 def _vpr_arch_interconnect(xml, delegate, sources, sink, module, parent = None, hierarchy = None):
     """Emit contents of an interconnect tag."""
     fasm_muxes = {}
     parent = uno(parent, None if hierarchy is None else hierarchy[-1].name)
     for source in sources:
-        source_vpr = _bit2vpr(source, parent)
-        sink_vpr = _bit2vpr(sink, parent)
+        source_vpr = _net2vpr(source, parent)
+        sink_vpr = _net2vpr(sink, parent)
         # fake timing
         xml.element_leaf('delay_constant', {
             'max': '1e-11',
@@ -108,15 +114,15 @@ def _vpr_arch_clusterlike(xml, delegate, module, parent = None, hierarchy = None
                 elif len(sources) == 1:
                     with xml.element('direct', {
                         'name': 'direct_{}_{}_{}'.format(sink.parent.name, sink.bus.name, sink.index),
-                        'input': _bit2vpr(sources[0], parent),
-                        'output': _bit2vpr(sink, parent),
+                        'input': _net2vpr(sources[0], parent),
+                        'output': _net2vpr(sink, parent),
                         }):
                         _vpr_arch_interconnect(xml, delegate, sources, sink, module, parent, hierarchy)
                 else:
                     with xml.element('mux', {
                         'name': 'mux_{}_{}_{}'.format(sink.parent.name, sink.bus.name, sink.index),
-                        'input': ' '.join(map(lambda x: _bit2vpr(x, parent), sources)),
-                        'output': _bit2vpr(sink, parent),
+                        'input': ' '.join(map(lambda x: _net2vpr(x, parent), sources)),
+                        'output': _net2vpr(sink, parent),
                         }):
                         _vpr_arch_interconnect(xml, delegate, sources, sink, module, parent, hierarchy)
     # 3. fasm metadata
@@ -171,26 +177,41 @@ def _vpr_arch_primitive(xml, delegate, hierarchical_instance):
             continue
         if port.clock is not None:
             if port.direction.is_input:
-                for bit in port:
-                    xml.element_leaf('T_setup', {
-                        'port': _bit2vpr(bit, parent),
+                xml.element_leaf('T_setup', {
+                        'port': _net2vpr(port, parent),
                         'value': '1e-11',
                         'clock': port.clock,
-                        })
+                    })
+                # for bit in port:
+                #     xml.element_leaf('T_setup', {
+                #         'port': _net2vpr(bit, parent),
+                #         'value': '1e-11',
+                #         'clock': port.clock,
+                #         })
             else:
-                for bit in port:
-                    xml.element_leaf('T_clock_to_Q', {
-                        'port': _bit2vpr(bit, parent),
-                        'max': '1e-11',
-                        'clock': port.clock,
-                        })
+                xml.element_leaf('T_clock_to_Q', {
+                    'port': _net2vpr(port, parent),
+                    'max': '1e-11',
+                    'clock': port.clock,
+                    })
+                # for bit in port:
+                #     xml.element_leaf('T_clock_to_Q', {
+                #         'port': _net2vpr(bit, parent),
+                #         'max': '1e-11',
+                #         'clock': port.clock,
+                #         })
         if port.direction.is_output:
             for source in port.combinational_sources:
-                for src, sink in product(iter(primitive.ports[source]), iter(port)):
+                # for src, sink in product(iter(primitive.ports[source]), iter(port)):
+                #     xml.element_leaf('delay_constant', {
+                #         'max': '1e-11',
+                #         'in_port': _net2vpr(src, parent),
+                #         'out_port': _net2vpr(sink, parent),
+                #         })
                     xml.element_leaf('delay_constant', {
                         'max': '1e-11',
-                        'in_port': _bit2vpr(src, parent),
-                        'out_port': _bit2vpr(sink, parent),
+                        'in_port': _net2vpr(primitive.ports[source], parent),
+                        'out_port': _net2vpr(port, parent),
                         })
 
 def _vpr_arch_primitive_instance(xml, delegate, hierarchical_instance):

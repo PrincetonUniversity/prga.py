@@ -13,7 +13,7 @@ from prga.util import ReadonlyMappingProxy
 
 from collections import OrderedDict
 
-__all__ = ['Inpad', 'Outpad', 'Iopad', 'Flipflop', 'LUT', 'SinglePortMemory', 'DualPortMemory']
+__all__ = ['Inpad', 'Outpad', 'Iopad', 'Flipflop', 'LUT', 'Memory']
 
 # ----------------------------------------------------------------------------
 # -- Base Class for Built-in Primitives --------------------------------------
@@ -211,31 +211,31 @@ class Memory(_BaseBuiltinPrimitive):
         self._transparent = transparent
         if dualport:
             self._add_port(PrimitiveClockPort(self, 'clk', port_class = PrimitivePortClass.clock))
-            self._add_port(PrimitiveInputPort(self, 'aaddr', addr_width, clock = 'clk', port_class =
+            self._add_port(PrimitiveInputPort(self, 'addr1', addr_width, clock = 'clk', port_class =
                     PrimitivePortClass.address1))
-            self._add_port(PrimitiveInputPort(self, 'adin', data_width, clock = 'clk', port_class =
+            self._add_port(PrimitiveInputPort(self, 'data1', data_width, clock = 'clk', port_class =
                     PrimitivePortClass.data_in1))
-            self._add_port(PrimitiveInputPort(self, 'awe', 1, clock = 'clk', port_class =
+            self._add_port(PrimitiveInputPort(self, 'we1', 1, clock = 'clk', port_class =
                     PrimitivePortClass.write_en1))
-            self._add_port(PrimitiveOutputPort(self, 'adout', data_width, clock = 'clk', port_class = 
+            self._add_port(PrimitiveOutputPort(self, 'out1', data_width, clock = 'clk', port_class = 
                     PrimitivePortClass.data_out1))
-            self._add_port(PrimitiveInputPort(self, 'baddr', addr_width, clock = 'clk', port_class =
+            self._add_port(PrimitiveInputPort(self, 'addr2', addr_width, clock = 'clk', port_class =
                     PrimitivePortClass.address2))
-            self._add_port(PrimitiveInputPort(self, 'bdin', data_width, clock = 'clk', port_class =
+            self._add_port(PrimitiveInputPort(self, 'data2', data_width, clock = 'clk', port_class =
                     PrimitivePortClass.data_in2))
-            self._add_port(PrimitiveInputPort(self, 'bwe', 1, clock = 'clk', port_class =
+            self._add_port(PrimitiveInputPort(self, 'we2', 1, clock = 'clk', port_class =
                     PrimitivePortClass.write_en2))
-            self._add_port(PrimitiveOutputPort(self, 'bdout', data_width, clock = 'clk', port_class = 
+            self._add_port(PrimitiveOutputPort(self, 'out2', data_width, clock = 'clk', port_class = 
                     PrimitivePortClass.data_out2))
         else:
             self._add_port(PrimitiveClockPort(self, 'clk', port_class = PrimitivePortClass.clock))
             self._add_port(PrimitiveInputPort(self, 'addr', addr_width, clock = 'clk', port_class =
                     PrimitivePortClass.address))
-            self._add_port(PrimitiveInputPort(self, 'din', data_width, clock = 'clk', port_class =
+            self._add_port(PrimitiveInputPort(self, 'data', data_width, clock = 'clk', port_class =
                     PrimitivePortClass.data_in))
             self._add_port(PrimitiveInputPort(self, 'we', 1, clock = 'clk', port_class =
                     PrimitivePortClass.write_en))
-            self._add_port(PrimitiveOutputPort(self, 'dout', data_width, clock = 'clk', port_class = 
+            self._add_port(PrimitiveOutputPort(self, 'out', data_width, clock = 'clk', port_class = 
                     PrimitivePortClass.data_out))
 
     # == low-level API =======================================================
