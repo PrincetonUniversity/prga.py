@@ -3,12 +3,46 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
+from prga.arch.net.common import PortDirection
 from prga.exception import PRGAAPIError
+from prga.util import Object
 
 from hdlparse.verilog_parser import VerilogExtractor as Vex
-from hdlparse.verilog_parser import VerilogModule
+import re
+
+_reprog_width = re.compile('^.*?\[\s*(?P<start>\d+)\s*:\s*(?P<end>\d+)\s*\].*?$')
 
 __all__ = ['find_verilog_top', 'parse_io_bindings', 'parse_parameters']
+
+class VerilogPort(Object):
+    """A port of a Verilog module.
+
+    Args:
+        name (:obj:`str`): Name of the connection
+        direction (`PortDirection`): Direction of this port
+        low (:obj:`int`): LSB
+        high (:obj:`int`): MSB
+    """
+
+    __slots__ = ['name', 'direction', 'low', 'high']
+    def __init__(self, name, direction, low = None, high = None):
+        self.name = name
+        self.direction = direction
+        self.low = low
+        self.high = high
+
+class VerilogModule(Object):
+    """A Verilog module.
+
+    Args:
+        name (:obj:`str`): Name of the module
+        ports (:obj:`Mapping` [:obj:`str`, `VerilogPort` ]): Mapping from port names to ports
+    """
+
+    __slots__ = ['name', 'ports']
+    def __init__(self, name, ports):
+        self.name = name
+        self.ports = ports
 
 def find_verilog_top(files, top = None):
     """Find and parse the top-level module in a list of Verilog files.
@@ -19,19 +53,40 @@ def find_verilog_top(files, top = None):
             files
 
     Returns:
-        `VerilogModule
-        <https://kevinpt.github.io/hdlparse/apidoc/hdlparse.html#hdlparse.verilog_parser.VerilogModule>`_:
+        `VerilogModule`:
     """
     mods = {x.name : x for f in files for x in Vex().extract_objects(f)}
-    if top is not None:
-        try:
-            return mods[top]
-        except KeyError:
-            raise PRGAAPIError("Module '{}' is not found in the file(S)")
-    elif len(mods) > 1:
-        raise PRGAAPIError('Multiple modules found in the file(s) but no top is specified')
-    else:
-        return next(iter(itervalues(mods)))
+    mod = next(iter(itervalues(mods)))
+    if len(mods) > 1:
+        if top is not None:
+            try:
+                mod = mods[top]
+            except KeyError:
+                raise PRGAAPIError("Module '{}' is not found in the file(s)")
+        else:
+            raise PRGAAPIError('Multiple modules found in the file(s) but no top is specified')
+    ports = {}
+    for port in mod.ports:
+        matched = _reprog_width.match(port.data_type)
+        direction = port.mode.strip()
+        if direction == 'input':
+            direction = PortDirection.input_
+        elif direction == 'output':
+            direction = PortDirection.output
+        else:
+            raise PRGAAPIError("Unknown port direction '{}'".format(direction))
+        low, high = None, None
+        matched = _reprog_width.match(port.data_type)
+        if matched is not None:
+            start, end = map(int, matched.group('start', 'end'))
+            if start > end:
+                low, high = end, start + 1
+            elif end > start:
+                low, high = start, end + 1
+            else:
+                low, high = start, start + 1
+        ports[port.name] = VerilogPort(port.name, direction, low, high)
+    return VerilogModule(mod.name, ports)
 
 def parse_io_bindings(file_):
     """Parse the IO binding constraint file.

@@ -99,20 +99,20 @@ def ioremap(context, input_, output, io_bindings):
     """
     et.parse(input_, parser = et.XMLParser(target = _RemapTarget(context, output, io_bindings)))
 
-import argparse
-parser = argparse.ArgumentParser(
-        description="Bitstream generator for bitchain-style configuration circuitry")
-
-parser.add_argument('context', type=argparse.FileType(OpenMode.r),
-        help="Pickled architecture context object")
-parser.add_argument('io', type=str,
-        help="IO assignment constraint")
-parser.add_argument('input', type=argparse.FileType(OpenMode.r),
-        help="DESIGN.net: packing result produced by VPR")
-parser.add_argument('output', type=argparse.FileType(OpenMode.w),
-        help="OUTPUT.net: output. Remapped packing result")
-
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(
+            description="Bitstream generator for bitchain-style configuration circuitry")
+    
+    parser.add_argument('context', type=argparse.FileType(OpenMode.r),
+            help="Pickled architecture context object")
+    parser.add_argument('io', type=str,
+            help="IO assignment constraint")
+    parser.add_argument('input', type=argparse.FileType(OpenMode.r),
+            help="DESIGN.net: packing result produced by VPR")
+    parser.add_argument('output', type=argparse.FileType(OpenMode.w),
+            help="OUTPUT.net: output. Remapped packing result")
+
     args = parser.parse_args()
     enable_stdout_logging(__name__, logging.INFO)
     context = ArchitectureContext.unpickle(args.context)
