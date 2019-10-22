@@ -378,7 +378,7 @@ def _vpr_arch_array(xml, delegate, array, hierarchy = None):
             else:
                 xml.element_leaf('single', attrs)
         else:
-            _vpr_arch_array(xml, instance.model, hierarchical_instance(instance, hierarchy))
+            _vpr_arch_array(xml, delegate, instance.model, hierarchical_instance(instance, hierarchy))
 
 def vpr_arch_layout(xml, delegate, array):
     """Convert a top-level array to VPR architecture description.

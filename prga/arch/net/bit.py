@@ -418,6 +418,7 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
             raise PRGAInternalError("'{}' is not a user sink"
                     .format(self))
         for s in sources:
+            s = s._get_or_create_static_cp()
             if s.is_sink:
                 # we allow non-user sources to be added to this list
                 # this is only used for connection box - switch box bridges
@@ -441,6 +442,7 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
                 pass
         else:
             for s in sources:
+                s = s._get_or_create_static_cp()
                 try:
                     self._user_sources.remove(s)
                 except ValueError:

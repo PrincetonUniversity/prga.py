@@ -46,7 +46,7 @@ class CompleteRoutingBox(Object, AbstractPass):
         hierarchy = analyze_hierarchy(context)
         for module in itervalues(hierarchy[array.name]):
             if module.module_class.is_array:
-                self.__process_array(context, module)
+                self.__process_array(context, module, segments)
             elif module.module_class.is_tile:
                 cboxify(context.connection_box_library, module, module.orientation.opposite)
                 for (position, orientation), cbox in iteritems(module.cbox_instances):
