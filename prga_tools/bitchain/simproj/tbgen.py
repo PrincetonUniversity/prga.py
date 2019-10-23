@@ -8,9 +8,9 @@ from prga.algorithm.util.array import get_external_port
 from prga.config.bitchain.algorithm.bitstream import get_config_bit_count, get_config_bit_offset
 from prga.flow.context import ArchitectureContext
 from prga.exception import PRGAAPIError
-from prga.util import enable_stdout_logging
+from prga.util import enable_stdout_logging, uno
 
-from prga_tools.util import find_verilog_top, parse_io_bindings
+from prga_tools.util import find_verilog_top, parse_io_bindings, parse_parameters
 
 import jinja2 as jj
 import os
@@ -134,19 +134,27 @@ if __name__ == '__main__':
             help="IO assignment constraint")
     parser.add_argument('wrapper', type=argparse.FileType('w'),
             help="Generated Verilog testbench wrapper")
+
     parser.add_argument('-t', '--testbench', type=str, nargs='+', dest="testbench",
             help="Testbench file(s) for behavioral model")
-    parser.add_argument('-m', '--model', type=str, nargs='+', dest="model",
-            help="Source file(s) for behavioral model")
     parser.add_argument('--testbench_top', type=str,
             help="Top-level module name of the testbench. Required if the testbench comprises multiple files/modules")
+    parser.add_argument('--testbench_parameters', type=str, nargs="+", default=[],
+            help="Parameters for the testbench: PARAMETER0=VALUE0 PARAMETER1=VALUE1 ...")
+
+    parser.add_argument('-m', '--model', type=str, nargs='+', dest="model",
+            help="Source file(s) for behavioral model")
     parser.add_argument('--model_top', type=str,
             help="Top-level module name of the behavioral model. Required if the model comprises multiple files/modules")
+    parser.add_argument('--model_parameters', type=str, nargs="+", default=[],
+            help="Parameters for the behavioral model: PARAMETER0=VALUE0 PARAMETER1=VALUE1 ...")
 
     args = parser.parse_args()
     enable_stdout_logging(__name__, logging.INFO)
     context = ArchitectureContext.unpickle(args.context)
     tb_top = find_verilog_top(args.testbench, args.testbench_top)
+    tb_top.parameters = parse_parameters(args.testbench_parameters)
     behav_top = find_verilog_top(args.model, args.model_top)
+    behav_top.parameters =parse_parameters(args.model_parameters) 
     io_bindings = parse_io_bindings(args.io)
     generate_testbench_wrapper(context, args.wrapper, tb_top, behav_top, io_bindings)

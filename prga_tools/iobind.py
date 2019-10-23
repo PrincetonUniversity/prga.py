@@ -7,7 +7,7 @@ from prga.arch.net.common import PortDirection
 from prga.algorithm.util.array import get_hierarchical_tile
 from prga.algorithm.util.hierarchy import hierarchical_position
 from prga.flow.context import ArchitectureContext
-from prga.util import enable_stdout_logging
+from prga.util import enable_stdout_logging, uno
 from prga.exception import PRGAAPIError
 
 from prga_tools.util import find_verilog_top, parse_io_bindings
@@ -39,7 +39,7 @@ def _find_next_available_io(assignments, current, direction):
         else:
             y, subblock = y + 1, 0
 
-def iobind(context, ostream, mod_top, fixed = {}):
+def iobind(context, ostream, mod_top, fixed = None):
     """Generate IO assignment file.
 
     Args:
@@ -67,7 +67,7 @@ def iobind(context, ostream, mod_top, fixed = {}):
                 assignments[x][y] = i, o
     # process fixed assignments
     processed = {}
-    for name, (x, y, subblock) in iteritems(fixed):
+    for name, (x, y, subblock) in iteritems(uno(fixed, {})):
         direction = PortDirection.input_
         if name.startswith('out:'):
             name = name[4:]

@@ -16,12 +16,14 @@ from prga.config.bitchain.flow import BitchainConfigCircuitryDelegate, InjectBit
 from itertools import product
 
 def test_large(tmpdir):
-    context = ArchitectureContext('top', 18, 18, BitchainConfigCircuitryDelegate)
+    width, height = 102, 82
+    context = ArchitectureContext('top', width, height, BitchainConfigCircuitryDelegate)
 
     # 1. routing stuff
     clk = context.create_global('clk', is_clock = True, bind_to_position = (0, 1))
-    context.create_segment('L1', 32, 1)
+    context.create_segment('L1', 48, 1)
     context.create_segment('L2', 16, 2)
+    context.create_segment('L4', 8, 4)
 
     # 2. create IOB
     iob = context.create_io_block('iob')
@@ -62,8 +64,8 @@ def test_large(tmpdir):
         cluster.connect(clkport, ff0.pins['clk'])
         cluster.connect(clkport, ff1.pins['clk'])
         cluster.connect(inport, lut.pins['in'])
-        cluster.connect(lut.pins['o6'], ff0.pins['D'])
-        cluster.connect(lut.pins['o5'], ff1.pins['D'])
+        cluster.connect(lut.pins['o6'], ff0.pins['D'], pack_pattern = True)
+        cluster.connect(lut.pins['o5'], ff1.pins['D'], pack_pattern = True)
         cluster.connect(lut.pins['o6'], outport[0])
         cluster.connect(lut.pins['o5'], outport[1])
         cluster.connect(ff0.pins['Q'], outport[0])
@@ -93,24 +95,33 @@ def test_large(tmpdir):
     bram = context.create_logic_block('bram', 1, 2)
     while True:
         clkport = bram.create_global(clk, Orientation.south, position = (0, 0))
-        addrport = bram.create_input('addr', 10, Orientation.west, position = (0, 0))
-        dinport = bram.create_input('data', 8, Orientation.west, position = (0, 1))
-        weport = bram.create_input('we', 1, Orientation.north, position = (0, 1))
-        doutport = bram.create_output('out', 8, Orientation.east, position = (0, 0))
-        inst = bram.instantiate(context.primitive_library.get_or_create_memory(10, 8), 'ram')
+        addrport1 = bram.create_input('addr1', 10, Orientation.west, position = (0, 0))
+        dinport1 = bram.create_input('data1', 8, Orientation.west, position = (0, 0))
+        weport1 = bram.create_input('we1', 1, Orientation.west, position = (0, 0))
+        doutport1 = bram.create_output('out1', 8, Orientation.east, position = (0, 0))
+        addrport2 = bram.create_input('addr2', 10, Orientation.west, position = (0, 1))
+        dinport2 = bram.create_input('data2', 8, Orientation.west, position = (0, 1))
+        weport2 = bram.create_input('we2', 1, Orientation.west, position = (0, 1))
+        doutport2 = bram.create_output('out2', 8, Orientation.east, position = (0, 1))
+        inst = bram.instantiate(context.primitive_library.get_or_create_memory(10, 8, 
+            dualport = True), 'ram')
         bram.connect(clkport, inst.pins['clk'])
-        bram.connect(addrport, inst.pins['addr'])
-        bram.connect(dinport, inst.pins['data'])
-        bram.connect(weport, inst.pins['we'])
-        bram.connect(inst.pins['out'], doutport)
+        bram.connect(addrport1, inst.pins['addr1'])
+        bram.connect(dinport1, inst.pins['data1'])
+        bram.connect(weport1, inst.pins['we1'])
+        bram.connect(inst.pins['out1'], doutport1)
+        bram.connect(addrport2, inst.pins['addr2'])
+        bram.connect(dinport2, inst.pins['data2'])
+        bram.connect(weport2, inst.pins['we1'])
+        bram.connect(inst.pins['out2'], doutport2)
         break
 
     # 8. create tile
     bramtile = context.create_tile('bram_tile', bram)
 
     # 9. create sub-array
-    subarray = context.create_array('subarray', 4, 4)
-    for x, y in product(range(4), range(4)):
+    subarray = context.create_array('subarray', 5, 4)
+    for x, y in product(range(5), range(4)):
         if x == 2:
             if y % 2 == 0:
                 subarray.instantiate_element(bramtile, (x, y))
@@ -118,19 +129,19 @@ def test_large(tmpdir):
             subarray.instantiate_element(clbtile, (x, y))
 
     # 9. fill top-level array
-    for x in range(18):
-        for y in range(18):
+    for x in range(width):
+        for y in range(height):
             if x == 0:
-                if y > 0 and y < 17:
+                if y > 0 and y < height - 1:
                     context.top.instantiate_element(iotiles[Orientation.west], (x, y))
-            elif x == 17:
-                if y > 0 and y < 17:
+            elif x == width - 1:
+                if y > 0 and y < height - 1:
                     context.top.instantiate_element(iotiles[Orientation.east], (x, y))
             elif y == 0:
                 context.top.instantiate_element(iotiles[Orientation.south], (x, y))
-            elif y == 17:
+            elif y == height - 1:
                 context.top.instantiate_element(iotiles[Orientation.north], (x, y))
-            elif x % 4 == 1 and y % 4 == 1:
+            elif x % 5 == 1 and y % 4 == 1:
                 context.top.instantiate_element(subarray, (x, y))
 
     # 10. flow

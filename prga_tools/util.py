@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from prga.arch.net.common import PortDirection
 from prga.exception import PRGAAPIError
-from prga.util import Object
+from prga.util import Object, uno
 
 from hdlparse.verilog_parser import VerilogExtractor as Vex
 import re
@@ -37,12 +37,14 @@ class VerilogModule(Object):
     Args:
         name (:obj:`str`): Name of the module
         ports (:obj:`Mapping` [:obj:`str`, `VerilogPort` ]): Mapping from port names to ports
+        parameters (:obj:`Mapping` [:obj:`str`, :obj:`str` ]): Parameters for this module
     """
 
-    __slots__ = ['name', 'ports']
-    def __init__(self, name, ports):
+    __slots__ = ['name', 'ports', 'parameters']
+    def __init__(self, name, ports, parameters = None):
         self.name = name
         self.ports = ports
+        self.parameters = uno(parameters, {})
 
 def find_verilog_top(files, top = None):
     """Find and parse the top-level module in a list of Verilog files.
