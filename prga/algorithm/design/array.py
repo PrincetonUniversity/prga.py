@@ -113,7 +113,7 @@ def find_segment_driver(array, node, create_input = True):
                 if subdriver is None:
                     continue
                 assert subdriver.net_type.is_pin and subdriver.direction.is_output
-                sbox.model.get_or_create_node(arraynode, PortDirection.output).source = subdriver
+                sbox.model.get_or_create_node(arraynode, PortDirection.output).logical_source = subdriver
                 return sbox.all_nodes[arraynode]
             elif pin.direction.is_output:
                 return pin
@@ -135,9 +135,9 @@ def create_and_connect_cs_bridge(array, source, create_output = True):
             arrayport = array.all_nodes.get(arraynode, None)
             if arrayport is None:
                 if create_output:
-                    array.get_or_create_node(arraynode, PortDirection.output).source = source
+                    array.get_or_create_node(arraynode, PortDirection.output).logical_source = source
                 return
-            elif arrayport.source is source:
+            elif arrayport.logical_source is source:
                 return
         raise PRGAInternalError("Got the third connection box - switch box bridge: {} in array '{}'"
                 .format(node, array))
@@ -150,10 +150,10 @@ def create_and_connect_cs_bridge(array, source, create_output = True):
             sboxpin = sbox.all_nodes.get(sboxnode, None)
             if sboxpin is None:
                 sbox.model.get_or_create_node(sboxnode)
-                sbox.all_nodes[sboxnode].source = source
+                sbox.all_nodes[sboxnode].logical_source = source
                 return
-            elif all(bit is UNCONNECTED for bit in sboxpin.source) or sboxpin.source is source:
-                sboxpin.source = source
+            elif all(bit is UNCONNECTED for bit in sboxpin.logical_source) or sboxpin.logical_source is source:
+                sboxpin.logical_source = source
                 return
     else:
         for type_ in (SegmentBridgeType.array_cboxout, SegmentBridgeType.array_cboxout2):
@@ -162,10 +162,10 @@ def create_and_connect_cs_bridge(array, source, create_output = True):
             if sboxpin is None:
                 arrayport = sbox.model.get_or_create_node(sboxnode, PortDirection.input_)
                 create_and_connect_cs_bridge(sbox.model, arrayport)
-                sbox.all_nodes[sboxnode].source = source
+                sbox.all_nodes[sboxnode].logical_source = source
                 return
-            elif all(bit is UNCONNECTED for bit in sboxpin.source) or sboxpin.source is source:
-                sboxpin.source = source
+            elif all(bit is UNCONNECTED for bit in sboxpin.logical_source) or sboxpin.logical_source is source:
+                sboxpin.logical_source = source
                 return
         raise PRGAInternalError("Got the third connection box - switch box bridge: {} in array '{}'"
                 .format(node, array))
@@ -192,32 +192,32 @@ def netify_array(array, top = False):
                             driver = find_segment_driver(array, node.to_driver_id(), not top)
                             if driver is None:
                                 continue
-                            pin.source = driver
+                            pin.logical_source = driver
                         elif ((node.bridge_type.is_array_cboxout or node.bridge_type.is_array_cboxout2) and
                                 pin.direction.is_output):
                             create_and_connect_cs_bridge(array, pin, not top)
                 elif pin.net_class.is_io:
                     node = pin.node
                     if pin.direction.is_input:
-                        exti = pin.source = array._add_port(ArrayExternalInputPort(array, node))
+                        exti = pin.physical_source = array._add_port(ArrayExternalInputPort(array, node))
                         extinputs[x][y].setdefault(node.subblock, []).append(exti)
                     else:
-                        array._add_port(ArrayExternalOutputPort(array, node)).source = pin
+                        array._add_port(ArrayExternalOutputPort(array, node)).physical_source = pin
         sbox = array.sbox_instances.get( (x, y), None )
         if sbox is not None:
-            snapshot = OrderedDict(iteritems(sbox.all_pins))
-            for sboxpin in itervalues(sbox.all_nodes):
+            snapshot = OrderedDict(iteritems(sbox.all_nodes))
+            for sboxpin in itervalues(snapshot):
                 node = sboxpin.node
                 if not (node.node_type.is_segment_bridge and node.bridge_type.is_sboxin_regular):
                     continue
                 driver = find_segment_driver(array, node.to_driver_id(), not top)
                 if driver is None:
                     continue
-                sboxpin.source = driver
+                sboxpin.logical_source = driver
     for x, y in product(range(-1, array.width), range(-1, array.height)):
         element = array.element_instances.get( (x, y), None )
         if element is not None:
-            for pin in itervalues(element.all_pins):
+            for pin in itervalues(element.physical_pins):
                 if pin.net_class.is_global:
                     global_ = pin.model.global_
                     if top:
@@ -242,6 +242,6 @@ def netify_array(array, top = False):
                                         "width ({}) of the external input port '{}'")
                                     .format(global_.name, global_.bound_to_position.x, global_.bound_to_position.y,
                                         global_.bound_to_subblock, global_.width, drivers[0].width, drivers[0]))
-                        pin.source = drivers[0]
+                        pin.physical_source = drivers[0]
                     else:
-                        pin.source = array.get_or_create_global_input(pin.model.global_)
+                        pin.physical_source = array.get_or_create_global_input(pin.model.global_)

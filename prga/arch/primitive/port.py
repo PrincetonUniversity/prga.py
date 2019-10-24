@@ -35,10 +35,6 @@ class PrimitiveClockPort(BaseCustomClockPort):
     def net_class(self):
         return NetClass.primitive
 
-    @property
-    def is_user_accessible(self):
-        return True
-
 # ----------------------------------------------------------------------------
 # -- Primitive Input Port ----------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -67,10 +63,6 @@ class PrimitiveInputPort(BaseLeafInputPort):
     @property
     def net_class(self):
         return NetClass.primitive
-
-    @property
-    def is_user_accessible(self):
-        return True
 
 # ----------------------------------------------------------------------------
 # -- Primitive Output Port ---------------------------------------------------
@@ -102,7 +94,3 @@ class PrimitiveOutputPort(BaseLeafOutputPort):
     @property
     def net_class(self):
         return NetClass.primitive
-
-    @property
-    def is_user_accessible(self):
-        return True

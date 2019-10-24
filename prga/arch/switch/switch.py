@@ -49,16 +49,18 @@ class ConfigurableMUX(BaseModule, AbstractSwitch):
     Args:
         width (:obj:`int`): Number of inputs of this mux
         name (:obj:`int`): Name of this mux
+        in_physical_domain (:obj:`bool`):
     """
 
-    __slots__ = ['_ports']
-    def __init__(self, width, name = None):
+    __slots__ = ['_ports', 'in_physical_domain']
+    def __init__(self, width, name = None, in_physical_domain = True):
         if width < 2:
             raise PRGAInternalError("Configurable MUX size '{}' not supported. Supported size: width >= 2"
                     .format(width))
         name = name or ('cfg_mux' + str(width))
         super(ConfigurableMUX, self).__init__(name)
         self._ports = OrderedDict()
+        self.in_physical_domain = in_physical_domain
         self._add_port(SwitchInputPort(self, 'i', width))
         self._add_port(SwitchOutputPort(self, 'o', 1, combinational_sources = ('i', )))
         self._add_port(ConfigInputPort(self, 'cfg_d', int(math.ceil(math.log(width, 2)))))
@@ -92,8 +94,8 @@ class SwitchInstance(RegularInstance):
     # == low-level API =======================================================
     @property
     def switch_inputs(self):
-        return tuple(self.all_pins[bit.bus.key][bit.index] for bit in self.model.switch_inputs)
+        return tuple(self.logical_pins[bit.bus.key][bit.index] for bit in self.model.switch_inputs)
 
     @property
     def switch_output(self):
-        return self.all_pins[self.model.switch_output.bus.key][self.model.switch_output.index]
+        return self.logical_pins[self.model.switch_output.bus.key][self.model.switch_output.index]

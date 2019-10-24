@@ -148,4 +148,4 @@ class BaseRoutingInstance(BaseInstance):
     def all_nodes(self):
         """:obj:`Mapping` [`AbstractRoutingNodeID`, `AbstractRoutingNodePort` ]: A mapping from routing node IDs to
         routing node ports. Note that this property handles the equivalent routing node IDs well."""
-        return _RoutingNodePortsProxy(self.all_pins)
+        return _RoutingNodePortsProxy(self.logical_pins)

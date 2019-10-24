@@ -40,7 +40,7 @@ class _BaseBus(Object, AbstractBus):
     @property
     def physical_cp(self):
         # 0. no physical counterpart if myself is physical
-        if self.is_physical:
+        if self.in_physical_domain:
             return self
         # 1. check grouped physical counterpart
         try:
@@ -62,14 +62,14 @@ class _BaseBus(Object, AbstractBus):
         except AttributeError:
             pass
         # 2. validate
-        if self.is_physical:
-            raise PRGAInternalError("'{}' is physical so no counterpart should be set"
+        if self.in_physical_domain:
+            raise PRGAInternalError("'{}' is in the physical domain so no counterpart should be set"
                     .format(self))
         # 3. ``cp`` is ``None`` or a bus
         try:
             if cp is None or cp.is_bus:
                 # 3.1 validate
-                if cp is not None and not (cp.is_physical and cp.is_sink is self.is_sink):
+                if cp is not None and not (cp.in_physical_domain and cp.is_sink is self.is_sink):
                     raise PRGAInternalError("'{}' is not a valid physical counterpart for '{}'"
                             .format(cp, self))
                 # 3.2 clean up ungrouped physical counterparts
@@ -91,7 +91,7 @@ class _BaseBus(Object, AbstractBus):
                     self._physical_cp = cp
             elif self.width == 1:
                 # 3.4 validate
-                if not (cp.is_physical and cp.is_sink is self.is_sink):
+                if not (cp.in_physical_domain and cp.is_sink is self.is_sink):
                     raise PRGAInternalError("'{}' is not a valid physical counterpart for '{}'"
                             .format(cp, self))
                 # 3.5 clean up grouped physical counterpart
@@ -115,7 +115,7 @@ class _BaseBus(Object, AbstractBus):
             # 4.3 update
             for i, cpbit in enumerate(cp):
                 # 4.3.1 validate
-                if cpbit is not None and not (cpbit.is_physical and cpbit.is_sink is self.is_sink):
+                if cpbit is not None and not (cpbit.in_physical_domain and cpbit.is_sink is self.is_sink):
                     raise PRGAInternalError("'{}' is not a valid physical counterpart for '{}'"
                             .format(cp, self[i]))
                 # 4.3.2 update
@@ -164,7 +164,7 @@ class _SinkBus(_BaseBus, AbstractBus):
         parent (`AbstractModule` or `AbstractInstance`): parent module/instance of this bus
     """
 
-    __slots__ = ['_physical_source', '_source']
+    __slots__ = ['_physical_source', '_logical_source']
 
     # -- implementing properties/methods required by superclass --------------
     def _get_or_create_bit(self, index, dynamic):
@@ -179,54 +179,62 @@ class _SinkBus(_BaseBus, AbstractBus):
 
     # == low-level API =======================================================
     @property
-    def source(self):
+    def logical_source(self):
         """:obj:`Sequence` [`AbstractSourceBit` ]: Logical driver of this bus."""
+        # 0. logical source is only valid if this is a logical net
+        if not self.in_logical_domain:
+            raise PRGAInternalError("'{}' is not in the logical domain"
+                    .format(self))
         # 1. check grouped logical source
         try:
-            return self._source
+            return self._logical_source
         except AttributeError:
             pass
         # 2. check ungrouped logical source
-        return tuple(bit.source for bit in self)
+        return tuple(bit.logical_source for bit in self)
 
-    @source.setter
-    def source(self, source):
-        # 1. shortcut if no changes are to be made
+    @logical_source.setter
+    def logical_source(self, source):
+        # 0. shortcut if no changes are to be made
         try:
-            if source is self._source:
+            if source is self._logical_source:
                 return
         except AttributeError:
             pass
+        # 1. logical source is only valid if this is a logical net
+        if not self.in_logical_domain:
+            raise PRGAInternalError("'{}' is not in the logical domain"
+                    .format(self))
         # 2. if ``source`` is a bus or a bit:
         try:
             if source.is_bus:
                 # 2.1 validate
-                if not (not source.is_sink and source.width == self.width):
-                    raise PRGAInternalError("'{}' is not a {}-bit source bus"
+                if not (source.in_logical_domain and not source.is_sink and source.width == self.width):
+                    raise PRGAInternalError("'{}' is not a {}-bit logical source bus"
                             .format(source, self.width))
                 # 2.2 clean up ungrouped logical sources
                 try:
                     for bit in self._bits:
                         try:
-                            del bit._source
+                            del bit._logical_source
                         except AttributeError:
                             pass
                 except AttributeError:
                     pass
                 # 2.3 update
-                self._source = source
+                self._logical_source = source
             elif self.width == 1:
                 # 2.4 validate
-                if source.is_sink:
-                    raise PRGAInternalError("'{}' is not a source"
+                if not (source.in_logical_domain and not source.is_sink):
+                    raise PRGAInternalError("'{}' is not a logical source"
                             .format(source))
                 # 2.5 clean up grouped logical source
                 try:
-                    del self._source
+                    del self._logical_source
                 except AttributeError:
                     pass
                 # 2.6 update
-                self._get_or_create_bit(0, False)._source = source
+                self._get_or_create_bit(0, False)._logical_source = source
         # 3. if ``source`` is a sequence of bits
         except AttributeError:
             # 3.1 validate
@@ -235,24 +243,24 @@ class _SinkBus(_BaseBus, AbstractBus):
                         .format(len(source), self.width))
             # 3.2 clean up grouped logical source
             try:
-                del self._source
+                del self._logical_source
             except AttributeError:
                 pass
             # 3.3 create links
             for i, src in enumerate(source):
                 # 3.3.1 validate
-                if src.is_sink:
-                    raise PRGAInternalError("'{}' is not a source"
+                if not (src.in_logical_domain and not src.is_sink):
+                    raise PRGAInternalError("'{}' is not a logical source"
                             .format(src))
                 # 3.3.2 update
-                self._get_or_create_bit(i, False)._source = src
+                self._get_or_create_bit(i, False)._logical_source = src
 
     @property
     def physical_source(self):
         """:obj:`Sequence` [`AbstractSourceBit` ]: Physical driver of this bus."""
         # 0. physical source is only valid if this is a physical net
-        if not self.is_physical:
-            raise PRGAInternalError("'{}' is not a physical net"
+        if not self.in_physical_domain:
+            raise PRGAInternalError("'{}' is not in the physical domain"
                     .format(self))
         # 1. check grouped physical source
         try:
@@ -264,21 +272,21 @@ class _SinkBus(_BaseBus, AbstractBus):
 
     @physical_source.setter
     def physical_source(self, source):
-        # 0. physical source is only valid if this is a physical net
-        if not self.is_physical:
-            raise PRGAInternalError("'{}' is not a physical net"
-                    .format(self))
-        # 1. shortcut if no changes are to be made
+        # 0. shortcut if no changes are to be made
         try:
             if source is self._physical_source:
                 return
         except AttributeError:
             pass
+        # 1. physical source is only valid if this is a physical net
+        if not self.in_physical_domain:
+            raise PRGAInternalError("'{}' is not in the physical domain"
+                    .format(self))
         # 2. if ``source`` is a bus or a bit:
         try:
             if source.is_bus:
                 # 2.1 validate
-                if not (source.is_physical and not source.is_sink and source.width == self.width):
+                if not (source.in_physical_domain and not source.is_sink and source.width == self.width):
                     raise PRGAInternalError("'{}' is not a {}-bit physical source bus"
                             .format(source, self.width))
                 # 2.2 clean up ungrouped physical sources
@@ -294,7 +302,7 @@ class _SinkBus(_BaseBus, AbstractBus):
                 self._physical_source = source
             elif self.width == 1:
                 # 2.4 validate
-                if not (source.is_physical and not source.is_sink):
+                if not (source.in_physical_domain and not source.is_sink):
                     raise PRGAInternalError("'{}' is not a physical source"
                             .format(source))
                 # 2.5 clean up grouped physical source
@@ -318,7 +326,7 @@ class _SinkBus(_BaseBus, AbstractBus):
             # 3.3 create links
             for i, src in enumerate(source):
                 # 3.3.1 validate
-                if not (src.is_physical and not src.is_sink):
+                if not (src.in_physical_domain and not src.is_sink):
                     raise PRGAInternalError("'{}' is not a physical source"
                             .format(src))
                 # 3.3.2 update

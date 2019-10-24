@@ -33,10 +33,6 @@ class _AbstractArrayExternalPort(AbstractPort):
         return NetClass.io
 
     @property
-    def is_user_accessible(self):
-        return False
-
-    @property
     def name(self):
         if self.node.prototype.parent.module_class.is_io_block:
             return 'ext_{}_x{}y{}_{}_{}'.format(self.node.prototype.parent.name,

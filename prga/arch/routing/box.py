@@ -38,7 +38,7 @@ class _RoutingBoxNodesProxy(Mapping):
 
     def __filter(self, kv):
         return (isinstance(kv[0], AbstractRoutingNodeID) and
-                kv[1].is_user_accessible and kv[1].direction is self.direction)
+                kv[1].in_user_domain and kv[1].direction is self.direction)
 
     def __len__(self):
         return sum(1 for _ in filter(self.__filter, iteritems(self.box.all_nodes)))
@@ -80,12 +80,12 @@ class AbstractRoutingBox(AbstractRoutingModule):
     # == internal API ========================================================
     def _connect(self, source, sink):
         if not (source.parent is self and not source.is_sink and source.net_class.is_node and
-                (source.is_user_accessible or (source.bus.node.node_type.is_segment_bridge and
+                (source.in_user_domain or (source.bus.node.node_type.is_segment_bridge and
                     (source.bus.node.bridge_type.is_sboxin_cboxout or
                         source.bus.node.bridge_type.is_sboxin_cboxout2)))):
             raise PRGAInternalError("'{}' is not a user-accessible sink node in routing box '{}'"
                     .format(source, self))
-        if not (sink.parent is self and sink.is_sink and sink.net_class.is_node and sink.is_user_accessible):
+        if not (sink.parent is self and sink.is_sink and sink.net_class.is_node and sink.in_user_domain):
             raise PRGAInternalError("'{}' is not a user-accessible source node in routing box '{}'"
                     .format(sink, self))
         sink.add_user_sources( (source, ) )

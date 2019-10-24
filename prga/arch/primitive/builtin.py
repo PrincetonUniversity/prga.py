@@ -47,7 +47,7 @@ class Inpad(_BaseBuiltinPrimitive):
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
     @property
-    def is_physical(self):
+    def in_physical_domain(self):
         return False
 
     @property
@@ -79,7 +79,7 @@ class Outpad(_BaseBuiltinPrimitive):
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
     @property
-    def is_physical(self):
+    def in_physical_domain(self):
         return False
 
     @property
@@ -108,12 +108,12 @@ class Iopad(_BaseBuiltinPrimitive):
         super(Iopad, self).__init__(name)
         self._add_port(PrimitiveInputPort(self, 'outpad', 1))
         self._add_port(PrimitiveOutputPort(self, 'inpad', 1))
-        self._add_port(ConfigInputPort(self, 'oe', 1))
+        self._add_port(ConfigInputPort(self, 'cfg_d', 1))
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
     @property
-    def is_physical(self):
+    def in_physical_domain(self):
         return False
 
     @property
@@ -136,10 +136,13 @@ class Flipflop(_BaseBuiltinPrimitive):
 
     Args:
         name (:obj:`str`): Name of this primitive
+        in_physical_domain (:obj:`bool`):
     """
 
-    def __init__(self, name = 'flipflop'):
+    __slots__ = ['in_physical_domain']
+    def __init__(self, name = 'flipflop', in_physical_domain = True):
         super(Flipflop, self).__init__(name)
+        self.in_physical_domain = in_physical_domain
         self._add_port(PrimitiveClockPort(self, 'clk', port_class = PrimitivePortClass.clock))
         self._add_port(PrimitiveInputPort(self, 'D', 1, clock = 'clk', port_class = PrimitivePortClass.D))
         self._add_port(PrimitiveOutputPort(self, 'Q', 1, clock = 'clk', port_class = PrimitivePortClass.Q))
@@ -163,14 +166,17 @@ class LUT(_BaseBuiltinPrimitive):
     Args:
         width (:obj:`int`): Number of input bits of this LUT
         name (:obj:`str`): Name of this primitive. Default to 'lut{width}'
+        in_physical_domain (:obj:`bool`):
     """
 
-    def __init__(self, width, name = None):
+    __slots__ = ['in_physical_domain']
+    def __init__(self, width, name = None, in_physical_domain = True):
         if width < 2 or width > 8:
             raise PRGAInternalError("LUT size '{}' not supported. Supported size: 2 <= width <= 8"
                     .format(width))
         name = name or ("lut" + str(width))
         super(LUT, self).__init__(name)
+        self.in_physical_domain = in_physical_domain
         self._add_port(PrimitiveInputPort(self, 'in', width, port_class = PrimitivePortClass.lut_in))
         self._add_port(PrimitiveOutputPort(self, 'out', 1, combinational_sources = ('in', ),
                 port_class = PrimitivePortClass.lut_out))
@@ -198,10 +204,12 @@ class Memory(_BaseBuiltinPrimitive):
         name (:obj:`str`): Name of this memory
         dualport (:obj:`bool`): If set, two set of read/write port are be generated
         transparent (:obj:`bool`): If set, each read/write port is transparent
+        in_physical_domain (:obj:`bool`):
     """
 
-    __slots__ = ['_addr_width', '_data_width', '_dualport', '_transparent']
-    def __init__(self, addr_width, data_width, name = None, dualport = False, transparent = False):
+    __slots__ = ['_addr_width', '_data_width', '_dualport', '_transparent', 'in_physical_domain']
+    def __init__(self, addr_width, data_width,
+            name = None, dualport = False, transparent = False, in_physical_domain = True):
         name = name or '{}p{}ram_a{}_d{}'.format('d' if dualport else 's', 
                 't' if transparent else '', addr_width, data_width)
         super(Memory, self).__init__(name)
@@ -209,34 +217,35 @@ class Memory(_BaseBuiltinPrimitive):
         self._data_width = data_width
         self._dualport = dualport
         self._transparent = transparent
+        self.in_physical_domain = in_physical_domain
         if dualport:
             self._add_port(PrimitiveClockPort(self, 'clk', port_class = PrimitivePortClass.clock))
-            self._add_port(PrimitiveInputPort(self, 'addr1', addr_width, clock = 'clk', port_class =
-                    PrimitivePortClass.address1))
-            self._add_port(PrimitiveInputPort(self, 'data1', data_width, clock = 'clk', port_class =
-                    PrimitivePortClass.data_in1))
-            self._add_port(PrimitiveInputPort(self, 'we1', 1, clock = 'clk', port_class =
-                    PrimitivePortClass.write_en1))
-            self._add_port(PrimitiveOutputPort(self, 'out1', data_width, clock = 'clk', port_class = 
-                    PrimitivePortClass.data_out1))
-            self._add_port(PrimitiveInputPort(self, 'addr2', addr_width, clock = 'clk', port_class =
-                    PrimitivePortClass.address2))
-            self._add_port(PrimitiveInputPort(self, 'data2', data_width, clock = 'clk', port_class =
-                    PrimitivePortClass.data_in2))
-            self._add_port(PrimitiveInputPort(self, 'we2', 1, clock = 'clk', port_class =
-                    PrimitivePortClass.write_en2))
-            self._add_port(PrimitiveOutputPort(self, 'out2', data_width, clock = 'clk', port_class = 
-                    PrimitivePortClass.data_out2))
+            self._add_port(PrimitiveInputPort(self, 'addr1', addr_width,
+                clock = 'clk', port_class = PrimitivePortClass.address1))
+            self._add_port(PrimitiveInputPort(self, 'data1', data_width,
+                clock = 'clk', port_class = PrimitivePortClass.data_in1))
+            self._add_port(PrimitiveInputPort(self, 'we1', 1,
+                clock = 'clk', port_class = PrimitivePortClass.write_en1))
+            self._add_port(PrimitiveOutputPort(self, 'out1', data_width,
+                clock = 'clk', port_class = PrimitivePortClass.data_out1))
+            self._add_port(PrimitiveInputPort(self, 'addr2', addr_width,
+                clock = 'clk', port_class = PrimitivePortClass.address2))
+            self._add_port(PrimitiveInputPort(self, 'data2', data_width,
+                clock = 'clk', port_class = PrimitivePortClass.data_in2))
+            self._add_port(PrimitiveInputPort(self, 'we2', 1,
+                clock = 'clk', port_class = PrimitivePortClass.write_en2))
+            self._add_port(PrimitiveOutputPort(self, 'out2', data_width,
+                clock = 'clk', port_class = PrimitivePortClass.data_out2))
         else:
             self._add_port(PrimitiveClockPort(self, 'clk', port_class = PrimitivePortClass.clock))
-            self._add_port(PrimitiveInputPort(self, 'addr', addr_width, clock = 'clk', port_class =
-                    PrimitivePortClass.address))
-            self._add_port(PrimitiveInputPort(self, 'data', data_width, clock = 'clk', port_class =
-                    PrimitivePortClass.data_in))
-            self._add_port(PrimitiveInputPort(self, 'we', 1, clock = 'clk', port_class =
-                    PrimitivePortClass.write_en))
-            self._add_port(PrimitiveOutputPort(self, 'out', data_width, clock = 'clk', port_class = 
-                    PrimitivePortClass.data_out))
+            self._add_port(PrimitiveInputPort(self, 'addr', addr_width,
+                clock = 'clk', port_class = PrimitivePortClass.address))
+            self._add_port(PrimitiveInputPort(self, 'data', data_width,
+                clock = 'clk', port_class = PrimitivePortClass.data_in))
+            self._add_port(PrimitiveInputPort(self, 'we', 1,
+                clock = 'clk', port_class = PrimitivePortClass.write_en))
+            self._add_port(PrimitiveOutputPort(self, 'out', data_width,
+                clock = 'clk', port_class = PrimitivePortClass.data_out))
 
     # == low-level API =======================================================
     @property

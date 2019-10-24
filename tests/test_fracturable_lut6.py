@@ -8,7 +8,7 @@ from prga.arch.array.common import ChannelCoverage
 from prga.algorithm.design.cbox import BlockPortFCValue, BlockFCValue
 from prga.flow.context import ArchitectureContext
 from prga.flow.flow import Flow
-from prga.flow.design import CompleteRoutingBox, CompleteSwitch, CompleteConnection
+from prga.flow.design import CompleteRoutingBox, CompleteSwitch, CompleteConnection, CompletePhysical
 from prga.flow.rtlgen import GenerateVerilog
 from prga.flow.vprgen import GenerateVPRXML
 from prga.config.bitchain.flow import BitchainConfigCircuitryDelegate, InjectBitchainConfigCircuitry
@@ -108,6 +108,7 @@ def test_fracturable_lut6(tmpdir):
         GenerateVerilog('rtl'),
         InjectBitchainConfigCircuitry(),
         GenerateVPRXML('vpr'),
+        CompletePhysical(),
             ))
 
     # 9. run flow

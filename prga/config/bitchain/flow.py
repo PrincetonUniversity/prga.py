@@ -23,7 +23,7 @@ class BitchainPrimitiveLibrary(BuiltinPrimitiveLibrary):
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
-    def get_or_create_primitive(self, name):
+    def get_or_create_primitive(self, name, logical_only = False):
         module = self.context._modules.get(name)
         if module is not None:
             if not module.module_class.is_primitve:
@@ -32,10 +32,10 @@ class BitchainPrimitiveLibrary(BuiltinPrimitiveLibrary):
             return module
         if name == 'fraclut6':
             return self.context._modules.setdefault(name, FracturableLUT6(
-                self.get_or_create_primitive('lut5'),
-                self.get_or_create_primitive('lut6')))
+                self.get_or_create_primitive('lut5', True),
+                self.get_or_create_primitive('lut6', True)))
         else:
-            return super(BitchainPrimitiveLibrary, self).get_or_create_primitive(name)
+            return super(BitchainPrimitiveLibrary, self).get_or_create_primitive(name, logical_only)
 
 # ----------------------------------------------------------------------------
 # -- Configuration Circuitry Delegate for Bitchain-based configuration -------
@@ -118,7 +118,7 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
         if config_bit_base is None:
             return ''
         return 'b{}[{}:0]'.format(str(config_bit_base),
-                len(hierarchical_instance[-1].all_pins['cfg_d']) - 1)
+                len(hierarchical_instance[-1].logical_pins['cfg_d']) - 1)
 
     def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy):
         module = source.parent if source.net_type.is_port else source.parent.parent
@@ -177,7 +177,7 @@ class InjectBitchainConfigCircuitry(Object, AbstractPass):
 
     @property
     def passes_after_self(self):
-        return ("rtl", "vpr")
+        return ("physical", "rtl", "vpr", "asicflow")
 
     def run(self, context):
         inject_config_chain(context.config_circuitry_delegate, context.top)

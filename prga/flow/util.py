@@ -93,7 +93,7 @@ def get_switch_path(context, source, sink, drop_cache = False):
     Returns:
         :obj:`Sequence` [`AbstractSinkBit` ]: A sequence of switch input bits
     """
-    if sink.source is source:
+    if sink.logical_source is source:
         return tuple()
     module = source.parent if source.net_type.is_port else source.parent.parent
     if not drop_cache:
@@ -113,7 +113,7 @@ def get_switch_path(context, source, sink, drop_cache = False):
             _in_cache_bit_id(sink), {})
     while stack:
         cur_sink, cur_path = stack.pop()
-        cur_source = cur_sink.source
+        cur_source = cur_sink.logical_source
         if cur_source.net_type.is_const:    # UNCONNECTED or CONSTANT connection
             continue
         if cur_source.net_type.is_pin and cur_source.net_class.is_switch:       # switch output

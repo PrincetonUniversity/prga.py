@@ -14,6 +14,7 @@ from prga.util import Object, uno, ReadonlyMappingProxy
 from prga.exception import PRGAAPIError, PRGAInternalError
 
 from collections import OrderedDict
+from past.builtins import basestring
 
 import sys
 sys.setrecursionlimit(2**16)
@@ -98,6 +99,16 @@ class ArchitectureContext(Object):
     def modules(self):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to modules."""
         return ReadonlyMappingProxy(self._modules)
+
+    @property
+    def physical_modules(self):
+        """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to physical modules."""
+        return ReadonlyMappingProxy(self._modules, lambda kv: kv[1].in_physical_domain)
+
+    @property
+    def logical_modules(self):
+        """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to logical modules."""
+        return ReadonlyMappingProxy(self._modules, lambda kv: kv[1].in_logical_domain)
 
     @property
     def config_circuitry_delegate(self):
@@ -327,12 +338,15 @@ class ArchitectureContext(Object):
         """Pickle the architecture context into a file.
 
         Args:
-            file_ (file-like object): output file
+            file_ (:obj:`str` or file-like object): output file
         """
         # drop cache before pickling
         cache = self._cache
         self._cache = {}
-        pickle.dump(self, file_, 2)
+        if isinstance(file_, basestring):
+            pickle.dump(self, open(file_, OpenMode.w), 2)
+        else:
+            pickle.dump(self, file_, 2)
         # put cache back
         self._cache = cache
 
@@ -341,6 +355,9 @@ class ArchitectureContext(Object):
         """Unpickle a pickled architecture context.
 
         Args:
-            file_ (file-like object): the pickled file
+            file_ (:obj:`str` or file-like object): the pickled file
         """
-        return pickle.load(file_)
+        if isinstance(file_, basestring):
+            return pickle.load(open(file_, OpenMode.r))
+        else:
+            return pickle.load(file_)

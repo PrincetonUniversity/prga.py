@@ -113,29 +113,29 @@ def netify_tile(tile):
                         node.position - port.position != (0, 0)):
                     # TODO: for block not positioned at (0, 0), create ports
                     continue
-                blockpin = tile.block_instances[node.subblock].all_pins[port.key]
+                blockpin = tile.block_instances[node.subblock].logical_pins[port.key]
                 if port.direction.is_input:
-                    blockpin.source = boxpin
+                    blockpin.logical_source = boxpin
                 else:
-                    boxpin.source = blockpin
+                    boxpin.logical_source = blockpin
             elif node.node_type.is_segment_bridge:
                 if node.bridge_type.is_cboxin:
-                    boxpin.source = tile.get_or_create_node(
+                    boxpin.logical_source = tile.get_or_create_node(
                             node.to_bridge_id(bridge_type = SegmentBridgeType.array_regular),
                             PortDirection.input_)
                 elif node.bridge_type.is_cboxout:
                     tile.get_or_create_node(
                             node.to_bridge_id(bridge_type = SegmentBridgeType.array_cboxout),
-                            PortDirection.output).source = boxpin
+                            PortDirection.output).logical_source = boxpin
     # external ports
     for subblock, blkinst in iteritems(tile.block_instances):
-        for pin in itervalues(blkinst.all_pins):
+        for pin in itervalues(blkinst.physical_pins):
             if pin.net_class.is_io:
                 if pin.direction.is_input:
-                    pin.source = tile._add_port(ArrayExternalInputPort(tile,
+                    pin.physical_source = tile._add_port(ArrayExternalInputPort(tile,
                         BlockPortID((0, 0), pin.model, subblock)))
                 else:
                     tile._add_port(ArrayExternalOutputPort(tile,
-                        BlockPortID((0, 0), pin.model, subblock))).source = pin
+                        BlockPortID((0, 0), pin.model, subblock))).physical_source = pin
             elif pin.net_class.is_global:
-                pin.source = tile.get_or_create_global_input(pin.model.global_)
+                pin.physical_source = tile.get_or_create_global_input(pin.model.global_)

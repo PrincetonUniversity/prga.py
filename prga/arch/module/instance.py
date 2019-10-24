@@ -77,18 +77,29 @@ class AbstractInstance(Abstract):
     def physical_pins(self):
         """:obj:`Mapping` [:obj:`Hashable`, `AbstractPin` ]: A mapping from some hashable indices to physical pins of
         this instance."""
-        return ReadonlyMappingProxy(self.all_pins, lambda kv: kv[1].is_physical)
+        return ReadonlyMappingProxy(self.all_pins, lambda kv: kv[1].in_physical_domain)
 
     @property
-    def is_user_accessible(self):
-        """:obj:`bool`: Test if this instance is user-accessible."""
+    def logical_pins(self):
+        """:obj:`Mapping` [:obj:`Hashable`, `AbstractPin` ]: A mapping from some hashable indices to logical pins of
+        this instance."""
+        return ReadonlyMappingProxy(self.all_pins, lambda kv: kv[1].in_logical_domain)
+
+    @property
+    def in_user_domain(self):
+        """:obj:`bool`: Test if this instance is in the user domain."""
         return self.module_class in (ModuleClass.primitive, ModuleClass.cluster)
 
     # -- properties/methods to be implemented/overriden by subclasses --------
-    @abstractproperty
-    def is_physical(self):
-        """:obj:`bool`: Test if this instance is physical."""
-        raise NotImplementedError
+    @property
+    def in_physical_domain(self):
+        """:obj:`bool`: Test if this instance is in the physical domain."""
+        return self.parent.in_physical_domain and self.model.in_physical_domain
+
+    @property
+    def in_logical_domain(self):
+        """:obj:`bool`: Test if this instance is in the logical domain."""
+        return self.parent.in_logical_domain and self.model.in_logical_domain
 
     @abstractproperty
     def parent(self):
@@ -115,7 +126,7 @@ class AbstractInstance(Abstract):
     def pins(self):
         """:obj:`Mapping` [:obj:`Hashable`, `AbstractPin` ]: A mapping from some hashable indices to user-accessible
         pins of this instance."""
-        return ReadonlyMappingProxy(self.all_pins, lambda kv: kv[1].is_user_accessible)
+        return ReadonlyMappingProxy(self.all_pins, lambda kv: kv[1].in_user_domain)
 
 # ----------------------------------------------------------------------------
 # -- Base Instance -----------------------------------------------------------
@@ -149,10 +160,6 @@ class BaseInstance(Object, AbstractInstance):
     @property
     def model(self):
         return self._model
-
-    @property
-    def is_physical(self):
-        return self.parent.is_physical and self.model.is_physical
 
 # ----------------------------------------------------------------------------
 # -- Regular Instance --------------------------------------------------------

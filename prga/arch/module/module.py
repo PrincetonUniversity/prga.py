@@ -40,8 +40,11 @@ class AbstractModule(Abstract):
         Returns:
             `AbstractPort`: Echoing back the added port
         """
-        if port.is_physical and not self.is_physical:
+        if port.in_physical_domain and not self.in_physical_domain:
             raise PRGAInternalError("Cannot add a physical port '{}' to a non-physical module '{}'"
+                    .format(port, self))
+        elif port.in_logical_domain and not self.in_logical_domain:
+            raise PRGAInternalError("Cannot add a logical port '{}' to a non-logical module '{}'"
                     .format(port, self))
         elif port.parent is not self:
             raise PRGAInternalError("Module '{}' is not the parent module of port '{}'"
@@ -64,8 +67,11 @@ class AbstractModule(Abstract):
         Returns:
             `AbstractInstance`: Echoing back the added instance
         """
-        if instance.is_physical and not self.is_physical:
+        if instance.in_physical_domain and not self.in_physical_domain:
             raise PRGAInternalError("Cannot add a physical instance '{}' to a non-physical module '{}'"
+                    .format(instance, self))
+        elif instance.in_logical_domain and not self.in_logical_domain:
+            raise PRGAInternalError("Cannot add a logical instance '{}' to a non-logical module '{}'"
                     .format(instance, self))
         elif instance.parent is not self:
             raise PRGAInternalError("Module '{}' is not the parent module of instance '{}'"
@@ -84,13 +90,25 @@ class AbstractModule(Abstract):
     def physical_ports(self):
         """:obj:`Mapping` [:obj:`Hashable`, `AbstractPort` ]: A mapping from some hashable indices to physical ports
         in this module."""
-        return ReadonlyMappingProxy(self.all_ports, lambda kv: kv[1].is_physical)
+        return ReadonlyMappingProxy(self.all_ports, lambda kv: kv[1].in_physical_domain)
+
+    @property
+    def logical_ports(self):
+        """:obj:`Mapping` [:obj:`Hashable`, `AbstractPort` ]: A mapping from some hashable indices to logical ports
+        in this module."""
+        return ReadonlyMappingProxy(self.all_ports, lambda kv: kv[1].in_logical_domain)
 
     @property
     def physical_instances(self):
         """:obj:`Mapping` [:obj:`Hashable`, `AbstractPort` ]: A mapping from some hashable indices to physical
         instances in this module."""
-        return ReadonlyMappingProxy(self._instances, lambda kv: kv[1].is_physical)
+        return ReadonlyMappingProxy(self.all_instances, lambda kv: kv[1].in_physical_domain)
+
+    @property
+    def logical_instances(self):
+        """:obj:`Mapping` [:obj:`Hashable`, `AbstractPort` ]: A mapping from some hashable indices to logical
+        instances in this module."""
+        return ReadonlyMappingProxy(self.all_instances, lambda kv: kv[1].in_logical_domain)
 
     # -- properties/methods to be implemented/overriden by subclasses --------
     @property
@@ -106,8 +124,13 @@ class AbstractModule(Abstract):
         return ReadonlyMappingProxy(self._instances)
 
     @property
-    def is_physical(self):
-        """:obj:`bool`: Test if this module is physical."""
+    def in_physical_domain(self):
+        """:obj:`bool`: Test if this module is in the physical domain."""
+        return not self.module_class.is_mode
+
+    @property
+    def in_logical_domain(self):
+        """:obj:`bool`: Test if this module is in the logical domain."""
         return True
 
     @property
@@ -140,13 +163,13 @@ class AbstractModule(Abstract):
     def ports(self):
         """:obj:`Mapping` [:obj:`Hashable`, `AbstractPort` ]: A mapping from some hashable indices to user-accessible
         ports."""
-        return ReadonlyMappingProxy(self._ports, lambda kv: kv[1].is_user_accessible)
+        return ReadonlyMappingProxy(self._ports, lambda kv: kv[1].in_user_domain)
 
     @property
     def instances(self):
         """:obj:`Mapping` [:obj:`Hashable`, `AbstractInstance` ]: A mapping from some hashable indices to
         user-accessible instances."""
-        return ReadonlyMappingProxy(self._instances, lambda kv: kv[1].is_user_accessible)
+        return ReadonlyMappingProxy(self._instances, lambda kv: kv[1].in_user_domain)
 
 # ----------------------------------------------------------------------------
 # -- Abstract Leaf Module ----------------------------------------------------

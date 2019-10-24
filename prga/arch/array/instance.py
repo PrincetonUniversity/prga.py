@@ -41,6 +41,10 @@ class BlockInstance(BaseInstance):
     def key(self):
         return self.subblock
 
+    @property
+    def in_user_domain(self):
+        return True
+
 # ----------------------------------------------------------------------------
 # -- Connection Box Instance -------------------------------------------------
 # ----------------------------------------------------------------------------

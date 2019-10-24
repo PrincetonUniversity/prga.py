@@ -9,6 +9,7 @@ from prga.arch.block.cluster import Cluster
 from prga.arch.block.block import LogicBlock
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.algorithm.design.switch import SwitchLibraryDelegate, switchify
+from prga.algorithm.design.physical import physicalify
 from prga.rtlgen.rtlgen import VerilogGenerator
 
 from itertools import chain
@@ -17,7 +18,7 @@ class SwitchLibrary(SwitchLibraryDelegate):
     def __init__(self):
         self.switches = {}
 
-    def get_or_create_switch(self, width, module):
+    def get_or_create_switch(self, width, module, in_physical_domain = True):
         return self.switches.setdefault(width, ConfigurableMUX(width))
 
     @property
@@ -53,6 +54,7 @@ def test_rtlgen(tmpdir):
 
     # 1.4 switchify!
     switchify(lib, cluster)
+    physicalify(cluster)
 
     # 2. block
     block = LogicBlock('mock_block')
@@ -71,6 +73,7 @@ def test_rtlgen(tmpdir):
 
     # 2.3 switchify!
     switchify(lib, block)
+    physicalify(block)
 
     # 4. generate files
     for module in chain(itervalues(lib.switches), iter((ff, lut, cluster, block))):

@@ -32,10 +32,11 @@ def get_external_port(array, position, subblock, direction):
     tile = tile[-1].model
     if not tile.block.module_class.is_io_block:
         return None
-    port = tile.block.physical_ports.get(direction.case('exti', 'exto'))
-    if port is None:
+    io = tile.block.logical_instances.get('io')
+    pin = io.logical_pins.get(direction.case("inpad", "outpad"))
+    if pin is None or pin.physical_cp is None:
         return None
-    node = BlockPortID(position, port, subblock)
+    node = BlockPortID(position, pin.physical_cp, subblock)
     port = array.physical_ports.get(node)
     if port is None:
         return None

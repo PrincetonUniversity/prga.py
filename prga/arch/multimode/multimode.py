@@ -91,10 +91,6 @@ class Mode(ClusterLike):
 
     # -- implementing properties/methods required by superclass --------------
     @property
-    def is_physical(self):
-        return False
-
-    @property
     def module_class(self):
         return ModuleClass.mode
 

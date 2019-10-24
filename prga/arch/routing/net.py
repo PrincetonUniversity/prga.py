@@ -69,7 +69,7 @@ class AbstractRoutingNodePort(AbstractPort):
         return self.node
 
     @property
-    def is_user_accessible(self):
+    def in_user_domain(self):
         return (self.node.node_type.is_segment_driver or self.node.node_type.is_blockport_bridge or
                 (self.node.node_type.is_segment_bridge and self.node.bridge_type in
                     (SegmentBridgeType.sboxin_regular, SegmentBridgeType.cboxin, SegmentBridgeType.cboxout)))

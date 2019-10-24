@@ -21,12 +21,13 @@ class SwitchLibraryDelegate(Abstract):
     # == low-level API =======================================================
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractmethod
-    def get_or_create_switch(self, width, module):
+    def get_or_create_switch(self, width, module, in_physical_domain = True):
         """Get a switch module with ``width`` input bits for ``module``.
 
         Args:
             width (:obj:`int`): Number of inputs needed
             module (`AbstractModule`): The module in which connections are to be implemented with switches
+            in_physical_domain (:obj:`bool`): 
 
         Returns:
             `AbstractSwitch`: Switch module found
@@ -44,7 +45,7 @@ class SwitchLibraryDelegate(Abstract):
 # ----------------------------------------------------------------------------
 # -- Algorithms for Implementing User-defined Configurable Connections -------
 # ----------------------------------------------------------------------------
-def _instantiate_switch(module, switch, name, sources, sink, connect_physical_cp = True):
+def _instantiate_switch(module, switch, name, sources, sink):
     """Instantiate an instance of ``switch`` named ``name`` in ``module``, connecting ``sources`` and ``sink``.
 
     Args:
@@ -53,7 +54,6 @@ def _instantiate_switch(module, switch, name, sources, sink, connect_physical_cp
         name (:obj:`str`): Name of the instantiated switch
         sources (:obj:`Sequence` [`AbstractSourceBit` ]): Source bits to be connected
         sink (`AbstractSinkBit`): Sink bit to be connected
-        connect_physical_cp (:obj:`bool`): If set, physical counterparts are to be connected too
 
     Returns:
         `SwitchInstance`: Instantiated switch
@@ -66,35 +66,28 @@ def _instantiate_switch(module, switch, name, sources, sink, connect_physical_cp
                 .format(len(sources), switch, len(switch.switch_inputs)))
     instance = SwitchInstance(module, switch, name)
     for source, pin_bit in zip(iter(sources), iter(instance.switch_inputs)):
-        pin_bit.source = source
-        if connect_physical_cp and source.physical_cp is not None:
-            pin_bit.physical_cp.physical_source = source.physical_cp
+        pin_bit.logical_source = source
     return instance
 
-def switchify(delegate, module, connect_physical_cp = True):
+def switchify(delegate, module):
     """Implement switches for user-defined connections in ``module`` with switches from ``delegate``.
 
     Args:
         delegate (`SwitchLibraryDelegate`):
         module (`AbstractModule`):
-        connect_physical_cp (:obj:`bool`): If set, physical counterparts are to be connected too
     """
     muxes = []  # (mux_instance, sink_bit)
     for sinkbus in filter(lambda bus: bus.is_sink, chain(itervalues(module.ports),
             iter(pin for instance in itervalues(module.instances) for pin in itervalues(instance.pins)))):
         for sink in sinkbus:
             if len(sink.user_sources) == 1:
-                sink.source = sink.user_sources[0]
-                if connect_physical_cp and sink.physical_cp is not None and sink.source.physical_cp is not None:
-                    sink.physical_cp.physical_source = sink.source.physical_cp
+                sink.logical_source = sink.user_sources[0]
             elif len(sink.user_sources) > 1:
                 name = ('sw_{}_{}_{}'.format(sink.parent.name, sink.bus.name, sink.index) if sink.net_type.is_pin else
                         'sw_{}_{}'.format(sink.bus.name, sink.index))
-                mux = _instantiate_switch(module, delegate.get_or_create_switch(len(sink.user_sources), module),
-                        name, sink.user_sources, sink, connect_physical_cp)
+                mux = _instantiate_switch(module, delegate.get_or_create_switch(len(sink.user_sources), module,
+                    module.in_physical_domain), name, sink.user_sources, sink)
                 muxes.append( (mux, sink) )
     for mux, sink in muxes:
-        sink.source = mux.switch_output
-        if connect_physical_cp and sink.physical_cp is not None and mux.switch_output.physical_cp is not None:
-            sink.physical_cp.physical_source = mux.switch_output.physical_cp
+        sink.logical_source = mux.switch_output
         module._add_instance(mux)

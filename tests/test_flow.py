@@ -8,7 +8,7 @@ from prga.arch.array.common import ChannelCoverage
 from prga.algorithm.design.cbox import BlockPortFCValue, BlockFCValue
 from prga.flow.context import ArchitectureContext
 from prga.flow.flow import Flow
-from prga.flow.design import CompleteRoutingBox, CompleteSwitch, CompleteConnection
+from prga.flow.design import CompleteRoutingBox, CompleteSwitch, CompleteConnection, CompletePhysical
 from prga.flow.rtlgen import GenerateVerilog
 from prga.flow.vprgen import GenerateVPRXML
 from prga.flow.opt import ZeroingUnusedLUTInputs
@@ -105,6 +105,7 @@ def test_flow(tmpdir):
         InjectBitchainConfigCircuitry(),
         GenerateVPRXML('vpr'),
         ZeroingUnusedLUTInputs(),
+        CompletePhysical(),
             ))
 
     # 9. run flow
@@ -112,4 +113,4 @@ def test_flow(tmpdir):
     flow.run(context)
 
     # 10. create a pickled version
-    context.pickle(tmpdir.join('ctx.pickled').open(OpenMode.w))
+    context.pickle('ctx.pickled')

@@ -72,12 +72,12 @@ def hierarchical_source(net, inplace = False):
     elif bit.net_type.is_pin:
         raise PRGAInternalError("'{}' is a pin".format(net))
     if bit.direction.is_output:
-        if bit.parent.is_leaf_module or bit.source is UNCONNECTED:
+        if bit.parent.is_leaf_module or bit.logical_source is UNCONNECTED:
             # we don't search combinational paths through a leaf module here.
             # do that in the caller's context
             return None
         else:
-            return hierarchical_net(bit.source, instance, inplace)
+            return hierarchical_net(bit.logical_source, instance, inplace)
     elif len(instance) == 0:
         return None
     else:
@@ -85,7 +85,7 @@ def hierarchical_source(net, inplace = False):
             leaf = instance.pop()
         else:
             instance, leaf = instance[:-1], instance[-1]
-        source_bit = leaf.all_pins[bit.bus.key][bit.index].source
+        source_bit = leaf.logical_pins[bit.bus.key][bit.index].logical_source
         if source_bit is UNCONNECTED:
             return None
         else:

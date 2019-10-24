@@ -27,7 +27,7 @@ class Library(SwitchLibraryDelegate, ConnectionBoxLibraryDelegate):
         self.cboxes = {}
         self.sboxes = {}
 
-    def get_or_create_switch(self, width, module):
+    def get_or_create_switch(self, width, module, in_physical_domain = True):
         return self.switches.setdefault(width, ConfigurableMUX(width))
 
     def get_or_create_cbox(self, block, orientation, position = None, channel = (0, 0)):

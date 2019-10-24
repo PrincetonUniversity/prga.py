@@ -58,11 +58,15 @@ class ConstBit(Object, AbstractSourceBit):
 
     # -- implementing properties/methods required by superclass --------------
     @property
-    def is_physical(self):
+    def in_physical_domain(self):
         return True
 
     @property
-    def is_user_accessible(self):
+    def in_logical_domain(self):
+        return True
+
+    @property
+    def in_user_domain(self):
         return False
 
     @property

@@ -48,17 +48,18 @@ class ClusterLike(BaseModule):
     def _connect(self, source, sink, pack_pattern):
         if ((source.net_type.is_port and source.parent is not self) or
                 (source.net_type.is_pin and source.parent.parent is not self) or
-                source.is_sink or not source.is_user_accessible):
-            raise PRGAInternalError("'{}' is not a user-accessible source in module '{}'"
+                source.is_sink or not source.in_user_domain):
+            raise PRGAInternalError("'{}' is not a source in the user domain in module '{}'"
                     .format(source, self))
         if ((sink.net_type.is_port and sink.parent is not self) or
                 (sink.net_type.is_pin and sink.parent.parent is not self) or
-                not sink.is_sink or not sink.is_user_accessible):
-            raise PRGAInternalError("'{}' is not a user-accessible sink in module '{}'"
+                not sink.is_sink or not sink.in_user_domain):
+            raise PRGAInternalError("'{}' is not a sink in the user domain in module '{}'"
                     .format(sink, self))
         sink.add_user_sources( (source, ) )
-        if pack_pattern and (source, sink) not in self._pack_patterns:
-            self._pack_patterns.append( (source, sink) )
+        pair = (source._get_or_create_static_cp(), sink._get_or_create_static_cp())
+        if pack_pattern and pair not in self._pack_patterns:
+            self._pack_patterns.append( pair )
 
     # == low-level API =======================================================
     @property

@@ -27,10 +27,6 @@ class MultimodeClockPort(BaseCustomClockPort):
     def net_class(self):
         return NetClass.multimode
 
-    @property
-    def is_user_accessible(self):
-        return True
-
 # ----------------------------------------------------------------------------
 # -- Multimode Input Port ----------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -49,10 +45,6 @@ class MultimodeInputPort(BaseLeafInputPort):
     @property
     def net_class(self):
         return NetClass.multimode
-
-    @property
-    def is_user_accessible(self):
-        return True
 
 # ----------------------------------------------------------------------------
 # -- Multimode Output Port ---------------------------------------------------
@@ -75,10 +67,6 @@ class MultimodeOutputPort(BaseLeafOutputPort):
     def net_class(self):
         return NetClass.multimode
 
-    @property
-    def is_user_accessible(self):
-        return True
-
 # ----------------------------------------------------------------------------
 # -- Mode Input Port ---------------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -95,7 +83,8 @@ class ModeInputPort(BaseInputPort):
     def __init__(self, parent, model):
         super(ModeInputPort, self).__init__(parent)
         self._model = model
-        self.physical_cp = model
+        if model.in_physical_domain:
+            self.physical_cp = model
 
     # == low-level API =======================================================
     @property
@@ -106,20 +95,12 @@ class ModeInputPort(BaseInputPort):
 
     # -- implementing properties/methods required by superclass --------------
     @property
-    def is_physical(self):
-        return False
-
-    @property
     def net_class(self):
         return NetClass.mode
 
     @property
     def is_clock(self):
         return self._model.is_clock
-
-    @property
-    def is_user_accessible(self):
-        return True
 
     @property
     def name(self):
@@ -149,7 +130,8 @@ class ModeOutputPort(BaseOutputPort):
     def __init__(self, parent, model):
         super(ModeOutputPort, self).__init__(parent)
         self._model = model
-        self.physical_cp = model
+        if model.in_physical_domain:
+            self.physical_cp = model
 
     # == low-level API =======================================================
     @property
@@ -160,16 +142,8 @@ class ModeOutputPort(BaseOutputPort):
 
     # -- implementing properties/methods required by superclass --------------
     @property
-    def is_physical(self):
-        return False
-
-    @property
     def net_class(self):
         return NetClass.mode
-
-    @property
-    def is_user_accessible(self):
-        return True
 
     @property
     def name(self):

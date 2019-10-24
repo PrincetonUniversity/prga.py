@@ -8,13 +8,14 @@ from prga.algorithm.design.sbox import populate_switch_box, generate_wilton
 from prga.algorithm.design.switch import switchify
 from prga.algorithm.design.tile import cboxify, netify_tile
 from prga.algorithm.design.array import sboxify, netify_array
+from prga.algorithm.design.physical import physicalify
 from prga.flow.flow import AbstractPass
 from prga.flow.util import analyze_hierarchy
 from prga.util import uno, Object
 
 from itertools import chain
 
-__all__ = ['CompleteRoutingBox', 'CompleteSwitch', 'CompleteConnection']
+__all__ = ['CompleteRoutingBox', 'CompleteSwitch', 'CompleteConnection', 'CompletePhysical']
 
 # ----------------------------------------------------------------------------
 # -- Create and Instantiate Routing Boxes ------------------------------------
@@ -40,7 +41,7 @@ class CompleteRoutingBox(Object, AbstractPass):
 
     @property
     def passes_after_self(self):
-        return ("completion.switch", "completion.connection", "rtl", "vpr", "config", "asicflow")
+        return ("completion.switch", "completion.connection", "physical", "config", "rtl", "vpr", "asicflow")
 
     def __process_array(self, context, array, segments):
         hierarchy = analyze_hierarchy(context)
@@ -82,7 +83,7 @@ class CompleteConnection(Object, AbstractPass):
     @property
     def passes_after_self(self):
         """Passes that should be run after this pass."""
-        return ("completion.switch", "rtl", "vpr", "config", "asicflow")
+        return ("completion.switch", "physical", "config", "rtl", "vpr", "asicflow")
 
     def __process_array(self, context, array, top = False):
         hierarchy = analyze_hierarchy(context)
@@ -110,7 +111,7 @@ class CompleteSwitch(Object, AbstractPass):
     @property
     def passes_after_self(self):
         """Passes that should be run after this pass."""
-        return ("rtl", "vpr", "config", "asicflow")
+        return ("physical", "config", "rtl", "vpr", "asicflow")
 
     def run(self, context):
         hierarchy = analyze_hierarchy(context)
@@ -125,3 +126,28 @@ class CompleteSwitch(Object, AbstractPass):
                 if inst.module_class.is_switch:
                     hierarchy.setdefault(inst.model.name, {})
                     hierarchy[module.name][inst.model.name] = inst.model
+
+# ----------------------------------------------------------------------------
+# -- Convert Logical Connections to Physical ---------------------------------
+# ----------------------------------------------------------------------------
+class CompletePhysical(Object, AbstractPass):
+    """Convert logical connections to physical."""
+
+    @property
+    def key(self):
+        """Key of this pass."""
+        return "physical"
+
+    @property
+    def passes_after_self(self):
+        """Passes that should be run after this pass."""
+        return ("rtl", "vpr", "asicflow")
+
+    def run(self, context):
+        modules = list(chain(itervalues(context.clusters),
+            itervalues(context.io_blocks),
+            itervalues(context.logic_blocks),
+            itervalues(context.connection_boxes),
+            itervalues(context.switch_boxes)))
+        for module in modules:
+            physicalify(module)

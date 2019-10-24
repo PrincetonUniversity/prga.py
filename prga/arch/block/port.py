@@ -30,10 +30,6 @@ class ClusterClockPort(BaseCustomClockPort):
     def net_class(self):
         return NetClass.cluster
 
-    @property
-    def is_user_accessible(self):
-        return True
-
 # ----------------------------------------------------------------------------
 # -- Cluster Input Port ------------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -51,10 +47,6 @@ class ClusterInputPort(BaseCustomInputPort):
     @property
     def net_class(self):
         return NetClass.cluster
-
-    @property
-    def is_user_accessible(self):
-        return True
 
 # ----------------------------------------------------------------------------
 # -- Cluster Output Port -----------------------------------------------------
@@ -74,10 +66,6 @@ class ClusterOutputPort(BaseCustomOutputPort):
     def net_class(self):
         return NetClass.cluster
 
-    @property
-    def is_user_accessible(self):
-        return True
-
 # ----------------------------------------------------------------------------
 # -- Abstract Block Port -----------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -94,10 +82,6 @@ class AbstractBlockPort(AbstractPort):
     @property
     def net_class(self):
         return NetClass.blockport
-
-    @property
-    def is_user_accessible(self):
-        return True
 
 # ----------------------------------------------------------------------------
 # -- IO Block Global Input Port ----------------------------------------------
@@ -122,6 +106,15 @@ class IOBlockGlobalInputPort(BaseGlobalInputPort, AbstractBlockPort):
     def orientation(self):
         """`Orientation`: Orientation of this port."""
         return self._orientation
+
+    # -- implementing properties/methods required by superclass --------------
+    @property
+    def in_logical_domain(self):
+        return True
+
+    @property
+    def in_user_domain(self):
+        return True
 
 # ----------------------------------------------------------------------------
 # -- IO Block Input Port -----------------------------------------------------
@@ -189,10 +182,6 @@ class IOBlockExternalInputPort(BaseCustomInputPort):
     def net_class(self):
         return NetClass.io
 
-    @property
-    def is_user_accessible(self):
-        return False
-
 # ----------------------------------------------------------------------------
 # -- IO Block External Output Port -------------------------------------------
 # ----------------------------------------------------------------------------
@@ -210,10 +199,6 @@ class IOBlockExternalOutputPort(BaseCustomOutputPort):
     @property
     def net_class(self):
         return NetClass.io
-
-    @property
-    def is_user_accessible(self):
-        return False
 
 # ----------------------------------------------------------------------------
 # -- Logic Block Global Input Port -------------------------------------------
@@ -245,6 +230,15 @@ class LogicBlockGlobalInputPort(BaseGlobalInputPort, AbstractBlockPort):
     def position(self):
         """`Position`: Position of this port in the block."""
         return self._position
+
+    # -- implementing properties/methods required by superclass --------------
+    @property
+    def in_logical_domain(self):
+        return True
+
+    @property
+    def in_user_domain(self):
+        return True
 
 # ----------------------------------------------------------------------------
 # -- Logic Block Input Port --------------------------------------------------

@@ -54,11 +54,12 @@ class PrimitiveLibraryDelegate(Abstract):
     # == low-level API =======================================================
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractmethod
-    def get_or_create_primitive(self, name):
+    def get_or_create_primitive(self, name, logical_only = False):
         """Get or create the primitive named ``name``.
 
         Args:
             name (:obj:`str`): Name of the primitive
+            logical_only (:obj:`bool`): We don't necessarily need the physical module
         """
         raise NotImplementedError
 
@@ -94,7 +95,7 @@ class BuiltinPrimitiveLibrary(_BaseLibrary, PrimitiveLibraryDelegate):
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
-    def get_or_create_primitive(self, name):
+    def get_or_create_primitive(self, name, logical_only = False):
         module = self.context._modules.get(name)
         if module is not None:
             if not module.module_class.is_primitve:
@@ -109,20 +110,30 @@ class BuiltinPrimitiveLibrary(_BaseLibrary, PrimitiveLibraryDelegate):
         elif name == 'iopad':
             return self.context._modules.setdefault(name, Iopad(name))
         elif name == 'flipflop':
-            return self.context._modules.setdefault(name, Flipflop(name))
+            return self.context._modules.setdefault(name, Flipflop(name,
+                in_physical_domain = not logical_only))
         matched = re.match('^lut(?P<width>[2-8])$', name)
         if matched:
-            return self.context._modules.setdefault(name, LUT(int(matched.group('width'))))
+            return self.context._modules.setdefault(name, LUT(int(matched.group('width')),
+                in_physical_domain = not logical_only))
         raise PRGAInternalError("No built-in primitive named '{}'"
                 .format(name))
 
-    def get_or_create_memory(self, addr_width, data_width, name = None, dualport = False, transparent = False):
+    def get_or_create_memory(self, addr_width, data_width, name = None, dualport = False, transparent = False,
+            in_physical_domain = True):
         try:
-            return self._memories[addr_width, data_width, dualport, transparent]
+            memory = self._memories[addr_width, data_width, dualport, transparent]
+            if in_physical_domain and not memory.in_physical_domain:
+                try:
+                    memory.in_physical_domain = True
+                except AttributeError:
+                    raise PRGAInternalError(("Memory '{}' is not in the physical domain and cannot be moved to "
+                        "the physical domain").format(memory))
+            return memory
         except KeyError:
             self._is_empty = False
             module = self._memories.setdefault( (addr_width, data_width, dualport, transparent),
-                    Memory(addr_width, data_width, name, dualport, transparent))
+                    Memory(addr_width, data_width, name, dualport, transparent, in_physical_domain))
             return self.context._modules.setdefault(module.name, module)
 
     @property
@@ -142,11 +153,13 @@ class BuiltinSwitchLibrary(_BaseLibrary, SwitchLibraryDelegate):
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
-    def get_or_create_switch(self, width, module):
+    def get_or_create_switch(self, width, module, in_physical_domain = True):
         switch = self._switches.get(width)
         if switch is not None:
+            if in_physical_domain and not switch.in_physical_domain:
+                switch.in_physical_domain = True
             return switch
-        switch = self._switches.setdefault(width, ConfigurableMUX(width))
+        switch = self._switches.setdefault(width, ConfigurableMUX(width, in_physical_domain = in_physical_domain))
         return self.context._modules.setdefault(switch.name, switch)
 
     @property

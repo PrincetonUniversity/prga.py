@@ -44,6 +44,6 @@ class GenerateVerilog(Object, AbstractPass):
             f = module.verilog_source = os.path.abspath(os.path.join(self.prefix, name + '.v'))
             vgen.generate_module(open(f, OpenMode.w), module)
             for subname, sub in iteritems(hierarchy[name]):
-                if subname in visited or subname in queue or not sub.is_physical:
+                if subname in visited or subname in queue or not sub.in_physical_domain:
                     continue
                 queue[subname] = sub

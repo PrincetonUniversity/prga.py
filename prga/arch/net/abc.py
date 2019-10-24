@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.arch.net.common import NetType
+from prga.arch.net.common import NetType, NetClass
 from prga.util import Abstract
 
 from abc import abstractproperty, abstractmethod
@@ -40,13 +40,18 @@ class AbstractBit(Abstract):
     # == low-level API =======================================================
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractproperty
-    def is_physical(self):
-        """:obj:`bool`: Test if this net is physical."""
+    def in_physical_domain(self):
+        """:obj:`bool`: Test if this net is in the physical domain."""
         raise NotImplementedError
 
     @abstractproperty
-    def is_user_accessible(self):
-        """:obj:`bool`: Test if this net is user-accessible."""
+    def in_logical_domain(self):
+        """:obj:`bool`: Test if this net is in the logical domain."""
+        raise NotImplementedError
+
+    @abstractproperty
+    def in_user_domain(self):
+        """:obj:`bool`: Test if this net is in the user domain."""
         raise NotImplementedError
 
     @abstractproperty
@@ -90,7 +95,7 @@ class AbstractSinkBit(AbstractBit):
     # == low-level API =======================================================
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractproperty
-    def source(self):
+    def logical_source(self):
         """`AbstractSourceBit`: Logical source of this bit."""
         raise NotImplementedError
 
@@ -179,14 +184,19 @@ class AbstractBus(Abstract, Sequence):
 
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractproperty
-    def is_physical(self):
-        """:obj:`bool`: Test if this net is physical."""
+    def in_physical_domain(self):
+        """:obj:`bool`: Test if this net is in the physical domain."""
         raise NotImplementedError
 
-    @property
-    def is_user_accessible(self):
-        """:obj:`bool`: Test if this net is user-accessible."""
-        return False
+    @abstractproperty
+    def in_logical_domain(self):
+        """:obj:`bool`: Test if this net is in the logical domain."""
+        raise NotImplementedError
+
+    @abstractproperty
+    def in_user_domain(self):
+        """:obj:`bool`: Test if this net is in the user domain."""
+        raise NotImplementedError
 
     @abstractproperty
     def net_type(self):
@@ -242,17 +252,29 @@ class AbstractPort(AbstractBus):
 
     @abstractproperty
     def net_class(self):
-        """`NetClass`: Logical class of this net."""
+        """`NetClass`: Class of this net."""
         raise NotImplementedError
 
     # -- implementing properties/methods required by superclass --------------
     @property
-    def is_physical(self):
-        return self.parent.is_physical
-
-    @property
     def net_type(self):
         return NetType.port
+
+    @property
+    def in_physical_domain(self):
+        return self.parent.in_physical_domain and not self.net_class.is_mode
+
+    @property
+    def in_logical_domain(self):
+        # global ports act differently in blocks
+        return self.parent.in_logical_domain and self.net_class not in (NetClass.io, NetClass.global_)
+
+    @property
+    def in_user_domain(self):
+        # node ports need further classification
+        # global ports act differently in blocks
+        return self.net_class in (NetClass.blockport, NetClass.cluster, NetClass.primitive, NetClass.multimode,
+                    NetClass.mode)
 
 # ----------------------------------------------------------------------------
 # -- Abstract Pin ------------------------------------------------------------
@@ -282,7 +304,7 @@ class AbstractPin(AbstractBus):
 
     @property
     def net_class(self):
-        """`NetClass`: Logical class of this net."""
+        """`NetClass`: Class of this net."""
         return self.model.net_class
 
     @property
@@ -303,12 +325,16 @@ class AbstractPin(AbstractBus):
 
     # -- implementing properties/methods required by superclass --------------
     @property
-    def is_physical(self):
-        return self.parent.is_physical and self.model.is_physical
+    def in_physical_domain(self):
+        return self.parent.in_physical_domain and self.model.in_physical_domain
 
     @property
-    def is_user_accessible(self):
-        return self.model.is_user_accessible
+    def in_logical_domain(self):
+        return self.parent.in_logical_domain and self.model.in_logical_domain
+
+    @property
+    def in_user_domain(self):
+        return self.parent.in_user_domain and self.model.in_user_domain
 
     @property
     def net_type(self):

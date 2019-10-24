@@ -25,9 +25,9 @@ __all__ = ['generate_testbench_wrapper']
 
 def _update_config_list(context, module, config, prefix = '', base = 0):
     config_bit_offset = get_config_bit_offset(context, module)
-    cur = module.physical_ports['cfg_o']
+    cur = module.logical_ports['cfg_o']
     while True:
-        prev = cur.source
+        prev = cur.logical_source
         if not prev.net_type.is_pin:
             break
         if prev.parent.model.is_leaf_module:
@@ -47,7 +47,7 @@ def _update_config_list(context, module, config, prefix = '', base = 0):
         else:
             _update_config_list(context, prev.parent.model, config,
                     prefix + prev.parent.name + '.', base + config_bit_offset[prev.parent.name])
-        cur = prev.parent.physical_pins['cfg_i']
+        cur = prev.parent.logical_pins['cfg_i']
 
 def generate_testbench_wrapper(context, ostream, tb_top, behav_top, io_bindings):
     """Generate simulation testbench wrapper.

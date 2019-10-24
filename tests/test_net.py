@@ -10,40 +10,45 @@ from prga.exception import PRGAInternalError
 
 import pytest
 
+class MockObject(object):
+    def __init__(self, **kwargs):
+        for k in kwargs:
+            setattr(self, k, kwargs[k])
+
 class MockClockPort(BaseClockPort):
-    __slots__ = ['name', 'net_class', 'is_physical', 'is_user_accessible']
+    __slots__ = ['name', 'net_class', 'in_physical_domain', 'in_user_domain']
     def __init__(self, parent, name,
-            net_class = NetClass.cluster, is_physical = True, is_user_accessible = True):
+            net_class = NetClass.cluster, in_physical_domain = True, in_user_domain = True):
         super(MockClockPort, self).__init__(parent)
         self.name = name
         self.net_class = net_class
-        self.is_physical = is_physical
-        self.is_user_accessible = is_user_accessible
+        self.in_physical_domain = in_physical_domain
+        self.in_user_domain = in_user_domain
 
 class MockInputPort(BaseInputPort):
-    __slots__ = ['name', 'width', 'net_class', 'is_physical', 'is_user_accessible']
+    __slots__ = ['name', 'width', 'net_class', 'in_physical_domain', 'in_user_domain']
     def __init__(self, parent, name, width,
-            net_class = NetClass.cluster, is_physical = True, is_user_accessible = True):
+            net_class = NetClass.cluster, in_physical_domain = True, in_user_domain = True):
         super(MockInputPort, self).__init__(parent)
         self.name = name
         self.width = width
         self.net_class = net_class
-        self.is_physical = is_physical
-        self.is_user_accessible = is_user_accessible
+        self.in_physical_domain = in_physical_domain
+        self.in_user_domain = in_user_domain
 
 class MockOutputPort(BaseOutputPort):
-    __slots__ = ['name', 'width', 'net_class', 'is_physical', 'is_user_accessible']
+    __slots__ = ['name', 'width', 'net_class', 'in_physical_domain', 'in_user_domain']
     def __init__(self, parent, name, width,
-            net_class = NetClass.cluster, is_physical = True, is_user_accessible = True):
+            net_class = NetClass.cluster, in_physical_domain = True, in_user_domain = True):
         super(MockOutputPort, self).__init__(parent)
         self.name = name
         self.width = width
         self.net_class = net_class
-        self.is_physical = is_physical
-        self.is_user_accessible = is_user_accessible
+        self.in_physical_domain = in_physical_domain
+        self.in_user_domain = in_user_domain
 
 def test_physical_source():
-    module = 'mock_module'
+    module = MockObject(name = 'mock_module', in_physical_domain = True, in_logical_domain = True)
     i = MockInputPort(module, 'mock_input', 4)
     o = MockOutputPort(module, 'mock_output', 4)
 
@@ -74,39 +79,39 @@ def test_physical_source():
     assert o[3].physical_source is i[0]
 
 def test_source():
-    module = 'mock_module'
+    module = MockObject(name = 'mock_module', in_physical_domain = True, in_logical_domain = True)
     i = MockInputPort(module, 'mock_input', 4)
     o = MockOutputPort(module, 'mock_output', 4)
 
     # 2. connect bus
-    o.source = i
+    o.logical_source = i
     assert not o[0]._is_static
-    assert not o[0].source._is_static
+    assert not o[0].logical_source._is_static
 
     # 3. save a dynamic object
     do0 = o[0]
     di0 = i[0]
 
     # 4. bit-wise assignment
-    o[2].source = i[1]
+    o[2].logical_source = i[1]
     assert o[2]._is_static
-    assert o[2].source is i[1]
+    assert o[2].logical_source is i[1]
     assert o[0]._is_static
     assert i[0]._is_static
-    assert o[0].source is i[0]
-    assert o.source == (i[0], i[1], i[1], i[3])
+    assert o[0].logical_source is i[0]
+    assert o.logical_source == (i[0], i[1], i[1], i[3])
 
     # 5. use stale dynamic handler
-    assert do0.source is i[0]
+    assert do0.logical_source is i[0]
     assert di0 is not i[0]
-    do0.source = i[3]
-    o[3].source = di0
-    assert o[0].source is i[3]
-    assert o[3].source is i[0]
+    do0.logical_source = i[3]
+    o[3].logical_source = di0
+    assert o[0].logical_source is i[3]
+    assert o[3].logical_source is i[0]
 
 def test_physical_cp():
-    module = 'mock_module'
-    l = MockInputPort(module, 'l', 4, is_physical = False)
+    module = MockObject(name = 'mock_module', in_physical_domain = True, in_logical_domain = True)
+    l = MockInputPort(module, 'l', 4, in_physical_domain = False)
     p = MockInputPort(module, 'p', 4)
 
     # 2. check initial physical counterpart
@@ -141,28 +146,28 @@ def test_physical_cp():
     assert l[3].physical_cp is p[0]
 
 def test_regular_net():
-    module = 'mock_module'
+    module = MockObject(name = 'mock_module', in_physical_domain = True, in_logical_domain = True)
 
     # 1. create ports
     i = MockInputPort(module, 'i', 4)
     o = MockOutputPort(module, 'o', 4)
-    li = MockInputPort(module, 'li', 4, is_physical = False)
+    li = MockInputPort(module, 'li', 4, in_physical_domain = False)
 
     # 2. connect bus
-    o.source = i
+    o.logical_source = i
     assert not o[0]._is_static
-    assert not o[0].source._is_static
+    assert not o[0].logical_source._is_static
     for idx, bit in enumerate(o.physical_source):
         assert not bit._is_static
         assert bit.bus is i
         assert bit.index is idx
 
     # 3. bit-wise
-    o[0].source = li[0]
+    o[0].logical_source = li[0]
     assert o[2]._is_static
-    assert o[2].source is i[2]
+    assert o[2].logical_source is i[2]
     assert o[0]._is_static
     assert i[0]._is_static
     assert li[0]._is_static
-    assert o[0].source is li[0]
+    assert o[0].logical_source is li[0]
     assert o[0].physical_source is UNCONNECTED

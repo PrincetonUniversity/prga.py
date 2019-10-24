@@ -8,27 +8,25 @@ from prga.util import Enum
 __all__ = ['ModuleClass']
 
 # ----------------------------------------------------------------------------
-# -- Logical Module Class ----------------------------------------------------
+# -- Module Class ------------------------------------------------------------
 # ----------------------------------------------------------------------------
 class ModuleClass(Enum):
-    """Logical class for modules."""
-    # primitives
-    primitive = 0           #: primitive module
-    mode = 1                #: one mode of a multi-mode primitive
-    # switches
-    switch = 2              #: configurable switches
-    # config circuitry
-    config = 3              #: configuration circuitry-related modules
-    # sub-block hierarchy
-    cluster = 4             #: user-defined intermediate modules inside logic/io blocks
+    """Class for modules."""
+    # logical (and maybe physical as well) w/o user ports
+    array = 0               #: top-level or intermediate-level array above tiles
+    tile = 1                #: a single tile in an array (wrapper for block + connection box)
+    config = 2              #: configuration circuitry
+    switch = 3              #: configurable switch
+    # logical (and maybe physical as well) w/ user ports
     # logic blocks
+    io_block = 4            #: IO block
     logic_block = 5         #: logic block
-    io_block = 6            #: io block
     # routing boxes
-    connection_box = 7      #: connection box
-    switch_box = 8          #: switch box
-    # array elements
-    tile = 9                #: a single tile in an array
-    array = 10              #: top-level or intermediate level of arrays
-    # extensions
-    extension = 11          #: reserved for extensions
+    connection_box = 6      #: connection box
+    switch_box = 7          #: switch box
+    # logical-only w/ user ports
+    # a mode in multi-mode primitive
+    mode = 8                #: one mode in a multi-mode primitive
+    # logical & user (and maybe physical as well)
+    cluster = 9             #: intermediate-level module inside blocks but above primitives
+    primitive = 10          #: primitive cell

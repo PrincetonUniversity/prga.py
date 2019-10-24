@@ -49,24 +49,24 @@ class PortDirection(Enum):
         return self.case(PortDirection.output, PortDirection.input_)
 
 # ----------------------------------------------------------------------------
-# -- Logical Net Class -------------------------------------------------------
+# -- Net Class ---------------------------------------------------------------
 # ----------------------------------------------------------------------------
 class NetClass(Enum):
-    """Logical class for nets."""
-    primitive = 0           #: user-available primitive ports
-    switch = 1              #: switch input/output
-    config = 2              #: configuration input/output
-    multimode = 3           #: input/output of a multimode primitive
-    mode = 4                #: input/output of a mode of a multimode primitive
-    cluster = 5             #: user-defined input/output of a sub-block cluster
-    # routing nodes
-    blockport = 6           #: IPIN/OPIN of logic/io block
-    node = 7                #: other routing nodes
-    # other tile/array ports
-    io = 8                  #: IOB/array external ports
-    global_ = 9             #: global wires
-    # extensions
-    extension = 10          #: reserved for extensions
+    """Class for nets."""
+    # physical-only
+    io = 0                  #: IOB/array external ports
+    global_ = 1             #: global wires
+    # logical (and maybe physical as well)
+    switch = 2              #: switch nets
+    config = 3              #: configuration nets
+    # logical & user (and maybe physical as well)
+    blockport = 4           #: IPIN/OPIN of logic/io block
+    node = 5                #: other routing nodes. Some of them may be in the user domain as well
+    cluster = 6             #: input/output of an intermediate level inside blocks but above primitives
+    primitive = 7           #: input/output of a single-mode primitive
+    multimode = 8           #: input/output of a multi-mode primitive
+    # logical-only (may be user as well)
+    mode = 9                #: input/output of a multi-mode primitive mapped into one of its logical modes
 
 # ----------------------------------------------------------------------------
 # -- Routing Node Type -------------------------------------------------------

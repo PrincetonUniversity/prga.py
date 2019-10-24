@@ -71,15 +71,15 @@ class IOBlock(BaseBlock):
         if io_primitive.primitive_class in (PrimitiveClass.inpad, PrimitiveClass.iopad):
             i = IOBlockExternalInputPort(self, 'exti', 1)
             self._add_port(i)
-            instance.all_pins['inpad'].physical_cp = i
+            instance.pins['inpad'].physical_cp = i
         if io_primitive.primitive_class in (PrimitiveClass.outpad, PrimitiveClass.iopad):
             o = IOBlockExternalOutputPort(self, 'exto', 1)
             self._add_port(o)
-            instance.all_pins['outpad'].physical_cp = o
+            instance.pins['outpad'].physical_cp = o
         if io_primitive.primitive_class.is_iopad:
             oe = IOBlockExternalOutputPort(self, 'extoe', 1)
             self._add_port(oe)
-            instance.all_pins['oe'].physical_cp = oe
+            instance.logical_pins['cfg_d'].physical_cp = oe
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------

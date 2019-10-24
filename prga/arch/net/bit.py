@@ -59,7 +59,7 @@ class _BaseBit(Object, AbstractBit):
 
     @property
     def net_class(self):
-        """`NetClass`: Logical class of this net."""
+        """`NetClass`: Class of this net."""
         return self.bus.net_class
 
     # -- implementing properties/methods required by superclass --------------
@@ -68,12 +68,16 @@ class _BaseBit(Object, AbstractBit):
         return self.bus.net_type
 
     @property
-    def is_physical(self):
-        return self.bus.is_physical
+    def in_physical_domain(self):
+        return self.bus.in_physical_domain
 
     @property
-    def is_user_accessible(self):
-        return self.bus.is_user_accessible
+    def in_logical_domain(self):
+        return self.bus.in_logical_domain
+
+    @property
+    def in_user_domain(self):
+        return self.bus.in_user_domain
 
 # ----------------------------------------------------------------------------
 # -- Base Class for Dynamic Port/Pin Bits ------------------------------------
@@ -106,7 +110,7 @@ class _BaseDynamicBit(_BaseBit):
     # -- implementing properties/methods required by superclass --------------
     @property
     def physical_cp(self):
-        if self.is_physical:
+        if self.in_physical_domain:
             return self
         try:
             return self._static_cp.physical_cp
@@ -115,8 +119,8 @@ class _BaseDynamicBit(_BaseBit):
 
     @physical_cp.setter
     def physical_cp(self, cp):
-        if self.is_physical:
-            raise PRGAInternalError("'{}' is physical so no counterpart should be set"
+        if self.in_physical_domain:
+            raise PRGAInternalError("'{}' is in the physical domain so no counterpart should be set"
                     .format(self))
         self._get_or_create_static_cp().physical_cp = cp
 
@@ -150,7 +154,7 @@ class _BaseStaticBit(_BaseBit):
     @property
     def physical_cp(self):
         # 0. no physical counterpart if myself is physical
-        if self.is_physical:
+        if self.in_physical_domain:
             return self
         # 1. check ungrouped physical counterpart
         try:
@@ -171,10 +175,10 @@ class _BaseStaticBit(_BaseBit):
         if cp is self.physical_cp:
             return
         # 1. validate self and parameter
-        if self.is_physical:
-            raise PRGAInternalError("'{}' is physical so no counterpart should be set"
+        if self.in_physical_domain:
+            raise PRGAInternalError("'{}' is in the physical domain so no counterpart should be set"
                     .format(self))
-        if cp is not None and not (cp.is_physical and cp.is_sink is self.is_sink):
+        if cp is not None and not (cp.in_physical_domain and cp.is_sink is self.is_sink):
             raise PRGAInternalError("'{}' is not a valid physical counterpart for '{}'"
                     .format(cp, self))
         # 2. ungroup grouped physical counterpart if there are
@@ -222,29 +226,37 @@ class DynamicSinkBit(_BaseDynamicBit, AbstractSinkBit):
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
     @property
-    def source(self):
+    def logical_source(self):
+        # 0. logical source is only valid if this is a logical net
+        if not self.in_logical_domain:
+            raise PRGAInternalError("'{}' is not in the logical domain"
+                    .format(self))
         # 1. check static counterpart's logical source
         try:
-            return self._static_cp._source
+            return self._static_cp._logical_source
         except AttributeError:
             pass
         # 2. check grouped logical source
         try:
-            return self.bus._source[self.index]
+            return self.bus._logical_source[self.index]
         except AttributeError:
             pass
         # 3. give up
         return UNCONNECTED
 
-    @source.setter
-    def source(self, source):
-        self._get_or_create_static_cp().source = source
+    @logical_source.setter
+    def logical_source(self, source):
+        # 0. logical source is only valid if this is a logical net
+        if not self.in_logical_domain:
+            raise PRGAInternalError("'{}' is not in the logical domain"
+                    .format(self))
+        self._get_or_create_static_cp().logical_source = source
 
     @property
     def physical_source(self):
         # 0. physical source is only valid if this is a physical net
-        if not self.is_physical:
-            raise PRGAInternalError("'{}' is not a physical net"
+        if not self.in_physical_domain:
+            raise PRGAInternalError("'{}' is not in the physical domain"
                     .format(self))
         # 1. check static counterpart's physical source
         try:
@@ -257,16 +269,17 @@ class DynamicSinkBit(_BaseDynamicBit, AbstractSinkBit):
         except AttributeError:
             pass
         # 3. default to logical source
-        source = self.source
-        if source.is_physical:
-            return source
+        if self.in_logical_domain:
+            source = self.logical_source
+            if source.in_physical_domain:
+                return source
         # 4. give up
         return UNCONNECTED
 
     @physical_source.setter
     def physical_source(self, source):
         # 0. physical source is only valid if this is a physical net
-        if not self.is_physical:
+        if not self.in_physical_domain:
             raise PRGAInternalError("'{}' is not a physical net"
                     .format(self))
         self._get_or_create_static_cp().physical_source = source
@@ -274,7 +287,7 @@ class DynamicSinkBit(_BaseDynamicBit, AbstractSinkBit):
     @property
     def user_sources(self):
         # 0. user sources are only valid if this is a user-accessible net
-        if not self.is_user_accessible:
+        if not self.in_user_domain:
             raise PRGAInternalError("'{}' is not a user-accessible sink"
                     .format(self))
         # 1. static bits are always created when user sources are involved
@@ -282,7 +295,7 @@ class DynamicSinkBit(_BaseDynamicBit, AbstractSinkBit):
 
     def add_user_sources(self, sources):
         # 0. user sources are only valid if this is a user-accessible net
-        if not self.is_user_accessible:
+        if not self.in_user_domain:
             raise PRGAInternalError("'{}' is not a user-accessible sink"
                     .format(self))
         # 1. static bits are always created when user sources are involved
@@ -290,7 +303,7 @@ class DynamicSinkBit(_BaseDynamicBit, AbstractSinkBit):
 
     def remove_user_sources(self, sources = None):
         # 0. user sources are only valid if this is a user-accessible net
-        if not self.is_user_accessible:
+        if not self.in_user_domain:
             raise PRGAInternalError("'{}' is not a user-accessible sink"
                     .format(self))
         # 1. static bits are always created when user sources are involved
@@ -319,50 +332,54 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
         index (:obj:`int`): The index of this bit in the bus
     """
 
-    __slots__ = ['_source', '_physical_source', '_user_sources']
+    __slots__ = ['_logical_source', '_physical_source', '_user_sources']
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
     @property
-    def source(self):
+    def logical_source(self):
+        # 0. logical source is only valid if this is a logical sink
+        if not self.in_logical_domain:
+            raise PRGAInternalError("'{}' is not a logical sink"
+                    .format(self))
         # 1. check ungrouped logical source
         try:
-            return self._source
+            return self._logical_source
         except AttributeError:
             pass
         # 2. check grouped logical source
         try:
-            return self.bus._source[self.index]
+            return self.bus._logical_source[self.index]
         except AttributeError:
             pass
         # 3. give up
         return UNCONNECTED
 
-    @source.setter
-    def source(self, source):
+    @logical_source.setter
+    def logical_source(self, source):
         # 0. shortcut if no changes are to be made
-        if source is self.source:
+        if source is self.logical_source:
             return
         # 1. validate self and source
-        if source.is_sink:
-            raise PRGAInternalError("'{}' is not a source"
+        if not (source.in_logical_domain and not source.is_sink):
+            raise PRGAInternalError("'{}' is not a logical source"
                     .format(source))
         # 2. ungroup grouped logical source if there are
         try:
-            grouped = self.bus._source
+            grouped = self.bus._logical_source
             for i in range(self.bus.width):
                 sink = self.bus._get_or_create_bit(i, False)
-                sink._source = grouped._get_or_create_bit(i, False)
-            del self.bus._source
+                sink._logical_source = grouped._get_or_create_bit(i, False)
+            del self.bus._logical_source
         except AttributeError:
             pass
         # 3. update
-        self._source = source._get_or_create_static_cp()
+        self._logical_source = source._get_or_create_static_cp()
 
     @property
     def physical_source(self):
         # 0. physical source is only valid if this is a physical sink
-        if not self.is_physical:
+        if not self.in_physical_domain:
             raise PRGAInternalError("'{}' is not a physical sink"
                     .format(self))
         # 1. check ungrouped physical source
@@ -376,9 +393,10 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
         except AttributeError:
             pass
         # 3. default to logical source
-        source = self.source
-        if source.is_physical:
-            return source
+        if self.in_logical_domain:
+            source = self.logical_source
+            if source.in_physical_domain:
+                return source
         # 4. give up
         return UNCONNECTED
 
@@ -388,7 +406,7 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
         if source is self.physical_source:
             return
         # 1. validate self and source
-        if not (source.is_physical and not source.is_sink):
+        if not (source.in_physical_domain and not source.is_sink):
             raise PRGAInternalError("'{}' is not a physical source"
                     .format(source))
         # 2. ungroup grouped physical source if there are
@@ -405,7 +423,7 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
 
     @property
     def user_sources(self):
-        if not self.is_user_accessible:
+        if not self.in_user_domain:
             raise PRGAInternalError("'{}' is not a user sink"
                     .format(self))
         try:
@@ -414,7 +432,7 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
             return tuple()
 
     def add_user_sources(self, sources):
-        if not self.is_user_accessible:
+        if not self.in_user_domain:
             raise PRGAInternalError("'{}' is not a user sink"
                     .format(self))
         for s in sources:
@@ -432,7 +450,7 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
                 self._user_sources = [s]
 
     def remove_user_sources(self, sources = None):
-        if not self.is_user_accessible:
+        if not self.in_user_domain:
             raise PRGAInternalError("'{}' is not a user sink"
                     .format(self))
         if sources is None:
