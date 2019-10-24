@@ -42,7 +42,7 @@ class _PrimitivesProxy(Object, Mapping):
             try:
                 return self.context.primitive_library.get_or_create_primitive(key)
             except PRGAInternalError as e:
-                raise KeyError(key)
+                raise_from(KeyError(key), e)
         elif not module.module_class.is_primitive:
             raise KeyError(key)
         else:
@@ -338,7 +338,7 @@ class ArchitectureContext(Object):
         """Pickle the architecture context into a file.
 
         Args:
-            file_ (:obj:`str` or file-like object): output file
+            file_ (:obj:`str` or file-like object): output file or its name
         """
         # drop cache before pickling
         cache = self._cache

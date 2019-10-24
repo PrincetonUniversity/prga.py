@@ -153,7 +153,7 @@ class BuiltinSwitchLibrary(_BaseLibrary, SwitchLibraryDelegate):
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
-    def get_or_create_switch(self, width, module, in_physical_domain = True):
+    def get_or_create_switch(self, width, module = None, in_physical_domain = True):
         switch = self._switches.get(width)
         if switch is not None:
             if in_physical_domain and not switch.in_physical_domain:

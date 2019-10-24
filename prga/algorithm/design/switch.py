@@ -21,7 +21,7 @@ class SwitchLibraryDelegate(Abstract):
     # == low-level API =======================================================
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractmethod
-    def get_or_create_switch(self, width, module, in_physical_domain = True):
+    def get_or_create_switch(self, width, module = None, in_physical_domain = True):
         """Get a switch module with ``width`` input bits for ``module``.
 
         Args:

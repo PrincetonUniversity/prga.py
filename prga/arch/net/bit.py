@@ -241,7 +241,12 @@ class DynamicSinkBit(_BaseDynamicBit, AbstractSinkBit):
             return self.bus._logical_source[self.index]
         except AttributeError:
             pass
-        # 3. give up
+        # 3. default to user source if there is only one user source
+        if self.in_user_domain and len(self.user_sources) == 1:
+            source = self.user_sources[0]
+            if source.in_logical_domain:
+                return source
+        # 4. give up
         return UNCONNECTED
 
     @logical_source.setter
@@ -352,7 +357,12 @@ class StaticSinkBit(_BaseStaticBit, AbstractSinkBit):
             return self.bus._logical_source[self.index]
         except AttributeError:
             pass
-        # 3. give up
+        # 3. default to user source if there is only one user source
+        if self.in_user_domain and len(self.user_sources) == 1:
+            source = self.user_sources[0]
+            if source.in_logical_domain:
+                return source
+        # 4. give up
         return UNCONNECTED
 
     @logical_source.setter

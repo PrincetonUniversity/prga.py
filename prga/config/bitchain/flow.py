@@ -7,7 +7,7 @@ from prga.flow.flow import AbstractPass
 from prga.flow.delegate import ConfigCircuitryDelegate, BuiltinPrimitiveLibrary
 from prga.flow.util import get_switch_path
 from prga.config.bitchain.design.primitive import (CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH, ConfigBitchain,
-        FracturableLUT6)
+        FracturableLUT6, FracturableLUT6FF)
 from prga.config.bitchain.algorithm.injection import ConfigBitchainLibraryDelegate, inject_config_chain
 from prga.config.bitchain.algorithm.bitstream import get_config_bit_count, get_config_bit_offset
 from prga.exception import PRGAInternalError
@@ -26,7 +26,7 @@ class BitchainPrimitiveLibrary(BuiltinPrimitiveLibrary):
     def get_or_create_primitive(self, name, logical_only = False):
         module = self.context._modules.get(name)
         if module is not None:
-            if not module.module_class.is_primitve:
+            if not module.module_class.is_primitive:
                 raise PRGAInternalError("Existing module named '{}' is not a primitive"
                         .format(name))
             return module
@@ -34,6 +34,13 @@ class BitchainPrimitiveLibrary(BuiltinPrimitiveLibrary):
             return self.context._modules.setdefault(name, FracturableLUT6(
                 self.get_or_create_primitive('lut5', True),
                 self.get_or_create_primitive('lut6', True)))
+        elif name == 'fraclut6ff':
+            return self.context._modules.setdefault(name, FracturableLUT6FF(
+                self.get_or_create_primitive('lut5', True),
+                self.get_or_create_primitive('lut6', True),
+                self.get_or_create_primitive('flipflop', True),
+                self.context.switch_library.get_or_create_switch(2, None, False)
+                ))
         else:
             return super(BitchainPrimitiveLibrary, self).get_or_create_primitive(name, logical_only)
 
@@ -122,8 +129,6 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
 
     def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy):
         module = source.parent if source.net_type.is_port else source.parent.parent
-        if module.module_class.is_mode:     # temporary patch
-            return []
         config_bit_base = 0 if not hierarchy else self.__config_bit_offset_instance(hierarchy)
         config_bit_offsets = get_config_bit_offset(self.context, module)
         path = get_switch_path(self.context, source, sink)

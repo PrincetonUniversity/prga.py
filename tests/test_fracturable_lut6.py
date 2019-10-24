@@ -48,26 +48,6 @@ def test_fracturable_lut6(tmpdir):
         iotiles[orientation] = context.create_tile(
                 'mock_iotile_{}'.format(orientation.name), iob, 4, orientation)
 
-    # 4. create cluster
-    cluster = context.create_cluster('mock_cluster')
-    while True:
-        clkport = cluster.create_clock('clk')
-        inport = cluster.create_input('in', 6)
-        outport = cluster.create_output('out', 2)
-        ff0 = cluster.instantiate(context.primitives['flipflop'], 'ff0')
-        ff1 = cluster.instantiate(context.primitives['flipflop'], 'ff1')
-        lut = cluster.instantiate(context.primitives['fraclut6'], 'lut')
-        cluster.connect(clkport, ff0.pins['clk'])
-        cluster.connect(clkport, ff1.pins['clk'])
-        cluster.connect(inport, lut.pins['in'])
-        cluster.connect(lut.pins['o6'], ff0.pins['D'])
-        cluster.connect(lut.pins['o5'], ff1.pins['D'])
-        cluster.connect(lut.pins['o6'], outport[0])
-        cluster.connect(lut.pins['o5'], outport[1])
-        cluster.connect(ff0.pins['Q'], outport[0])
-        cluster.connect(ff1.pins['Q'], outport[1])
-        break
-
     # 5. create CLB
     clb = context.create_logic_block('mock_clb')
     while True:
@@ -75,10 +55,11 @@ def test_fracturable_lut6(tmpdir):
         inport = clb.create_input('in', 12, Orientation.west)
         outport = clb.create_output('out', 4, Orientation.east)
         for i in range(2):
-            inst = clb.instantiate(cluster, 'cluster{}'.format(i))
+            inst = clb.instantiate(context.primitives['fraclut6ff'], 'cluster{}'.format(i))
             clb.connect(clkport, inst.pins['clk'])
             clb.connect(inport[i*6: (i+1)*6], inst.pins['in'])
-            clb.connect(inst.pins['out'], outport[i*2: (i+1)*2])
+            clb.connect(inst.pins['o6'], outport[i*2])
+            clb.connect(inst.pins['o5'], outport[i*2 + 1])
         break
 
     # 6. create tile
