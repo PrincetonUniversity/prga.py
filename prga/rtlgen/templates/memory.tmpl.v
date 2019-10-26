@@ -5,21 +5,41 @@
     , input wire [0:0] we{{ portsuffix }}
     , output reg [{{ data_width - 1 }}:0] out{{ portsuffix }}
 {%- endmacro -%}
-{% macro memproc(portsuffix, transparent) -%}
+{% macro memproc(portsuffix, addr_width, transparent) -%}
+    // convert 'x' or 'z' to '0' in simulation
+    reg internal_we{{ portsuffix }};
+    reg [{{ addr_width - 1 }}:0] internal_addr{{ portsuffix }};
+
+    always @* begin
+        internal_we{{ portsuffix }} = we{{ portsuffix }};
+        internal_addr{{ portsuffix }} = addr{{ portsuffix }};
+
+        // synopsys translate off
+        if (we{{ portsuffix }} === 1'bx || we{{ portsuffix }} === 1'bz) begin
+            internal_we{{ portsuffix }} = 1'b0;
+        end
+        {% for i in range(addr_width) %}
+        if (addr{{ portsuffix }}[{{ i }}] === 1'bx || addr{{ portsuffix }}[{{ i }}] === 1'bz) begin
+            internal_addr{{ portsuffix }} = 1'b0;
+        end
+        {%- endfor %}
+        // synopsys translate on
+    end
+
     always @(posedge clk) begin
         {% if transparent -%}
-        if (we{{ portsuffix }}) begin
-            mem[addr{{ portsuffix }}] <= data{{ portsuffix }};
+        if (internal_we{{ portsuffix }}) begin
+            mem[internal_addr{{ portsuffix }}] <= data{{ portsuffix }};
             out{{ portsuffix }} <= data{{ portsuffix }};
         end else begin
-            out{{ portsuffix }} <= mem[addr{{ portsuffix }}];
+            out{{ portsuffix }} <= mem[internal_addr{{ portsuffix }}];
         end
         {%- else -%}
-        if (we{{ portsuffix }}) begin
-            mem[addr{{ portsuffix }}] <= data{{ portsuffix }};
+        if (internal_we{{ portsuffix }}) begin
+            mem[internal_addr{{ portsuffix }}] <= data{{ portsuffix }};
         end
 
-        out{{ portsuffix }} <= mem[addr{{ portsuffix }}];
+        out{{ portsuffix }} <= mem[internal_addr{{ portsuffix }}];
         {%- endif %}
     end
 {%- endmacro -%}
@@ -36,11 +56,11 @@ module {{ module.name }} (
     reg [{{ module.data_width - 1}}:0] mem [0:{{ 2 ** module.addr_width - 1 }}];
 
     {% if module.dualport -%}
-        {{ memproc('1', module.transparent) }}
+        {{ memproc('1', module.addr_width, module.transparent) }}
 
-        {{ memproc('2', module.transparent) }}
+        {{ memproc('2', module.addr_width, module.transparent) }}
     {%- else -%}
-        {{ memproc('', module.transparent) }}
+        {{ memproc('', module.addr_width, module.transparent) }}
     {%- endif %}
 
 endmodule

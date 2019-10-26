@@ -14,13 +14,17 @@ from prga.flow.vprgen import GenerateVPRXML
 from prga.flow.opt import ZeroingBRAMWriteEnable
 from prga.config.bitchain.flow import BitchainConfigCircuitryDelegate, InjectBitchainConfigCircuitry
 
-def test_bram(tmpdir):
-    context = ArchitectureContext('top', 8, 8, BitchainConfigCircuitryDelegate)
+from itertools import product
+
+def test_large(): # tmpdir):
+    width, height = 52, 42
+    context = ArchitectureContext('top', width, height, BitchainConfigCircuitryDelegate)
 
     # 1. routing stuff
     clk = context.create_global('clk', is_clock = True, bind_to_position = (0, 1))
-    context.create_segment('L1', 12, 1)
-    context.create_segment('L2', 4, 2)
+    context.create_segment('L1', 48, 1)
+    context.create_segment('L2', 16, 2)
+    context.create_segment('L4', 8, 4)
 
     # 2. create IOB
     iob = context.create_io_block('iob')
@@ -47,20 +51,23 @@ def test_bram(tmpdir):
         if orientation.is_auto:
             continue
         iotiles[orientation] = context.create_tile(
-                'iotile_{}'.format(orientation.name), iob, 4, orientation)
+                'iotile_{}'.format(orientation.name), iob, 8, orientation)
 
     # 5. create CLB
     clb = context.create_logic_block('clb')
     while True:
         clkport = clb.create_global(clk, Orientation.south)
-        inport = clb.create_input('in', 12, Orientation.west)
-        outport = clb.create_output('out', 4, Orientation.east)
-        for i in range(2):
-            inst = clb.instantiate(context.primitives['fraclut6ff'], 'cluster{}'.format(i))
+        for i, ori_in in enumerate(Orientation):
+            if ori_in.is_auto:
+                continue
+            ori_out = ori_in.case(Orientation.east, Orientation.south, Orientation.west, Orientation.north)
+            inport = clb.create_input('in_' + ori_in.name[0], 6, ori_in)
+            outport = clb.create_output('out_' + ori_out.name[0], 2, ori_out)
+            inst = clb.instantiate(context.primitives['fraclut6ff'], 'cluster_' + ori_in.name[0])
             clb.connect(clkport, inst.pins['clk'])
-            clb.connect(inport[i*6: (i+1)*6], inst.pins['in'])
-            clb.connect(inst.pins['o6'], outport[i*2])
-            clb.connect(inst.pins['o5'], outport[i*2 + 1])
+            clb.connect(inport, inst.pins['in'])
+            clb.connect(inst.pins['o6'], outport[0])
+            clb.connect(inst.pins['o5'], outport[1])
         break
 
     # 6. create tile
@@ -94,24 +101,30 @@ def test_bram(tmpdir):
     # 8. create tile
     bramtile = context.create_tile('bram_tile', bram)
 
+    # 9. create sub-array
+    subarray = context.create_array('subarray', 5, 4)
+    for x, y in product(range(5), range(4)):
+        if x == 2:
+            if y % 2 == 0:
+                subarray.instantiate_element(bramtile, (x, y))
+        else:
+            subarray.instantiate_element(clbtile, (x, y))
+
     # 9. fill top-level array
-    for x in range(8):
-        for y in range(8):
+    for x in range(width):
+        for y in range(height):
             if x == 0:
-                if y > 0 and y < 7:
+                if y > 0 and y < height - 1:
                     context.top.instantiate_element(iotiles[Orientation.west], (x, y))
-            elif x == 7:
-                if y > 0 and y < 7:
+            elif x == width - 1:
+                if y > 0 and y < height - 1:
                     context.top.instantiate_element(iotiles[Orientation.east], (x, y))
             elif y == 0:
                 context.top.instantiate_element(iotiles[Orientation.south], (x, y))
-            elif y == 7:
+            elif y == height - 1:
                 context.top.instantiate_element(iotiles[Orientation.north], (x, y))
-            elif x in (2, 5):
-                if y % 2 == 1:
-                    context.top.instantiate_element(bramtile, (x, y))
-            else:
-                context.top.instantiate_element(clbtile, (x, y))
+            elif x % 5 == 1 and y % 4 == 1:
+                context.top.instantiate_element(subarray, (x, y))
 
     # 10. flow
     flow = Flow((
@@ -126,7 +139,6 @@ def test_bram(tmpdir):
             ))
 
     # 11. run flow
-    oldcwd = tmpdir.chdir()
     flow.run(context)
 
     # 12. create a pickled version

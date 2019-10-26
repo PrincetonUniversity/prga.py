@@ -24,6 +24,13 @@ module {{ behav.name }}_tb_wrapper;
     wire {% if port.low is not none %}[{{ port.high - 1 }}:{{ port.low }}] {% endif %}behav_{{ name }};
     {%- endfor %}
 
+    // FPGA implementation wires
+    {%- for name, port in iteritems(behav.ports) %}
+        {%- if port.direction.name == 'output' %}
+    wire {% if port.low is not none %}[{{ port.high - 1 }}:{{ port.low }}] {% endif %}impl_{{ name }};
+        {%- endif %}
+    {%- endfor %}
+
     // testbench
     {{ tb.name }} {% if tb.parameters %}#(
         {%- set comma0 = joiner(",") -%}
@@ -36,8 +43,12 @@ module {{ behav.name }}_tb_wrapper;
         ,.sys_success(sys_success)
         ,.sys_fail(sys_fail)
         ,.cycle_count(cycle_count)
-        {%- for name in behav.ports %}
-        ,.{{ name }}(behav_{{ name }})
+        {%- for name, port in iteritems(behav.ports) %}
+            {%- if port.direction.name == 'output' %}
+        ,.{{ name }}(impl_{{ name }})
+            {%- else %}
+        ,.{{ name }}(behav_{{ port.name }})
+            {%- endif %}
         {%- endfor %}
         );
 
@@ -151,13 +162,6 @@ module {{ behav.name }}_tb_wrapper;
     reg [7:0]       cfg_percentage;
 
     assign cfg_clk = cfg_e && sys_clk;
-
-    // FPGA implementation wires
-    {%- for name, port in iteritems(behav.ports) %}
-        {%- if port.direction.name == 'output' %}
-    wire {% if port.low is not none %}[{{ port.high - 1 }}:{{ port.low }}] {% endif %}impl_{{ name }};
-        {%- endif %}
-    {%- endfor %}
 
     // FPGA implementation
     {{ impl.name }} impl (
