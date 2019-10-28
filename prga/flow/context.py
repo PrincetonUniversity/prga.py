@@ -6,7 +6,7 @@ from prga.compatible import *
 from prga.arch.common import Global, Orientation
 from prga.arch.block.cluster import Cluster
 from prga.arch.block.block import IOBlock, LogicBlock
-from prga.arch.routing.common import Segment
+from prga.arch.routing.common import Segment, DirectTunnel
 from prga.arch.array.common import ChannelCoverage
 from prga.arch.array.tile import Tile, IOTile
 from prga.arch.array.array import Array
@@ -68,6 +68,7 @@ class ArchitectureContext(Object):
     __slots__ = [
             '_top',                 # top-level array
             '_globals',             # global wire prototypes
+            '_directs',             # direct inter-block tunnels
             '_segments',            # wire segment prototypes
             '_modules',             # all created modules
             '_config_lib',          # configuration circuitry library
@@ -84,6 +85,7 @@ class ArchitectureContext(Object):
         super(ArchitectureContext, self).__init__()
         self._top = Array(name, width, height, True)
         self._globals = OrderedDict()
+        self._directs = OrderedDict()
         self._segments = OrderedDict()
         self._modules = OrderedDict()
         cfg = self._config_lib = config_circuitry_delegate_class(self)
@@ -166,6 +168,29 @@ class ArchitectureContext(Object):
         if bind_to_position is not None:
             global_.bind(bind_to_position, uno(bind_to_subblock, 0))
         return global_
+
+    # -- Direct Inter-block Tunnels ------------------------------------------
+    @property
+    def direct_tunnels(self):
+        """:obj:`Mapping` [:obj:`str`, `DirectTunnel` ]: A mapping from names to direct inter-block tunnels."""
+        return ReadonlyMappingProxy(self._directs)
+
+    def create_direct(self, name, source, sink, offset):
+        """Create a direct inter-block tunnel.
+
+        Args:
+            name (:obj:`str`): Name of this direct inter-block tunnel
+            source (`AbstractBlockPort`): Source of the tunnel
+            sink (`AbstractBlockPort`): Sink of the tunnel
+            offset (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of the source block relative to the sink block.
+                This definition is the opposite of how VPR defines a ``<direct>`` tag. In addition, ``offset`` is
+                defined based on the position of the blocks, not the ports
+        """
+        if name in self._directs:
+            raise PRGAAPIError("Direct inter-block tunnel named '{}' is already created".format(name))
+        elif not (source.parent.module_class.is_logic_block and sink.parent.module_class.is_logic_block):
+            raise PRGAAPIError("Direct inter-block tunnel can only be created between logic block ports")
+        return self._directs.setdefault(name, DirectTunnel(name, source, sink, Position(*offset)))
 
     # -- Wire Segments -------------------------------------------------------
     @property

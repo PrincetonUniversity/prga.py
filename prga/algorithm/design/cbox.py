@@ -69,7 +69,7 @@ class BlockFCValue(namedtuple('BlockFCValue', 'default_in default_out overrides'
         default_in (`BlockPortFCValue`): the default FC value for all input ports
         default_out (`BlockPortFCValue`): the default FC value for all output ports. Same as the default value for
             input ports if not set
-        overrides (:obj:`Mapping` [:obj:`str`, `BlockPortFCValue` ]): the FC value for a specific segment type
+        overrides (:obj:`Mapping` [:obj:`str`, `BlockPortFCValue` ]): the FC value for a specific port
     """
     def __new__(cls, default_in, default_out = None, overrides = None):
         return super(BlockFCValue, cls).__new__(cls, default_in,

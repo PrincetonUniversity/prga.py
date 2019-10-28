@@ -49,7 +49,8 @@ class CompleteRoutingBox(Object, AbstractPass):
             if module.module_class.is_array:
                 self.__process_array(context, module, segments)
             elif module.module_class.is_tile:
-                cboxify(context.connection_box_library, module, module.orientation.opposite)
+                cboxify(context.connection_box_library, module, segments,
+                        self.block_fc.get(module.block.name, self.default_fc), module.orientation.opposite)
                 for (position, orientation), cbox in iteritems(module.cbox_instances):
                     if cbox.model.name in hierarchy[module.name]:
                         continue
@@ -75,6 +76,8 @@ class CompleteRoutingBox(Object, AbstractPass):
 class CompleteConnection(Object, AbstractPass):
     """Create and connect ports/pins in tiles & arrays."""
 
+    __slots__ = ['_directs']
+
     @property
     def key(self):
         """Key of this pass."""
@@ -89,12 +92,13 @@ class CompleteConnection(Object, AbstractPass):
         hierarchy = analyze_hierarchy(context)
         for module in itervalues(hierarchy[array.name]):
             if module.module_class.is_tile:
-                netify_tile(module)
+                netify_tile(module, self._directs)
             elif module.module_class.is_array:
                 self.__process_array(context, module)
         netify_array(array, top)
 
     def run(self, context):
+        self._directs = list(itervalues(context.directs))
         self.__process_array(context, context.top, True)
 
 # ----------------------------------------------------------------------------

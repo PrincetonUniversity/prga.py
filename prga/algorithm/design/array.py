@@ -170,6 +170,48 @@ def create_and_connect_cs_bridge(array, source, create_output = True):
         raise PRGAInternalError("Got the third connection box - switch box bridge: {} in array '{}'"
                 .format(node, array))
 
+def find_blockport_bridge_driver(array, node, create_input = True):
+    """Find or create the blockport-bridge driver for ``node``.
+
+    Args:
+        array (`Array`): Find the segment driver in this array
+        node (`BlockPortID`):
+        create_input (:obj:`bool`): If no possible driver found, an input port will be created 
+    """
+    # 1. get the tile instance
+    tileinst = array.get_root_element(node.position)
+    if tileinst is None:
+        if create_input and not array.covers_tile(node.position):
+            return array.get_or_create_node(node, PortDirection.input_)
+        else:
+            return None
+    node_in_element = node.move(-tileinst.position)
+    # 2. if it is a tile
+    if tileinst.module_class.is_tile:
+        if (node.prototype.position != node_in_element.position or
+                tileinst.model.block is not node.prototype.parent):
+            return None
+        driver = tileinst.logical_pins.get(node_in_element)
+        if driver is None:
+            tile = tileinst.model
+            port_in_tile = tile.get_or_create_node(node_in_element, PortDirection.output)
+            port_in_tile.logical_source = tile.block_instances[node.subblock].logical_pins[node.prototype.key]
+            driver = tileinst.logical_pins[port_in_tile.key]
+        return driver
+    # 3. if it is an array:
+    else:
+        assert tileinst.module_class.is_array
+        driver = tileinst.logical_pins.get(node_in_element)
+        if driver is None:
+            driver_in_array = find_blockport_bridge_driver(tileinst.model, node_in_element, False)
+            if driver_in_array is None:
+                driver = None
+            else:
+                port_in_array = tileinst.model.get_or_create_node(node_in_element, PortDirection.output)
+                port_in_array.logical_source = driver_in_array
+                driver = tileinst.logical_pins[port_in_array.key]
+        return driver
+
 def netify_array(array, top = False):
     """Expose ports and connect nets in ``array``.
 
@@ -180,6 +222,7 @@ def netify_array(array, top = False):
     """
     extinputs = [[{} for _ in range(array.height)] for _ in range(array.width)]
     for x, y in product(range(-1, array.width), range(-1, array.height)):
+        # 1. check out the array element (tile or array)
         element = array.element_instances.get( (x, y), None )
         if element is not None:
             snapshot = OrderedDict(iteritems(element.all_pins))
@@ -196,6 +239,11 @@ def netify_array(array, top = False):
                         elif ((node.bridge_type.is_array_cboxout or node.bridge_type.is_array_cboxout2) and
                                 pin.direction.is_output):
                             create_and_connect_cs_bridge(array, pin, not top)
+                    elif node.node_type.is_blockport_bridge and pin.direction.is_input:
+                        # highly possibly a bridge for direct inter-block tunnels
+                        driver = find_blockport_bridge_driver(array, node, not top)
+                        if driver is not None:
+                            pin.logical_source = driver
                 elif pin.net_class.is_io:
                     node = pin.node
                     if pin.direction.is_input:
@@ -203,6 +251,7 @@ def netify_array(array, top = False):
                         extinputs[x][y].setdefault(node.subblock, []).append(exti)
                     else:
                         array._add_port(ArrayExternalOutputPort(array, node)).physical_source = pin
+        # 2. check out the switch box
         sbox = array.sbox_instances.get( (x, y), None )
         if sbox is not None:
             snapshot = OrderedDict(iteritems(sbox.all_nodes))

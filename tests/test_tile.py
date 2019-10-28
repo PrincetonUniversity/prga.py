@@ -4,9 +4,9 @@ from __future__ import division, absolute_import, print_function, unicode_litera
 from prga.compatible import *
 
 from prga.arch.common import Global, Orientation, Dimension
-from prga.arch.primitive.builtin import Iopad, Memory
+from prga.arch.primitive.builtin import Iopad
 from prga.arch.block.block import IOBlock, LogicBlock
-from prga.arch.routing.common import Segment
+from prga.arch.routing.common import Segment, DirectTunnel
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.arch.routing.box import ConnectionBox
 from prga.arch.array.tile import Tile, IOTile
@@ -41,6 +41,7 @@ def test_io_tile(tmpdir):
     sgmts = [Segment('L1', 4, 1), Segment('L2', 1, 2)]
     lib = Library()
     gen = VerilogGenerator()
+    fc = BlockFCValue(BlockPortFCValue(0.5), BlockPortFCValue(1.0))
 
     # 1. add some ports
     block.create_global(glb)
@@ -51,15 +52,13 @@ def test_io_tile(tmpdir):
     tile = IOTile('mock_tile', block, 4, Orientation.west)
 
     # 3. cboxify
-    cboxify(lib, tile, Orientation.east)
+    cboxify(lib, tile, sgmts, fc, Orientation.east)
 
     # 4. populate and generate connections
     for (position, orientation), cbox_inst in iteritems(tile.cbox_instances):
         populate_connection_box(cbox_inst.model, sgmts, tile.block, orientation,
                 tile.capacity, position)
-        generate_fc(cbox_inst.model, sgmts, tile.block, orientation,
-                BlockFCValue(BlockPortFCValue(0.5), BlockPortFCValue(1.0)),
-                tile.capacity, position)
+        generate_fc(cbox_inst.model, sgmts, tile.block, orientation, fc, tile.capacity, position)
         switchify(lib, cbox_inst.model)
 
     # 5 switchify!
@@ -73,12 +72,13 @@ def test_io_tile(tmpdir):
         gen.generate_module(tmpdir.join(module.name + '.v').open(OpenMode.w), module)
 
 def test_logic_tile(tmpdir):
-    mem = Memory(10, 8, 'mem8Kb')
-    block = LogicBlock('mock_block', 1, 3)
     clk = Global('clk', is_clock = True)
     sgmts = [Segment('L1', 4, 1), Segment('L2', 1, 2)]
     lib = Library()
     gen = VerilogGenerator()
+    block = LogicBlock('mock_block', 1, 3)
+    fc = BlockFCValue(BlockPortFCValue(0.5), BlockPortFCValue(1.0),
+            {"cin": BlockPortFCValue(0), "cout": BlockPortFCValue(0)})
 
     # 1. add some ports
     block.create_global(clk, Orientation.south, position = (0, 0))
@@ -86,25 +86,29 @@ def test_logic_tile(tmpdir):
     block.create_input('din', 8, Orientation.west, (0, 1))
     block.create_input('we', 1, Orientation.west, (0, 2))
     block.create_output('dout', 8, Orientation.east, (0, 0))
+    cin = block.create_input('cin', 1, Orientation.south, position = (0, 0))
+    cout = block.create_output('cout', 1, Orientation.north, position = (0, 2))
 
-    # 2. create tile
+    # 2. direct tunnels
+    directs = [DirectTunnel('carrychain', cout, cin, (0, -3))]
+
+    # 3. create tile
     tile = Tile('mock_tile', block)
 
-    # 3. cboxify
-    cboxify(lib, tile)
+    # 4. cboxify
+    cboxify(lib, tile, sgmts, fc)
 
-    # 4. populate and generate connections
+    # 5. populate and generate connections
     for (position, orientation), cbox_inst in iteritems(tile.cbox_instances):
         populate_connection_box(cbox_inst.model, sgmts, tile.block, orientation,
                 tile.capacity, position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
-        generate_fc(cbox_inst.model, sgmts, tile.block, orientation,
-                BlockFCValue(BlockPortFCValue(0.5), BlockPortFCValue(1.0)),
+        generate_fc(cbox_inst.model, sgmts, tile.block, orientation, fc,
                 tile.capacity, position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
         switchify(lib, cbox_inst.model)
 
-    # 6. netify
-    netify_tile(tile)
+    # 7. netify
+    netify_tile(tile, directs)
 
-    # 7. generate files
+    # 8. generate files
     for module in chain(itervalues(lib.switches), itervalues(lib.cboxes), iter((tile, ))):
         gen.generate_module(tmpdir.join(module.name + '.v').open(OpenMode.w), module)

@@ -415,6 +415,26 @@ def vpr_arch_segment(xml, segment):
         xml.element_leaf('sb', {'type': 'pattern'}, ' '.join(iter('1' for i in range(segment.length + 1))))
         xml.element_leaf('cb', {'type': 'pattern'}, ' '.join(iter('1' for i in range(segment.length))))
 
+def vpr_arch_direct(xml, context, direct):
+    """Convert a direct inter-block tunnel to VPR architecture description.
+
+    Args:
+        xml (`XMLGenerator`):
+        direct (`DirectTunnel`):
+    """
+    # find all tiles encapsulating the source/sink block
+    source_tiles = [tile for tile in iter_all_tiles(context) if tile.block is direct.source.parent]
+    sink_tiles = [tile for tile in iter_all_tiles(context) if tile.block is direct.sink.parent]
+    for source_tile, sink_tile in product(source_tiles, sink_tiles):
+        xml.element_leaf("direct", {
+            "name": direct.name,
+            "from_pin": "{}.{}".format(source_tile.name, direct.source.name),
+            "to_pin": "{}.{}".format(sink_tile.name, direct.sink.name),
+            "x_offset": str(-direct.offset.x),
+            "y_offset": str(-direct.offset.y),
+            "z_offset": "0",
+            })
+
 def vpr_arch_default_switch(xml):
     """Generate a default switch tag to VPR architecture description.
 
@@ -473,6 +493,10 @@ def vpr_arch_xml(xml, delegate, context):
         with xml.element('segmentlist'):
             for segment in itervalues(context.segments):
                 vpr_arch_segment(xml, segment)
+        # directlist
+        with xml.element('directlist'):
+            for direct in itervalues(context.direct_tunnels):
+                vpr_arch_direct(xml, context, direct)
         # complexblocklist
         with xml.element('complexblocklist'):
             for tile in iter_all_tiles(context):

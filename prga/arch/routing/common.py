@@ -13,7 +13,7 @@ from collections import namedtuple
 from abc import abstractproperty
 from copy import copy
 
-__all__ = ['Segment', 'SegmentBridgeType', 'SegmentID', 'BlockPortID']
+__all__ = ['Segment', 'SegmentBridgeType', 'SegmentID', 'BlockPortID', 'DirectTunnel']
 
 # ----------------------------------------------------------------------------
 # -- Segment Prototype -------------------------------------------------------
@@ -252,3 +252,19 @@ class BlockPortID(Object, AbstractRoutingNodeID):
     @property
     def node_type(self):
         return RoutingNodeType.blockport_bridge
+
+# ----------------------------------------------------------------------------
+# -- Direct Inter-block Tunnel -----------------------------------------------
+# ----------------------------------------------------------------------------
+class DirectTunnel(namedtuple('DirectTunnel', 'name source sink offset')):
+    """Defining a direct inter-block tunnel.
+
+    Args:
+        name (:obj:`str`): Name of this tunnel
+        source (`AbstractBlockPort`): Source port of this tunnel
+        sink (`AbstractBlockPort`): Sink port of this tunnel
+        offset (`Position`): Position of the source block relative to the sink block.
+            This definition is the opposite of how VPR defines a ``<direct>`` tag. In addition, ``offset`` is
+            defined based on the position of the blocks, not the ports
+    """
+    pass

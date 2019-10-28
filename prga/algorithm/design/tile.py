@@ -7,6 +7,7 @@ from prga.arch.common import Dimension, Direction, Orientation
 from prga.arch.net.common import PortDirection
 from prga.arch.routing.common import SegmentBridgeID, SegmentBridgeType, BlockPortID
 from prga.arch.array.port import ArrayExternalInputPort, ArrayExternalOutputPort
+from prga.algorithm.design.cbox import BlockFCValue
 from prga.util import Abstract
 
 from abc import abstractmethod, abstractproperty
@@ -59,12 +60,14 @@ class ConnectionBoxLibraryDelegate(Abstract):
 # ----------------------------------------------------------------------------
 # -- Algorithms for Instantiating Connection Boxes in Tiles ------------------
 # ----------------------------------------------------------------------------
-def cboxify(lib, tile, orientation = Orientation.auto):
+def cboxify(lib, tile, segments, fc, orientation = Orientation.auto):
     """Create and instantiate single-sided connection boxes in ``tile``.
 
     Args:
         lib (`ConnectionBoxLibraryDelegate`):
         tile (`Tile`):
+        segments (:obj:`Sequence` [`Segment` ]):
+        fc (`BlockFCValue`):
         orientation (`Orientation`): If the block instantiated in ``tile`` is an IO block with auto-oriented
             ports, orientation is required
     """
@@ -74,7 +77,7 @@ def cboxify(lib, tile, orientation = Orientation.auto):
     # scan positions and orientations
     sides = set()
     for port in itervalues(tile.block.ports):
-        if port.net_class.is_blockport:
+        if port.net_class.is_blockport and any(fc.port_fc(port, segment) > 0 for segment in segments):
             sides.add( (port.orientation, port.position) )
     # instantiate cboxes
     for ori, position in sides:
@@ -87,13 +90,16 @@ def cboxify(lib, tile, orientation = Orientation.auto):
 # ----------------------------------------------------------------------------
 # -- Algorithms for Creating Ports and Connecting Nets in Tiles --------------
 # ----------------------------------------------------------------------------
-def netify_tile(tile):
+def netify_tile(tile, directs = tuple()):
     """Create ports and connect nets in tile.
 
     Args:
         tile (`Tile`):
+        directs (:obj:`Sequence` [`DirectTunnel` ]): A sequence of direct inter-block tunnels
     """
+    # regular connections
     for orientation, x, y in product(iter(Orientation), range(tile.width), range(tile.height)):
+        # is the current position & orientation on the edge of a tile?
         if orientation.case(
                 north = y != tile.height - 1,
                 east = x != tile.width - 1,
@@ -101,7 +107,9 @@ def netify_tile(tile):
                 west = x != 0,
                 auto = True):
             continue
+        # is there a connection box at the position & orientation?
         cboxinst = tile.cbox_instances.get( ((x, y), orientation), None )
+        # if connection box exists, process it
         if cboxinst is None:
             continue
         for boxpin in itervalues(cboxinst.all_nodes):
@@ -111,7 +119,6 @@ def netify_tile(tile):
                 if (port is None or
                         port.orientation not in (Orientation.auto, orientation) or
                         node.position - port.position != (0, 0)):
-                    # TODO: for block not positioned at (0, 0), create ports
                     continue
                 blockpin = tile.block_instances[node.subblock].logical_pins[port.key]
                 if port.direction.is_input:
@@ -139,3 +146,29 @@ def netify_tile(tile):
                         BlockPortID((0, 0), pin.model, subblock))).physical_source = pin
             elif pin.net_class.is_global:
                 pin.physical_source = tile.get_or_create_global_input(pin.model.global_)
+    # direct inter-block tunnels
+    for direct in directs:
+        # sink?
+        if direct.sink.parent is tile.block:
+            assert tile.block.module_class.is_logic_block
+            # check if the sink is also driven by a connection box
+            sink = tile.block_instances[0].logical_pins[direct.sink.key]
+            if any(not source.net_type.is_const for source in sink.logical_source):
+                # the sink is driven by a connection box
+                try:
+                    assert sink.logical_source.parent.module_class.is_connection_box
+                except AttributeError:
+                    raise PRGAInternalError("Block pin '{}' is not driven by a bus but multiple bits"
+                            .format(sink))
+                # we need to create an additional blockport bridge
+                sinkport_in_cbox = sink.logical_source.model
+                cbox = sink.logical_source.parent
+                sourceport_in_cbox = cbox.model.get_or_create_node(
+                        BlockPortID(direct.source.position + direct.offset - cbox.position, direct.source),
+                        PortDirection.input_)
+                cbox.model.connect(sourceport_in_cbox, sinkport_in_cbox)
+                sink = sink.logical_source.parent.logical_pins[sourceport_in_cbox.key]
+            # expose an input blockport bridge
+            sink.logical_source = tile.get_or_create_node(
+                    BlockPortID(direct.source.position + direct.offset, direct.source),
+                    PortDirection.input_)
