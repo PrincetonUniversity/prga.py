@@ -98,7 +98,7 @@ class CompleteConnection(Object, AbstractPass):
         netify_array(array, top)
 
     def run(self, context):
-        self._directs = list(itervalues(context.directs))
+        self._directs = list(itervalues(context.direct_tunnels))
         self.__process_array(context, context.top, True)
 
 # ----------------------------------------------------------------------------

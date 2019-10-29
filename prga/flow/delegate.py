@@ -9,6 +9,7 @@ Builtin library delegates.
 
 from prga.arch.common import Orientation
 from prga.arch.primitive.builtin import Inpad, Outpad, Iopad, Flipflop, LUT, Memory
+from prga.arch.primitive.primitive import CustomPrimitive
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.arch.routing.box import ConnectionBox, SwitchBox
 from prga.algorithm.design.sbox import SwitchBoxEnvironment, populate_switch_box
@@ -16,13 +17,30 @@ from prga.algorithm.design.switch import SwitchLibraryDelegate
 from prga.algorithm.design.array import SwitchBoxLibraryDelegate
 from prga.algorithm.design.tile import ConnectionBoxLibraryDelegate
 from prga.vprgen.delegate import FASMDelegate
-from prga.util import Object, Abstract
-from prga.exception import PRGAInternalError
+from prga.util import Object, Abstract, Enum
+from prga.exception import PRGAInternalError, PRGAAPIError
 
 import re
 from abc import abstractproperty, abstractmethod
 
 __all__ = ['BuiltinPrimitiveLibrary', 'BuiltinSwitchLibrary', 'BuiltinConnectionBoxLibrary', 'BuiltinSwitchBoxLibrary']
+
+# ----------------------------------------------------------------------------
+# -- Primitive Requirement ---------------------------------------------------
+# ----------------------------------------------------------------------------
+class PrimitiveRequirement(Enum):
+    """Requirement of a primitive."""
+
+    physical_preferred = 0      #: default requirement: physical if possible
+    non_physical_preferred = 1  #: non-physical primitives are preferred
+    physical_required = 2       #: physical primitives are required
+
+# ----------------------------------------------------------------------------
+# -- Primitive Not Found Error -----------------------------------------------
+# ----------------------------------------------------------------------------
+class PRGAPrimitiveNotFoundError(PRGAAPIError):
+    """Raised when a primitive can noy be found."""
+    pass
 
 # ----------------------------------------------------------------------------
 # -- Abstract Base Library ---------------------------------------------------
@@ -54,12 +72,12 @@ class PrimitiveLibraryDelegate(Abstract):
     # == low-level API =======================================================
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractmethod
-    def get_or_create_primitive(self, name, logical_only = False):
+    def get_or_create_primitive(self, name, requirement = PrimitiveRequirement.physical_preferred):
         """Get or create the primitive named ``name``.
 
         Args:
             name (:obj:`str`): Name of the primitive
-            logical_only (:obj:`bool`): We don't necessarily need the physical module
+            requirement (`PrimitiveRequirement`): Requirement of the primitive
         """
         raise NotImplementedError
 
@@ -73,6 +91,16 @@ class PrimitiveLibraryDelegate(Abstract):
             name (:obj:`str`): Name of this memory
             dualport (:obj:`bool`): If set, two set of read/write port are be generated
             transparent (:obj:`bool`): If set, each read/write port is transparent
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_custom_primitive(self, name, verilog_template = None):
+        """Create a custom primitive.
+
+        Args:
+            name (:obj:`str`):
+            verilog_template (:obj:``str`): Verilog template/source file
         """
         raise NotImplementedError
 
@@ -95,12 +123,19 @@ class BuiltinPrimitiveLibrary(_BaseLibrary, PrimitiveLibraryDelegate):
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
-    def get_or_create_primitive(self, name, logical_only = False):
+    def get_or_create_primitive(self, name, requirement = PrimitiveRequirement.physical_preferred):
         module = self.context._modules.get(name)
         if module is not None:
-            if not module.module_class.is_primitve:
+            if not module.module_class.is_primitive:
                 raise PRGAInternalError("Existing module named '{}' is not a primitive"
                         .format(name))
+            elif not module.in_physical_domain:
+                if requirement.is_physical_required or requirement.is_physical_preferred:
+                    try:
+                        module.in_physical_domain = True
+                    except AttributeError:
+                        if requirement.is_physical_required:
+                            raise PRGAInternalError("Cannot make primitive '{}' physical".format(module))
             return module
         self._is_empty = False
         if name == 'inpad':
@@ -111,13 +146,12 @@ class BuiltinPrimitiveLibrary(_BaseLibrary, PrimitiveLibraryDelegate):
             return self.context._modules.setdefault(name, Iopad(name))
         elif name == 'flipflop':
             return self.context._modules.setdefault(name, Flipflop(name,
-                in_physical_domain = not logical_only))
+                in_physical_domain = requirement.is_physical_required or requirement.is_physical_preferred))
         matched = re.match('^lut(?P<width>[2-8])$', name)
         if matched:
             return self.context._modules.setdefault(name, LUT(int(matched.group('width')),
-                in_physical_domain = not logical_only))
-        raise PRGAInternalError("No built-in primitive named '{}'"
-                .format(name))
+                in_physical_domain = requirement.is_physical_required or requirement.is_physical_preferred))
+        raise PRGAPrimitiveNotFoundError("No built-in primitive named '{}'".format(name))
 
     def get_or_create_memory(self, addr_width, data_width, name = None, dualport = False, transparent = False,
             in_physical_domain = True):
@@ -135,6 +169,11 @@ class BuiltinPrimitiveLibrary(_BaseLibrary, PrimitiveLibraryDelegate):
             module = self._memories.setdefault( (addr_width, data_width, dualport, transparent),
                     Memory(addr_width, data_width, name, dualport, transparent, in_physical_domain))
             return self.context._modules.setdefault(module.name, module)
+
+    def create_custom_primitive(self, name, verilog_template = None):
+        if name in self.context._modules:
+            raise PRGAAPIError("Module '{}' is already created".format(name))
+        return self.context._modules.setdefault(name, CustomPrimitive(name, verilog_template))
 
     @property
     def is_empty(self):

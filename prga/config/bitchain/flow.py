@@ -4,10 +4,11 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from prga.flow.flow import AbstractPass
-from prga.flow.delegate import ConfigCircuitryDelegate, BuiltinPrimitiveLibrary
+from prga.flow.delegate import (PrimitiveRequirement, PRGAPrimitiveNotFoundError, ConfigCircuitryDelegate,
+        BuiltinPrimitiveLibrary)
 from prga.flow.util import get_switch_path
 from prga.config.bitchain.design.primitive import (CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH, ConfigBitchain,
-        FracturableLUT6, FracturableLUT6FF)
+        FracturableLUT6, FracturableLUT6FF, MultifuncFlipflop, MultimodeAdder, FracturableLUT6WithSFFAdder)
 from prga.config.bitchain.algorithm.injection import ConfigBitchainLibraryDelegate, inject_config_chain
 from prga.config.bitchain.algorithm.bitstream import get_config_bit_count, get_config_bit_offset
 from prga.exception import PRGAInternalError
@@ -23,26 +24,29 @@ class BitchainPrimitiveLibrary(BuiltinPrimitiveLibrary):
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
-    def get_or_create_primitive(self, name, logical_only = False):
-        module = self.context._modules.get(name)
-        if module is not None:
-            if not module.module_class.is_primitive:
-                raise PRGAInternalError("Existing module named '{}' is not a primitive"
-                        .format(name))
-            return module
-        if name == 'fraclut6':
-            return self.context._modules.setdefault(name, FracturableLUT6(
-                self.get_or_create_primitive('lut5', True),
-                self.get_or_create_primitive('lut6', True)))
-        elif name == 'fraclut6ff':
-            return self.context._modules.setdefault(name, FracturableLUT6FF(
-                self.get_or_create_primitive('lut5', True),
-                self.get_or_create_primitive('lut6', True),
-                self.get_or_create_primitive('flipflop', True),
-                self.context.switch_library.get_or_create_switch(2, None, False)
-                ))
-        else:
-            return super(BitchainPrimitiveLibrary, self).get_or_create_primitive(name, logical_only)
+    def get_or_create_primitive(self, name, requirement = PrimitiveRequirement.physical_preferred):
+        try:
+            return super(BitchainPrimitiveLibrary, self).get_or_create_primitive(name, requirement)
+        except PRGAPrimitiveNotFoundError:
+            if name == 'fraclut6':
+                return self.context._modules.setdefault(name, FracturableLUT6(self.context,
+                        requirement.is_physical_preferred or requirement.is_physical_required))
+            elif name == 'fraclut6ff':
+                return self.context._modules.setdefault(name, FracturableLUT6FF(self.context,
+                        requirement.is_physical_preferred or requirement.is_physical_required))
+            elif name == 'multifuncflipflop':
+                if requirement.is_physical_required:
+                    raise PRGAInternalError("Module '{}' is logical-only".format(name))
+                return self.context._modules.setdefault(name, MultifuncFlipflop(self.context))
+            elif name == 'multimodeadder':
+                if requirement.is_physical_required:
+                    raise PRGAInternalError("Module '{}' is logical-only".format(name))
+                return self.context._modules.setdefault(name, MultimodeAdder(self.context))
+            elif name == 'fraclut6sffc':
+                return self.context._modules.setdefault(name, FracturableLUT6WithSFFAdder(self.context,
+                        requirement.is_physical_preferred or requirement.is_physical_required))
+            else:
+                raise
 
 # ----------------------------------------------------------------------------
 # -- Configuration Circuitry Delegate for Bitchain-based configuration -------

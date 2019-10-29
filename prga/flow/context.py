@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.arch.common import Global, Orientation
+from prga.arch.common import Global, Orientation, Position
 from prga.arch.block.cluster import Cluster
 from prga.arch.block.block import IOBlock, LogicBlock
 from prga.arch.routing.common import Segment, DirectTunnel
@@ -175,7 +175,7 @@ class ArchitectureContext(Object):
         """:obj:`Mapping` [:obj:`str`, `DirectTunnel` ]: A mapping from names to direct inter-block tunnels."""
         return ReadonlyMappingProxy(self._directs)
 
-    def create_direct(self, name, source, sink, offset):
+    def create_direct_tunnel(self, name, source, sink, offset):
         """Create a direct inter-block tunnel.
 
         Args:

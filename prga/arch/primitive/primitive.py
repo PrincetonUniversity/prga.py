@@ -41,11 +41,12 @@ class CustomPrimitive(BaseModule, AbstractPrimitive):
     
     Args:
         name (:obj:`str`): Name of this primitive
-        verilog_template (:obj:`str`): Path to the template (or vanilla Verilog source file)
+        verilog_template (:obj:`str`): Path to the template (or vanilla Verilog source file). If set, this custom
+            primitive becomes physical. Otherwise, it is logical-only
     """
 
     __slots__ = ['_ports', '_verilog_template']
-    def __init__(self, name, verilog_template):
+    def __init__(self, name, verilog_template = None):
         super(CustomPrimitive, self).__init__(name)
         self._ports = OrderedDict()
         self._verilog_template = verilog_template
@@ -54,7 +55,18 @@ class CustomPrimitive(BaseModule, AbstractPrimitive):
     # -- implementing properties/methods required by superclass --------------
     @property
     def verilog_template(self):
+        if self._verilog_template is None:
+            raise PRGAInternalError("Primitive '{}' is a logical-only module with no verilog template"
+                    .format(self))
         return self._verilog_template
+
+    @verilog_template.setter
+    def verilog_template(self, template):
+        self._verilog_template = template
+
+    @property
+    def in_physical_domain(self):
+        return self._verilog_template is not None
 
     @property
     def primitive_class(self):
