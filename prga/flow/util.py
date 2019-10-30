@@ -22,7 +22,7 @@ def analyze_hierarchy(context, drop_cache = False):
     while modules:
         name, module = modules.popitem()
         subhierarchy = hierarchy.setdefault(name, {})
-        for instance in itervalues(module.all_instances):
+        for instance in itervalues(module.logical_instances):
             if instance.model.name not in hierarchy:
                 modules[instance.model.name] = instance.model
             subhierarchy[instance.model.name] = instance.model
@@ -68,12 +68,32 @@ def iter_all_sboxes(context, drop_cache = False):
         visited.add(name)
         for subname, sub in iteritems(hierarchy[name]):
             if subname in visited or subname in queue:
-                continue
+               continue
             elif sub.module_class.is_array:
                 queue[subname] = sub
             elif sub.module_class.is_switch_box:
                 yield sub
                 visited.add(subname)
+
+def iter_all_primitives(context, drop_cache = False):
+    """Iterate through all primitives in use in ``context``."""
+    visited = set()
+    queue = {tile.block.name : tile.block for tile in iter_all_tiles(context, drop_cache)}
+    while queue:
+        name, module = queue.popitem()
+        visited.add(name)
+        for instance in itervalues(module.logical_instances):
+            subname, sub = instance.model.name, instance.model
+            if subname in visited or subname in queue:
+                continue
+            elif sub.module_class.is_primitive:
+                visited.add(subname)
+                yield sub
+                if sub.primitive_class.is_multimode:
+                    for mode in itervalues(sub.modes):
+                        queue['{}.{}'.format(subname, mode.name)] = mode
+            else:
+                queue[subname] = sub
 
 # ----------------------------------------------------------------------------
 # -- Switch Path -------------------------------------------------------------

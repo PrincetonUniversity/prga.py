@@ -12,6 +12,7 @@ from prga.flow.design import CompleteRoutingBox, CompleteSwitch, CompleteConnect
 from prga.flow.rtlgen import GenerateVerilog
 from prga.flow.vprgen import GenerateVPRXML
 from prga.flow.opt import ZeroingBRAMWriteEnable
+from prga.flow.ysgen import GenerateYosysResources
 from prga.config.bitchain.flow import BitchainConfigCircuitryDelegate, InjectBitchainConfigCircuitry
 
 def test_bram(tmpdir):
@@ -47,26 +48,37 @@ def test_bram(tmpdir):
         if orientation.is_auto:
             continue
         iotiles[orientation] = context.create_tile(
-                'iotile_{}'.format(orientation.name), iob, 4, orientation)
+                'io_tile_{}'.format(orientation.name), iob, 4, orientation)
 
     # 5. create CLB
     clb = context.create_logic_block('clb')
     while True:
         clkport = clb.create_global(clk, Orientation.south)
-        inport = clb.create_input('in', 12, Orientation.west)
-        outport = clb.create_output('out', 4, Orientation.east)
+        ceport = clb.create_input('ce', 1, Orientation.south)
+        srport = clb.create_input('sr', 1, Orientation.south)
+        cin = clb.create_input('cin', 1, Orientation.south)
         for i in range(2):
-            inst = clb.instantiate(context.primitives['fraclut6ff'], 'cluster{}'.format(i))
+            inst = clb.instantiate(context.primitives['fraclut6sffc'], 'cluster{}'.format(i))
             clb.connect(clkport, inst.pins['clk'])
-            clb.connect(inport[i*6: (i+1)*6], inst.pins['in'])
-            clb.connect(inst.pins['o6'], outport[i*2])
-            clb.connect(inst.pins['o5'], outport[i*2 + 1])
+            clb.connect(ceport, inst.pins['ce'])
+            clb.connect(srport, inst.pins['sr'])
+            clb.connect(clb.create_input('ia' + str(i), 6, Orientation.west), inst.pins['ia'])
+            clb.connect(clb.create_input('ib' + str(i), 1, Orientation.west), inst.pins['ib'])
+            clb.connect(cin, inst.pins['cin'], pack_pattern = 'carrychain')
+            cin = inst.pins['cout']
+            clb.connect(inst.pins['oa'], clb.create_output('oa' + str(i), 1, Orientation.east))
+            clb.connect(inst.pins['ob'], clb.create_output('ob' + str(i), 1, Orientation.east))
+            clb.connect(inst.pins['q'], clb.create_output('q' + str(i), 1, Orientation.east))
+        clb.connect(cin, clb.create_output('cout', 1, Orientation.north), pack_pattern = 'carrychain')
         break
 
-    # 6. create tile
+    # 6. create direct inter-block tunnels
+    context.create_direct_tunnel('carrychain', clb.ports['cout'], clb.ports['cin'], (0, -1))
+
+    # 7. create tile
     clbtile = context.create_tile('clb_tile', clb)
 
-    # 7. create BRAM
+    # 8. create BRAM
     bram = context.create_logic_block('bram', 1, 2)
     while True:
         clkport = bram.create_global(clk, Orientation.south, position = (0, 0))
@@ -91,10 +103,10 @@ def test_bram(tmpdir):
         bram.connect(inst.pins['out2'], doutport2)
         break
 
-    # 8. create tile
+    # 9. create tile
     bramtile = context.create_tile('bram_tile', bram)
 
-    # 9. fill top-level array
+    # 10. fill top-level array
     for x in range(8):
         for y in range(8):
             if x == 0:
@@ -113,9 +125,11 @@ def test_bram(tmpdir):
             else:
                 context.top.instantiate_element(clbtile, (x, y))
 
-    # 10. flow
+    # 11. flow
     flow = Flow((
-        CompleteRoutingBox(BlockFCValue(BlockPortFCValue(0.25), BlockPortFCValue(0.1))),
+        CompleteRoutingBox(BlockFCValue(BlockPortFCValue(0.25), BlockPortFCValue(0.5)),
+            {'clb': BlockFCValue(BlockPortFCValue(0.25), BlockPortFCValue(0.25),
+                {'cout': BlockPortFCValue(0)})}),
         CompleteSwitch(),
         CompleteConnection(),
         GenerateVerilog('rtl'),
@@ -123,6 +137,7 @@ def test_bram(tmpdir):
         GenerateVPRXML('vpr'),
         CompletePhysical(),
         ZeroingBRAMWriteEnable(),
+        GenerateYosysResources('syn'),
             ))
 
     # 11. run flow

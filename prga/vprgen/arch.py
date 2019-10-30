@@ -73,9 +73,9 @@ def _vpr_arch_interconnect(xml, delegate, sources, sink, module, parent = None, 
             'out_port': sink_vpr,
             })
         # pack pattern
-        if (source, sink) in module.pack_patterns:
+        for pattern in module.get_pack_patterns(source, sink):
             xml.element_leaf('pack_pattern', {
-                'name': 'pack_{}_{}_{}'.format(sink.parent.name, sink.bus.name, sink.index),
+                'name': pattern,
                 'in_port': source_vpr,
                 'out_port': sink_vpr,
                 })

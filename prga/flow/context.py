@@ -10,6 +10,7 @@ from prga.arch.routing.common import Segment, DirectTunnel
 from prga.arch.array.common import ChannelCoverage
 from prga.arch.array.tile import Tile, IOTile
 from prga.arch.array.array import Array
+from prga.ysgen.ysgen import YosysTemplateRegistry
 from prga.util import Object, uno, ReadonlyMappingProxy
 from prga.exception import PRGAAPIError, PRGAInternalError
 
@@ -76,6 +77,7 @@ class ArchitectureContext(Object):
             '_switch_lib',          # switch library
             '_cbox_lib',            # connection box library
             '_sbox_lib',            # switch box library
+            '_yosys_registry',      # registry of Yosys resources
             '_cache',               # non-pickled stuff
             '_additional_template_search_paths',
             ]
@@ -88,12 +90,13 @@ class ArchitectureContext(Object):
         self._directs = OrderedDict()
         self._segments = OrderedDict()
         self._modules = OrderedDict()
+        self._additional_template_search_paths = additional_template_search_paths
         cfg = self._config_lib = config_circuitry_delegate_class(self)
         self._primitive_lib = cfg.get_primitive_library(self)
         self._switch_lib = cfg.get_switch_library(self)
         self._cbox_lib = cfg.get_connection_box_library(self)
         self._sbox_lib = cfg.get_switch_box_library(self)
-        self._additional_template_search_paths = additional_template_search_paths
+        self._yosys_registry = YosysTemplateRegistry()
         self._cache = {}
 
     # == low-level API =======================================================
@@ -136,6 +139,12 @@ class ArchitectureContext(Object):
     def switch_box_library(self):
         """`SwitchBoxLibraryDelegate`: Switch box library."""
         return self._sbox_lib
+
+    @property
+    def yosys_template_registry(self):
+        """`YosysTemplateRegistry`: Registry for the templates for generating blackbox modules, BRAM mapping rules and
+        techmap files needed by Yosys."""
+        return self._yosys_registry
 
     # == high-level API ======================================================
     # -- Global Wires --------------------------------------------------------

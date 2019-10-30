@@ -24,7 +24,7 @@ class ZeroingUnusedLUTInputs(Object, AbstractPass):
 
     @property
     def passes_after_self(self):
-        return ("completion.switch", "physical", "config", "rtl", "vpr", "asicflow")
+        return ("completion.switch", "physical", "config", "rtl", "syn", "vpr", "asicflow")
 
     def run(self, context):
         hierarchy = analyze_hierarchy(context)
@@ -60,7 +60,7 @@ class ZeroingBRAMWriteEnable(Object, AbstractPass):
 
     @property
     def passes_after_self(self):
-        return ("completion.switch", "physical", "config", "rtl", "vpr", "asicflow")
+        return ("completion.switch", "physical", "config", "rtl", "syn", "vpr", "asicflow")
 
     def run(self, context):
         hierarchy = analyze_hierarchy(context)

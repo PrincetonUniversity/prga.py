@@ -153,8 +153,10 @@ class BuiltinPrimitiveLibrary(_BaseLibrary, PrimitiveLibraryDelegate):
                 in_physical_domain = requirement.is_physical_required or requirement.is_physical_preferred))
         raise PRGAPrimitiveNotFoundError("No built-in primitive named '{}'".format(name))
 
-    def get_or_create_memory(self, addr_width, data_width, name = None, dualport = False, transparent = False,
+    def get_or_create_memory(self, addr_width, data_width, name = None, dualport = True, transparent = False,
             in_physical_domain = True):
+        if not dualport:
+            raise PRGAInternalError("Cannot make use of single-port memories for now")
         try:
             memory = self._memories[addr_width, data_width, dualport, transparent]
             if in_physical_domain and not memory.in_physical_domain:
@@ -168,6 +170,9 @@ class BuiltinPrimitiveLibrary(_BaseLibrary, PrimitiveLibraryDelegate):
             self._is_empty = False
             module = self._memories.setdefault( (addr_width, data_width, dualport, transparent),
                     Memory(addr_width, data_width, name, dualport, transparent, in_physical_domain))
+            self.context.yosys_template_registry.register_blackbox_template(module.name, 'memory.lib.tmpl.v')
+            self.context.yosys_template_registry.register_bram_rule_template(module.name, 'builtin.tmpl.rule')
+            self.context.yosys_template_registry.register_techmap_template(module.name, 'memory.techmap.tmpl.v')
             return self.context._modules.setdefault(module.name, module)
 
     def create_custom_primitive(self, name, verilog_template = None):
@@ -273,11 +278,6 @@ class ConfigCircuitryDelegate(_BaseLibrary, FASMDelegate):
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
-    @property
-    def additional_template_search_paths(self):
-        """:obj:`Iterable` [:obj:`str` ]: Additional search paths for Verilog templates."""
-        return tuple()
-
     def get_primitive_library(self, context):
         """Get the primitive library for ``context``."""
         return BuiltinPrimitiveLibrary(context)

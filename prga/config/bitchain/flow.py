@@ -8,7 +8,7 @@ from prga.flow.delegate import (PrimitiveRequirement, PRGAPrimitiveNotFoundError
         BuiltinPrimitiveLibrary)
 from prga.flow.util import get_switch_path
 from prga.config.bitchain.design.primitive import (CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH, ConfigBitchain,
-        FracturableLUT6, FracturableLUT6FF, MultifuncFlipflop, MultimodeAdder, FracturableLUT6WithSFFAdder)
+        FracturableLUT6, FracturableLUT6FF, MultifuncFlipflop, CarrychainWrapper, FracturableLUT6WithSFFnCarry)
 from prga.config.bitchain.algorithm.injection import ConfigBitchainLibraryDelegate, inject_config_chain
 from prga.config.bitchain.algorithm.bitstream import get_config_bit_count, get_config_bit_offset
 from prga.exception import PRGAInternalError
@@ -29,21 +29,27 @@ class BitchainPrimitiveLibrary(BuiltinPrimitiveLibrary):
             return super(BitchainPrimitiveLibrary, self).get_or_create_primitive(name, requirement)
         except PRGAPrimitiveNotFoundError:
             if name == 'fraclut6':
+                self._is_empty = False
                 return self.context._modules.setdefault(name, FracturableLUT6(self.context,
                         requirement.is_physical_preferred or requirement.is_physical_required))
             elif name == 'fraclut6ff':
+                self._is_empty = False
                 return self.context._modules.setdefault(name, FracturableLUT6FF(self.context,
                         requirement.is_physical_preferred or requirement.is_physical_required))
             elif name == 'multifuncflipflop':
+                self._is_empty = False
                 if requirement.is_physical_required:
                     raise PRGAInternalError("Module '{}' is logical-only".format(name))
                 return self.context._modules.setdefault(name, MultifuncFlipflop(self.context))
-            elif name == 'multimodeadder':
+            elif name == 'carrychain_wrapper':
+                self._is_empty = False
                 if requirement.is_physical_required:
                     raise PRGAInternalError("Module '{}' is logical-only".format(name))
-                return self.context._modules.setdefault(name, MultimodeAdder(self.context))
+                return self.context._modules.setdefault(name, CarrychainWrapper(self.context))
             elif name == 'fraclut6sffc':
-                return self.context._modules.setdefault(name, FracturableLUT6WithSFFAdder(self.context,
+                self._is_empty = False
+                self.context.yosys_template_registry.register_techmap_template(name, 'fraclut6sffc.techmap.tmpl.v')
+                return self.context._modules.setdefault(name, FracturableLUT6WithSFFnCarry(self.context,
                         requirement.is_physical_preferred or requirement.is_physical_required))
             else:
                 raise
@@ -57,6 +63,7 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
     def __init__(self, context):
         super(BitchainConfigCircuitryDelegate, self).__init__(context)
         self._bitchains = {}
+        context._additional_template_search_paths += (CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH, )
 
     def __config_bit_offset_instance(self, hierarchy):
         total = 0
@@ -78,10 +85,6 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
             raise PRGAInternalError("Total number of configuration bits not set yet.""")
 
     # -- implementing properties/methods required by superclass --------------
-    @property
-    def additional_template_search_paths(self):
-        return (CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH, )
-
     def get_primitive_library(self, context):
         return BitchainPrimitiveLibrary(context)
 
@@ -186,7 +189,7 @@ class InjectBitchainConfigCircuitry(Object, AbstractPass):
 
     @property
     def passes_after_self(self):
-        return ("physical", "rtl", "vpr", "asicflow")
+        return ("physical", "rtl", "syn", "vpr", "asicflow")
 
     def run(self, context):
         inject_config_chain(context.config_circuitry_delegate, context.top)

@@ -1,0 +1,21 @@
+bram {{ module.name }}_wrapper
+    init 0
+    abits {{ module.addr_width }}
+    dbits {{ module.data_width }}
+    groups 2
+    ports 1 1
+    wrmode 1 0
+    enable 1 1
+    transp 0 {{ '1' if module.transparent else '0' }}
+    clocks 1 1
+    clkpol 1 1
+endbram
+
+match {{ module.name }}_wrapper
+    {%- if not module.transparent %}
+    make_transp
+    {%- endif %}
+    make_outreg
+    or_next_if_better
+endmatch
+

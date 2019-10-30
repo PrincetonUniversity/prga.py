@@ -14,7 +14,7 @@ from prga.flow.vprgen import GenerateVPRXML
 from prga.config.bitchain.flow import BitchainConfigCircuitryDelegate, InjectBitchainConfigCircuitry
 
 def test_fracturable_lut6(tmpdir):
-    context = ArchitectureContext('array', 8, 8, BitchainConfigCircuitryDelegate)
+    context = ArchitectureContext('top', 8, 8, BitchainConfigCircuitryDelegate)
 
     # 1. routing stuff
     clk = context.create_global('clk', is_clock = True, bind_to_position = (0, 1))

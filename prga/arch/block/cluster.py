@@ -8,7 +8,7 @@ from prga.arch.module.instance import RegularInstance
 from prga.arch.module.module import BaseModule
 from prga.arch.block.port import ClusterClockPort, ClusterInputPort, ClusterOutputPort
 from prga.exception import PRGAInternalError
-from prga.util import ReadonlySequenceProxy
+from prga.util import ReadonlySequenceProxy, uno
 
 from itertools import product
 from collections import OrderedDict
@@ -37,7 +37,10 @@ class ClusterLike(BaseModule):
     __slots__ = ['_pack_patterns']
     def __init__(self, name):
         super(ClusterLike, self).__init__(name)
-        self._pack_patterns = []
+        self._pack_patterns = {}
+
+    def __net_id(self, bit):
+        return (None if bit.net_type.is_port else bit.parent.key, bit.bus.key, bit.index)
 
     # == internal API ========================================================
     def _validate_model(self, model):
@@ -45,7 +48,7 @@ class ClusterLike(BaseModule):
         if model.module_class not in (ModuleClass.primitive, ModuleClass.cluster):
             raise PRGAInternalError("Only primitives or clusters may be instantiated in a custer/block.")
 
-    def _connect(self, source, sink, pack_pattern):
+    def _connect(self, source, sink, pack_pattern = None):
         if ((source.net_type.is_port and source.parent is not self) or
                 (source.net_type.is_pin and source.parent.parent is not self) or
                 source.is_sink or not source.in_user_domain):
@@ -57,16 +60,64 @@ class ClusterLike(BaseModule):
             raise PRGAInternalError("'{}' is not a sink in the user domain in module '{}'"
                     .format(sink, self))
         sink.add_user_sources( (source, ) )
-        pair = (source._get_or_create_static_cp(), sink._get_or_create_static_cp())
-        if pack_pattern and pair not in self._pack_patterns:
-            self._pack_patterns.append( pair )
+        if pack_pattern is not None:
+            self._pack_patterns.setdefault((self.__net_id(source), self.__net_id(sink)), set()).add(pack_pattern)
 
     # == low-level API =======================================================
-    @property
-    def pack_patterns(self):
-        """:obj:`Sequence` [:obj:`tuple` [`AbstractSourceBit`, `AbstractSinkBit` ]]): A sequence of pack-pattern
-        connections."""
-        return ReadonlySequenceProxy(self._pack_patterns)
+    def get_pack_patterns(self, source, sink):
+        """Get the pack patterns in which the connection from ``source`` to ``sink`` is part of.
+
+        Args:
+            source (`AbstractSourceBit`):
+            sink (`AbstractSinkBit`):
+
+        Returns:
+            :obj:`Sequence` [:obj:`str` ]:
+        """
+        pack_patterns = self._pack_patterns.get((self.__net_id(source), self.__net_id(sink)))
+        if pack_patterns:
+            return tuple(iter(pack_patterns))
+        else:
+            return tuple()
+
+    def auto_connect(self, instance, skip_pins = None, quiet = False):
+        """Auto connect all pins of ``instance`` to ports with the same key of this module.
+        
+        Args:
+            instance (`AbstractInstance`):
+            skip_pins (:obj:`Container`): A set of pin keys which should be skipped
+            quiet (:obj:`bool`): If set, skip if no matching port is found for a pin. Otherwise, error is raised
+        """
+        skip_pins = uno(skip_pins, set())
+        if instance.parent is not self:
+            raise PRGAInternalError("Module '{}' is not the parent module of instance '{}'"
+                    .format(self, instance))
+        for key, pin in iteritems(instance.pins):
+            if key in skip_pins:
+                continue
+            port = self.ports.get(key)
+            if port is None:
+                if not quiet:
+                    raise PRGAInternalError("No matching port is found in module '{}' for pin '{}'"
+                            .format(self, pin))
+                continue
+            elif port.direction is not pin.direction:
+                if not quiet:
+                    raise PRGAInternalError(("Match found for pin '{}' in module '{}', "
+                        "but the matched port '{}' is an {} (the pin is an {})")
+                        .format(pin, self, port, port.direction.case('input', 'output'),
+                            pin.direction.case('input', 'output')))
+                continue
+            elif port.width != pin.width:
+                if not quiet:
+                    raise PRGAInternalError(("Match found for pin '{}' in module '{}', "
+                        "but the matched port '{}' is {}-bit wide (the pin is {}-bit wide)")
+                        .format(pin, self, port, port.width, pin.width))
+                continue
+            elif port.direction.is_input:
+                self.connect(port, pin)
+            else:
+                self.connect(pin, port)
 
     # -- implementing properties/methods required by superclass --------------
     @property
@@ -85,7 +136,7 @@ class ClusterLike(BaseModule):
         instance = RegularInstance(self, model, name)
         return self._add_instance(instance)
 
-    def connect(self, sources, sinks, fully_connected = False, pack_pattern = False):
+    def connect(self, sources, sinks, fully_connected = False, pack_pattern = None):
         """Connect a sequence of source net bits to a sequence of sink net bits.
 
         Args:
@@ -93,7 +144,7 @@ class ClusterLike(BaseModule):
             sinks (:obj:`Sequence` [`AbstractSinkBit` ]):
             fully_connected (:obj:`bool`): Connections are created bit-wise by default. If ``fully_connected`` is set,
                 connections are created in an all-to-all manner
-            pack_pattern (:obj:`bool`): An advanced feature in VPR
+            pack_pattern (:obj:`str`): An advanced feature in VPR. This is the name of the pack pattern
         """
         sources = sources if isinstance(sources, Iterable) else (sources, )
         sinks = sinks if isinstance(sinks, Iterable) else (sinks, )

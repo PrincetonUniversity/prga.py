@@ -64,3 +64,4 @@ module {{ module.name }} (
     {%- endif %}
 
 endmodule
+

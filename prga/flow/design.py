@@ -41,7 +41,7 @@ class CompleteRoutingBox(Object, AbstractPass):
 
     @property
     def passes_after_self(self):
-        return ("completion.switch", "completion.connection", "physical", "config", "rtl", "vpr", "asicflow")
+        return ("completion.switch", "completion.connection", "physical", "config", "rtl", "syn", "vpr", "asicflow")
 
     def __process_array(self, context, array, segments):
         hierarchy = analyze_hierarchy(context)
@@ -86,7 +86,7 @@ class CompleteConnection(Object, AbstractPass):
     @property
     def passes_after_self(self):
         """Passes that should be run after this pass."""
-        return ("completion.switch", "physical", "config", "rtl", "vpr", "asicflow")
+        return ("completion.switch", "physical", "config", "rtl", "syn", "vpr", "asicflow")
 
     def __process_array(self, context, array, top = False):
         hierarchy = analyze_hierarchy(context)
@@ -115,7 +115,7 @@ class CompleteSwitch(Object, AbstractPass):
     @property
     def passes_after_self(self):
         """Passes that should be run after this pass."""
-        return ("physical", "config", "rtl", "vpr", "asicflow")
+        return ("physical", "config", "rtl", "syn", "vpr", "asicflow")
 
     def run(self, context):
         hierarchy = analyze_hierarchy(context)
@@ -145,7 +145,7 @@ class CompletePhysical(Object, AbstractPass):
     @property
     def passes_after_self(self):
         """Passes that should be run after this pass."""
-        return ("rtl", "vpr", "asicflow")
+        return ("rtl", "syn", "vpr", "asicflow")
 
     def run(self, context):
         modules = list(chain(itervalues(context.clusters),

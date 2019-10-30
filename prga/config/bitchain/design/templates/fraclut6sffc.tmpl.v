@@ -5,8 +5,8 @@
 `define LUT5A_DATA 34:3
 `define LUT5B_DATA 66:35
 `define LUT6_ENABLE 67
-`define ADDER_SOURCE_B 68
-`define ADDER_SOURCE_CIN 70:69
+`define CARRY_SOURCE_G 68
+`define CARRY_SOURCE_CIN 70:69
 `define FFA_SOURCE 72:71
 `define FFA_ENABLE_CE 73
 `define FFA_ENABLE_SR 74
@@ -39,14 +39,14 @@ module fraclut6sffc (
     output wire [0:0] cfg_o
     );
 
-    // selector for the adder
-    localparam ADDER_CONST0 = 2'd0;
-    localparam ADDER_CONST1 = 2'd1;
-    localparam ADDER_CARRYIN = 2'd2;
+    // selector for the carry in of the carry chain
+    localparam CARRY_CIN_CIN = 2'd0;
+    localparam CARRY_CIN_IB = 2'd2;
+    localparam CARRY_CIN_O5 = 2'd3;
 
-    // selector for the input of adder
-    localparam ADDER_IB = 1'd0;
-    localparam ADDER_O5 = 1'd1;
+    // selector for the input 'g' of carry chain
+    localparam CARRY_G_IB = 1'd0;
+    localparam CARRY_G_O5 = 1'd1;
 
     // selector for the source of flip-flop A
     localparam FFA_COUT = 2'd0;
@@ -135,36 +135,37 @@ module fraclut6sffc (
     end
 
     // ----------------------------------------------------------------------
-    // -- Adder -------------------------------------------------------------
+    // -- Carry Chain -------------------------------------------------------
     // ----------------------------------------------------------------------
-    // input b
-    reg internal_adder_b;
+    // input g
+    reg internal_carry_g;
 
     always @* begin
-        internal_adder_b = ib;
+        internal_carry_g = ib;
 
-        case (cfg_d[`ADDER_SOURCE_B])
-            ADDER_IB: internal_adder_b = ib;
-            ADDER_O5: internal_adder_b = internal_lut5[1];
+        case (cfg_d[`CARRY_SOURCE_G])
+            CARRY_G_IB: internal_carry_g = ib;
+            CARRY_G_O5: internal_carry_g = internal_lut5[1];
         endcase
     end
 
     // carry in
-    reg internal_adder_cin;
+    reg internal_carry_cin;
 
     always @* begin
-        internal_adder_cin = cin;
+        internal_carry_cin = cin;
 
-        case (cfg_d[`ADDER_SOURCE_CIN])
-            ADDER_CONST0: internal_adder_cin = 1'b0;
-            ADDER_CONST1: internal_adder_cin = 1'b1;
-            ADDER_CIN: internal_adder_cin = cin;
+        case (cfg_d[`CARRY_SOURCE_CIN])
+            CARRY_CIN_CIN: internal_carry_cin = cin;
+            CARRY_CIN_IB: internal_carry_cin = ib;
+            CARRY_CIN_O5: internal_carry_cin = internal_lut5[1];
         endcase
     end
 
-    // adder
+    // carry
     wire s;
-    assign {cout, s} = oa + internal_adder_b + internal_adder_cin;
+    assign cout = internal_carry_g || (oa && internal_carry_cin);
+    assign s = oa ^ internal_carry_cin;
 
     // ----------------------------------------------------------------------
     // -- Flip-flop A -------------------------------------------------------
@@ -216,5 +217,4 @@ module fraclut6sffc (
     end
 
 endmodule
-
 

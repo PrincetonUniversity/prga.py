@@ -1,0 +1,31 @@
+module {{ module.name }}_wrapper (CLK1, A1ADDR, A1DATA, A1EN, B1ADDR, B1DATA, B1EN);
+
+    input CLK1;
+    input [{{ module.addr_width - 1 }}:0] A1ADDR;
+    input A1EN;
+    input [{{ module.data_width - 1 }}:0] A1DATA;
+    input [{{ module.addr_width - 1 }}:0] B1ADDR;
+    input B1EN;
+    output [{{ module.data_width - 1 }}:0] B1DATA;
+
+    parameter INIT      =   1'bx;
+    parameter CLKPOL1   =   1;
+    parameter CLKPOL2   =   1;
+
+    wire gnd = 1'b0;
+
+    genvar i;
+    generate for (i = 0; i < {{ module.data_width }}; i = i + 1) begin: slice
+        {{ module.name }} _TECHMAP_REPLACE_ (
+            .clk(CLK1),
+            .addr1(A1ADDR),
+            .data1(A1DATA[i]),
+            .we1(A1EN),
+            .addr2(B1ADDR),
+            .we2(gnd),
+            .out2(B1DATA[i])
+            );
+    end endgenerate
+
+endmodule
+

@@ -17,3 +17,4 @@ module {{ module.name }} (
     end
 
 endmodule
+

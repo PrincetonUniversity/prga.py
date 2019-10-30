@@ -85,3 +85,4 @@ module fraclut6 (
     assign cfg_o = cfg_d[64];
 
 endmodule
+

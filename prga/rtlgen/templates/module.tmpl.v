@@ -31,3 +31,4 @@ module {{ module.name }} (
     {%- endfor %}
 
 endmodule
+
