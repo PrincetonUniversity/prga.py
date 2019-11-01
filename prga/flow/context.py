@@ -378,7 +378,7 @@ class ArchitectureContext(Object):
         cache = self._cache
         self._cache = {}
         if isinstance(file_, basestring):
-            pickle.dump(self, open(file_, OpenMode.w), 2)
+            pickle.dump(self, open(file_, OpenMode.wb), 2)
         else:
             pickle.dump(self, file_, 2)
         # put cache back
@@ -392,6 +392,6 @@ class ArchitectureContext(Object):
             file_ (:obj:`str` or file-like object): the pickled file
         """
         if isinstance(file_, basestring):
-            return pickle.load(open(file_, OpenMode.r))
+            return pickle.load(open(file_, OpenMode.rb))
         else:
             return pickle.load(file_)

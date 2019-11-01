@@ -8,7 +8,7 @@ from prga.arch.module.module import AbstractLeafModule, BaseModule
 from prga.arch.primitive.common import PrimitiveClass
 from prga.arch.primitive.port import PrimitiveClockPort, PrimitiveInputPort, PrimitiveOutputPort
 from prga.exception import PRGAInternalError
-from prga.util import ReadonlyMappingProxy
+from prga.util import ReadonlyMappingProxy, uno
 
 from abc import abstractproperty
 from collections import OrderedDict
@@ -33,6 +33,12 @@ class AbstractPrimitive(AbstractLeafModule):
         """`PrimitiveClass`: Logical class of this primitive."""
         raise NotImplementedError
 
+    @property
+    def parameters(self):
+        """:obj:`Mapping` [:obj:`Mapping` [:obj:`str`, Any ]]: A mapping from parameter names to a dict of related
+        info, e.g. "default" for the default value of the parameter."""
+        return ReadonlyMappingProxy({})
+
 # ----------------------------------------------------------------------------
 # -- User-Defined Primitive --------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -43,13 +49,15 @@ class CustomPrimitive(BaseModule, AbstractPrimitive):
         name (:obj:`str`): Name of this primitive
         verilog_template (:obj:`str`): Path to the template (or vanilla Verilog source file). If set, this custom
             primitive becomes physical. Otherwise, it is logical-only
+        parameters (:obj:`Mapping` [:obj:`Mapping` [:obj:`str`, Any ]]): Parameters
     """
 
-    __slots__ = ['_ports', '_verilog_template']
-    def __init__(self, name, verilog_template = None):
+    __slots__ = ['_ports', '_verilog_template', '_parameters']
+    def __init__(self, name, verilog_template = None, parameters = None):
         super(CustomPrimitive, self).__init__(name)
         self._ports = OrderedDict()
         self._verilog_template = verilog_template
+        self._parameters = uno(parameters, {})
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
@@ -71,6 +79,10 @@ class CustomPrimitive(BaseModule, AbstractPrimitive):
     @property
     def primitive_class(self):
         return PrimitiveClass.custom
+
+    @property
+    def parameters(self):
+        return self._parameters
 
     # == high-level API ======================================================
     def create_clock(self, name):

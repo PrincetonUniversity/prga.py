@@ -56,7 +56,7 @@ def test_bram(tmpdir):
         clkport = clb.create_global(clk, Orientation.south)
         ceport = clb.create_input('ce', 1, Orientation.south)
         srport = clb.create_input('sr', 1, Orientation.south)
-        cin = clb.create_input('cin', 1, Orientation.south)
+        cin = clb.create_input('cin', 1, Orientation.north)
         for i in range(2):
             inst = clb.instantiate(context.primitives['fraclut6sffc'], 'cluster{}'.format(i))
             clb.connect(clkport, inst.pins['clk'])
@@ -69,11 +69,11 @@ def test_bram(tmpdir):
             clb.connect(inst.pins['oa'], clb.create_output('oa' + str(i), 1, Orientation.east))
             clb.connect(inst.pins['ob'], clb.create_output('ob' + str(i), 1, Orientation.east))
             clb.connect(inst.pins['q'], clb.create_output('q' + str(i), 1, Orientation.east))
-        clb.connect(cin, clb.create_output('cout', 1, Orientation.north), pack_pattern = 'carrychain')
+        clb.connect(cin, clb.create_output('cout', 1, Orientation.south), pack_pattern = 'carrychain')
         break
 
     # 6. create direct inter-block tunnels
-    context.create_direct_tunnel('carrychain', clb.ports['cout'], clb.ports['cin'], (0, -1))
+    context.create_direct_tunnel('carrychain', clb.ports['cout'], clb.ports['cin'], (0, 1))
 
     # 7. create tile
     clbtile = context.create_tile('clb_tile', clb)
@@ -129,7 +129,7 @@ def test_bram(tmpdir):
     flow = Flow((
         CompleteRoutingBox(BlockFCValue(BlockPortFCValue(0.25), BlockPortFCValue(0.5)),
             {'clb': BlockFCValue(BlockPortFCValue(0.25), BlockPortFCValue(0.25),
-                {'cout': BlockPortFCValue(0)})}),
+                {'cin': BlockPortFCValue(0), 'cout': BlockPortFCValue(0)})}),
         CompleteSwitch(),
         CompleteConnection(),
         GenerateVerilog('rtl'),

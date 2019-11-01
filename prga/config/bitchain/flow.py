@@ -48,7 +48,8 @@ class BitchainPrimitiveLibrary(BuiltinPrimitiveLibrary):
                 return self.context._modules.setdefault(name, CarrychainWrapper(self.context))
             elif name == 'fraclut6sffc':
                 self._is_empty = False
-                self.context.yosys_template_registry.register_techmap_template(name, 'fraclut6sffc.techmap.tmpl.v')
+                self.context.yosys_template_registry.register_blackbox_template(name,
+                        techmap_template = 'fraclut6sffc.techmap.tmpl.v')
                 return self.context._modules.setdefault(name, FracturableLUT6WithSFFnCarry(self.context,
                         requirement.is_physical_preferred or requirement.is_physical_required))
             else:
@@ -133,6 +134,20 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
             return ''
         return 'b{}[{}:0]'.format(str(config_bit_base),
                 len(hierarchical_instance[-1].logical_pins['cfg_d']) - 1)
+
+    def fasm_params(self, hierarchical_instance):
+        config_bit_base = self.__config_bit_offset_instance(hierarchical_instance)
+        if config_bit_base is None:
+            # raise RuntimeError
+            return {}
+        params = {}
+        for param, info in iteritems(hierarchical_instance[-1].model.parameters):
+            offset = info.get("config_bit_offset")
+            if offset is None:
+                continue
+            width = info.get("config_bit_count", 1)
+            params[param] = "b{}[{}:{}]".format(config_bit_base + offset, width - 1, 0)
+        return params
 
     def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy):
         module = source.parent if source.net_type.is_port else source.parent.parent

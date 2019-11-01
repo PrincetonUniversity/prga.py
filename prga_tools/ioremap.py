@@ -102,15 +102,15 @@ def ioremap(context, input_, output, io_bindings):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(
-            description="Bitstream generator for bitchain-style configuration circuitry")
+            description="VPR's packing result remapper")
     
-    parser.add_argument('context', type=argparse.FileType(OpenMode.r),
+    parser.add_argument('context', type=argparse.FileType(OpenMode.rb),
             help="Pickled architecture context object")
     parser.add_argument('io', type=str,
             help="IO assignment constraint")
-    parser.add_argument('input', type=argparse.FileType(OpenMode.r),
+    parser.add_argument('input', type=argparse.FileType(OpenMode.rb),
             help="DESIGN.net: packing result produced by VPR")
-    parser.add_argument('output', type=argparse.FileType(OpenMode.w),
+    parser.add_argument('output', type=argparse.FileType(OpenMode.wb),
             help="OUTPUT.net: output. Remapped packing result")
 
     args = parser.parse_args()

@@ -35,16 +35,12 @@ class GenerateYosysResources(Object, AbstractPass):
     def run(self, context):
         makedirs(self.prefix)
         ysgen = YosysGenerator(context.yosys_template_registry, context._additional_template_search_paths)
-        blackbox = open(os.path.abspath(os.path.join(self.prefix, 'lib.v')), OpenMode.w)
-        bram_rule = open(os.path.abspath(os.path.join(self.prefix, 'bram.rule')), OpenMode.w)
-        techmap = open(os.path.abspath(os.path.join(self.prefix, 'techmap.v')), OpenMode.w)
+        blackbox = os.path.abspath(os.path.join(self.prefix, 'lib.v')) 
+        bram_rule = os.path.abspath(os.path.join(self.prefix, 'bram.rule'))
+        memory_techmap = os.path.abspath(os.path.join(self.prefix, 'bram_techmap.v'))
+        techmap = os.path.abspath(os.path.join(self.prefix, 'techmap.v'))
         for primitive in iter_all_primitives(context):
-            # blackbox?
-            if primitive.primitive_class in (PrimitiveClass.memory, PrimitiveClass.custom):
-                ysgen.generate_blackbox(blackbox, primitive)
-            # bram rules?
             if primitive.primitive_class.is_memory:
-                ysgen.generate_bram_rule(bram_rule, primitive)
-            # techmap?
-            if primitive.primitive_class in (PrimitiveClass.memory, PrimitiveClass.custom, PrimitiveClass.multimode):
-                ysgen.generate_techmap(techmap, primitive)
+                ysgen.generate_memory(blackbox, memory_techmap, bram_rule, primitive)
+            else:
+                ysgen.generate_blackbox(blackbox, techmap, primitive)

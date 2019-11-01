@@ -87,3 +87,14 @@ class FASMDelegate(Object):
             :obj:`Sequence` [:obj:`str` ]: "fasm_features" features
         """
         return tuple()
+
+    def fasm_params(self, hierarchical_instance):
+        """Get the "fasm_params" strings for primitive instance ``hierarchical_instance``.
+
+        Args:
+            hierarchical_instance (:obj:`Sequence` [`AbstractInstance` ]): Hierarchical instance from block level
+
+        Returns:
+            :obj:`Mapping` [:obj:`str`, :obj:`str` ]: "fasm_param" feature mapping for the primitive instance
+        """
+        return {}

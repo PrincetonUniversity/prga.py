@@ -3,28 +3,49 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.util import Object, uno
+from prga.util import Object, uno, ReadonlyMappingProxy
 from prga.exception import PRGAInternalError
 
 import os
 import jinja2 as jj
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
+from past.builtins import basestring
 
-__all__ = ['YosysTemplateEntry', 'YosysTemplateRegistry', 'YosysGenerator']
+__all__ = ['YosysTemplateRegistry', 'YosysGenerator']
 
 # ----------------------------------------------------------------------------
 # -- Yosys Template Entry ----------------------------------------------------
 # ----------------------------------------------------------------------------
-class YosysTemplateEntry(namedtuple('YosysTemplateEntry', 'template parameters')):
+class YosysTemplateEntry(namedtuple('YosysTemplateEntry', 'lib_template techmap_template parameters')):
     """An entry in the Yosys template registry.
 
     Args:
-        template (:obj:`str`): Template for generating a file
-        parameters (:obj:`Mapping` [:obj:`str`, Any ]): Additional parameters for the template
+        lib_template (:obj:`str`): Template for generating a blackbox library file
+        techmap_template (:obj:`str`): Template for generating a techmap file
+        parameters (:obj:`Mapping` [:obj:`str`, Any ]): Additional parameters for the templates
     """
 
-    def __new__(cls, template, parameters = None):
-        return super(YosysTemplateEntry, cls).__new__(cls, template, uno(parameters, {}))
+    def __new__(cls, lib_template = None, techmap_template = None, parameters = None):
+        return super(YosysTemplateEntry, cls).__new__(cls, uno(lib_template,'blackbox.lib.tmpl.v'),
+                techmap_template, uno(parameters, {}))
+
+# ----------------------------------------------------------------------------
+# -- Yosys Memory Templates Entry --------------------------------------------
+# ----------------------------------------------------------------------------
+class YosysMemoryTemplateEntry(namedtuple('YosysMemoryTemplateEntry',
+    'lib_template techmap_template rule_template parameters')):
+    """An entry for BRAM in the Yosys template registry.
+
+    Args:
+        lib_template (:obj:`str`): Template for generating a blackbox library file
+        techmap_template (:obj:`str`): Template for generating a techmap file
+        rule_template (:obj:`str`): Template for generating a BRAM rule
+        parameters (:obj:`Mapping` [:obj:`str`, Any ]): Additional parameters for the templates
+    """
+
+    def __new__(cls, lib_template = None, techmap_template = None, rule_template = None, parameters = None):
+        return super(YosysMemoryTemplateEntry, cls).__new__(cls, uno(lib_template,'blackbox.lib.tmpl.v'),
+                techmap_template, rule_template, uno(parameters, {}))
 
 # ----------------------------------------------------------------------------
 # -- Yosys Template Registry -------------------------------------------------
@@ -33,68 +54,54 @@ class YosysTemplateRegistry(Object):
     """A registry for necessary info for generating the blackbox modules, BRAM mapping rules, and techmap files needed
     by Yosys."""
 
-    __slots__ = ['_blackboxes', '_bram_rules', '_techmaps']
+    __slots__ = ['_memory_entries', '_blackbox_entries']
     def __init__(self):
         super(YosysTemplateRegistry, self).__init__()
-        self._blackboxes = {}
-        self._bram_rules = {}
-        self._techmaps = {}
+        self._memory_entries = OrderedDict()
+        self._blackbox_entries = OrderedDict()
 
     @property
-    def blackboxes(self):
-        """:obj:`Mapping` [:obj:`str`, `YosysTemplateEntry` ]: A mapping from module names to template entries."""
-        return self._blackboxes
+    def memory_entries(self):
+        """:obj:`Mapping` [:obj:`str`, `YosysMemoryTemplateEntry` ]: A mapping from module names to template
+        entries."""
+        return ReadonlyMappingProxy(self._memory_entries)
 
     @property
-    def bram_rules(self):
+    def blackbox_entries(self):
         """:obj:`Mapping` [:obj:`str`, `YosysTemplateEntry` ]: A mapping from module names to template entries."""
-        return self._bram_rules
+        return ReadonlyMappingProxy(self._blackbox_entries)
 
-    @property
-    def techmaps(self):
-        """:obj:`Mapping` [:obj:`str`, `YosysTemplateEntry` ]: A mapping from module names to template entries."""
-        return self._techmaps
-
-    def register_blackbox_template(self, name, template, parameters = None):
+    def register_blackbox_template(self, name, lib_template = None, techmap_template = None, parameters = None):
         """Register a blackbox template.
 
         Args:
             name (:obj:`str`): Name of the module which activates this entry
-            template (:obj:`str`): Template or vanilla source file for the blacbox
+            lib_template (:obj:`str`): Template for generating a blackbox library file
+            techmap_template (:obj:`str`): Template for generating a techmap file
             parameters (:obj:`Mapping` [:obj:`str`, Any ]): Additional parameters for the template
 
-        Blackbox is auto-generated for primitives, so register blackbox template only if you wish to override the
-        blackbox generated by default.
+        Blackbox library is auto-generated for custom primitives, so register blackbox template only if you wish to
+        override the blackbox generated by default, or you need to provide techmap file for them.
         """
-        if name in self._blackboxes:
+        if name in self._blackbox_entries:
             raise PRGAInternalError("Blackbox template entry '{}' already registered".format(name))
-        return self._blackboxes.setdefault(name, YosysTemplateEntry(template, parameters))
+        return self._blackbox_entries.setdefault(name, YosysTemplateEntry(lib_template, techmap_template, parameters))
 
-    def register_bram_rule_template(self, name, template, parameters = None):
+    def register_memory_template(self, name, lib_template = None, techmap_template = None, rule_template = None,
+            parameters = None):
         """Register a BRAM rule template.
 
         Args:
             name (:obj:`str`): Name of the module which activates this entry
-            template (:obj:`str`): Template or vanilla source file for the BRAM rule
+            lib_template (:obj:`str`): Template for generating a blackbox library file
+            techmap_template (:obj:`str`): Template for generating a techmap file
+            rule_template (:obj:`str`): Template for generating a BRAM rule
             parameters (:obj:`Mapping` [:obj:`str`, Any ]): Additional parameters for the template
         """
-        if name in self._bram_rules:
-            raise PRGAInternalError("BRAM rule template entry '{}' already registered".format(name))
-        return self._bram_rules.setdefault(name, YosysTemplateEntry(template, parameters))
-
-    def register_techmap_template(self, name, template, parameters = None):
-        """Register a techmap template.
-
-        Args:
-            name (:obj:`str`): Name of the module which activates this entry
-            template (:obj:`str`): Template or vanilla source file for the techmap
-            parameters (:obj:`Mapping` [:obj:`str`, Any ]): Additional parameters for the template
-
-        Primitives can be simply used as blackbox modules if no applicable techmap is provided.
-        """
-        if name in self._techmaps:
-            raise PRGAInternalError("Techmap template entry '{}' already registered".format(name))
-        return self._techmaps.setdefault(name, YosysTemplateEntry(template, parameters))
+        if name in self._memory_entries:
+            raise PRGAInternalError("Memory rule template entry '{}' already registered".format(name))
+        return self._memory_entries.setdefault(name, YosysMemoryTemplateEntry(lib_template, techmap_template,
+            rule_template, parameters))
 
 # ----------------------------------------------------------------------------
 # -- Yosys Generator ---------------------------------------------------------
@@ -114,39 +121,60 @@ class YosysGenerator(object):
         search_paths.extend(additional_template_search_paths)
         self.env = jj.Environment(loader = jj.FileSystemLoader(search_paths))
 
-    def generate_blackbox(self, f, module):
-        entry = self.registry.blackboxes.get(module.name, YosysTemplateEntry('blackbox.lib.tmpl.v'))
-        template = self.env.get_template(entry.template)
-        parameters = {
-                'module': module,
-                'itervalues': itervalues,
-                'iteritems': iteritems,
-                }
-        parameters.update(entry.parameters)
-        template.stream(parameters).dump(f, encoding='ascii')
+    def generate_blackbox(self, lib_f, techmap_f, module):
+        """Generate blackbox library and techmap files for ``module``.
 
-    def generate_bram_rule(self, f, module):
-        entry = self.registry.bram_rules.get(module.name)
-        if entry is None:
-            return
-        template = self.env.get_template(entry.template)
+        Args:
+            lib_f (:obj:`str` or file-like object): Blackbox library file
+            techmap_f (:obj:`str` or file-like object): Techmap file
+            module (`AbstractModule`):
+        """
+        entry = self.registry.blackbox_entries.get(module.name, YosysTemplateEntry())
         parameters = {
                 'module': module,
                 'itervalues': itervalues,
                 'iteritems': iteritems,
                 }
         parameters.update(entry.parameters)
-        template.stream(parameters).dump(f, encoding='ascii')
+        if entry.lib_template is not None:
+            if isinstance(lib_f, basestring):
+                lib_f = open(lib_f, OpenMode.abc)
+            template = self.env.get_template(entry.lib_template)
+            template.stream(parameters).dump(lib_f, encoding='ascii')
+        if entry.techmap_template is not None:
+            if isinstance(techmap_f, basestring):
+                techmap_f = open(techmap_f, OpenMode.abc)
+            template = self.env.get_template(entry.techmap_template)
+            template.stream(parameters).dump(techmap_f, encoding='ascii')
 
-    def generate_techmap(self, f, module):
-        entry = self.registry.techmaps.get(module.name)
-        if entry is None:
-            return
-        template = self.env.get_template(entry.template)
+    def generate_memory(self, lib_f, techmap_f, rule_f, module):
+        """Generate blackbox library and techmap files for ``module``.
+
+        Args:
+            lib_f (:obj:`str` or file-like object): Blackbox library file
+            techmap_f (:obj:`str` or file-like object): Techmap file
+            rule_f (:obj:`str` or file-like object): BRAM rule file
+            module (`AbstractModule`):
+        """
+        entry = self.registry.memory_entries.get(module.name, YosysMemoryTemplateEntry())
         parameters = {
                 'module': module,
                 'itervalues': itervalues,
                 'iteritems': iteritems,
                 }
         parameters.update(entry.parameters)
-        template.stream(parameters).dump(f, encoding='ascii')
+        if entry.lib_template is not None:
+            if isinstance(lib_f, basestring):
+                lib_f = open(lib_f, OpenMode.abc)
+            template = self.env.get_template(entry.lib_template)
+            template.stream(parameters).dump(lib_f, encoding='ascii')
+        if entry.techmap_template is not None:
+            if isinstance(techmap_f, basestring):
+                techmap_f = open(techmap_f, OpenMode.abc)
+            template = self.env.get_template(entry.techmap_template)
+            template.stream(parameters).dump(techmap_f, encoding='ascii')
+        if entry.rule_template is not None:
+            if isinstance(rule_f, basestring):
+                rule_f = open(rule_f, OpenMode.abc)
+            template = self.env.get_template(entry.rule_template)
+            template.stream(parameters).dump(rule_f, encoding='ascii')

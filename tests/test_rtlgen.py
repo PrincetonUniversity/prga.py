@@ -77,4 +77,4 @@ def test_rtlgen(tmpdir):
 
     # 4. generate files
     for module in chain(itervalues(lib.switches), iter((ff, lut, cluster, block))):
-        gen.generate_module(tmpdir.join(module.name + '.v').open(OpenMode.w), module)
+        gen.generate_module(tmpdir.join(module.name + '.v').open(OpenMode.wb), module)

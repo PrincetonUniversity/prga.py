@@ -69,7 +69,7 @@ def test_io_tile(tmpdir):
 
     # 7. generate files
     for module in chain(itervalues(lib.switches), itervalues(lib.cboxes), iter((tile, ))):
-        gen.generate_module(tmpdir.join(module.name + '.v').open(OpenMode.w), module)
+        gen.generate_module(tmpdir.join(module.name + '.v').open(OpenMode.wb), module)
 
 def test_logic_tile(tmpdir):
     clk = Global('clk', is_clock = True)
@@ -111,4 +111,4 @@ def test_logic_tile(tmpdir):
 
     # 8. generate files
     for module in chain(itervalues(lib.switches), itervalues(lib.cboxes), iter((tile, ))):
-        gen.generate_module(tmpdir.join(module.name + '.v').open(OpenMode.w), module)
+        gen.generate_module(tmpdir.join(module.name + '.v').open(OpenMode.wb), module)

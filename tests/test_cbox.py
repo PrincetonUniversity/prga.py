@@ -48,4 +48,4 @@ def test_connection_box(tmpdir):
     switchify(lib, cbox)
 
     # 4. generate files
-    gen.generate_module(tmpdir.join(cbox.name + '.v').open(OpenMode.w), cbox)
+    gen.generate_module(tmpdir.join(cbox.name + '.v').open(OpenMode.wb), cbox)

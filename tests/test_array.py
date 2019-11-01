@@ -96,7 +96,7 @@ def test_io_leaf_array(tmpdir):
 
     # 12. generate files
     for module in chain(itervalues(lib.switches), itervalues(lib.sboxes), iter((array, ))):
-        gen.generate_module(tmpdir.join(module.name + '.v').open(OpenMode.w), module)
+        gen.generate_module(tmpdir.join(module.name + '.v').open(OpenMode.wb), module)
 
 def test_complex_array(tmpdir):
     io = Iopad()
@@ -198,4 +198,4 @@ def test_complex_array(tmpdir):
     # 12. generate files
     for module in chain(itervalues(lib.switches), itervalues(lib.sboxes), itervalues(lib.cboxes),
             itervalues(iob_tiles), iter((clb_tile, bram_tile, subarray, array))):
-        gen.generate_module(tmpdir.join(module.name + '.v').open(OpenMode.w), module)
+        gen.generate_module(tmpdir.join(module.name + '.v').open(OpenMode.wb), module)

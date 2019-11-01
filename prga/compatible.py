@@ -35,8 +35,10 @@ class OpenMode(object):
     def __new__(cls):
         raise RuntimeError("Cannot instantiate '{}'".format(cls.__name__))
 
-    r = "rb" if _sys.version_info > (3, ) else "r"
-    w = "wb" if _sys.version_info > (3, ) else "w"
+    rb = "rb" if _sys.version_info > (3, ) else "r"
+    wb = "wb" if _sys.version_info > (3, ) else "w"
+    ab = "ab" if _sys.version_info > (3, ) else "a"
+    abc = "ab+" if _sys.version_info > (3, ) else "a+"
 
 if _sys.version_info >= (3, 2):
     def makedirs(directory):

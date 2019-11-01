@@ -170,9 +170,8 @@ class BuiltinPrimitiveLibrary(_BaseLibrary, PrimitiveLibraryDelegate):
             self._is_empty = False
             module = self._memories.setdefault( (addr_width, data_width, dualport, transparent),
                     Memory(addr_width, data_width, name, dualport, transparent, in_physical_domain))
-            self.context.yosys_template_registry.register_blackbox_template(module.name, 'memory.lib.tmpl.v')
-            self.context.yosys_template_registry.register_bram_rule_template(module.name, 'builtin.tmpl.rule')
-            self.context.yosys_template_registry.register_techmap_template(module.name, 'memory.techmap.tmpl.v')
+            self.context.yosys_template_registry.register_memory_template(module.name,
+                    'memory.lib.tmpl.v', 'memory.techmap.tmpl.v', 'builtin.tmpl.rule')
             return self.context._modules.setdefault(module.name, module)
 
     def create_custom_primitive(self, name, verilog_template = None):

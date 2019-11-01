@@ -132,7 +132,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
             description="IO assignment generator")
     
-    parser.add_argument('context', type=argparse.FileType(OpenMode.r),
+    parser.add_argument('context', type=argparse.FileType(OpenMode.rb),
             help="Pickled architecture context object")
     parser.add_argument('io', type=argparse.FileType("w"),
             help="Generated IO assignments")

@@ -398,7 +398,18 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
         multifuncflipflop = lib.get_or_create_primitive('multifuncflipflop')
         mux2 = context.switch_library.get_or_create_switch(2, None, False)
         mux4 = context.switch_library.get_or_create_switch(4, None, False)
-        carrychain = lib.get_or_create_primitive('carrychain_wrapper')
+        try:
+            carrychain = lib.get_or_create_primitive('carrychain', PrimitiveRequirement.non_physical_preferred)
+        except PRGAPrimitiveNotFoundError:
+            carrychain = lib.create_custom_primitive('carrychain')
+            carrychain.parameters['CIN_FABRIC'] = {'init': "1'b0", 'config_bit_offset': 0, 'config_bit_count': 1}
+            carrychain.create_input('p', 1)
+            carrychain.create_input('g', 1)
+            carrychain.create_input('cin', 1)
+            carrychain.create_input('cin_fabric', 1)
+            carrychain.create_output('s', 1, combinational_sources = ('p', 'g', 'cin', 'cin_fabric'))
+            carrychain.create_output('cout', 1, combinational_sources = ('p', 'g', 'cin', 'cin_fabric'))
+            carrychain.create_output('cout_fabric', 1, combinational_sources = ('p', 'g', 'cin', 'cin_fabric'))
 
         super(FracturableLUT6WithSFFnCarry, self).__init__('fraclut6sffc')
         self.in_physical_domain = in_physical_domain
@@ -427,34 +438,20 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
     def __create_mode_lut6dff(self, lut6, ff, carrychain, multifuncflipflop, mux4):
         mode = self._add_mode(BitchainMode('lut6dff', self, {
             "lut6_inst": 3,     # LUT5A_DATA, LUT5B_DATA:                       66:3
-            "carry_inst": 70,   # CARRY_SOURCE_CIN:                             70
-            "mux_mfdff_d": 76,  # FFB_SOURCE:                                   77:76
             "mfdff_inst": 78,   # FFB_ENABLE_CE, FFB_ENABLE_SR, FFB_SR_SET:     80:78
-            "mux_ob": 81,       # OB_SEL:                                       82:81
             },
-            (67, 72)            # LUT6_ENABLE, FFA_SOURCE = FFA_O6
+            (67, 72, 77, 82)    # LUT6_ENABLE, FFA_SOURCE = FFA_O6, FFB_SOURCE = FFB_IB, OB_SEL = OB_QB
             ))
         lut6_inst = mode.instantiate(lut6, 'lut6_inst')
-        carry_inst = mode.instantiate(carrychain, 'carry_inst')
         ff_inst = mode.instantiate(ff, 'ff_inst')
         multiff_inst = mode.instantiate(multifuncflipflop, 'mfdff_inst')
         # LUT6 connections
         mode.connect(mode.ports['ia'], lut6_inst.pins['in'])
         mode.connect(lut6_inst.pins['out'], ff_inst.pins['D'], pack_pattern = 'lut6_dff')
-        mode.connect(lut6_inst.pins['out'], carry_inst.pins['p'])
         mode.connect(lut6_inst.pins['out'], mode.ports['oa'])
         # D-Flipflop connections
         mode.connect(mode.ports['clk'], ff_inst.pins['clk'])
         mode.connect(ff_inst.pins['Q'], mode.ports['q'])
-        # carry chain connections
-        mode.connect(mode.ports['ib'], carry_inst.pins['g'])
-        mode.connect(mode.ports['cin'], carry_inst.pins['cin'], pack_pattern = 'carrychain')
-        mode.connect(mode.ports['ib'], carry_inst.pins['cin_fabric'])
-        mode.connect(carry_inst.pins['cout'], mode.ports['cout'], pack_pattern = 'carrychain')
-        mode.connect(carry_inst.pins['cout_fabric'], mode.ports['ob'])
-        mode.connect(carry_inst.pins['cout_fabric'], multiff_inst.pins['d'])
-        mode.connect(carry_inst.pins['s'], mode.ports['ob'])
-        mode.connect(carry_inst.pins['s'], multiff_inst.pins['d'])
         # multi-functional flipflop connections
         mode.connect(mode.ports['clk'], multiff_inst.pins['clk'])
         mode.connect(mode.ports['ce'], multiff_inst.pins['en'])
@@ -462,29 +459,18 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
         mode.connect(mode.ports['ib'], multiff_inst.pins['d'])
         mode.connect(multiff_inst.pins['q'], mode.ports['ob'])
         # now the user-invisible part
-        # mux for the input of the multi-functional D-flipflop
-        mux_mfdff = mode._add_instance(SwitchInstance(mode, mux4, 'mux_mfdff_d'))
-        mux_mfdff.switch_inputs[0].logical_source = carry_inst.pins['cout_fabric'][0]
-        mux_mfdff.switch_inputs[1].logical_source = carry_inst.pins['s'][0]
-        mux_mfdff.switch_inputs[2].logical_source = mode.ports['ib'][0]
-        multiff_inst.pins['d'][0].logical_source = mux_mfdff.switch_output
-        # mux for the output 'ob'
-        mux_ob = mode._add_instance(SwitchInstance(mode, mux4, 'mux_ob'))
-        mux_ob.switch_inputs[0].logical_source = carry_inst.pins['cout_fabric'][0]
-        mux_ob.switch_inputs[1].logical_source = carry_inst.pins['s'][0]
-        mux_ob.switch_inputs[2].logical_source = multiff_inst.pins['q'][0]
-        mode.ports['ob'][0].logical_source = mux_ob.switch_output
 
     def __create_mode_lut5dffx2(self, lut5, ff, carrychain, mux2, mux4):
         mode = self._add_mode(BitchainMode('lut5dffx2', self, {
             "lut5_inst_0":  3,  # LUT5A_DATA:                               34:3
             "lut5_inst_1":  35, # LUT5B_DATA:                               66:35
             "mux_carry_g":  68, # CARRY_SOURCE_G:                           68
-            "mux_carry_cin": 69,# CARRY_SOURCE_CIN:                         69
-            "carry_inst": 70,   # CARRY_SOURCE_CIN:                         70
+            "mux_carry_cin":69, # CARRY_SOURCE_CIN:                         69
+            "carry_inst":   70, # CARRY_SOURCE_CIN:                         70
+            "mux_ffa_d":    72, # FFA_SOURCE:                               72
+            "mux_ffb_d":    76, # FFB_SOURCE:                               77:76
             "mux_ob":       81, # OB_SEL:                                   82:81
             },
-            (72, 77, 78)        # FFA_SOURCE = FFA_O6, FFB_SOURCE = FFB_O5
             ))
         lut5_inst = [mode.instantiate(lut5, 'lut5_inst_' + str(i)) for i in range(2)]
         ff_inst = [mode.instantiate(ff, 'ff_inst_' + str(i)) for i in range(2)]
@@ -492,6 +478,7 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
         # LUT5+DFF
         for i in range(2):
             mode.connect(mode.ports['ia'][0:5], lut5_inst[i].pins['in'])
+            mode.connect(carry_inst.pins['cout_fabric'], ff_inst[i].pins['D'])
             mode.connect(lut5_inst[i].pins['out'], ff_inst[i].pins['D'], pack_pattern = 'lut5_dff_' + str(i))
             mode.connect(mode.ports['clk'], ff_inst[i].pins['clk'])
         # carry chain
@@ -502,6 +489,7 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
         mode.connect(mode.ports['ib'], carry_inst.pins['cin_fabric'])
         mode.connect(lut5_inst[1].pins['out'], carry_inst.pins['cin_fabric'])
         mode.connect(carry_inst.pins['cout'], mode.ports['cout'], pack_pattern = 'carrychain')
+        mode.connect(carry_inst.pins['s'], ff_inst[1].pins['D'], pack_pattern = 'carrychain')
         # oa
         mode.connect(lut5_inst[0].pins['out'], mode.ports['oa'])
         # q
@@ -521,7 +509,19 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
         mux_cin = mode._add_instance(SwitchInstance(mode, mux2, 'mux_carry_cin'))
         mux_cin.switch_inputs[0].logical_source = mode.ports['ib'][0]
         mux_cin.switch_inputs[1].logical_source = lut5_inst[1].pins['out'][0]
-        carry_inst.pins['cin_fabric'][0].logical_source = mux_carry.switch_output
+        carry_inst.pins['cin_fabric'][0].logical_source = mux_cin.switch_output
+        # mux for input 'd' of Flip-flop A
+        mux_ffa_d = mode._add_instance(SwitchInstance(mode, mux2, 'mux_ffa_d'))
+        mux_ffa_d.switch_inputs[0].logical_source = carry_inst.pins['cout_fabric'][0]
+        mux_ffa_d.switch_inputs[1].logical_source = lut5_inst[0].pins['out'][0]
+        ff_inst[0].pins['D'].logical_source = mux_ffa_d.switch_output
+        # mux for input 'd' of Flip-flop B
+        mux_ffb_d = mode._add_instance(SwitchInstance(mode, mux4, 'mux_ffb_d'))
+        mux_ffb_d.switch_inputs[0].logical_source = carry_inst.pins['cout_fabric'][0]
+        mux_ffb_d.switch_inputs[1].logical_source = carry_inst.pins['s'][0]
+        mux_ffb_d.switch_inputs[2].logical_source = mode.ports['ib'][0]
+        mux_ffb_d.switch_inputs[3].logical_source = lut5_inst[1].pins['out'][0]
+        ff_inst[1].pins['D'].logical_source = mux_ffb_d.switch_output
         # mux for output port 'ob'
         mux_ob = mode._add_instance(SwitchInstance(mode, mux4, 'mux_ob'))
         mux_ob.switch_inputs[0].logical_source = carry_inst.pins['cout_fabric'][0]

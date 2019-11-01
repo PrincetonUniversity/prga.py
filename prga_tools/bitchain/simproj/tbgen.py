@@ -128,7 +128,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
             description="Testbench generator for bitchain-style configuration circuitry")
     
-    parser.add_argument('context', type=argparse.FileType(OpenMode.r),
+    parser.add_argument('context', type=argparse.FileType(OpenMode.rb),
             help="Pickled architecture context object")
     parser.add_argument('io', type=str,
             help="IO assignment constraint")

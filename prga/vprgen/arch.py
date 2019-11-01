@@ -208,11 +208,17 @@ def _vpr_arch_primitive(xml, delegate, hierarchical_instance):
                 #         'in_port': _net2vpr(src, parent),
                 #         'out_port': _net2vpr(sink, parent),
                 #         })
-                    xml.element_leaf('delay_constant', {
-                        'max': '1e-11',
-                        'in_port': _net2vpr(primitive.ports[source], parent),
-                        'out_port': _net2vpr(port, parent),
-                        })
+                xml.element_leaf('delay_constant', {
+                    'max': '1e-11',
+                    'in_port': _net2vpr(primitive.ports[source], parent),
+                    'out_port': _net2vpr(port, parent),
+                    })
+    # fasm params 
+    fasm_params = delegate.fasm_params(hierarchical_instance)
+    if fasm_params:
+        with xml.element('metadata'):
+            xml.element_leaf('meta', {"name": "fasm_params"},
+                    '\n'.join("{} = {}".format(config, param) for param, config in iteritems(fasm_params)))
 
 def _vpr_arch_primitive_instance(xml, delegate, hierarchical_instance):
     """Emit ``"pb_type"`` for primitive instance."""
@@ -301,13 +307,14 @@ def vpr_arch_instance(xml, delegate, hierarchical_instance):
     elif hierarchical_instance[-1].module_class.is_primitive:  # primitive
         _vpr_arch_primitive_instance(xml, delegate, hierarchical_instance)
 
-def vpr_arch_block(xml, delegate, tile):
+def vpr_arch_block(xml, delegate, tile, directs = tuple()):
     """Convert the block used in ``tile`` into VPR architecture description.
     
     Args:
         xml (`XMLGenerator`):
         delegate (`FASMDelegate`):
         tile (`Tile`):
+        directs (:obj:`Sequence` [`DirectTunnel` ]):
     """
     with xml.element('pb_type', {
         'name': tile.name,
@@ -349,6 +356,12 @@ def vpr_arch_block(xml, delegate, tile):
                     xml.element_leaf('loc', {'side': 'top', 'xoffset': x, 'yoffset': tile.height - 1},
                         ' '.join('{}.{}'.format(tile.name, name) for name, port in iteritems(tile.block.ports)
                             if port.position == (x, tile.height - 1) and port.orientation.is_north))
+        # 5. fc
+        with xml.element('fc', {"in_type": "frac", "in_val": "1.0", "out_type": "frac", "out_val": "1.0"}):
+            for direct in directs:
+                for port in (direct.source, direct.sink):
+                    if port.parent is tile.block:
+                        xml.element_leaf("fc_override", {"fc_type": "abs", "fc_val": "0", "port_name": port.name})
 
 # ----------------------------------------------------------------------------
 # -- Layout to VPR Architecture Description ----------------------------------
@@ -494,10 +507,11 @@ def vpr_arch_xml(xml, delegate, context):
             for segment in itervalues(context.segments):
                 vpr_arch_segment(xml, segment)
         # directlist
+        directs = tuple(itervalues(context.direct_tunnels))
         with xml.element('directlist'):
-            for direct in itervalues(context.direct_tunnels):
+            for direct in directs:
                 vpr_arch_direct(xml, context, direct)
         # complexblocklist
         with xml.element('complexblocklist'):
             for tile in iter_all_tiles(context):
-                vpr_arch_block(xml, delegate, tile)
+                vpr_arch_block(xml, delegate, tile, directs)

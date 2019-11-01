@@ -37,8 +37,8 @@ module \$lcu (P, G, CI, CO);
     wire _TECHMAP_FAIL_ = WIDTH <= 2;
 
     wire [WIDTH-1:0] CO_CHAIN;
-
-    carrychain_fabric cc0 (.p(P[0]), .g(G[0]), .cin_fabric(CI), .cout(CO_CHAIN[0]), .cout_fabric(CO[0]));
+    
+    carrychain #(.CIN_FABRIC(1'b1)) cc0 (.p(P[0]), .g(G[0]), .cin_fabric(CI), .cout(CO_CHAIN[0]), .cout_fabric(CO[0]));
 
     genvar i;
     generate for (i = 1; i < WIDTH; i = i + 1) begin: slice
@@ -76,7 +76,7 @@ module \$alu (A, B, CI, BI, X, Y, CO);
     wire [Y_WIDTH-1:0] G = AA & BB;
     wire [Y_WIDTH-1:0] CO_CHAIN;
 
-    carrychain_fabric cc0 (.p(P[0]), .g(G[0]), .cin_fabric(CI), .s(Y[0]), .cout(CO_CHAIN[0]), .cout_fabric(CO[0]));
+    carrychain #(.CIN_FABRIC(1'b1)) cc0 (.p(P[0]), .g(G[0]), .cin_fabric(CI), .s(Y[0]), .cout(CO_CHAIN[0]), .cout_fabric(CO[0]));
 
     genvar i;
     generate for (i = 1; i < Y_WIDTH; i = i + 1) begin: slice
