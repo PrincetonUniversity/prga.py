@@ -29,9 +29,11 @@ class GenerateVPRXML(Object, AbstractPass):
 
     def run(self, context):
         makedirs(self.prefix)
-        arch = os.path.join(self.prefix, 'arch.xml')
+        arch = os.path.abspath(os.path.join(self.prefix, 'arch.xml'))
         with XMLGenerator(open(arch, OpenMode.wb), True) as xml:
             vpr_arch_xml(xml, context.config_circuitry_delegate, context)
-        rrg = os.path.join(self.prefix, 'rrg.xml')
+        context._vpr_archdef = arch
+        rrg = os.path.abspath(os.path.join(self.prefix, 'rrg.xml'))
         with XMLGenerator(open(rrg, OpenMode.wb), True) as xml:
             vpr_rrg_xml(xml, context.config_circuitry_delegate, context)
+        context._vpr_rrgraph = rrg

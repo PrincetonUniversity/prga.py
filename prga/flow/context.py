@@ -72,6 +72,7 @@ class ArchitectureContext(Object):
             '_directs',             # direct inter-block tunnels
             '_segments',            # wire segment prototypes
             '_modules',             # all created modules
+            '_additional_template_search_paths',
             '_config_lib',          # configuration circuitry library
             '_primitive_lib',       # primitive library
             '_switch_lib',          # switch library
@@ -79,7 +80,9 @@ class ArchitectureContext(Object):
             '_sbox_lib',            # switch box library
             '_yosys_registry',      # registry of Yosys resources
             '_cache',               # non-pickled stuff
-            '_additional_template_search_paths',
+            '_verilog_sources',     # all generated verilog sources
+            '_vpr_archdef',         # the generated Architecture Description file for VPR
+            '_vpr_rrgraph',         # the generated routing resource graph for VPR
             ]
 
     def __init__(self, name, width, height, config_circuitry_delegate_class,
@@ -98,6 +101,9 @@ class ArchitectureContext(Object):
         self._sbox_lib = cfg.get_switch_box_library(self)
         self._yosys_registry = YosysTemplateRegistry()
         self._cache = {}
+        self._verilog_sources = []
+        self._vpr_archdef = None
+        self._vpr_rrgraph = None
 
     # == low-level API =======================================================
     @property

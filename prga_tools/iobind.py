@@ -16,6 +16,7 @@ from itertools import product
 
 import re
 import logging
+import sys
 
 _logger = logging.getLogger(__name__)
 _reprog_bit = re.compile('^(?P<name>.*?)(?:\[(?P<index>\d+)\])?$')
@@ -39,12 +40,11 @@ def _find_next_available_io(assignments, current, direction):
         else:
             y, subblock = y + 1, 0
 
-def iobind(context, ostream, mod_top, fixed = None):
-    """Generate IO assignment file.
+def iobind(context, mod_top, fixed = None):
+    """Generate IO assignment.
 
     Args:
         context (`ArchitectureContext`): The architecture context of the custom FPGA
-        ostream (file-like object): Output file
         mod_top (`VerilogModule`): Top-level module of target design
         fixed (:obj:`Mapping` [:obj:`str`, :obj:`tuple` [:obj:`int`, :obj:`int`, :obj:`int` ]]): Manually assigned IOs
     """
@@ -123,9 +123,7 @@ def iobind(context, ostream, mod_top, fixed = None):
                 x, y, subblock = io
                 assignments[x][y][port.direction.case(0, 1)][subblock] = bit_name
                 processed[bit_name] = io
-    # print results
-    for name, (x, y, subblock) in iteritems(processed):
-        ostream.write("{} {} {} {}\n".format(name, x, y, subblock))
+    return processed
 
 if __name__ == "__main__":
     import argparse
@@ -134,7 +132,7 @@ if __name__ == "__main__":
     
     parser.add_argument('context', type=argparse.FileType(OpenMode.rb),
             help="Pickled architecture context object")
-    parser.add_argument('io', type=argparse.FileType("w"),
+    parser.add_argument('-o', '--output', type=str, dest="output",
             help="Generated IO assignments")
     parser.add_argument('-m', '--model', type=str, nargs='+', dest="model",
             help="Source file(s) for behavioral model")
@@ -147,6 +145,10 @@ if __name__ == "__main__":
     enable_stdout_logging(__name__, logging.INFO)
     context = ArchitectureContext.unpickle(args.context)
     _logger.info("Architecture context parsed")
-    iobind(context, args.io, find_verilog_top(args.model, args.model_top),
+    assignments = iobind(context, find_verilog_top(args.model, args.model_top),
             parse_io_bindings(args.fixed) if args.fixed is not None else {})
+    # print results
+    ostream = sys.stdout if args.output is None else open(args.output, 'w')
+    for name, (x, y, subblock) in iteritems(assignments):
+        ostream.write("{} {} {} {}\n".format(name, x, y, subblock))
     _logger.info("Assignment generated. Bye")

@@ -53,7 +53,7 @@ def bitgen_bitchain(context     # architecture context
             actual_width = high - low + 1
             if actual_width > width:
                 segment.extend((False, ) * (actual_width - width))
-            bits[low: low + actual_width] = segment[0: actual_width]
+            bits[base + low: base + low + actual_width] = segment[0: actual_width]
         else:
             bits[base + int(segments[-1][1:])] = True
     # emit lines in quad words

@@ -49,21 +49,18 @@ def _update_config_list(context, module, config, prefix = '', base = 0):
                     prefix + prev.parent.name + '.', base + config_bit_offset[prev.parent.name])
         cur = prev.parent.logical_pins['cfg_i']
 
-def generate_testbench_wrapper(context, ostream, tb_top, behav_top, io_bindings):
+def generate_testbench_wrapper(context, template, ostream, tb_top, behav_top, io_bindings):
     """Generate simulation testbench wrapper.
 
     Args:
         context (`ArchitectureContext`): The architecture context of the custom FPGA
+        template (Jinja2 template):
         ostream (file-like object): Output file
         tb_top (`VerilogModule`): Top-level module of the testbench of the behavioral model
         behav_top (`VerilogModule`): Top-level module of the behavioral model
         io_bindings (:obj:`Mapping` [:obj:`str` ], :obj:`tuple` [:obj:`int`, :obj:`int`, :obj:`int`]): Mapping from
            port name in the behavioral model to \(x, y, subblock\)
     """
-    # get verilog template
-    env = jj.Environment(loader=jj.FileSystemLoader(
-        os.path.join(os.path.abspath(os.path.dirname(__file__)), 'templates')))
-
     # configuration bits
     config_info = {}
     total_config_bits = config_info['bs_total_size'] = context.config_circuitry_delegate.total_config_bits
@@ -114,7 +111,7 @@ def generate_testbench_wrapper(context, ostream, tb_top, behav_top, io_bindings)
     _update_config_list(context, context.top, impl_info['config'])
 
     # generate testbench wrapper
-    env.get_template('tb.tmpl.v').stream({
+    template.stream({
         "config": config_info,
         "behav": behav_top,
         "tb": tb_top,
@@ -157,4 +154,9 @@ if __name__ == '__main__':
     behav_top = find_verilog_top(args.model, args.model_top)
     behav_top.parameters =parse_parameters(args.model_parameters) 
     io_bindings = parse_io_bindings(args.io)
-    generate_testbench_wrapper(context, args.wrapper, tb_top, behav_top, io_bindings)
+
+    # get verilog template
+    env = jj.Environment(loader=jj.FileSystemLoader(
+        os.path.join(os.path.abspath(os.path.dirname(__file__)), 'templates')))
+
+    generate_testbench_wrapper(context, env.get_template('tb.tmpl.v'), args.wrapper, tb_top, behav_top, io_bindings)
