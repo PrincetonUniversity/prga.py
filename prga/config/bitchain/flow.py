@@ -49,7 +49,8 @@ class BitchainPrimitiveLibrary(BuiltinPrimitiveLibrary):
             elif name == 'fraclut6sffc':
                 self._is_empty = False
                 self.context.yosys_template_registry.register_blackbox_template(name,
-                        techmap_template = 'fraclut6sffc.techmap.tmpl.v')
+                        techmap_template = 'fraclut6sffc.techmap.tmpl.v',
+                        premap_commands = ["dffsr2dff"])
                 return self.context._modules.setdefault(name, FracturableLUT6WithSFFnCarry(self.context,
                         requirement.is_physical_preferred or requirement.is_physical_required))
             else:

@@ -19,6 +19,8 @@ FLAGS := -full64 -v2005
 # ----------------------------------------------------------------------------
 # -- Inputs ------------------------------------------------------------------
 # ----------------------------------------------------------------------------
+TESTBENCH_WRAPPER := {{ testbench_wrapper }}
+
 TARGET := {{ target.name }}
 TARGET_SRCS := {{ target.sources|join(' ') }}
 TARGET_FLAGS :={% for inc in target.includes %} {% if compiler == 'iverilog' %}-I{{ inc }}{% elif compiler == 'vcs' %}+incdir+{{ inc }}{% endif %}{% endfor %}
@@ -37,6 +39,7 @@ YOSYS_SCRIPT := {{ yosys_script }}
 VPR_CHAN_WIDTH := {{ vpr.channel_width }}
 VPR_ARCHDEF := {{ vpr.archdef }}
 VPR_RRGRAPH := {{ vpr.rrgraph }}
+VPR_IOBINDING := {{ vpr.io_binding }}
 {% for f in rtl %}
 	{%- if loop.first %}
 FPGA_RTL := {{ f }}
@@ -53,7 +56,6 @@ SYNTHESIS_LOG := $(TARGET).synth.log
 PACK_RESULT := $(TARGET).net
 PACK_LOG := $(TARGET).pack.log
 PACK_RESULT_REMAPPED := $(TARGET).remapped.net
-VPR_IOBINDING := $(TARGET).pads
 PLACE_RESULT := $(TARGET).place
 PLACE_LOG := $(TARGET).place.log
 ROUTE_RESULT := $(TARGET).route
@@ -61,7 +63,6 @@ ROUTE_LOG := $(TARGET).route.log
 FASM_RESULT := $(TARGET).fasm
 FASM_LOG := $(TARGET).fasm.log
 BITGEN_RESULT := $(TARGET).memh
-TESTBENCH_GENERATED := $(TARGET).tb.v
 SIM := sim_$(TARGET)
 SIM_LOG := $(TARGET).log
 SIM_WAVEFORM := $(TARGET).vpd
@@ -69,12 +70,10 @@ SIM_WAVEFORM := $(TARGET).vpd
 OUTPUTS := $(SYNTHESIS_RESULT)
 OUTPUTS += $(PACK_RESULT)
 OUTPUTS += $(PACK_RESULT_REMAPPED)
-OUTPUTS += $(VPR_IOBINDING)
 OUTPUTS += $(PLACE_RESULT)
 OUTPUTS += $(ROUTE_RESULT)
 OUTPUTS += $(FASM_RESULT)
 OUTPUTS += $(BITGEN_RESULT)
-OUTPUTS += $(TESTBENCH_GENERATED)
 OUTPUTS += $(SIM)
 
 LOGS := $(SYNTHESIS_LOG)
@@ -85,9 +84,10 @@ LOGS += $(FASM_LOG)
 LOGS += $(SIM_LOG)
 
 JUNKS := csrc *.daidir ucli.key vpr_stdout.log *.rpt
+JUNKS += *.vpd DVEfiles opendatabase.log
 
 # ----------------------------------------------------------------------------
-
+# -- Phony rules -------------------------------------------------------------
 # ----------------------------------------------------------------------------
 .PHONY: verify synth pack bind place route fasm bitgen tbgen compile waveform clean cleanlog cleanall makefile_validation_ disp
 verify: $(SIM_LOG) makefile_validation_
@@ -98,8 +98,6 @@ verify: $(SIM_LOG) makefile_validation_
 
 synth: $(SYNTHESIS_RESULT) makefile_validation_
 
-bind: $(VPR_IOBINDING) makefile_validation_
-
 pack: $(PACK_RESULT_REMAPPED) makefile_validation_
 
 place: $(PLACE_RESULT) makefile_validation_
@@ -109,8 +107,6 @@ route: $(ROUTE_RESULT) makefile_validation_
 fasm: $(FASM_RESULT) makefile_validation_
 
 bitgen: $(BITGEN_RESULT) makefile_validation_
-
-tbgen: $(TESTBENCH_GENERATED) makefile_validation_
 
 compile: $(SIM) makefile_validation_
 
@@ -150,10 +146,6 @@ $(PACK_RESULT): $(VPR_ARCHDEF) $(SYNTHESIS_RESULT)
 	$(VPR) $^ --circuit_format eblif --pack --net_file $@ --constant_net_method route \
 		| tee $(PACK_LOG)
 
-$(VPR_IOBINDING): $(CTX) $(TARGET_SRCS){%- if vpr.partial_binding %} {{ vpr.partial_binding }}{%- endif %}
-	$(PYTHON) -m prga_tools.iobind -m $(TARGET_SRCS) --model_top $(TARGET) \
-		{% if vpr.partial_binding %}-f {{ vpr.partial_binding }} {% endif -%} $(CTX) $@
-
 $(PACK_RESULT_REMAPPED): $(CTX) $(VPR_IOBINDING) $(PACK_RESULT)
 	$(PYTHON) -m prga_tools.ioremap $^ $@
 
@@ -179,19 +171,7 @@ $(FASM_RESULT): $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) $(VPR_RRGRAPH) $(PACK_RESULT_
 $(BITGEN_RESULT): $(CTX) $(FASM_RESULT)
 	$(PYTHON) -m prga_tools.bitchain.bitgen $^ $@
 
-$(TESTBENCH_GENERATED): $(CTX) $(VPR_IOBINDING) $(TARGET_SRCS) $(HOST_SRCS)
-	$(PYTHON) -m prga_tools.bitchain.simproj.tbgen \
-		-t $(HOST_SRCS) --testbench_top $(HOST) \
-		{%- if host.parameters %}--testbench_parameters
-			{%- for param, value in iteritems(host.parameters) %} {{ param }}={{ value }}{% endfor %} \
-		{%- endif %}
-		-m $(TARGET_SRCS) --model_top $(TARGET) \
-		{%- if target.parameters %}--model_parameters
-			{%- for param, value in iteritems(target.parameters) %} {{ param }}={{ value }}{% endfor %} \
-		{%- endif %}
-		$(CTX) $(VPR_IOBINDING) $@
-
-$(SIM): $(TESTBENCH_GENERATED) $(TARGET_SRCS) $(HOST_SRCS) $(FPGA_RTL)
+$(SIM): $(TESTBENCH_WRAPPER) $(TARGET_SRCS) $(HOST_SRCS) $(FPGA_RTL)
 	$(COMP) $(FLAGS) $(HOST_FLAGS) $(TARGET_FLAGS) $< -o $@ $(addprefix -v ,$^)
 
 $(SIM_LOG): $(SIM) $(BITGEN_RESULT)

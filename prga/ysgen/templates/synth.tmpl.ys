@@ -1,0 +1,43 @@
+read_library:
+    {%- for lib in libraries %}
+    read_verilog -lib {{ lib }}
+    {%- endfor %}
+
+begin:
+    hierarchy -check
+
+coarse:
+    proc
+    flatten
+    synth -run coarse
+
+memory:
+    {%- for memmap in memory_techmaps %}
+    memory_bram -rules {{ memmap.rule }}
+    {%- for command in memmap.premap_commands %}
+    {{ command }}
+    {%- endfor %}
+    techmap -map {{ memmap.techmap }}
+    {%- endfor %}
+    opt -full
+    memory_map
+
+techmap:
+    {%- for entry in techmaps %}
+    {%- for command in entry.premap_commands %}
+    {{ command }}
+    {%- endfor %}
+    techmap -map {{ entry.techmap }}
+    {%- endfor %}
+    opt -full
+
+luts:
+    pmuxtree
+    simplemap
+    abc -luts {{ abc_luts }}
+    opt -fast -full
+    clean
+
+check:
+    stat
+    check -noinit

@@ -39,8 +39,25 @@ class GenerateYosysResources(Object, AbstractPass):
         bram_rule = os.path.abspath(os.path.join(self.prefix, 'bram.rule'))
         memory_techmap = os.path.abspath(os.path.join(self.prefix, 'bram_techmap.v'))
         techmap = os.path.abspath(os.path.join(self.prefix, 'techmap.v'))
+        lut_sizes = []
+        memory_premap_commands = []
+        techmap_premap_commands = []
         for primitive in iter_all_primitives(context):
             if primitive.primitive_class.is_memory:
                 ysgen.generate_memory(blackbox, memory_techmap, bram_rule, primitive)
+                entry = context.yosys_template_registry.memory_entries.get(primitive.name)
+                if entry is not None:
+                    memory_premap_commands.extend(entry.premap_commands)
             else:
+                if primitive.primitive_class.is_lut:
+                    lut_sizes.append(len(primitive.ports['in']))
+                entry = context.yosys_template_registry.blackbox_entries.get(primitive.name)
+                if entry is not None:
+                    techmap_premap_commands.extend(entry.premap_commands)
                 ysgen.generate_blackbox(blackbox, techmap, primitive)
+        script = os.path.abspath(os.path.join(self.prefix, 'synth.ys'))
+        ysgen.generate_script(open(script, OpenMode.wb),
+                ','.join('{0}:{0}'.format(size) for size in sorted(lut_sizes)),
+                [blackbox],
+                [{"rule": bram_rule, "techmap": memory_techmap, "premap_commands": memory_premap_commands}],
+                [{"techmap": techmap, "premap_commands": techmap_premap_commands}])

@@ -10,16 +10,20 @@ from prga_tools.util import find_verilog_top, parse_parameters
 
 import jinja2 as jj
 import os
+import sys
 
 def generate_makefile(context, template, ostream,
         tb_top, tb_sources, behav_top, behav_sources, yosys_script,
-        channel_width, archdef, rrgraph, fpga_sources,
-        compiler = "vcs", partial_binding = None, tb_plus_args = None,
+        channel_width, archdef, rrgraph, io_binding, fpga_sources, testbench_wrapper,
+        compiler = "vcs", tb_plus_args = None,
         tb_includes = None, tb_defines = None, tb_parameters = None,
         behav_includes = None, behav_defines = None, behav_parameters = None):
     """Generate Makefile for simulation flow."""
     param = {}
     param["compiler"] = compiler
+
+    # testbench wrapper
+    param["testbench_wrapper"] = testbench_wrapper
 
     # target (behavioral model)
     target = param["target"] = {}
@@ -47,12 +51,10 @@ def generate_makefile(context, template, ostream,
     vpr["channel_width"] = channel_width
     vpr["archdef"] = archdef
     vpr["rrgraph"] = rrgraph
+    vpr["io_binding"] = io_binding
 
     # fpga sources
     param["rtl"] = fpga_sources
-
-    # partial IO binding
-    vpr["partial_binding"] = partial_binding
 
     # generate
     template.stream(param).dump(ostream)
@@ -63,7 +65,11 @@ if __name__ == '__main__':
             description="Testbench generator for bitchain-style configuration circuitry")
     
     parser.add_argument('context', type=str, help="Pickled architecture context object")
-    parser.add_argument('output', type=argparse.FileType("w"), help="Generated Makefile")
+    parser.add_argument('yosys_script', type=str, help="Synthesis script for Yosys")
+    parser.add_argument('io_binding', type=str, help="IO assignment")
+    parser.add_argument('testbench_wrapper', type=str, help="Testbench wrapper")
+    parser.add_argument('-o', '--output', type=argparse.FileType("w"), dest='output',
+            help="Generated Makefile")
 
     parser.add_argument('-t', '--testbench', type=str, nargs='+', dest="testbench",
             help="Testbench file(s) for behavioral model")
@@ -89,11 +95,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_parameters', type=str, nargs="+", default=[],
             help="Parameters for the target design: PARAMETER0=VALUE0 PARAMETER1=VALUE1 ...")
 
-    parser.add_argument('-y', '--yosys', type=str, dest="yosys",
-            help="Yosys script to synthesize the target design")
-    parser.add_argument('--io', type=str, dest="io",
-            help="Partial or complete assignment of the IOs")
-    parser.add_argument('-c', '--compiler', type=str, choices=['vcs', 'iverilog'], dest='compiler',
+    parser.add_argument('-c', '--compiler', type=str, choices=['vcs', 'iverilog'], dest='compiler', default="vcs",
             help="Verilog compiler used to build the simulator")
 
     args = parser.parse_args()
@@ -110,8 +112,10 @@ if __name__ == '__main__':
     behav_top = find_verilog_top(args.model, args.model_top)
     behav_top.parameters =parse_parameters(args.model_parameters) 
 
-    generate_makefile(args.context, env.get_template('tmpl.Makefile'), args.output,
-            tb_top, args.testbench, behav_top, args.model, args.yosys,
-            channel_width, context._vpr_archdef, context._vpr_rrgraph, context._verilog_sources,
-            args.compiler, args.io, args.testbench_plus_args, args.testbench_includes, args.testbench_defines,
+    ostream = sys.stdout if args.output is None else args.output
+    generate_makefile(args.context, env.get_template('tmpl.Makefile'), ostream,
+            tb_top, args.testbench, behav_top, args.model, args.yosys_script,
+            channel_width, context._vpr_archdef, context._vpr_rrgraph,
+            args.io_binding, context._verilog_sources, args.testbench_wrapper,
+            args.compiler, args.testbench_plus_args, args.testbench_includes, args.testbench_defines,
             args.testbench_parameters, args.model_includes, args.model_defines, args.model_parameters)
