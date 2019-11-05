@@ -10,7 +10,7 @@ from prga.flow.flow import AbstractPass
 from prga.flow.util import analyze_hierarchy
 from prga.util import Object
 
-__all__ = ['ZeroingUnusedLUTInputs', 'ZeroingBRAMWriteEnable']
+__all__ = ['ZeroingUnusedLUTInputs', 'ZeroingBlockPins', 'ZeroingBRAMWriteEnable']
 
 # ----------------------------------------------------------------------------
 # -- Pass: ZeroingUnusedLUTInputs --------------------------------------------
