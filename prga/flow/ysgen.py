@@ -61,3 +61,4 @@ class GenerateYosysResources(Object, AbstractPass):
                 [blackbox],
                 [{"rule": bram_rule, "techmap": memory_techmap, "premap_commands": memory_premap_commands}],
                 [{"techmap": techmap, "premap_commands": techmap_premap_commands}])
+        context._yosys_script = script

@@ -49,6 +49,38 @@ class ZeroingUnusedLUTInputs(Object, AbstractPass):
                 stack[subname] = submod
 
 # ----------------------------------------------------------------------------
+# -- Pass: ZeroingBlockPins --------------------------------------------------
+# ----------------------------------------------------------------------------
+class ZeroingBlockPins(Object, AbstractPass):
+    """Set the default connection of all block pins to zero.
+
+    This pass is especially useful for generaing simulatable FPGAs."""
+
+    @property
+    def key(self):
+        return "opt.zeroing_block_pins"
+
+    @property
+    def passes_after_self(self):
+        return ("completion.switch", "physical", "config", "rtl", "syn", "vpr", "asicflow")
+
+    def run(self, context):
+        hierarchy = analyze_hierarchy(context)
+        stack = {context.top.name: context.top}
+        visited = set()
+        while stack:
+            name, module = stack.popitem()
+            visited.add(name)
+            if module.module_class.is_connection_box:
+                for port in itervalues(module.all_nodes):
+                    if not (port.direction.is_output and port.node.node_type.is_blockport_bridge):
+                        continue
+                    for bit in port:
+                        sources = tuple(iter(bit.user_sources))
+                        bit.remove_user_sources()
+                        bit.add_user_sources((ZERO, ) + sources)
+
+# ----------------------------------------------------------------------------
 # -- Pass: ZeroingBRAMWriteEnable --------------------------------------------
 # ----------------------------------------------------------------------------
 class ZeroingBRAMWriteEnable(Object, AbstractPass):

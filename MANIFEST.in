@@ -3,6 +3,7 @@ graft tests
 graft prga/rtlgen/templates
 graft prga/ysgen/templates
 graft prga/config/bitchain/design/templates
+graft prga_tools/templates
 graft prga_tools/bitchain/simproj/templates
 global-exclude __pycache__
 global-exclude *.pyc

@@ -125,7 +125,7 @@ class RoutingNodeInputPin(InputPin):
     """Routing node input pin.
 
     Args:
-        parent (`RoutingInstance`): parent instance of this port
+        parent (`BaseRoutingInstance`): parent instance of this port
         model (`RoutingNodeInputPort`): model of this pin
     """
 
@@ -142,7 +142,7 @@ class RoutingNodeOutputPin(OutputPin):
     """Routing node output pin.
 
     Args:
-        parent (`RoutingInstance`): parent instance of this port
+        parent (`BaseRoutingInstance`): parent instance of this port
         model (`RoutingNodeOutputPort`): model of this pin
     """
 

@@ -51,7 +51,7 @@ class NetSlice(Object):
         """Create a list of slices for a list of bits.
 
         Args:
-            bits (:obj:`Iterable` [`AbstractGenericBit` ]):
+            bits (:obj:`Iterable` [`AbstractBit` ]):
 
         Returns:
             :obj:`list` [`NetSlice` ]:

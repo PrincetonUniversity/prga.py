@@ -22,7 +22,7 @@ __all__ = ['AbstractRoutingModule']
 # -- Routing Node Ports Proxy ------------------------------------------------
 # ----------------------------------------------------------------------------
 class _RoutingNodePortsProxy(Object, Mapping):
-    """Helper class for `AbstractRoutingModule.all_nodes` and `RoutingInstance.all_nodes` property."""
+    """Helper class for `AbstractRoutingModule.all_nodes` and `BaseRoutingInstance.all_nodes` property."""
 
     __slots__ = ['nets']
     def __init__(self, nets):

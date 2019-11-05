@@ -20,10 +20,10 @@ class BitchainMode(Mode):
 
     args:
         name (:obj:`str`): Name of the mode
-        parent (`multimode`): Parent multi-mode primitive of this mode
+        parent (`BitchainMultimode`): Parent multi-mode primitive of this mode
         config_bit_offset (:obj:`Mapping` [:obj:`str`, :obj:`int` ]): Mapping from sub-instance names to configuration
             bit offsets
-        mode_enabling_bits (:obj:`Sequence` [:obj:`int`]): Bits to be set to enable this mode
+        mode_enabling_bits (:obj:`Sequence` [:obj:`int` ]): Bits to be set to enable this mode
     """
 
     __slots__ = ['_config_bit_offset', '_mode_enabling_bits']

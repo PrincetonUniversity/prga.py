@@ -139,7 +139,7 @@ makefile_validation_: ;
 # -- Regular rules -----------------------------------------------------------
 # ----------------------------------------------------------------------------
 $(SYNTHESIS_RESULT): $(TARGET_SRCS) $(YOSYS_SCRIPT)
-	$(YOSYS) -s $(YOSYS_SCRIPT) -p "write_blif -conn -param $@" $(TARGET_SRCS) \
+	$(YOSYS) -s $(YOSYS_SCRIPT) \
 		| tee $(SYNTHESIS_LOG)
 
 $(PACK_RESULT): $(VPR_ARCHDEF) $(SYNTHESIS_RESULT)

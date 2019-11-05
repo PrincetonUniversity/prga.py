@@ -15,8 +15,9 @@
 `define FFB_ENABLE_CE 78
 `define FFB_ENABLE_SR 79
 `define FFB_SR_SET 80
-`define OB_SEL 82:81
-`define NUM_CFG_BITS 83
+`define OA_SEL 81
+`define OB_SEL 83:82
+`define NUM_CFG_BITS 84
 
 module fraclut6sffc (
     // user-accessible ports
@@ -59,6 +60,10 @@ module fraclut6sffc (
     localparam FFB_S = 2'd1;
     localparam FFB_IB = 2'd2;
     localparam FFB_O5 = 2'd3;
+
+    // selector for output OA
+    localparam OA_O6 = 1'd0;
+    localparam OA_S = 1'd1;
 
     // selector for output OB
     localparam OB_COUT = 2'd0;
@@ -123,14 +128,15 @@ module fraclut6sffc (
     {%- endfor %}
 
     // lut6 output
+    reg [0:0] internal_lut6;
     always @* begin
         if (cfg_d[`LUT6_ENABLE]) begin
             case (internal_in[5]) // synopsys infer_mux
-                1'b0: oa = internal_lut5[0];
-                1'b1: oa = internal_lut5[1];
+                1'b0: internal_lut6 = internal_lut5[0];
+                1'b1: internal_lut6 = internal_lut5[1];
             endcase
         end else begin
-            oa = internal_lut5[0];
+            internal_lut6 = internal_lut5[0];
         end
     end
 
@@ -164,8 +170,8 @@ module fraclut6sffc (
 
     // carry
     wire s;
-    assign cout = internal_carry_g || (oa && internal_carry_cin);
-    assign s = oa ^ internal_carry_cin;
+    assign cout = internal_carry_g || (internal_lut6 && internal_carry_cin);
+    assign s = internal_lut6 ^ internal_carry_cin;
 
     // ----------------------------------------------------------------------
     // -- Flip-flop A -------------------------------------------------------
@@ -179,7 +185,7 @@ module fraclut6sffc (
             case (cfg_d[`FFA_SOURCE])
                 FFA_COUT: q <= cout;
                 FFA_S: q <= s;
-                FFA_O6: q <= oa;
+                FFA_O6: q <= internal_lut6;
                 FFA_O5: q <= internal_lut5[1];
             endcase
         end
@@ -202,6 +208,17 @@ module fraclut6sffc (
                 FFB_O5: ffb <= internal_lut5[1];
             endcase
         end
+    end
+
+    // ----------------------------------------------------------------------
+    // -- OA ----------------------------------------------------------------
+    // ----------------------------------------------------------------------
+
+    always @* begin
+        case (cfg_d[`OA_SEL])
+            OA_O6: oa = internal_lut6;
+            OA_S: oa = s;
+        endcase
     end
 
     // ----------------------------------------------------------------------

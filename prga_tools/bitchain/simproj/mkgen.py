@@ -16,8 +16,7 @@ def generate_makefile(context, template, ostream,
         tb_top, tb_sources, behav_top, behav_sources, yosys_script,
         channel_width, archdef, rrgraph, io_binding, fpga_sources, testbench_wrapper,
         compiler = "vcs", tb_plus_args = None,
-        tb_includes = None, tb_defines = None, tb_parameters = None,
-        behav_includes = None, behav_defines = None, behav_parameters = None):
+        tb_includes = None, tb_defines = None, behav_includes = None, behav_defines = None):
     """Generate Makefile for simulation flow."""
     param = {}
     param["compiler"] = compiler
@@ -30,14 +29,12 @@ def generate_makefile(context, template, ostream,
     target["name"] = behav_top.name
     target["sources"] = uno(behav_sources, tuple())
     target["defines"] = uno(behav_defines, tuple())
-    target["parameters"] = uno(behav_parameters, {})
 
     # host (testbench)
     host = param["host"] = {}
     host["name"] = tb_top.name
     host["sources"] = uno(tb_sources, tuple())
     host["defines"] = uno(tb_defines, tuple())
-    host["parameters"] = uno(tb_parameters, {})
     host["args"] = uno(tb_plus_args, tuple())
 
     # context
@@ -62,10 +59,9 @@ def generate_makefile(context, template, ostream,
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(
-            description="Testbench generator for bitchain-style configuration circuitry")
+            description="Makefile generator for bitchain-style configuration circuitry")
     
     parser.add_argument('context', type=str, help="Pickled architecture context object")
-    parser.add_argument('yosys_script', type=str, help="Synthesis script for Yosys")
     parser.add_argument('io_binding', type=str, help="IO assignment")
     parser.add_argument('testbench_wrapper', type=str, help="Testbench wrapper")
     parser.add_argument('-o', '--output', type=argparse.FileType("w"), dest='output',
@@ -79,8 +75,6 @@ if __name__ == '__main__':
             help="Include directories for the testbench")
     parser.add_argument('--testbench_defines', type=str, nargs="+", default=[],
             help="Macros for the testbench. Use MACRO for valueless macro, and MACRO=VALUE for macros with value")
-    parser.add_argument('--testbench_parameters', type=str, nargs="+", default=[],
-            help="Parameters for the testbench: PARAMETER0=VALUE0 PARAMETER1=VALUE1 ...")
     parser.add_argument('--testbench_plus_args', type=str, nargs="+", default=[],
             help="Plus arguments to run the testbench. Use ARG for valueless args, and ARG=VALUE for args with value")
 
@@ -92,8 +86,6 @@ if __name__ == '__main__':
             help="Include directories for the target design")
     parser.add_argument('--model_defines', type=str, nargs="+", default=[],
             help="Macros for the target design. Use MACRO for valueless macro, and MACRO=VALUE for macros with value")
-    parser.add_argument('--model_parameters', type=str, nargs="+", default=[],
-            help="Parameters for the target design: PARAMETER0=VALUE0 PARAMETER1=VALUE1 ...")
 
     parser.add_argument('-c', '--compiler', type=str, choices=['vcs', 'iverilog'], dest='compiler', default="vcs",
             help="Verilog compiler used to build the simulator")
@@ -108,14 +100,12 @@ if __name__ == '__main__':
         os.path.join(os.path.abspath(os.path.dirname(__file__)), 'templates')))
 
     tb_top = find_verilog_top(args.testbench, args.testbench_top)
-    tb_top.parameters = parse_parameters(args.testbench_parameters)
     behav_top = find_verilog_top(args.model, args.model_top)
-    behav_top.parameters =parse_parameters(args.model_parameters) 
 
     ostream = sys.stdout if args.output is None else args.output
     generate_makefile(args.context, env.get_template('tmpl.Makefile'), ostream,
-            tb_top, args.testbench, behav_top, args.model, args.yosys_script,
+            tb_top, args.testbench, behav_top, args.model, context._yosys_script,
             channel_width, context._vpr_archdef, context._vpr_rrgraph,
             args.io_binding, context._verilog_sources, args.testbench_wrapper,
-            args.compiler, args.testbench_plus_args, args.testbench_includes, args.testbench_defines,
-            args.testbench_parameters, args.model_includes, args.model_defines, args.model_parameters)
+            args.compiler, args.testbench_plus_args,
+            args.testbench_includes, args.testbench_defines, args.model_includes, args.model_defines)

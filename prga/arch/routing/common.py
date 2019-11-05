@@ -87,12 +87,14 @@ class SegmentID(Object, AbstractRoutingNodeID):
         section (:obj:`int`): section of the segment if longer than 1
 
     Supports the following operators:
-        ``+``(`SegmentID` + :obj:`int`): get a new `SegmentID` object referring to the same segment but from an anchor
-            position further from the origin
-        ``+=``(`SegmentID` += :obj:`int`): modify the `SegmentID` object in place
-        ``-``(`SegmentID` - :obj:`int`): get a new `SegmentID` object referring to the same segment but from an anchor
-            position closer to the origin
-        ``-=``(`SegmentID` -= :obj:`int`): modify the `SegmentID` object in place
+
+    - ``+`` (`SegmentID` + :obj:`int` ): get a new `SegmentID` object referring to the same segment but from an anchor
+      position further away from the origin
+    - ``+=`` (`SegmentID` += :obj:`int` ): modify the `SegmentID` object in place
+    - ``-`` (`SegmentID` - :obj:`int` ): get a new `SegmentID` object referring to the same segment but from an anchor
+      position closer to the origin
+    - ``-=`` (`SegmentID` -= :obj:`int` ): modify the `SegmentID` object in place
+
 
     These operators don't validate the argument passed in. Validate before adding/subtracting.
 

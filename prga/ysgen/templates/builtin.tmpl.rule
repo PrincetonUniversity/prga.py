@@ -16,6 +16,8 @@ match {{ module.name }}_wrapper
     make_transp
     {%- endif %}
     make_outreg
+    {%- if not_last %}
     or_next_if_better
+    {%- endif %}
 endmatch
 

@@ -1,0 +1,16 @@
+read_source:
+    {%- for source in model_sources %}
+    read_verilog {{ source }}
+    {%- endfor %}
+
+begin:
+    {%- for k, v in iteritems(model.parameters) %}
+    chparam -set {{ k }} {{ v }} {{ model.name }}
+    {%- endfor %}
+    hierarchy -check -top {{ model.name }}
+
+synth:
+    script {{ yosys_script }}
+
+backend:
+    write_blif -conn -param {{ model.name }}.blif

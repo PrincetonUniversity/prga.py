@@ -3,13 +3,8 @@ read_library:
     read_verilog -lib {{ lib }}
     {%- endfor %}
 
-begin:
-    hierarchy -check
-
 coarse:
-    proc
-    flatten
-    synth -run coarse
+    synth -flatten -run coarse
 
 memory:
     {%- for memmap in memory_techmaps %}
@@ -32,8 +27,7 @@ techmap:
     opt -full
 
 luts:
-    pmuxtree
-    simplemap
+    techmap
     abc -luts {{ abc_luts }}
     opt -fast -full
     clean

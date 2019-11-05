@@ -137,7 +137,7 @@ def generate_fc(box, segments, block, orientation, fc,
     """Add port-segment connections using FC values.
 
     Args:
-        box (`AbstractConnectionBox`):
+        box (`ConnectionBox`):
         segments (:obj:`Sequence` [`Segment` ]):
         block (`BaseBlock`):
         orientation (`Orientation`):

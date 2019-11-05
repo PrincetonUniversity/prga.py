@@ -83,6 +83,7 @@ class ArchitectureContext(Object):
             '_verilog_sources',     # all generated verilog sources
             '_vpr_archdef',         # the generated Architecture Description file for VPR
             '_vpr_rrgraph',         # the generated routing resource graph for VPR
+            '_yosys_script',        # the generated generic Yosys synthesis script
             ]
 
     def __init__(self, name, width, height, config_circuitry_delegate_class,
@@ -104,6 +105,7 @@ class ArchitectureContext(Object):
         self._verilog_sources = []
         self._vpr_archdef = None
         self._vpr_rrgraph = None
+        self._yosys_script = None
 
     # == low-level API =======================================================
     @property
@@ -360,7 +362,7 @@ class ArchitectureContext(Object):
         """Create a (sub-)array.
 
         Args:
-            name (:obj:`str): Name of the array
+            name (:obj:`str`): Name of the array
             width (:obj:`int`): Number of tiles in the X axis
             height (:obj:`int`): Number of tiles in the Y axis
             coverage (`ChannelCoverage`): Coverage of routing channels surrounding the array. No routing channels are

@@ -49,7 +49,7 @@ class _BaseLibrary(Object):
     """Abstract base class for all libraries.
 
     Args:
-        context (`ArchiectureContext`): architecture context that the library is bound to
+        context (`ArchitectureContext`): architecture context that the library is bound to
     """
 
     __slots__ = ['_context']
@@ -60,7 +60,7 @@ class _BaseLibrary(Object):
     # == low-level API =======================================================
     @property
     def context(self):
-        """`ArchiectureContext`: The architecture context that the library is bound to."""
+        """`ArchitectureContext`: The architecture context that the library is bound to."""
         return self._context
 
 # ----------------------------------------------------------------------------
@@ -100,7 +100,7 @@ class PrimitiveLibraryDelegate(Abstract):
 
         Args:
             name (:obj:`str`):
-            verilog_template (:obj:``str`): Verilog template/source file
+            verilog_template (:obj:`str`): Verilog template/source file
         """
         raise NotImplementedError
 

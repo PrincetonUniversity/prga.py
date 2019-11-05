@@ -440,7 +440,7 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
             "lut6_inst": 3,     # LUT5A_DATA, LUT5B_DATA:                       66:3
             "mfdff_inst": 78,   # FFB_ENABLE_CE, FFB_ENABLE_SR, FFB_SR_SET:     80:78
             },
-            (67, 72, 77, 82)    # LUT6_ENABLE, FFA_SOURCE = FFA_O6, FFB_SOURCE = FFB_IB, OB_SEL = OB_QB
+            (67, 72, 77, 83)    # LUT6_ENABLE, FFA_SOURCE = FFA_O6, FFB_SOURCE = FFB_IB, OB_SEL = OB_QB
             ))
         lut6_inst = mode.instantiate(lut6, 'lut6_inst')
         ff_inst = mode.instantiate(ff, 'ff_inst')
@@ -469,7 +469,8 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
             "carry_inst":   70, # CARRY_SOURCE_CIN:                         70
             "mux_ffa_d":    72, # FFA_SOURCE:                               72
             "mux_ffb_d":    76, # FFB_SOURCE:                               77:76
-            "mux_ob":       81, # OB_SEL:                                   82:81
+            "mux_oa":       81, # OA_SEL:                                   81
+            "mux_ob":       82, # OB_SEL:                                   83:82
             },
             ))
         lut5_inst = [mode.instantiate(lut5, 'lut5_inst_' + str(i)) for i in range(2)]
@@ -492,6 +493,7 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
         mode.connect(carry_inst.pins['s'], ff_inst[1].pins['D'], pack_pattern = 'carrychain')
         # oa
         mode.connect(lut5_inst[0].pins['out'], mode.ports['oa'])
+        mode.connect(carry_inst.pins['s'], mode.ports['oa'])
         # q
         mode.connect(ff_inst[0].pins['Q'], mode.ports['q'])
         # ob
@@ -522,6 +524,11 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
         mux_ffb_d.switch_inputs[2].logical_source = mode.ports['ib'][0]
         mux_ffb_d.switch_inputs[3].logical_source = lut5_inst[1].pins['out'][0]
         ff_inst[1].pins['D'].logical_source = mux_ffb_d.switch_output
+        # mux for output port 'oa'
+        mux_oa = mode._add_instance(SwitchInstance(mode, mux2, 'mux_oa'))
+        mux_oa.switch_inputs[0].logical_source = lut5_inst[0].pins['out'][0]
+        mux_oa.switch_inputs[1].logical_source = carry_inst.pins['s'][0]
+        mode.ports['oa'][0].logical_source = mux_oa.switch_output
         # mux for output port 'ob'
         mux_ob = mode._add_instance(SwitchInstance(mode, mux4, 'mux_ob'))
         mux_ob.switch_inputs[0].logical_source = carry_inst.pins['cout_fabric'][0]
@@ -538,4 +545,4 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
 
     @property
     def config_bit_count(self):
-        return 83
+        return 84
