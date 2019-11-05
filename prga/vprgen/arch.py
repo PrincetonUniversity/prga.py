@@ -508,9 +508,10 @@ def vpr_arch_xml(xml, delegate, context):
                 vpr_arch_segment(xml, segment)
         # directlist
         directs = tuple(itervalues(context.direct_tunnels))
-        with xml.element('directlist'):
-            for direct in directs:
-                vpr_arch_direct(xml, context, direct)
+        if directs:
+            with xml.element('directlist'):
+                for direct in directs:
+                    vpr_arch_direct(xml, context, direct)
         # complexblocklist
         with xml.element('complexblocklist'):
             for tile in iter_all_tiles(context):

@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.util import enable_stdout_logging
+from prga.util import enable_stdout_logging, uno
 from prga.flow.context import ArchitectureContext
 from prga.exception import PRGAAPIError
 
@@ -54,6 +54,13 @@ parser.add_argument('--model_defines', type=str, nargs="+", default=[],
 parser.add_argument('--model_parameters', type=str, nargs="+", default=[],
         help="Parameters for the behavioral model: PARAMETER0=VALUE0 PARAMETER1=VALUE1 ...")
 
+parser.add_argument('--makefile', type=str,
+        help="Name of the generated Makefile. 'Makefile' by default")
+parser.add_argument('--wrapper', type=str,
+        help="Name of the generated testbench wrapper. 'TESTBENCH_wrapper.v' by default")
+parser.add_argument('--yosys_script', type=str,
+        help="Name of the generated design-specific synthesis script. 'synth.ys' by default")
+
 args = parser.parse_args()
 enable_stdout_logging(__name__, logging.INFO)
 
@@ -85,15 +92,16 @@ for name, (x, y, subblock) in iteritems(io_assignments):
     ostream.write("{} {} {} {}\n".format(name, x, y, subblock))
 
 _logger.info("Generating testbench wrapper ...")
-wrapper = '{}_wrapper.v'.format(testbench_top.name)
+wrapper = uno(args.wrapper, '{}_wrapper.v'.format(testbench_top.name))
 generate_testbench_wrapper(context, env.get_template('tb.tmpl.v'), wrapper, testbench_top, model_top, io_assignments)
 
 _logger.info("Generating design-specific synthesis script ...")
-script = 'synth.ys'
+script = uno(args.yosys_script, 'synth.ys')
 generate_yosys_script(open(script, 'w'), args.model, model_top, context._yosys_script)
 
 _logger.info("Generating Makefile ...")
-ostream = open('Makefile', 'w')
+makefile = uno(args.makefile, 'Makefile')
+ostream = open(makefile, 'w')
 generate_makefile(args.context, env.get_template('tmpl.Makefile'), ostream,
         testbench_top, args.testbench, model_top, args.model, script,
         channel_width, context._vpr_archdef, context._vpr_rrgraph,

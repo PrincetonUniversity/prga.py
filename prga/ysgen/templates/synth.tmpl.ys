@@ -8,11 +8,15 @@ coarse:
 
 memory:
     {%- for memmap in memory_techmaps %}
+        {%- if memmap.rule %}
     memory_bram -rules {{ memmap.rule }}
-    {%- for command in memmap.premap_commands %}
+        {%- endif %}
+        {%- for command in memmap.premap_commands %}
     {{ command }}
-    {%- endfor %}
+        {%- endfor %}
+        {%- if memmap.techmap %}
     techmap -map {{ memmap.techmap }}
+        {%- endif %}
     {%- endfor %}
     opt -full
     memory_map
@@ -22,7 +26,9 @@ techmap:
     {%- for command in entry.premap_commands %}
     {{ command }}
     {%- endfor %}
+        {%- if entry.techmap %}
     techmap -map {{ entry.techmap }}
+        {%- endif %}
     {%- endfor %}
     opt -full
 
