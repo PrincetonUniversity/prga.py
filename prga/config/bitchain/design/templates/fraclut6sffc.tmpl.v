@@ -177,10 +177,8 @@ module fraclut6sffc (
     // -- Flip-flop A -------------------------------------------------------
     // ----------------------------------------------------------------------
     always @(posedge internal_clk) begin
-        if (cfg_d[`FFA_ENABLE_SR] && internal_sr && cfg_d[`FFA_SR_SET]) begin
-            q <= 1'b1;
-        end else if (cfg_d[`FFA_ENABLE_SR] && internal_sr && ~cfg_d[`FFA_SR_SET]) begin
-            q <= 1'b0;
+        if (cfg_d[`FFA_ENABLE_SR] && internal_sr) begin
+            q <= cfg_d[`FFA_SR_SET];
         end else if (~cfg_d[`FFA_ENABLE_CE] || internal_ce) begin
             case (cfg_d[`FFA_SOURCE])
                 FFA_COUT: q <= cout;
@@ -196,10 +194,8 @@ module fraclut6sffc (
     // ----------------------------------------------------------------------
     reg ffb;
     always @(posedge internal_clk) begin
-        if (cfg_d[`FFB_ENABLE_SR] && internal_sr && cfg_d[`FFB_SR_SET]) begin
-            ffb <= 1'b1;
-        end else if (cfg_d[`FFB_ENABLE_SR] && internal_sr && ~cfg_d[`FFB_SR_SET]) begin
-            ffb <= 1'b0;
+        if (cfg_d[`FFB_ENABLE_SR] && internal_sr) begin
+            ffb <= cfg_d[`FFB_SR_SET];
         end else if (~cfg_d[`FFB_ENABLE_CE] || internal_ce) begin
             case (cfg_d[`FFB_SOURCE])
                 FFB_COUT: ffb <= cout;

@@ -1,29 +1,33 @@
-module \$dffe (input D, C, E, output Q);
-    ffe _TECHMAP_REPLACE_ (.clk(C), .d(D), .en(E), .q(Q));
+(* techmap_celltype = "$dff $_DFF_P_" *)
+module _dff (input D, C, output Q);
+    parameter _TECHMAP_CELLTYPE_ = "";
+    multimodedff dff (.clk(C), .d(D), .q(Q));
 endmodule
 
-module \$_DFFE_PP_ (input D, C, E, output Q);
-    ffe _TECHMAP_REPLACE_ (.clk(C), .d(D), .en(E), .q(Q));
+(* techmap_celltype = "$dffe $_DFFE_PP_" *)
+module _dffe (input D, C, E, output Q);
+    parameter _TECHMAP_CELLTYPE_ = "";
+    multimodedff #(.ENABLE_CE(1'b1)) dff (.clk(C), .d(D), .ce(E), .q(Q));
 endmodule
 
 module \$_DFFE_PN_ (input D, C, E, output Q);
-    ffe _TECHMAP_REPLACE_ (.clk(C), .d(D), .en(~E), .q(Q));
+    multimodedff #(.ENABLE_CE(1'b1)) dff (.clk(C), .d(D), .ce(~E), .q(Q));
 endmodule
 
 module \$_DFF_PP0_ (input D, C, R, output Q);
-    ffc _TECHMAP_REPLACE_ (.clk(C), .d(D), .clear(R), .q(Q));
+    multimodedff #(.ENABLE_SR(1'b1)) dff (.clk(C), .d(D), .sr(R), .q(Q));
 endmodule
 
 module \$_DFF_PN0_ (input D, C, R, output Q);
-    ffc _TECHMAP_REPLACE_ (.clk(C), .d(D), .clear(~R), .q(Q));
+    multimodedff #(.ENABLE_SR(1'b1)) dff (.clk(C), .d(D), .sr(~R), .q(Q));
 endmodule
 
 module \$_DFF_PP1_ (input D, C, R, output Q);
-    ffs _TECHMAP_REPLACE_ (.clk(C), .d(D), .set(R), .q(Q));
+    multimodedff #(.ENABLE_SR(1'b1), .SR_SET(1'b1)) dff (.clk(C), .d(D), .sr(R), .q(Q));
 endmodule
 
 module \$_DFF_PN1_ (input D, C, R, output Q);
-    ffs _TECHMAP_REPLACE_ (.clk(C), .d(D), .set(~R), .q(Q));
+    multimodedff #(.ENABLE_SR(1'b1), .SR_SET(1'b1)) dff (.clk(C), .d(D), .sr(~R), .q(Q));
 endmodule
 
 module \$lcu (P, G, CI, CO);

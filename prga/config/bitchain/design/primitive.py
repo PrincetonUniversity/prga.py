@@ -18,8 +18,7 @@ import os
 from collections import OrderedDict
 
 __all__ = ['CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH',
-        'ConfigBitchain', 'FracturableLUT6', 'FracturableLUT6FF', 'MultifuncFlipflop',
-        'CarrychainWrapper', 'FracturableLUT6WithSFFnCarry']
+        'ConfigBitchain', 'FracturableLUT6', 'FracturableLUT6FF', 'FracturableLUT6WithSFFnCarry']
 
 CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
 
@@ -182,203 +181,6 @@ class FracturableLUT6FF(BitchainMultimode):
         return 67
 
 # ----------------------------------------------------------------------------
-# -- Multi-functional Flip-flop ----------------------------------------------
-# ----------------------------------------------------------------------------
-class MultifuncFlipflop(BitchainMultimode):
-    """Multi-functional flipflop.
-    
-    Args:
-        context (`ArchitectureContext`): Architecture context in which this primitive will be added to
-    """
-
-    def __init__(self, context):
-        super(MultifuncFlipflop, self).__init__('multifuncflipflop')
-        self._add_port(MultimodeClockPort(self, 'clk'))
-        self._add_port(MultimodeInputPort(self, 'd', 1, clock = 'clk'))
-        self._add_port(MultimodeInputPort(self, 'sr', 1, clock = 'clk'))
-        self._add_port(MultimodeInputPort(self, 'en', 1, clock = 'clk'))
-        self._add_port(MultimodeOutputPort(self, 'q', 1, clock = 'clk'))
-
-        # create modes
-        lib = context.primitive_library
-        self.__create_mode_ffce(lib)
-        self.__create_mode_ffse(lib)
-        self.__create_mode_ffc(lib)
-        self.__create_mode_ffs(lib)
-        self.__create_mode_ffe(lib)
-
-    def __create_mode_ffce(self, lib):
-        # flip-flop with synchronous clear and enable
-        try:
-            ffce = lib.get_or_create_primitive('ffce', PrimitiveRequirement.non_physical_preferred)
-        except PRGAPrimitiveNotFoundError:
-            ffce = lib.create_custom_primitive('ffce')
-            ffce.create_clock('clk')
-            ffce.create_input('d', 1, clock = 'clk')
-            ffce.create_input('clear', 1, clock = 'clk')
-            ffce.create_input('en', 1, clock = 'clk')
-            ffce.create_output('q', 1, clock = 'clk')
-
-        # add mode
-        mode_ffce = self._add_mode(BitchainMode('ffce', self, mode_enabling_bits = (0, 1)))
-        ffce_inst = mode_ffce.instantiate(ffce, 'ffce_inst')
-        mode_ffce.auto_connect(ffce_inst, ('clear', ))
-        mode_ffce.connect(mode_ffce.ports['sr'], ffce_inst.pins['clear'])
-
-    def __create_mode_ffse(self, lib):
-        # flip-flop with synchronous set and enable
-        try:
-            ffse = lib.get_or_create_primitive('ffse', PrimitiveRequirement.non_physical_preferred)
-        except PRGAPrimitiveNotFoundError:
-            ffse = lib.create_custom_primitive('ffse')
-            ffse.create_clock('clk')
-            ffse.create_input('d', 1, clock = 'clk')
-            ffse.create_input('set', 1, clock = 'clk')
-            ffse.create_input('en', 1, clock = 'clk')
-            ffse.create_output('q', 1, clock = 'clk')
-
-        # add mode
-        mode_ffse = self._add_mode(BitchainMode('ffse', self, mode_enabling_bits = (0, 1, 2)))
-        ffse_inst = mode_ffse.instantiate(ffse, 'ffse_inst')
-        mode_ffse.auto_connect(ffse_inst, ('set', ))
-        mode_ffse.connect(mode_ffse.ports['sr'], ffse_inst.pins['set'])
-
-    def __create_mode_ffc(self, lib):
-        # flip-flop with synchronous clear
-        try:
-            ffc = lib.get_or_create_primitive('ffc', PrimitiveRequirement.non_physical_preferred)
-        except PRGAPrimitiveNotFoundError:
-            ffc = lib.create_custom_primitive('ffc')
-            ffc.create_clock('clk')
-            ffc.create_input('d', 1, clock = 'clk')
-            ffc.create_input('clear', 1, clock = 'clk')
-            ffc.create_output('q', 1, clock = 'clk')
-
-        # add mode
-        mode_ffc = self._add_mode(BitchainMode('ffc', self, mode_enabling_bits = (1, )))
-        ffc_inst = mode_ffc.instantiate(ffc, 'ffc_inst')
-        mode_ffc.auto_connect(ffc_inst, ('clear', ))
-        mode_ffc.connect(mode_ffc.ports['sr'], ffc_inst.pins['clear'])
-
-    def __create_mode_ffs(self, lib):
-        # flip-flop with synchronous set
-        try:
-            ffs = lib.get_or_create_primitive('ffs', PrimitiveRequirement.non_physical_preferred)
-        except PRGAPrimitiveNotFoundError:
-            ffs = lib.create_custom_primitive('ffs')
-            ffs.create_clock('clk')
-            ffs.create_input('d', 1, clock = 'clk')
-            ffs.create_input('set', 1, clock = 'clk')
-            ffs.create_output('q', 1, clock = 'clk')
-
-        # add mode
-        mode_ffs = self._add_mode(BitchainMode('ffs', self, mode_enabling_bits = (1, 2)))
-        ffs_inst = mode_ffs.instantiate(ffs, 'ffs_inst')
-        mode_ffs.auto_connect(ffs_inst, ('set', ))
-        mode_ffs.connect(mode_ffs.ports['sr'], ffs_inst.pins['set'])
-
-    def __create_mode_ffe(self, lib):
-        # flip-flop with clock enable
-        try:
-            ffe = lib.get_or_create_primitive('ffe', PrimitiveRequirement.non_physical_preferred)
-        except PRGAPrimitiveNotFoundError:
-            ffe = lib.create_custom_primitive('ffe')
-            ffe.create_clock('clk')
-            ffe.create_input('d', 1, clock = 'clk')
-            ffe.create_input('en', 1, clock = 'clk')
-            ffe.create_output('q', 1, clock = 'clk')
-
-        # add mode
-        mode_ffe = self._add_mode(BitchainMode('ffe', self, mode_enabling_bits = (0, )))
-        ffe_inst = mode_ffe.instantiate(ffe, 'ffe_inst')
-        mode_ffe.auto_connect(ffe_inst)
-
-    # == low-level API =======================================================
-    # -- implementing properties/methods required by superclass --------------
-    @property
-    def in_physical_domain(self):
-        return False
-
-    @property
-    def config_bit_count(self):
-        return 3
-
-# ----------------------------------------------------------------------------
-# -- Carry Chain Wrapper -----------------------------------------------------
-# ----------------------------------------------------------------------------
-class CarrychainWrapper(BitchainMultimode):
-    """Carry chain unit. This primitive is multi-mode only to be compatible with VPR's way of dealing with direct
-    inter-block tunnels.
-
-    Args:
-        context (`ArchitectureContext`): Architecture context in which this primitive will be added to
-    """
-
-    def __init__(self, context):
-        super(CarrychainWrapper, self).__init__('carrychain_wrapper')
-        self._add_port(MultimodeInputPort(self, 'p', 1))
-        self._add_port(MultimodeInputPort(self, 'g', 1))
-        self._add_port(MultimodeInputPort(self, 'cin', 1))
-        self._add_port(MultimodeInputPort(self, 'cin_fabric', 1))
-        self._add_port(MultimodeOutputPort(self, 's', 1))
-        self._add_port(MultimodeOutputPort(self, 'cout', 1))
-        self._add_port(MultimodeOutputPort(self, 'cout_fabric', 1))
-
-        # create modes
-        lib = context.primitive_library
-        self.__create_mode_carrychain(lib)
-        self.__create_mode_carrychain_fabric(lib)
-
-    def __create_mode_carrychain(self, lib):
-        # carry chain with direct inter-block carry-in
-        try:
-            carrychain = lib.get_or_create_primitive('carrychain', PrimitiveRequirement.non_physical_preferred)
-        except PRGAPrimitiveNotFoundError:
-            carrychain = lib.create_custom_primitive('carrychain')
-            carrychain.create_input('p', 1)
-            carrychain.create_input('g', 1)
-            carrychain.create_input('cin', 1)
-            carrychain.create_output('s', 1, combinational_sources = ('p', 'g', 'cin'))
-            carrychain.create_output('cout', 1, combinational_sources = ('p', 'g', 'cin'))
-            carrychain.create_output('cout_fabric', 1, combinational_sources = ('p', 'g', 'cin'))
-
-        # add mode
-        mode = self._add_mode(BitchainMode('carrychain', self))
-        inst = mode.instantiate(carrychain, 'carrychain_inst')
-        mode.auto_connect(inst, ('cin', 'cout'))
-        mode.connect(mode.ports['cin'], inst.pins['cin'], pack_pattern = 'carrychain')
-        mode.connect(inst.pins['cout'], mode.ports['cout'], pack_pattern = 'carrychain')
-
-    def __create_mode_carrychain_fabric(self, lib):
-        # carry chain with routable carry-in
-        try:
-            carrychain = lib.get_or_create_primitive('carrychain_fabric', PrimitiveRequirement.non_physical_preferred)
-        except PRGAPrimitiveNotFoundError:
-            carrychain = lib.create_custom_primitive('carrychain_fabric')
-            carrychain.create_input('p', 1)
-            carrychain.create_input('g', 1)
-            carrychain.create_input('cin_fabric', 1)
-            carrychain.create_output('s', 1, combinational_sources = ('p', 'g', 'cin_fabric'))
-            carrychain.create_output('cout', 1, combinational_sources = ('p', 'g', 'cin_fabric'))
-            carrychain.create_output('cout_fabric', 1, combinational_sources = ('p', 'g', 'cin_fabric'))
-
-        # add mode
-        mode = self._add_mode(BitchainMode('carrychain_fabric', self, mode_enabling_bits = (0, )))
-        inst = mode.instantiate(carrychain, 'carrychain_inst')
-        mode.auto_connect(inst, ('cout', ))
-        mode.connect(inst.pins['cout'], mode.ports['cout'], pack_pattern = 'carrychain')
-
-    # == low-level API =======================================================
-    # -- implementing properties/methods required by superclass --------------
-    @property
-    def in_physical_domain(self):
-        return False
-
-    @property
-    def config_bit_count(self):
-        return 1
-
-# ----------------------------------------------------------------------------
 # -- Fractuable LUT6 with Multi-functional Flip-Flops and Carry Chain --------
 # ----------------------------------------------------------------------------
 class FracturableLUT6WithSFFnCarry(BitchainMultimode):
@@ -394,22 +196,10 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
         lib = context.primitive_library
         lut5 = lib.get_or_create_primitive('lut5', PrimitiveRequirement.non_physical_preferred)
         lut6 = lib.get_or_create_primitive('lut6', PrimitiveRequirement.non_physical_preferred)
-        ff = lib.get_or_create_primitive('flipflop', PrimitiveRequirement.non_physical_preferred)
-        multifuncflipflop = lib.get_or_create_primitive('multifuncflipflop')
         mux2 = context.switch_library.get_or_create_switch(2, None, False)
         mux4 = context.switch_library.get_or_create_switch(4, None, False)
-        try:
-            carrychain = lib.get_or_create_primitive('carrychain', PrimitiveRequirement.non_physical_preferred)
-        except PRGAPrimitiveNotFoundError:
-            carrychain = lib.create_custom_primitive('carrychain')
-            carrychain.parameters['CIN_FABRIC'] = {'init': "1'b0", 'config_bit_offset': 0, 'config_bit_count': 1}
-            carrychain.create_input('p', 1)
-            carrychain.create_input('g', 1)
-            carrychain.create_input('cin', 1)
-            carrychain.create_input('cin_fabric', 1)
-            carrychain.create_output('s', 1, combinational_sources = ('p', 'g', 'cin', 'cin_fabric'))
-            carrychain.create_output('cout', 1, combinational_sources = ('p', 'g', 'cin', 'cin_fabric'))
-            carrychain.create_output('cout_fabric', 1, combinational_sources = ('p', 'g', 'cin', 'cin_fabric'))
+        multimodedff = self.__get_multimodedff(lib)
+        carrychain = self.__get_carrychain(lib)
 
         super(FracturableLUT6WithSFFnCarry, self).__init__('fraclut6sffc')
         self.in_physical_domain = in_physical_domain
@@ -430,58 +220,91 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
         self._add_port(ConfigOutputPort(self, 'cfg_o', 1, 'cfg_clk'))
 
         # mode 1: (LUT6 + DFF) + carrychain + Multi-functional D-Flipflop
-        self.__create_mode_lut6dff(lut6, ff, carrychain, multifuncflipflop, mux4)
+        self.__create_mode_lut6dff(lut6, multimodedff, carrychain, mux4)
 
         # mode 2: 2x(LUT5 + DFF) + carrychain
-        self.__create_mode_lut5dffx2(lut5, ff, carrychain, mux2, mux4)
+        self.__create_mode_lut5dffx2(lut5, multimodedff, carrychain, mux2, mux4)
 
-    def __create_mode_lut6dff(self, lut6, ff, carrychain, multifuncflipflop, mux4):
+    def __get_multimodedff(self, lib):
+        try:
+            multimodedff = lib.get_or_create_primitive('multimodedff', PrimitiveRequirement.non_physical_preferred)
+        except PRGAPrimitiveNotFoundError:
+            multimodedff = lib.create_custom_primitive('multimodedff')
+            multimodedff.parameters['ENABLE_CE'] = {'init': "1'b0", 'config_bit_offset': 0, 'config_bit_count': 1}
+            multimodedff.parameters['ENABLE_SR'] = {'init': "1'b0", 'config_bit_offset': 1, 'config_bit_count': 1}
+            multimodedff.parameters['SR_SET'] = {'init': "1'b0", 'config_bit_offset': 2, 'config_bit_count': 1}
+            multimodedff.create_clock('clk')
+            multimodedff.create_input('d', 1, clock = 'clk')
+            multimodedff.create_input('ce', 1, clock = 'clk')
+            multimodedff.create_input('sr', 1, clock = 'clk')
+            multimodedff.create_output('q', 1, clock = 'clk')
+        return multimodedff
+
+    def __get_carrychain(self, lib):
+        try:
+            carrychain = lib.get_or_create_primitive('carrychain', PrimitiveRequirement.non_physical_preferred)
+        except PRGAPrimitiveNotFoundError:
+            carrychain = lib.create_custom_primitive('carrychain')
+            carrychain.parameters['CIN_FABRIC'] = {'init': "1'b0", 'config_bit_offset': 0, 'config_bit_count': 1}
+            carrychain.create_input('p', 1)
+            carrychain.create_input('g', 1)
+            carrychain.create_input('cin', 1)
+            carrychain.create_input('cin_fabric', 1)
+            carrychain.create_output('s', 1, combinational_sources = ('p', 'g', 'cin', 'cin_fabric'))
+            carrychain.create_output('cout', 1, combinational_sources = ('p', 'g', 'cin', 'cin_fabric'))
+            carrychain.create_output('cout_fabric', 1, combinational_sources = ('p', 'g', 'cin', 'cin_fabric'))
+        return carrychain
+
+    def __create_mode_lut6dff(self, lut6, multimodedff, carrychain, mux4):
         mode = self._add_mode(BitchainMode('lut6dff', self, {
             "lut6_inst": 3,     # LUT5A_DATA, LUT5B_DATA:                       66:3
-            "mfdff_inst": 78,   # FFB_ENABLE_CE, FFB_ENABLE_SR, FFB_SR_SET:     80:78
+            "ffa_inst": 73,     # FFA_ENABLE_CE, FFA_ENABLE_SR, FFA_SR_SET:     75:73
+            "ffb_inst": 78,     # FFB_ENABLE_CE, FFB_ENABLE_SR, FFB_SR_SET:     80:78
             },
             (67, 72, 77, 83)    # LUT6_ENABLE, FFA_SOURCE = FFA_O6, FFB_SOURCE = FFB_IB, OB_SEL = OB_QB
             ))
         lut6_inst = mode.instantiate(lut6, 'lut6_inst')
-        ff_inst = mode.instantiate(ff, 'ff_inst')
-        multiff_inst = mode.instantiate(multifuncflipflop, 'mfdff_inst')
+        ffa_inst = mode.instantiate(multimodedff, 'ffa_inst')
+        ffb_inst = mode.instantiate(multimodedff, 'ffb_inst')
         # LUT6 connections
         mode.connect(mode.ports['ia'], lut6_inst.pins['in'])
-        mode.connect(lut6_inst.pins['out'], ff_inst.pins['D'], pack_pattern = 'lut6_dff')
+        mode.connect(lut6_inst.pins['out'], ffa_inst.pins['d'], pack_pattern = 'lut6_dff')
         mode.connect(lut6_inst.pins['out'], mode.ports['oa'])
-        # D-Flipflop connections
-        mode.connect(mode.ports['clk'], ff_inst.pins['clk'])
-        mode.connect(ff_inst.pins['Q'], mode.ports['q'])
-        # multi-functional flipflop connections
-        mode.connect(mode.ports['clk'], multiff_inst.pins['clk'])
-        mode.connect(mode.ports['ce'], multiff_inst.pins['en'])
-        mode.connect(mode.ports['sr'], multiff_inst.pins['sr'])
-        mode.connect(mode.ports['ib'], multiff_inst.pins['d'])
-        mode.connect(multiff_inst.pins['q'], mode.ports['ob'])
-        # now the user-invisible part
+        # Flipflop connections
+        for ff in (ffa_inst, ffb_inst):
+            mode.connect(mode.ports['clk'], ff.pins['clk'])
+            mode.connect(mode.ports['ce'], ff.pins['ce'])
+            mode.connect(mode.ports['sr'], ff.pins['sr'])
+        mode.connect(mode.ports['ib'], ffb_inst.pins['d'])
+        mode.connect(ffa_inst.pins['q'], mode.ports['q'])
+        mode.connect(ffb_inst.pins['q'], mode.ports['ob'])
 
-    def __create_mode_lut5dffx2(self, lut5, ff, carrychain, mux2, mux4):
+    def __create_mode_lut5dffx2(self, lut5, multimodedff, carrychain, mux2, mux4):
         mode = self._add_mode(BitchainMode('lut5dffx2', self, {
-            "lut5_inst_0":  3,  # LUT5A_DATA:                               34:3
-            "lut5_inst_1":  35, # LUT5B_DATA:                               66:35
-            "mux_carry_g":  68, # CARRY_SOURCE_G:                           68
-            "mux_carry_cin":69, # CARRY_SOURCE_CIN:                         69
-            "carry_inst":   70, # CARRY_SOURCE_CIN:                         70
-            "mux_ffa_d":    72, # FFA_SOURCE:                               72
-            "mux_ffb_d":    76, # FFB_SOURCE:                               77:76
-            "mux_oa":       81, # OA_SEL:                                   81
-            "mux_ob":       82, # OB_SEL:                                   83:82
+            "lut5_inst_0":  3,  # LUT5A_DATA:                                   34:3
+            "lut5_inst_1":  35, # LUT5B_DATA:                                   66:35
+            "mux_carry_g":  68, # CARRY_SOURCE_G:                               68
+            "mux_carry_cin":69, # CARRY_SOURCE_CIN:                             69
+            "carry_inst":   70, # CARRY_SOURCE_CIN:                             70
+            "mux_ffa_d":    72, # FFA_SOURCE:                                   72
+            "ffa_inst":     73, # FFA_ENABLE_CE, FFA_ENABLE_SR, FFA_SR_SET:     75:73
+            "mux_ffb_d":    76, # FFB_SOURCE:                                   77:76
+            "ffb_inst":     78, # FFB_ENABLE_CE, FFB_ENABLE_SR, FFB_SR_SET:     80:78
+            "mux_oa":       81, # OA_SEL:                                       81
+            "mux_ob":       82, # OB_SEL:                                       83:82
             },
             ))
         lut5_inst = [mode.instantiate(lut5, 'lut5_inst_' + str(i)) for i in range(2)]
-        ff_inst = [mode.instantiate(ff, 'ff_inst_' + str(i)) for i in range(2)]
+        ff_inst = [mode.instantiate(multimodedff, name) for name in ("ffa_inst", "ffb_inst")]
         carry_inst = mode.instantiate(carrychain, 'carry_inst')
         # LUT5+DFF
         for i in range(2):
             mode.connect(mode.ports['ia'][0:5], lut5_inst[i].pins['in'])
-            mode.connect(carry_inst.pins['cout_fabric'], ff_inst[i].pins['D'])
-            mode.connect(lut5_inst[i].pins['out'], ff_inst[i].pins['D'], pack_pattern = 'lut5_dff_' + str(i))
+            mode.connect(carry_inst.pins['cout_fabric'], ff_inst[i].pins['d'])
+            mode.connect(lut5_inst[i].pins['out'], ff_inst[i].pins['d'], pack_pattern = 'lut5_dff_' + str(i))
             mode.connect(mode.ports['clk'], ff_inst[i].pins['clk'])
+            mode.connect(mode.ports['ce'], ff_inst[i].pins['ce'])
+            mode.connect(mode.ports['sr'], ff_inst[i].pins['sr'])
         # carry chain
         mode.connect(lut5_inst[0].pins['out'], carry_inst.pins['p'])
         mode.connect(lut5_inst[1].pins['out'], carry_inst.pins['g'])
@@ -490,16 +313,16 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
         mode.connect(mode.ports['ib'], carry_inst.pins['cin_fabric'])
         mode.connect(lut5_inst[1].pins['out'], carry_inst.pins['cin_fabric'])
         mode.connect(carry_inst.pins['cout'], mode.ports['cout'], pack_pattern = 'carrychain')
-        mode.connect(carry_inst.pins['s'], ff_inst[1].pins['D'], pack_pattern = 'carrychain')
+        mode.connect(carry_inst.pins['s'], ff_inst[1].pins['d'], pack_pattern = 'carrychain')
         # oa
         mode.connect(lut5_inst[0].pins['out'], mode.ports['oa'])
         mode.connect(carry_inst.pins['s'], mode.ports['oa'])
         # q
-        mode.connect(ff_inst[0].pins['Q'], mode.ports['q'])
+        mode.connect(ff_inst[0].pins['q'], mode.ports['q'])
         # ob
         mode.connect(carry_inst.pins['cout_fabric'], mode.ports['ob'])
         mode.connect(carry_inst.pins['s'], mode.ports['ob'])
-        mode.connect(ff_inst[1].pins['Q'], mode.ports['ob'])
+        mode.connect(ff_inst[1].pins['q'], mode.ports['ob'])
         mode.connect(lut5_inst[1].pins['out'], mode.ports['ob'])
         # now the user-invisible part
         # mux for the input 'g' of the carry chain
@@ -516,14 +339,14 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
         mux_ffa_d = mode._add_instance(SwitchInstance(mode, mux2, 'mux_ffa_d'))
         mux_ffa_d.switch_inputs[0].logical_source = carry_inst.pins['cout_fabric'][0]
         mux_ffa_d.switch_inputs[1].logical_source = lut5_inst[0].pins['out'][0]
-        ff_inst[0].pins['D'].logical_source = mux_ffa_d.switch_output
+        ff_inst[0].pins['d'].logical_source = mux_ffa_d.switch_output
         # mux for input 'd' of Flip-flop B
         mux_ffb_d = mode._add_instance(SwitchInstance(mode, mux4, 'mux_ffb_d'))
         mux_ffb_d.switch_inputs[0].logical_source = carry_inst.pins['cout_fabric'][0]
         mux_ffb_d.switch_inputs[1].logical_source = carry_inst.pins['s'][0]
         mux_ffb_d.switch_inputs[2].logical_source = mode.ports['ib'][0]
         mux_ffb_d.switch_inputs[3].logical_source = lut5_inst[1].pins['out'][0]
-        ff_inst[1].pins['D'].logical_source = mux_ffb_d.switch_output
+        ff_inst[1].pins['d'].logical_source = mux_ffb_d.switch_output
         # mux for output port 'oa'
         mux_oa = mode._add_instance(SwitchInstance(mode, mux2, 'mux_oa'))
         mux_oa.switch_inputs[0].logical_source = lut5_inst[0].pins['out'][0]
@@ -533,7 +356,7 @@ class FracturableLUT6WithSFFnCarry(BitchainMultimode):
         mux_ob = mode._add_instance(SwitchInstance(mode, mux4, 'mux_ob'))
         mux_ob.switch_inputs[0].logical_source = carry_inst.pins['cout_fabric'][0]
         mux_ob.switch_inputs[1].logical_source = carry_inst.pins['s'][0]
-        mux_ob.switch_inputs[2].logical_source = ff_inst[1].pins['Q'][0]
+        mux_ob.switch_inputs[2].logical_source = ff_inst[1].pins['q'][0]
         mux_ob.switch_inputs[3].logical_source = lut5_inst[1].pins['out'][0]
         mode.ports['ob'][0].logical_source = mux_ob.switch_output
 

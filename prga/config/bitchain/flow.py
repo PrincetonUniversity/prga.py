@@ -8,7 +8,7 @@ from prga.flow.delegate import (PrimitiveRequirement, PRGAPrimitiveNotFoundError
         BuiltinPrimitiveLibrary)
 from prga.flow.util import get_switch_path
 from prga.config.bitchain.design.primitive import (CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH, ConfigBitchain,
-        FracturableLUT6, FracturableLUT6FF, MultifuncFlipflop, CarrychainWrapper, FracturableLUT6WithSFFnCarry)
+        FracturableLUT6, FracturableLUT6FF, FracturableLUT6WithSFFnCarry)
 from prga.config.bitchain.algorithm.injection import ConfigBitchainLibraryDelegate, inject_config_chain
 from prga.config.bitchain.algorithm.bitstream import get_config_bit_count, get_config_bit_offset
 from prga.exception import PRGAInternalError
@@ -36,21 +36,11 @@ class BitchainPrimitiveLibrary(BuiltinPrimitiveLibrary):
                 self._is_empty = False
                 return self.context._modules.setdefault(name, FracturableLUT6FF(self.context,
                         requirement.is_physical_preferred or requirement.is_physical_required))
-            elif name == 'multifuncflipflop':
-                self._is_empty = False
-                if requirement.is_physical_required:
-                    raise PRGAInternalError("Module '{}' is logical-only".format(name))
-                return self.context._modules.setdefault(name, MultifuncFlipflop(self.context))
-            elif name == 'carrychain_wrapper':
-                self._is_empty = False
-                if requirement.is_physical_required:
-                    raise PRGAInternalError("Module '{}' is logical-only".format(name))
-                return self.context._modules.setdefault(name, CarrychainWrapper(self.context))
             elif name == 'fraclut6sffc':
                 self._is_empty = False
                 self.context.yosys_template_registry.register_blackbox_template(name,
                         techmap_template = 'fraclut6sffc.techmap.tmpl.v',
-                        premap_commands = ["dffsr2dff"])
+                        premap_commands = ["simplemap t:$dff t:$dffe t:$dffsr", "dffsr2dff", "dff2dffe", "opt -full"])
                 return self.context._modules.setdefault(name, FracturableLUT6WithSFFnCarry(self.context,
                         requirement.is_physical_preferred or requirement.is_physical_required))
             else:
