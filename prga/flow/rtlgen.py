@@ -9,6 +9,8 @@ from prga.flow.util import analyze_hierarchy
 from prga.util import Object
 
 import os
+import logging
+_logger = logging.getLogger(__name__)
 
 __all__ = ['GenerateVerilog']
 
@@ -32,7 +34,6 @@ class GenerateVerilog(Object, AbstractPass):
         return "rtl.verilog"
 
     def run(self, context):
-        makedirs(self.prefix)
         vgen = VerilogGenerator(context._additional_template_search_paths)
         hierarchy = analyze_hierarchy(context)
         visited = set()
@@ -41,7 +42,13 @@ class GenerateVerilog(Object, AbstractPass):
         while queue:
             name, module = queue.popitem()
             visited.add(name)
-            f = module.verilog_source = os.path.abspath(os.path.join(self.prefix, name + '.v'))
+            f = module.verilog_source
+            if f is None:
+                f = module.verilog_source = os.path.abspath(os.path.join(self.prefix, name + '.v'))
+            else:
+                f = module.verilog_source = os.path.abspath(os.path.join(self.prefix, module.verilog_source))
+            _logger.info("[RTLGEN] Generating Verilog for module '{}': {}".format(name, f))
+            makedirs(os.path.dirname(f))
             vgen.generate_module(open(f, OpenMode.wb), module)
             context._verilog_sources.append(f)
             for subname, sub in iteritems(hierarchy[name]):

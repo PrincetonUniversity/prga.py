@@ -61,6 +61,10 @@ class ZeroingBlockPins(Object, AbstractPass):
         return "opt.zeroing_block_pins"
 
     @property
+    def passes_before_self(self):
+        return ("completion.routing", )
+
+    @property
     def passes_after_self(self):
         return ("completion.switch", "physical", "config", "rtl", "syn", "vpr", "asicflow")
 
