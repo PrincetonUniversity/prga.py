@@ -9,7 +9,7 @@ from prga.arch.block.block import IOBlock, LogicBlock
 from prga.arch.routing.common import Segment, DirectTunnel
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.arch.routing.box import ConnectionBox
-from prga.arch.array.tile import Tile, IOTile
+from prga.arch.array.tile import Tile
 from prga.algorithm.design.cbox import BlockPortFCValue, BlockFCValue, populate_connection_box, generate_fc
 from prga.algorithm.design.tile import ConnectionBoxLibraryDelegate, cboxify, netify_tile
 from prga.algorithm.design.switch import SwitchLibraryDelegate, switchify
@@ -36,7 +36,7 @@ class Library(SwitchLibraryDelegate, ConnectionBoxLibraryDelegate):
 
 def test_io_tile(tmpdir):
     io = Iopad()
-    block = IOBlock('mock_block', io)
+    block = IOBlock('mock_block', io, 4)
     glb = Global('clk', is_clock = True)
     sgmts = [Segment('L1', 4, 1), Segment('L2', 1, 2)]
     lib = Library()
@@ -49,16 +49,15 @@ def test_io_tile(tmpdir):
     block.create_output('inpad', 1)
 
     # 2. create tile
-    tile = IOTile('mock_tile', block, 4, Orientation.west)
+    tile = Tile('mock_tile', block, Orientation.west)
 
     # 3. cboxify
     cboxify(lib, tile, sgmts, fc, Orientation.east)
 
     # 4. populate and generate connections
     for (position, orientation), cbox_inst in iteritems(tile.cbox_instances):
-        populate_connection_box(cbox_inst.model, sgmts, tile.block, orientation,
-                tile.capacity, position)
-        generate_fc(cbox_inst.model, sgmts, tile.block, orientation, fc, tile.capacity, position)
+        populate_connection_box(cbox_inst.model, sgmts, tile.block, orientation, position)
+        generate_fc(cbox_inst.model, sgmts, tile.block, orientation, fc, position)
         switchify(lib, cbox_inst.model)
 
     # 5 switchify!
@@ -101,9 +100,9 @@ def test_logic_tile(tmpdir):
     # 5. populate and generate connections
     for (position, orientation), cbox_inst in iteritems(tile.cbox_instances):
         populate_connection_box(cbox_inst.model, sgmts, tile.block, orientation,
-                tile.capacity, position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
+                position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
         generate_fc(cbox_inst.model, sgmts, tile.block, orientation, fc,
-                tile.capacity, position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
+                position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
         switchify(lib, cbox_inst.model)
 
     # 7. netify

@@ -3,10 +3,10 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.arch.common import Position
+from prga.arch.common import Orientation, Position
 from prga.algorithm.util.hierarchy import (hierarchical_instance, hierarchical_net, hierarchical_position,
         hierarchical_source)
-from prga.flow.util import iter_all_tiles
+from prga.flow.util import iter_all_blocks
 from prga.util import uno
 
 from itertools import chain, count, product
@@ -307,23 +307,23 @@ def vpr_arch_instance(xml, delegate, hierarchical_instance):
     elif hierarchical_instance[-1].module_class.is_primitive:  # primitive
         _vpr_arch_primitive_instance(xml, delegate, hierarchical_instance)
 
-def vpr_arch_block(xml, delegate, tile, directs = tuple()):
-    """Convert the block used in ``tile`` into VPR architecture description.
+def vpr_arch_block(xml, delegate, block, directs = tuple()):
+    """Convert the ``block`` into VPR architecture description.
     
     Args:
         xml (`XMLGenerator`):
         delegate (`FASMDelegate`):
-        tile (`Tile`):
+        block (`IOBlock` or `LogicBlock`):
         directs (:obj:`Sequence` [`DirectTunnel` ]):
     """
     with xml.element('pb_type', {
-        'name': tile.name,
-        'capacity': tile.capacity,
-        'width': tile.width,
-        'height': tile.height,
+        'name': block.name,
+        'capacity': block.capacity,
+        'width': block.width,
+        'height': block.height,
         }):
         # 1. emit ports
-        for port in itervalues(tile.block.ports):
+        for port in itervalues(block.ports):
             attrs = {'name': port.name, 'num_pins': port.width}
             if port.net_class.is_global and not port.is_clock:
                 attrs['is_non_clock_global'] = "true"
@@ -331,36 +331,34 @@ def vpr_arch_block(xml, delegate, tile, directs = tuple()):
                     'clock' if port.is_clock else port.direction.case('input', 'output'),
                     attrs)
         # 2. do the rest of the cluster
-        _vpr_arch_clusterlike(xml, delegate, tile.block, tile.name)
+        _vpr_arch_clusterlike(xml, delegate, block, block.name)
         # 4. pin locations
         with xml.element('pinlocations', {'pattern': 'custom'}):
-            if tile.block.module_class.is_io_block:
-                xml.element_leaf('loc', {'side': tile.orientation.case('bottom', 'left', 'top', 'right')},
-                        ' '.join('{}.{}'.format(tile.name, port) for port in tile.block.ports))
-            else:
-                for y in range(tile.height):
-                    # left
-                    xml.element_leaf('loc', {'side': 'left', 'xoffset': '0', 'yoffset': y},
-                        ' '.join('{}.{}'.format(tile.name, name) for name, port in iteritems(tile.block.ports)
-                            if port.position == (0, y) and port.orientation.is_west))
-                    # right
-                    xml.element_leaf('loc', {'side': 'right', 'xoffset': tile.width - 1, 'yoffset': y},
-                        ' '.join('{}.{}'.format(tile.name, name) for name, port in iteritems(tile.block.ports)
-                            if port.position == (tile.width - 1, y) and port.orientation.is_east))
-                for x in range(tile.width):
-                    # bottom
-                    xml.element_leaf('loc', {'side': 'bottom', 'xoffset': x, 'yoffset': '0'},
-                        ' '.join('{}.{}'.format(tile.name, name) for name, port in iteritems(tile.block.ports)
-                            if port.position == (x, 0) and port.orientation.is_south))
-                    # top
-                    xml.element_leaf('loc', {'side': 'top', 'xoffset': x, 'yoffset': tile.height - 1},
-                        ' '.join('{}.{}'.format(tile.name, name) for name, port in iteritems(tile.block.ports)
-                            if port.position == (x, tile.height - 1) and port.orientation.is_north))
+            for y in range(block.height):
+                # left
+                xml.element_leaf('loc', {'side': 'left', 'xoffset': '0', 'yoffset': y},
+                    ' '.join('{}.{}'.format(block.name, name) for name, port in iteritems(block.ports)
+                        if port.position == (0, y) and port.orientation in (Orientation.west, Orientation.auto)))
+                # right
+                xml.element_leaf('loc', {'side': 'right', 'xoffset': block.width - 1, 'yoffset': y},
+                    ' '.join('{}.{}'.format(block.name, name) for name, port in iteritems(block.ports)
+                        if port.position == (block.width - 1, y) and port.orientation in (Orientation.east,
+                            Orientation.auto)))
+            for x in range(block.width):
+                # bottom
+                xml.element_leaf('loc', {'side': 'bottom', 'xoffset': x, 'yoffset': '0'},
+                    ' '.join('{}.{}'.format(block.name, name) for name, port in iteritems(block.ports)
+                        if port.position == (x, 0) and port.orientation in (Orientation.south, Orientation.auto)))
+                # top
+                xml.element_leaf('loc', {'side': 'top', 'xoffset': x, 'yoffset': block.height - 1},
+                    ' '.join('{}.{}'.format(block.name, name) for name, port in iteritems(block.ports)
+                        if port.position == (x, block.height - 1) and port.orientation in (Orientation.north,
+                            Orientation.auto)))
         # 5. fc
         with xml.element('fc', {"in_type": "frac", "in_val": "1.0", "out_type": "frac", "out_val": "1.0"}):
             for direct in directs:
                 for port in (direct.source, direct.sink):
-                    if port.parent is tile.block:
+                    if port.parent is block:
                         xml.element_leaf("fc_override", {"fc_type": "abs", "fc_val": "0", "port_name": port.name})
 
 # ----------------------------------------------------------------------------
@@ -380,7 +378,7 @@ def _vpr_arch_array(xml, delegate, array, hierarchy = None):
         pos += position
         if instance.module_class.is_tile:
             fasm_prefix = '\n'.join(delegate.fasm_prefix_for_tile(hierarchical_instance(instance, hierarchy)))
-            attrs = {   'type': instance.model.name,
+            attrs = {   'type': instance.model.block.name,
                         'priority': '1',
                         'x': pos.x,
                         'y': pos.y, }
@@ -435,14 +433,14 @@ def vpr_arch_direct(xml, context, direct):
         xml (`XMLGenerator`):
         direct (`DirectTunnel`):
     """
-    # find all tiles encapsulating the source/sink block
-    source_tiles = [tile for tile in iter_all_tiles(context) if tile.block is direct.source.parent]
-    sink_tiles = [tile for tile in iter_all_tiles(context) if tile.block is direct.sink.parent]
-    for source_tile, sink_tile in product(source_tiles, sink_tiles):
+    # find all blocks encapsulating the source/sink block
+    source_blocks = filter(lambda x: x is direct.source.parent, iter_all_blocks(context))
+    sink_blocks = filter(lambda x: x is direct.sink.parent, iter_all_blocks(context))
+    for source_block, sink_block in product(source_blocks, sink_blocks):
         xml.element_leaf("direct", {
             "name": direct.name,
-            "from_pin": "{}.{}".format(source_tile.name, direct.source.name),
-            "to_pin": "{}.{}".format(sink_tile.name, direct.sink.name),
+            "from_pin": "{}.{}".format(source_block.name, direct.source.name),
+            "to_pin": "{}.{}".format(sink_block.name, direct.sink.name),
             "x_offset": str(-direct.offset.x),
             "y_offset": str(-direct.offset.y),
             "z_offset": "0",
@@ -482,10 +480,6 @@ def vpr_arch_xml(xml, delegate, context):
             for primitive in itervalues(context.primitives):
                 if primitive.primitive_class.is_custom or primitive.primitive_class.is_memory:
                     vpr_arch_primitive(xml, primitive)
-        # # tiles
-        # with xml.element('tiles'):
-        #     for tile in iter_all_tiles(context):
-        #         vpr_arch_tile(xml, tile)
         # layout
         vpr_arch_layout(xml, delegate, context.top)
         # device: faked
@@ -514,5 +508,5 @@ def vpr_arch_xml(xml, delegate, context):
                     vpr_arch_direct(xml, context, direct)
         # complexblocklist
         with xml.element('complexblocklist'):
-            for tile in iter_all_tiles(context):
-                vpr_arch_block(xml, delegate, tile, directs)
+            for block in iter_all_blocks(context):
+                vpr_arch_block(xml, delegate, block, directs)

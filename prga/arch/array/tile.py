@@ -14,7 +14,7 @@ from prga.exception import PRGAInternalError
 
 from collections import OrderedDict
 
-__all__ = ['Tile', 'IOTile']
+__all__ = ['Tile']
 
 # ----------------------------------------------------------------------------
 # -- Tile --------------------------------------------------------------------
@@ -25,14 +25,19 @@ class Tile(BaseModule, AbstractArrayElement):
     Args:
         name (:obj:`str`): Name of the tile
         block (`LogicBlock`): The block to be instantiated in this tile
+        orientation (`Orientation`): On which edge may this tile be placed
     """
 
-    __slots__ = ['_ports', '_instances']
-    def __init__(self, name, block):
+    __slots__ = ['_ports', '_instances', '_orientation']
+    def __init__(self, name, block, orientation = Orientation.auto):
         super(Tile, self).__init__(name)
         self._ports = OrderedDict()
         self._instances = OrderedDict()
-        for subblock in range(self.capacity):
+        if block.is_io_block and orientation.is_auto:
+            raise PRGAInternalError("'orientation' required for IO block '{}'"
+                    .format(block))
+        self._orientation = orientation
+        for subblock in range(block.capacity):
             self._add_instance(BlockInstance(self, block, subblock))
 
     # == low-level API =======================================================
@@ -64,14 +69,9 @@ class Tile(BaseModule, AbstractArrayElement):
 
     # -- properties/methods to be implemented/overriden by subclasses --------
     @property
-    def capacity(self):
-        """:obj:`int`: Number of block instances in this tile"""
-        return 1
-
-    @property
     def orientation(self):
         """`Orientation`: On which edge of the array may this tile be placed"""
-        return Orientation.auto
+        return self._orientation
 
     # -- implementing properties/methods required by superclass --------------
     @property
@@ -92,32 +92,3 @@ class Tile(BaseModule, AbstractArrayElement):
 
     def runs_channel(self, position, dimension):
         return False
-
-# ----------------------------------------------------------------------------
-# -- IO Tile -----------------------------------------------------------------
-# ----------------------------------------------------------------------------
-class IOTile(Tile):
-    """A IO tile.
-
-    Args:
-        name (:obj:`str`): Name of the tile
-        block (`IOBlock`): The block to be instantiated in this tile
-        capacity (:obj:`int`): Number of block instances in this tile
-        orientation (`Orientation`): On which edge may this tile be placed
-    """
-
-    __slots__ = ['_capacity', '_orientation']
-    def __init__(self, name, block, capacity, orientation):
-        self._capacity = capacity
-        self._orientation = orientation
-        super(IOTile, self).__init__(name, block)
-
-    # == low-level API =======================================================
-    # -- implementing properties/methods required by superclass --------------
-    @property
-    def capacity(self):
-        return self._capacity
-
-    @property
-    def orientation(self):
-        return self._orientation

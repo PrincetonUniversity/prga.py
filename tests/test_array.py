@@ -10,7 +10,7 @@ from prga.arch.routing.common import Segment, DirectTunnel
 from prga.arch.switch.switch import ConfigurableMUX
 from prga.arch.routing.box import ConnectionBox, SwitchBox
 from prga.arch.array.common import ChannelCoverage
-from prga.arch.array.tile import Tile, IOTile
+from prga.arch.array.tile import Tile
 from prga.arch.array.array import Array
 from prga.algorithm.design.cbox import BlockPortFCValue, BlockFCValue, populate_connection_box, generate_fc
 from prga.algorithm.design.sbox import SwitchBoxEnvironment, populate_switch_box, generate_wilton
@@ -46,7 +46,7 @@ class Library(SwitchLibraryDelegate, ConnectionBoxLibraryDelegate):
 
 def test_io_leaf_array(tmpdir):
     io = Iopad()
-    block = IOBlock('mock_block', io)
+    block = IOBlock('mock_block', io, 4)
     glb = Global('clk', is_clock = True)
     sgmts = [Segment('L1', 4, 1)]
     lib = Library()
@@ -59,16 +59,15 @@ def test_io_leaf_array(tmpdir):
     block.create_output('inpad', 1)
 
     # 2. create tile
-    tile = IOTile('mock_tile', block, 4, Orientation.west)
+    tile = Tile('mock_tile', block, Orientation.west)
 
     # 3. cboxify
     cboxify(lib, tile, sgmts, fc, Orientation.east)
 
     # 4. populate and generate connections
     for (position, orientation), cbox_inst in iteritems(tile.cbox_instances):
-        populate_connection_box(cbox_inst.model, sgmts, tile.block, orientation,
-                tile.capacity, position)
-        generate_fc(cbox_inst.model, sgmts, tile.block, orientation, fc, tile.capacity, position)
+        populate_connection_box(cbox_inst.model, sgmts, tile.block, orientation, position)
+        generate_fc(cbox_inst.model, sgmts, tile.block, orientation, fc, position)
 
     # 5. netify
     netify_tile(tile)
@@ -107,7 +106,7 @@ def test_complex_array(tmpdir):
     gen = VerilogGenerator()
 
     # 1. create IOB
-    iob = IOBlock('mock_iob', io)
+    iob = IOBlock('mock_iob', io, 4)
     iob.create_global(clk)
     iob.create_input('outpad', 1)
     iob.create_output('inpad', 1)
@@ -118,11 +117,11 @@ def test_complex_array(tmpdir):
     for ori in Orientation:
         if ori.is_auto:
             continue
-        tile = iob_tiles[ori] = IOTile('mock_tile_io' + ori.name[0], iob, 4, ori)
+        tile = iob_tiles[ori] = Tile('mock_tile_io' + ori.name[0], iob, ori)
         cboxify(lib, tile, sgmts, io_fc, ori.opposite)
         for (position, orientation), cbox_inst in iteritems(tile.cbox_instances):
             generate_fc(cbox_inst.model, sgmts, tile.block, orientation, io_fc,
-                    tile.capacity, position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
+                    position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
         netify_tile(tile)
 
     # 3. create CLB
@@ -144,7 +143,7 @@ def test_complex_array(tmpdir):
     cboxify(lib, clb_tile, sgmts, clb_fc)
     for (position, orientation), cbox_inst in iteritems(clb_tile.cbox_instances):
         generate_fc(cbox_inst.model, sgmts, clb_tile.block, orientation, clb_fc,
-                clb_tile.capacity, position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
+                position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
     netify_tile(clb_tile, directs)
 
     # 6. create BRAM
@@ -162,7 +161,7 @@ def test_complex_array(tmpdir):
     cboxify(lib, bram_tile, sgmts, bram_fc)
     for (position, orientation), cbox_inst in iteritems(bram_tile.cbox_instances):
         generate_fc(cbox_inst.model, sgmts, bram_tile.block, orientation, bram_fc,
-                bram_tile.capacity, position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
+                position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
     netify_tile(bram_tile, directs)
 
     # 8. repetitive sub-array

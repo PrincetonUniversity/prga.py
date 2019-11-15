@@ -23,7 +23,7 @@ def test_flow(tmpdir):
     context.create_segment('L2', 1, 2)
 
     # 2. create IOB
-    iob = context.create_io_block('mock_iob')
+    iob = context.create_io_block('mock_iob', 4)
     while True:
         clkport = iob.create_global(clk)
         outpad = iob.create_input('outpad', 1)
@@ -47,7 +47,7 @@ def test_flow(tmpdir):
         if orientation.is_auto:
             continue
         iotiles[orientation] = context.create_tile(
-                'mock_iotile_{}'.format(orientation.name), iob, 4, orientation)
+                'mock_iotile_{}'.format(orientation.name), iob, orientation)
 
     # 4. create cluster
     cluster = context.create_cluster('mock_cluster')

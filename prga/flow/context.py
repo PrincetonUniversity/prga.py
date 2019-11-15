@@ -8,7 +8,7 @@ from prga.arch.block.cluster import Cluster
 from prga.arch.block.block import IOBlock, LogicBlock
 from prga.arch.routing.common import Segment, DirectTunnel
 from prga.arch.array.common import ChannelCoverage
-from prga.arch.array.tile import Tile, IOTile
+from prga.arch.array.tile import Tile
 from prga.arch.array.array import Array
 from prga.ysgen.ysgen import YosysTemplateRegistry
 from prga.util import Object, uno, ReadonlyMappingProxy
@@ -262,11 +262,12 @@ class ArchitectureContext(Object):
         """:obj:`Mapping` [:obj:`str`, `IOBlock` ]: A mapping from names to IOBs."""
         return ReadonlyMappingProxy(self._modules, lambda kv: kv[1].module_class.is_io_block)
 
-    def create_io_block(self, name, input_ = True, output = True):
+    def create_io_block(self, name, capacity, input_ = True, output = True):
         """Create an IO block.
 
         Args:
             name (:obj:`str`): Name of the IO block
+            capacity (:obj:`int`): Number of block instances in one tile
             input_ (:obj:`bool`): If set, the IOB can be used as an external input
             output (:obj:`bool`): If set, the IOB can be used as an external output
 
@@ -279,7 +280,7 @@ class ArchitectureContext(Object):
                 if input_ else (self.primitives['outpad'] if output else None))
         if io_primitive is None:
             raise PRGAAPIError("At least one of 'input' and 'output' must be True")
-        return self._modules.setdefault(name, IOBlock(name, io_primitive))
+        return self._modules.setdefault(name, IOBlock(name, io_primitive, capacity))
 
     # -- Logic Blocks --------------------------------------------------------
     @property
@@ -320,14 +321,12 @@ class ArchitectureContext(Object):
         """:obj:`Mapping` [:obj:`str`, `Tile` ]: A mapping from names to tiles."""
         return ReadonlyMappingProxy(self._modules, lambda kv: kv[1].module_class.is_tile)
 
-    def create_tile(self, name, block, capacity = None, orientation = None):
+    def create_tile(self, name, block, orientation = Orientation.auto):
         """Create a tile.
 
         Args:
             name (:obj:`str`): Name of the tile
             block (`IOBlock` or `LogicBlock`): Block in this tile
-            capacity (:obj:`int`): Number of block instances in this tile. Required and only used if ``block`` is
-                an `IOBlock`
             orientation (`Orientation`): On which side of the top-level array should the tile be placed on. Required
                 and only used if ``block`` is an `IOBlock`
 
@@ -339,13 +338,10 @@ class ArchitectureContext(Object):
         """
         if name in self._modules:
             raise PRGAAPIError("Module '{}' is already created".format(name))
-        if block.module_class.is_io_block:
-            if capacity is None or orientation in (None, Orientation.auto):
-                raise PRGAAPIError("'capacity' and 'orientation' are required since '{}' is an IO block"
-                        .format(block))
-            return self._modules.setdefault(name, IOTile(name, block, capacity, orientation))
-        else:
-            return self._modules.setdefault(name, Tile(name, block))
+        elif block.module_class.is_io_block and orientation in (None, Orientation.auto):
+            raise PRGAAPIError("Non-auto 'orientation' are required since '{}' is an IO block"
+                    .format(block))
+        return self._modules.setdefault(name, Tile(name, block, orientation))
 
     # -- Arrays --------------------------------------------------------------
     @property

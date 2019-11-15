@@ -6,7 +6,7 @@ from prga.compatible import *
 from prga.arch.common import Position, Dimension, Direction, Orientation
 from prga.arch.routing.common import SegmentID, BlockPortID
 from prga.arch.array.tile import Tile
-from prga.flow.util import iter_all_tiles
+from prga.flow.util import iter_all_blocks
 from prga.algorithm.util.hierarchy import hierarchical_position, hierarchical_net, hierarchical_source
 from prga.algorithm.util.array import get_hierarchical_tile, get_hierarchical_sbox
 
@@ -50,26 +50,26 @@ class _VPRRoutingResourceGraph(object):
         self.channel_nodes = segment_node_id_base
         self.channel_nodes_truncated = segment_node_id_base_truncated
         # block
-        self.block_type_id = OrderedDict()          # tile name -> block_type_id
-        self.block_num_pins = {}                    # tile name -> total number of pins of thie block
-        self.block_pin_ptc = {}                     # tile name, port name -> PTC base
-        for i, tile in enumerate(iter_all_tiles(context)):
-            self.block_type_id[tile.name] = i + 1
-            block_pin_ptc = self.block_pin_ptc[tile.name] = OrderedDict()
+        self.block_type_id = OrderedDict()          # block name -> block_type_id
+        self.block_num_pins = {}                    # block name -> total number of pins of thie block
+        self.block_pin_ptc = {}                     # block name, port name -> PTC base
+        for i, block in enumerate(iter_all_blocks(context)):
+            self.block_type_id[block.name] = i + 1
+            block_pin_ptc = self.block_pin_ptc[block.name] = OrderedDict()
             block_num_pins = 0
-            for port in itervalues(tile.block.ports):
+            for port in itervalues(block.ports):
                 if port.direction.is_input and not port.is_clock:
                     block_pin_ptc[port.name] = block_num_pins
                     block_num_pins += port.width
-            for port in itervalues(tile.block.ports):
+            for port in itervalues(block.ports):
                 if port.direction.is_output:
                     block_pin_ptc[port.name] = block_num_pins
                     block_num_pins += port.width
-            for port in itervalues(tile.block.ports):
+            for port in itervalues(block.ports):
                 if port.direction.is_input and port.is_clock:
                     block_pin_ptc[port.name] = block_num_pins
                     block_num_pins += port.width
-            self.block_num_pins[tile.name] = block_num_pins
+            self.block_num_pins[block.name] = block_num_pins
 
     def iter_tiles(self):
         self.grid = [[None for _ in range(self.context.top.height)] for _ in range(self.context.top.width)]
@@ -124,20 +124,23 @@ class _VPRRoutingResourceGraph(object):
             # block pin nodes
             tile = self.grid[x][y]
             if isinstance(tile, Tile):
+                block = tile.block
                 self.srcsink_node_id_base[x][y] = self.num_nodes
-                for subblock, (name, ptc_base) in product(range(tile.capacity), iteritems(self.block_pin_ptc[tile.name])):
-                    ptc_base += subblock * self.block_num_pins[tile.name]
-                    port = tile.block.ports[name]
+                for subblock, (name, ptc_base) in product(range(block.capacity),
+                        iteritems(self.block_pin_ptc[block.name])):
+                    ptc_base += subblock * self.block_num_pins[block.name]
+                    port = block.ports[name]
                     for i in range(port.width):
                         yield (self.num_nodes, port.direction.case('SINK', 'SOURCE'),
-                                (x, x + tile.width - 1, y, y + tile.height - 1, ptc_base + i))
+                                (x, x + block.width - 1, y, y + block.height - 1, ptc_base + i))
                         self.num_nodes += 1
                 self.iopin_node_id_base[x][y] = self.num_nodes
-                for subblock, (name, ptc_base) in product(range(tile.capacity), iteritems(self.block_pin_ptc[tile.name])):
-                    ptc_base += subblock * self.block_num_pins[tile.name]
-                    port = tile.block.ports[name]
+                for subblock, (name, ptc_base) in product(range(block.capacity),
+                        iteritems(self.block_pin_ptc[block.name])):
+                    ptc_base += subblock * self.block_num_pins[block.name]
+                    port = block.ports[name]
                     for i in range(port.width):
-                        ptc = subblock * self.block_num_pins[tile.name] + self.block_pin_ptc[tile.name][name] + i
+                        ptc = subblock * self.block_num_pins[block.name] + self.block_pin_ptc[block.name][name] + i
                         yield (self.num_nodes, port.direction.case('IPIN', 'OPIN'),
                                 (x + port.position.x, y + port.position.y, ptc_base + i,
                                     port.orientation if tile.orientation.is_auto else tile.orientation.opposite))
@@ -177,15 +180,17 @@ class _VPRRoutingResourceGraph(object):
         else:
             return tile, (0, 0)
 
-    def calc_srcsink_id(self, tile, node, i):
+    def calc_srcsink_id(self, node, i):
         node_id_base = self.srcsink_node_id_base[node.position.x][node.position.y]
-        return (node_id_base + self.block_num_pins[tile.name] * node.subblock + 
-                self.block_pin_ptc[tile.name][node.prototype.name] + i)
+        port = node.prototype
+        return (node_id_base + self.block_num_pins[port.parent.name] * node.subblock + 
+                self.block_pin_ptc[port.parent.name][port.name] + i)
 
-    def calc_iopin_id(self, tile, node, i):
+    def calc_iopin_id(self, node, i):
         node_id_base = self.iopin_node_id_base[node.position.x][node.position.y]
-        return (node_id_base + self.block_num_pins[tile.name] * node.subblock + 
-                self.block_pin_ptc[tile.name][node.prototype.name] + i)
+        port = node.prototype
+        return (node_id_base + self.block_num_pins[port.parent.name] * node.subblock + 
+                self.block_pin_ptc[port.parent.name][port.name] + i)
 
     def calc_track_id(self, node, i):
         node_id_base, before, after = node.orientation.dimension.case(
@@ -232,7 +237,7 @@ def _vpr_rrg_edges(xml, delegate, rrg, sink_bit, sink_node_id, sink_node_str):
             source_node = BlockPortID(hierarchical_position(prevtilehier),
                         prevbit.bus,
                         prevblkinst.subblock)
-            attrs = { 'src_node': rrg.calc_iopin_id(prevtilehier[-1].model, source_node, prevbit.index),
+            attrs = { 'src_node': rrg.calc_iopin_id(source_node, prevbit.index),
                     'sink_node': sink_node_id,
                     'switch_id': '0', }
             if not fasm_features:
@@ -316,30 +321,30 @@ def vpr_rrg_xml(xml, delegate, context):
                 'height': '1',
                 })
             for name, block_type_id in iteritems(rrg.block_type_id):
-                tile = context.tiles[name]
+                block = context._modules[name]
                 with xml.element('block_type', {
                     'id': str(block_type_id),
                     'name': name,
-                    'width': str(tile.width),
-                    'height': str(tile.height),
+                    'width': str(block.width),
+                    'height': str(block.height),
                     }):
-                    for subblock, (name, ptc_base) in product(range(tile.capacity),
-                            iteritems(rrg.block_pin_ptc[tile.name])):
-                        ptc_base += subblock * rrg.block_num_pins[tile.name]
-                        port = tile.block.ports[name]
+                    for subblock, (name, ptc_base) in product(range(block.capacity),
+                            iteritems(rrg.block_pin_ptc[block.name])):
+                        ptc_base += subblock * rrg.block_num_pins[block.name]
+                        port = block.ports[name]
                         for i in range(port.width):
                             with xml.element('pin_class', {'type': port.direction.case('INPUT', 'OUTPUT')}):
                                 xml.element_leaf('pin', {'ptc': str(ptc_base + i)},
-                                        '{}[{}].{}[{}]'.format(tile.name, subblock, name, i)
-                                        if tile.block.module_class.is_io_block else
-                                        '{}.{}[{}]'.format(tile.name, name, i))
+                                        '{}[{}].{}[{}]'.format(block.name, subblock, name, i)
+                                        if block.module_class.is_io_block else
+                                        '{}.{}[{}]'.format(block.name, name, i))
         # grid
         with xml.element('grid'):
             for (x, y), tile, (xoffset, yoffset) in rrg.iter_tiles():
                 xml.element_leaf('grid_loc', {
                     'x': str(x),
                     'y': str(y),
-                    'block_type_id': '0' if tile is None else str(rrg.block_type_id[tile.name]),
+                    'block_type_id': '0' if tile is None else str(rrg.block_type_id[tile.block.name]),
                     'width_offset': str(xoffset),
                     'height_offset': str(yoffset),
                     })
@@ -380,16 +385,16 @@ def vpr_rrg_xml(xml, delegate, context):
                             if pin.direction.is_output:
                                 for i, bit in enumerate(pin):
                                     xml.element_leaf('edge', {
-                                        'src_node': str(rrg.calc_srcsink_id(tile, node, i)),
-                                        'sink_node': str(rrg.calc_iopin_id(tile, node, i)),
+                                        'src_node': str(rrg.calc_srcsink_id(node, i)),
+                                        'sink_node': str(rrg.calc_iopin_id(node, i)),
                                         'switch_id': '0',
                                         })
                             else:
                                 for i, bit in enumerate(pin):
-                                    sink_node_id = rrg.calc_iopin_id(tile, node, i)
+                                    sink_node_id = rrg.calc_iopin_id(node, i)
                                     xml.element_leaf('edge', {
                                         'src_node': str(sink_node_id),
-                                        'sink_node': str(rrg.calc_srcsink_id(tile, node, i)),
+                                        'sink_node': str(rrg.calc_srcsink_id(node, i)),
                                         'switch_id': '0',
                                         })
                                     _vpr_rrg_edges(xml, delegate, rrg, hierarchical_net(bit, hiertile),

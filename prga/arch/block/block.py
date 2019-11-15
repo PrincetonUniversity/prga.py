@@ -53,6 +53,22 @@ class BaseBlock(ClusterLike):
                     .format(position, orientation.name, self))
         return orientation, position
 
+    # == high-level API ======================================================
+    @property
+    def width(self):
+        """:obj:`int`: Width of this block in the number of tiles."""
+        return 1
+
+    @property
+    def height(self):
+        """:obj:`int`: Height of this block in the number of tiles."""
+        return 1
+
+    @property
+    def capacity(self):
+        """:obj:`int`: Number of block instances in the same tile."""
+        return 1
+
 # ----------------------------------------------------------------------------
 # -- IO Block ----------------------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -62,9 +78,11 @@ class IOBlock(BaseBlock):
     Args:
         name (:obj:`str`): Name of this IO block
         io_primitive (`Inpad`, `Outpad` or `Iopad`): IO primitive to instantiate in this block
+        capacity (:obj:`int`): Number of IO blocks per tile
     """
 
-    def __init__(self, name, io_primitive):
+    __slots__ = ['_capacity']
+    def __init__(self, name, io_primitive, capacity):
         super(IOBlock, self).__init__(name)
         instance = RegularInstance(self, io_primitive, 'io')
         self._add_instance(instance)
@@ -80,6 +98,7 @@ class IOBlock(BaseBlock):
             oe = IOBlockExternalOutputPort(self, 'extoe', 1)
             self._add_port(oe)
             instance.logical_pins['cfg_d'].physical_cp = oe
+        self._capacity = capacity
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
@@ -89,14 +108,8 @@ class IOBlock(BaseBlock):
 
     # == high-level API ======================================================
     @property
-    def width(self):
-        """:obj:`int`: Width of this block in the number of tiles."""
-        return 1
-
-    @property
-    def height(self):
-        """:obj:`int`: Height of this block in the number of tiles."""
-        return 1
+    def capacity(self):
+        return self._capacity
 
     def create_global(self, global_, orientation = Orientation.auto, name = None):
         """Create and add a global input port to this block.
@@ -161,12 +174,10 @@ class LogicBlock(BaseBlock):
     # == high-level API ======================================================
     @property
     def width(self):
-        """:obj:`int`: Width of this block in the number of tiles."""
         return self._width
 
     @property
     def height(self):
-        """:obj:`int`: Height of this block in the number of tiles."""
         return self._height
 
     def create_global(self, global_, orientation, name = None, position = None):

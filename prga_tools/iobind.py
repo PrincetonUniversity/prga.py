@@ -57,11 +57,11 @@ def iobind(context, mod_top, fixed = None):
             if tile.block.module_class.is_io_block:
                 i, o = map(tile.block.physical_ports.get, ("exti", "exto"))
                 if i is not None:
-                    i = [None] * tile.capacity
+                    i = [None] * tile.block.capacity
                 else:
                     i = []
                 if o is not None:
-                    o = [None] * tile.capacity
+                    o = [None] * tile.block.capacity
                 else:
                     o = []
                 assignments[x][y] = i, o

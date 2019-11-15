@@ -55,7 +55,7 @@ class CompleteRoutingBox(Object, AbstractPass):
                     if cbox.model.name in hierarchy[module.name]:
                         continue
                     generate_fc(cbox.model, segments, module.block, orientation,
-                            self.block_fc.get(module.block.name, self.default_fc), module.capacity,
+                            self.block_fc.get(module.block.name, self.default_fc),
                             position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
                     hierarchy.setdefault(cbox.model.name, {})
                     hierarchy[module.name][cbox.model.name] = cbox.model

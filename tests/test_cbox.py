@@ -26,7 +26,7 @@ class SwitchLibrary(SwitchLibraryDelegate):
 
 def test_connection_box(tmpdir):
     io = Iopad()
-    block = IOBlock('mock_block', io)
+    block = IOBlock('mock_block', io, 4)
     glb = Global('clk', is_clock = True)
     sgmts = [Segment('L1', 4, 1), Segment('L2', 1, 2)]
     lib = SwitchLibrary()
@@ -41,8 +41,8 @@ def test_connection_box(tmpdir):
     cbox = ConnectionBox('mock_cbox', Dimension.x)
 
     # 3. populate and generate connections
-    populate_connection_box(cbox, sgmts, block, Orientation.south, 4)
-    generate_fc(cbox, sgmts, block, Orientation.south, BlockFCValue(BlockPortFCValue(0.5), BlockPortFCValue(1.0)), 4)
+    populate_connection_box(cbox, sgmts, block, Orientation.south)
+    generate_fc(cbox, sgmts, block, Orientation.south, BlockFCValue(BlockPortFCValue(0.5), BlockPortFCValue(1.0)))
 
     # 2.3 switchify!
     switchify(lib, cbox)

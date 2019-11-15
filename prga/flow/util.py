@@ -5,8 +5,8 @@ from prga.compatible import *
 
 from prga.exception import PRGAInternalError
 
-__all__ = ['analyze_hierarchy', 'iter_all_arrays', 'iter_all_tiles', 'iter_all_sboxes',
-        'get_switch_path']
+__all__ = ['analyze_hierarchy', 'iter_all_arrays', 'iter_all_tiles', 'iter_all_blocks',
+        'iter_all_sboxes', 'get_switch_path']
 
 # ----------------------------------------------------------------------------
 # -- Helper Function ---------------------------------------------------------
@@ -57,6 +57,14 @@ def iter_all_tiles(context, drop_cache = False):
             elif sub.module_class.is_tile:
                 yield sub
                 visited.add(subname)
+
+def iter_all_blocks(context, drop_cache = False):
+    """Iterate through all logic/io blocks in use in ``context``."""
+    visited = set()
+    for tile in iter_all_tiles(context, drop_cache):
+        if tile.block.name not in visited:
+            visited.add(tile.block.name)
+            yield tile.block
 
 def iter_all_sboxes(context, drop_cache = False):
     """Iterate through all switch boxes in use in ``context``."""

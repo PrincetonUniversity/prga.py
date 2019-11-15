@@ -97,7 +97,7 @@ class BitchainConfigCircuitryDelegate(ConfigBitchainLibraryDelegate, ConfigCircu
             config_bit_base += config_bit_offsets[instance.name]
         config_bit_offsets = get_config_bit_offset(self.context, hierarchical_instance[-1].model)
         prefix = []
-        for subblock in range(hierarchical_instance[-1].model.capacity):
+        for subblock in range(hierarchical_instance[-1].model.block.capacity):
             blk_inst = hierarchical_instance[-1].model.block_instances[subblock]
             if blk_inst.name not in config_bit_offsets:
                 return tuple()

@@ -10,7 +10,7 @@ from prga.arch.block.block import IOBlock
 def test_io_block(tmpdir):
     io = Iopad()
     ff = Flipflop()
-    block = IOBlock('mock_block', io)
+    block = IOBlock('mock_block', io, 4)
     glb = Global('clk', is_clock = True)
 
     # 1. add some ports

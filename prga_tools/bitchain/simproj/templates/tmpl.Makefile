@@ -55,7 +55,6 @@ SYNTHESIS_RESULT := $(TARGET).blif
 SYNTHESIS_LOG := $(TARGET).synth.log
 PACK_RESULT := $(TARGET).net
 PACK_LOG := $(TARGET).pack.log
-PACK_RESULT_REMAPPED := $(TARGET).remapped.net
 PLACE_RESULT := $(TARGET).place
 PLACE_LOG := $(TARGET).place.log
 ROUTE_RESULT := $(TARGET).route
@@ -69,7 +68,6 @@ SIM_WAVEFORM := $(TARGET).vpd
 
 OUTPUTS := $(SYNTHESIS_RESULT)
 OUTPUTS += $(PACK_RESULT)
-OUTPUTS += $(PACK_RESULT_REMAPPED)
 OUTPUTS += $(PLACE_RESULT)
 OUTPUTS += $(ROUTE_RESULT)
 OUTPUTS += $(FASM_RESULT)
@@ -98,7 +96,7 @@ verify: $(SIM_LOG) makefile_validation_
 
 synth: $(SYNTHESIS_RESULT) makefile_validation_
 
-pack: $(PACK_RESULT_REMAPPED) makefile_validation_
+pack: $(PACK_RESULT) makefile_validation_
 
 place: $(PLACE_RESULT) makefile_validation_
 
@@ -121,8 +119,8 @@ cleanlog: makefile_validation_
 cleanall: clean cleanlog
 	rm -rf $(OUTPUTS)
 
-disp: $(SYNTHESIS_RESULT) $(PACK_RESULT_REMAPPED) $(PLACE_RESULT) $(ROUTE_RESULT) makefile_validation_
-	$(VPR) $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) --circuit_format eblif --net_file $(PACK_RESULT_REMAPPED) \
+disp: $(SYNTHESIS_RESULT) $(PACK_RESULT) $(PLACE_RESULT) $(ROUTE_RESULT) makefile_validation_
+	$(VPR) $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) --circuit_format eblif --net_file $(PACK_RESULT) \
 		--place_file $(PLACE_RESULT) --route_file $(ROUTE_RESULT) --analysis \
 		--route_chan_width $(VPR_CHAN_WIDTH) --read_rr_graph $(VPR_RRGRAPH) --disp on
 
@@ -146,25 +144,22 @@ $(PACK_RESULT): $(VPR_ARCHDEF) $(SYNTHESIS_RESULT)
 	$(VPR) $^ --circuit_format eblif --pack --net_file $@ --constant_net_method route \
 		| tee $(PACK_LOG)
 
-$(PACK_RESULT_REMAPPED): $(CTX) $(VPR_IOBINDING) $(PACK_RESULT)
-	$(PYTHON) -m prga_tools.ioremap $^ $@
-
-$(PLACE_RESULT): $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) $(PACK_RESULT_REMAPPED) $(VPR_IOBINDING)
+$(PLACE_RESULT): $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) $(PACK_RESULT) $(VPR_IOBINDING)
 	$(VPR) $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) --circuit_format eblif --constant_net_method route \
-		--net_file $(PACK_RESULT_REMAPPED) \
+		--net_file $(PACK_RESULT) \
 		--place --place_file $@ --fix_pins $(VPR_IOBINDING) \
 		--place_delay_model delta_override --place_chan_width $(VPR_CHAN_WIDTH) \
 		| tee $(PLACE_LOG)
 
-$(ROUTE_RESULT): $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) $(VPR_RRGRAPH) $(PACK_RESULT_REMAPPED) $(PLACE_RESULT)
+$(ROUTE_RESULT): $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) $(VPR_RRGRAPH) $(PACK_RESULT) $(PLACE_RESULT)
 	$(VPR) $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) --circuit_format eblif --constant_net_method route \
-		--net_file $(PACK_RESULT_REMAPPED) --place_file $(PLACE_RESULT) \
+		--net_file $(PACK_RESULT) --place_file $(PLACE_RESULT) \
 		--route --route_file $@ --route_chan_width $(VPR_CHAN_WIDTH) --read_rr_graph $(VPR_RRGRAPH) \
 		| tee $(ROUTE_LOG)
 
-$(FASM_RESULT): $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) $(VPR_RRGRAPH) $(PACK_RESULT_REMAPPED) $(PLACE_RESULT) $(ROUTE_RESULT)
+$(FASM_RESULT): $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) $(VPR_RRGRAPH) $(PACK_RESULT) $(PLACE_RESULT) $(ROUTE_RESULT)
 	$(GENFASM) $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) --circuit_format eblif --analysis \
-		--net_file $(PACK_RESULT_REMAPPED) --place_file $(PLACE_RESULT) --route_file $(ROUTE_RESULT) \
+		--net_file $(PACK_RESULT) --place_file $(PLACE_RESULT) --route_file $(ROUTE_RESULT) \
 		--route_chan_width $(VPR_CHAN_WIDTH) --read_rr_graph $(VPR_RRGRAPH) \
 		| tee $(FASM_LOG)
 

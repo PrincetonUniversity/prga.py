@@ -234,8 +234,7 @@ class BaseModule(Object, AbstractModule):
         try:
             return self._verilog_source
         except AttributeError:
-            raise PRGAInternalError("Verilog source file not generated for module '{}' yet."
-                    .format(self))
+            return None
 
     @verilog_source.setter
     def verilog_source(self, source):

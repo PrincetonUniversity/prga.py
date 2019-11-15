@@ -94,7 +94,7 @@ class BlockFCValue(namedtuple('BlockFCValue', 'default_in default_out overrides'
 # -- Algorithms for connection boxes -----------------------------------------
 # ----------------------------------------------------------------------------
 def populate_connection_box(box, segments, block, orientation,
-        capacity = 1, position = None, channel = (0, 0)):
+        position = None, channel = (0, 0)):
     """Populate connection box.
 
     Args:
@@ -102,7 +102,6 @@ def populate_connection_box(box, segments, block, orientation,
         segments (:obj:`Sequence` [`Segment` ]):
         block (`BaseBlock`):
         orientation (`Orientation`):
-        capacity (:obj:`int`): Number of blocks connected to this box
         position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): position of the ports in ``block`` that are connected by
             this cbox. This argument can be omitted if ``block`` is 1x1
         channel (:obj:`tuple` [:obj:`int`, :obj:`int` ]): position of the routing channel relative to this cbox
@@ -129,11 +128,11 @@ def populate_connection_box(box, segments, block, orientation,
         if not (port.net_class.is_blockport and port.position == position and
                 port.orientation in (orientation, Orientation.auto)):
             continue
-        for subblock in range(capacity):
+        for subblock in range(block.capacity):
             box.get_or_create_node(BlockPortID(pos_port_rel_to_cbox, port, subblock))
 
 def generate_fc(box, segments, block, orientation, fc,
-        capacity = 1, position = None, channel = (0, 0), create_nets_if_absent = True): 
+        position = None, channel = (0, 0), create_nets_if_absent = True): 
     """Add port-segment connections using FC values.
 
     Args:
@@ -142,7 +141,6 @@ def generate_fc(box, segments, block, orientation, fc,
         block (`BaseBlock`):
         orientation (`Orientation`):
         fc (`BlockFCValue`):
-        capacity (:obj:`int`): Number of blocks connected to this box
         position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): position of the ports in ``block`` that are connected by
             this cbox. This argument can be omitted if ``block`` is 1x1
         channel (:obj:`tuple` [:obj:`int`, :obj:`int` ]): position of the routing channel relative to this cbox
@@ -169,7 +167,7 @@ def generate_fc(box, segments, block, orientation, fc,
                 continue
             imax = port.direction.case(sgmt.length * sgmt.width, sgmt.width)
             istep = max(1, imax // nc)                  # index step
-            for _, port_idx, subblock in product(range(nc), range(port.width), range(capacity)):
+            for _, port_idx, subblock in product(range(nc), range(port.width), range(block.capacity)):
                 # get the section and track id to be connected
                 section = port.direction.case(iti[sgmt_idx] % sgmt.length, 0)
                 track_idx = port.direction.case(iti[sgmt_idx] // sgmt.length, oti[sgmt_idx])

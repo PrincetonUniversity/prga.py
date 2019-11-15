@@ -52,7 +52,7 @@ class _RemapTarget(object):
             if tile is None:
                 break
             tile = tile[-1].model
-            if not tile.block.module_class.is_io_block or subblock < 0 or subblock >= tile.capacity:
+            if not tile.block.module_class.is_io_block or subblock < 0 or subblock >= tile.block.capacity:
                 raise PRGAAPIError("No IO block found at position ({}, {}, {})"
                         .format(x, y, subblock))
             matched = _reprog_instance.match(attrs['instance'])
