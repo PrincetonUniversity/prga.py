@@ -87,7 +87,7 @@ class ArchitectureContext(Object):
             ]
 
     def __init__(self, name, width, height, config_circuitry_delegate_class,
-            additional_template_search_paths = tuple()):
+            additional_template_search_paths = tuple(), **kwargs):
         super(ArchitectureContext, self).__init__()
         self._top = Array(name, width, height, True)
         self._globals = OrderedDict()
@@ -95,7 +95,7 @@ class ArchitectureContext(Object):
         self._segments = OrderedDict()
         self._modules = OrderedDict()
         self._additional_template_search_paths = additional_template_search_paths
-        cfg = self._config_lib = config_circuitry_delegate_class(self)
+        cfg = self._config_lib = config_circuitry_delegate_class(self, **kwargs)
         self._primitive_lib = cfg.get_primitive_library(self)
         self._switch_lib = cfg.get_switch_library(self)
         self._cbox_lib = cfg.get_connection_box_library(self)
