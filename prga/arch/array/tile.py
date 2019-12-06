@@ -33,7 +33,7 @@ class Tile(BaseModule, AbstractArrayElement):
         super(Tile, self).__init__(name)
         self._ports = OrderedDict()
         self._instances = OrderedDict()
-        if block.is_io_block and orientation.is_auto:
+        if block.module_class.is_io_block and orientation.is_auto:
             raise PRGAInternalError("'orientation' required for IO block '{}'"
                     .format(block))
         self._orientation = orientation
