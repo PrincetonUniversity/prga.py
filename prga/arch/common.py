@@ -8,7 +8,7 @@ from prga.exception import PRGAInternalError
 
 from collections import namedtuple
 
-__all__ = ['Dimension', 'Direction', 'Orientation', 'Position']
+__all__ = ['Dimension', 'Direction', 'Orientation', 'Corner', 'Position']
 
 # ----------------------------------------------------------------------------
 # -- Dimension ---------------------------------------------------------------
@@ -55,7 +55,7 @@ class Orientation(Enum):
     east = 1        #: Direction.inc x Dimension.x
     south = 2       #: Direction.dec x Dimension.y
     west = 3        #: Direction.dec x Dimension.x
-    auto = 4       #: automatically determine the orientation. Not valid in some cases
+    auto = 4        #: automatically determine the orientation. Not valid in some cases
 
     @property
     def dimension(self):
@@ -103,6 +103,52 @@ class Orientation(Enum):
         """
         return dimension.case(direction.case(Orientation.east, Orientation.west),
                 direction.case(Orientation.north, Orientation.south))
+
+# ----------------------------------------------------------------------------
+# -- Corner ------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+class Corner(Enum):
+    """Corner in a 2D grid."""
+    northeast = 0   #: Orientation.north x Orientation.east
+    northwest = 1   #: Orientation.north x Orientation.west
+    southeast = 2   #: Orientation.south x Orientation.east
+    southwest = 3   #: Orientation.south x Orientation.west
+
+    @classmethod
+    def compose(cls, ori_a, ori_b):
+        """Compose two orientations to make a corner.
+
+        Args:
+            ori_a (`Orientation`):
+            ori_b (`Orientation`):
+
+        Retusn:
+            `Corner`:
+        """
+        if ori_a.dimension is ori_b.dimension:
+            raise PRGAInternalError("Cannot compose '{}' and '{}'".format(ori_a, ori_b))
+        return ori_a.case(
+                ori_b.case(west = Corner.northwest, east = Corner.northeast),
+                ori_b.case(north = Corner.northeast, south = Corner.southeast),
+                ori_b.case(west = Corner.southwest, east = Corner.southwest),
+                ori_b.case(north = Corner.northwest, south = Corner.southwest))
+
+    @property
+    def opposite(self):
+        """`Corner`: The opposite corner of this corner."""
+        return self.case(
+                Corner.southwest,
+                Corner.southeast,
+                Corner.northwest,
+                Corner.northeast)
+
+    def decompose(self):
+        """:obj:`tuple` (`Orientation`, `Orientation`): Decompose this corner into two `Orientation`s."""
+        return self.case(
+                (Orientation.north, Orientation.east),
+                (Orientation.north, Orientation.west),
+                (Orientation.south, Orientation.east),
+                (Orientation.south, Orientation.west))
 
 # ----------------------------------------------------------------------------
 # -- Position ----------------------------------------------------------------

@@ -115,7 +115,12 @@ class _BaseDynamicBit(_BaseBit):
         try:
             return self._static_cp.physical_cp
         except AttributeError:
-            return None
+            pass
+        try:
+            return self.bus._physical_cp[self.index]
+        except AttributeError:
+            pass
+        return None
 
     @physical_cp.setter
     def physical_cp(self, cp):

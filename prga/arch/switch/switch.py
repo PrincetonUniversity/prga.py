@@ -13,7 +13,6 @@ from prga.util import Object, ReadonlyMappingProxy
 
 from abc import abstractproperty
 from collections import OrderedDict
-import math
 
 __all__ = ['AbstractSwitch', 'ConfigurableMUX']
 
@@ -63,7 +62,11 @@ class ConfigurableMUX(BaseModule, AbstractSwitch):
         self.in_physical_domain = in_physical_domain
         self._add_port(SwitchInputPort(self, 'i', width))
         self._add_port(SwitchOutputPort(self, 'o', 1, combinational_sources = ('i', )))
-        self._add_port(ConfigInputPort(self, 'cfg_d', int(math.ceil(math.log(width, 2)))))
+        try:
+            len_cfg_d = (width - 1).bit_length()
+        except AttributeError:
+            len_cfg_d = len(bin(width - 1).lstrip('-0b'))
+        self._add_port(ConfigInputPort(self, 'cfg_d', len_cfg_d))
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------

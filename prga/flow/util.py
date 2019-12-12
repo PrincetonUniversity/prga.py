@@ -6,7 +6,7 @@ from prga.compatible import *
 from prga.exception import PRGAInternalError
 
 __all__ = ['analyze_hierarchy', 'iter_all_arrays', 'iter_all_tiles', 'iter_all_blocks',
-        'iter_all_sboxes', 'get_switch_path']
+        'iter_all_sboxes', 'iter_all_cboxes', 'get_switch_path']
 
 # ----------------------------------------------------------------------------
 # -- Helper Function ---------------------------------------------------------
@@ -82,6 +82,15 @@ def iter_all_sboxes(context, drop_cache = False):
             elif sub.module_class.is_switch_box:
                 yield sub
                 visited.add(subname)
+
+def iter_all_cboxes(context, drop_cache = False):
+    """Iterate through all connection boxes in use in ``context``."""
+    visited = set()
+    for tile in iter_all_tiles(context, drop_cache):
+        for instance in itervalues(tile.cbox_instances):
+            if instance.model.name not in visited:
+                visited.add(instance.model.name)
+                yield instance.model
 
 def iter_all_primitives(context, drop_cache = False):
     """Iterate through all primitives in use in ``context``."""

@@ -248,7 +248,7 @@ def netify_array(array, top = False):
                     node = pin.node
                     if pin.direction.is_input:
                         exti = pin.physical_source = array._add_port(ArrayExternalInputPort(array, node))
-                        extinputs[x][y].setdefault(node.subblock, []).append(exti)
+                        extinputs[node.position.x][node.position.y].setdefault(node.subblock, []).append(exti)
                     else:
                         array._add_port(ArrayExternalOutputPort(array, node)).physical_source = pin
         # 2. check out the switch box
