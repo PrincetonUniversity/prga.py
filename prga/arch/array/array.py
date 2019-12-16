@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.arch.common import Position
+from prga.arch.common import Position, Orientation, Dimension
 from prga.arch.module.common import ModuleClass
 from prga.arch.module.module import BaseModule
 from prga.arch.module.instance import AbstractInstance
@@ -124,19 +124,24 @@ class Array(BaseModule, AbstractArrayElement):
         name (:obj:`str`): Name of the array
         width (:obj:`int`): Width of the array
         height (:obj:`int`): Height of the array
-        is_top (:obj:`bool`): If this is the top-level array
         coverage (`ChannelCoverage`): Coverage of the adjacent channels surrouding this array
+        inner_coverage (`ChannelCoverage`): Coverage of the channels on the edges of this array
     """
 
-    __slots__ = ['_width', '_height', '_is_top', '_coverage', '_ports', '_sbox_grid', '_element_grid', '_nongrid_instances']
-    def __init__(self, name, width, height, is_top = False, coverage = ChannelCoverage()):
-        if is_top and any(coverage):
-            raise PRGAInternalError("Top-level array cannot cover any surrouding routing channels")
+    __slots__ = ['_width', '_height', '_coverage', '_inner_coverage', '_ports',
+            '_sbox_grid', '_element_grid', '_nongrid_instances']
+    def __init__(self, name, width, height, coverage = ChannelCoverage(),
+            inner_coverage = ChannelCoverage(True, True, True, True)):
+        for ori in iter(Orientation):
+            if ori.is_auto:
+                continue
+            if coverage[ori] and not inner_coverage[ori]:
+                raise PRGAInternalError("Covering outer channels on {} edge but not inner channels")
         super(Array, self).__init__(name)
         self._width = width
         self._height = height
-        self._is_top = is_top
         self._coverage = coverage
+        self._inner_coverage = inner_coverage
         self._ports = OrderedDict()
         self._sbox_grid = [[None for _0 in range(height + 1)] for _1 in range(width + 1)]
         self._element_grid = [[None for _0 in range(height)] for _1 in range(width)]
@@ -149,11 +154,6 @@ class Array(BaseModule, AbstractArrayElement):
         return _ArrayInstancesProxy(self)
 
     # == low-level API =======================================================
-    @property
-    def is_top(self):
-        """:obj:`bool`: Test if this is a top-level array."""
-        return self._is_top
-
     @property
     def element_instances(self):
         """:obj:`Mapping` [:obj:`tuple` [:obj:`int`, :obj:`int` ], `ArrayElementInstance` ]: A mapping from tile
@@ -184,16 +184,22 @@ class Array(BaseModule, AbstractArrayElement):
         for x, y in product(range(-1, element.width), range(-1, element.height)):
             pos_in_elem = Position(x, y)
             pos_in_array = position + pos_in_elem
+            for dim in iter(Dimension):
+                if element.covers_channel(pos_in_elem, dim):
+                    if not (self.covers_channel(pos_in_array, dim) and
+                            element.runs_channel(pos_in_elem, dim) != self.runs_channel(pos_in_array, dim)):
+                        raise PRGAInternalError("Array element '{}' does not fit in array '{}' at {} (channel {})"
+                                .format(element, self, position, dim.name))
             if element.covers_tile(pos_in_elem):
                 if not self.covers_tile(pos_in_array):
-                    raise PRGAInternalError("Array element '{}' does not fit in array '{}' at {}"
+                    raise PRGAInternalError("Array element '{}' does not fit in array '{}' at {} (tile)"
                             .format(element, self, position))
                 elif self.get_root_element(pos_in_array) is not None:
                     raise PRGAInternalError("Conflicting tile at {} when instantiating array element '{}' at {}"
                             .format(pos_in_array, element, position))
             if element.covers_sbox(pos_in_elem):
                 if not self.covers_sbox(pos_in_array):
-                    raise PRGAInternalError("Array element '{}' does not fit in array '{}' at {}"
+                    raise PRGAInternalError("Array element '{}' does not fit in array '{}' at {} (switch box)"
                             .format(element, self, position))
                 elif (self.sbox_instances.get(pos_in_array, None) is not None or
                         self.get_root_element_for_sbox(pos_in_array) is not None):
@@ -280,6 +286,10 @@ class Array(BaseModule, AbstractArrayElement):
         return self._coverage
 
     @property
+    def inner_coverage(self):
+        return self._inner_coverage
+
+    @property
     def module_class(self):
         return ModuleClass.array
 
@@ -293,5 +303,15 @@ class Array(BaseModule, AbstractArrayElement):
         instance = self.get_root_element(position + dimension.case((0, 1), (1, 0)))
         if instance is not None and instance.model.covers_channel(position - instance.position, dimension):
             return instance.model.runs_channel(position - instance.position, dimension)
-        return not self.is_top or (position.x < self.width - 1 and position.y < self.height - 1 and
-                dimension.case(position.x > 0, position.y > 0))
+        x, y = position
+        if dimension.is_x:
+            if x == 0 and not self.inner_coverage.west:
+                return False
+            elif x == self.width - 1 and not self.inner_coverage.east:
+                return False
+        else:
+            if y == 0 and not self.inner_coverage.south:
+                return False
+            elif y == self.height - 1 and not self.inner_coverage.north:
+                return False
+        return True

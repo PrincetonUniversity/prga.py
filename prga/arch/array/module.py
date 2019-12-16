@@ -79,7 +79,14 @@ class AbstractArrayElement(AbstractRoutingModule):
         Args:
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
         """
-        return self.covers_channel(position, Dimension.x) and self.covers_channel(position, Dimension.y)
+        x, y = position
+        return (
+                (self.channel_coverage.west if x == -1
+                    else self.channel_coverage.east if x == self.width - 1
+                    else x > -1 and x < self.width - 1) and
+                (self.channel_coverage.south if y == -1
+                    else self.channel_coverage.north if y == self.height - 1
+                    else y > -1 and y < self.height - 1))
 
     def get_or_create_global_input(self, global_, name = None):
         """Get or create a global input port.

@@ -89,7 +89,7 @@ class ArchitectureContext(Object):
     def __init__(self, name, width, height, config_circuitry_delegate_class,
             additional_template_search_paths = tuple(), **kwargs):
         super(ArchitectureContext, self).__init__()
-        self._top = Array(name, width, height, True)
+        self._top = Array(name, width, height, inner_coverage = ChannelCoverage())
         self._globals = OrderedDict()
         self._directs = OrderedDict()
         self._segments = OrderedDict()
@@ -354,7 +354,8 @@ class ArchitectureContext(Object):
         """:obj:`Mapping` [:obj:`str`, `Array` ]: A mapping from names to arrays."""
         return ReadonlyMappingProxy(self._modules, lambda kv: kv[1].module_class.is_array)
 
-    def create_array(self, name, width, height, coverage = ChannelCoverage()):
+    def create_array(self, name, width, height,
+            coverage = ChannelCoverage(), inner_coverage = ChannelCoverage(True, True, True, True)):
         """Create a (sub-)array.
 
         Args:
@@ -363,13 +364,15 @@ class ArchitectureContext(Object):
             height (:obj:`int`): Number of tiles in the Y axis
             coverage (`ChannelCoverage`): Coverage of routing channels surrounding the array. No routing channels are
                 covered by default
+            inner_coverage (`ChannelCoverage`): Coverage of the channels on the edges of this array. All edges are
+                covered by default
 
         Returns:
             `Array`: The created array
         """
         if name in self._modules:
             raise PRGAAPIError("Module '{}' is already created".format(name))
-        return self._modules.setdefault(name, Array(name, width, height, False, coverage))
+        return self._modules.setdefault(name, Array(name, width, height, coverage, inner_coverage))
 
     # -- Serialization -------------------------------------------------------
     def pickle(self, file_):

@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.arch.common import Orientation, Dimension, Global
+from prga.arch.common import Orientation, Dimension, Global, Position
 from prga.arch.net.common import PortDirection
 from prga.arch.net.const import UNCONNECTED
 from prga.arch.routing.common import SegmentBridgeID, SegmentBridgeType, BlockPortID
@@ -27,11 +27,13 @@ class SwitchBoxLibraryDelegate(Abstract):
     # == low-level API =======================================================
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractmethod
-    def get_or_create_sbox(self, env = SwitchBoxEnvironment(), drive_truncated = True):
+    def get_or_create_sbox(self, env = SwitchBoxEnvironment(),
+            array = None, drive_truncated = True):
         """Get a switch box module.
 
         Args:
             env (`SwitchBoxEnvironment`):
+            array (`Array`): If set, a switch box unique to this array should be created/retrieved
         """
         raise NotImplementedError
 
@@ -43,23 +45,35 @@ class SwitchBoxLibraryDelegate(Abstract):
 # ----------------------------------------------------------------------------
 # -- Algorithms for Instantiating Switch Boxes in Arrays ---------------------
 # ----------------------------------------------------------------------------
-def sboxify(lib, array):
+def sboxify(lib, array, top_array = None, pos_in_top = None):
     """Instantiate and place switch box instances into ``array``.
 
     Args:
         lib (`SwitchBoxLibraryDelegate`):
         array (`Array`):
+        top_array (`Array`): If ``array`` is not the top-level array, use ``top_array`` to pass in the top-level array
+        pos_in_top (`Position`): Position of the instance of ``array`` in ``top_array``. Required if ``top_array``
+            is not None
     """
+    if top_array is not None and pos_in_top is None:
+        raise PRGAInternalError("Argument 'pos_in_top' required because 'top_array' is not None")
     for x, y in product(range(-1, array.width), range(-1, array.height)):
-        pos = (x, y)
+        pos = Position(x, y)
         if array.covers_sbox( pos ) and array.get_root_element_for_sbox( pos ) is None:
-            env = SwitchBoxEnvironment(
-                    not array.covers_channel( (x, y+1), Dimension.y ) or array.runs_channel( (x, y+1), Dimension.y ),
-                    not array.covers_channel( (x+1, y), Dimension.x ) or array.runs_channel( (x+1, y), Dimension.x ),
-                    not array.covers_channel( (x, y), Dimension.y ) or array.runs_channel( (x, y), Dimension.y ),
-                    not array.covers_channel( (x, y), Dimension.x ) or array.runs_channel( (x, y), Dimension.x )
-                    )
-            array.instantiate_sbox(lib.get_or_create_sbox(env), pos)
+            kwargs = {}
+            for key, offset, dimension in (
+                    ("north", (0, 1), Dimension.y),
+                    ("east",  (1, 0), Dimension.x),
+                    ("south", (0, 0), Dimension.y),
+                    ("west",  (0, 0), Dimension.x), ):
+                if array.covers_channel( pos + offset, dimension ):
+                    kwargs[key] = array.runs_channel( pos + offset, dimension )
+                elif top_array is None:
+                    kwargs[key] = True
+                else:
+                    kwargs[key] = top_array.runs_channel( pos_in_top + pos + offset, dimension )
+            env = SwitchBoxEnvironment( **kwargs )
+            array.instantiate_sbox(lib.get_or_create_sbox(env, array), pos)
 
 # ----------------------------------------------------------------------------
 # -- Algorithms for Exposing Ports and Connecting Nets in Arrays -------------
@@ -74,17 +88,7 @@ def find_segment_driver(array, node, create_input = True):
     """
     for sec in range(node.section + 1):
         equiv_node = node - sec
-        # 1. is the channel covered?
-        if not array.covers_channel(equiv_node.position, node.orientation.dimension):
-            if create_input:
-                return array.get_or_create_node(equiv_node.to_bridge_id(
-                    bridge_type = SegmentBridgeType.array_regular), PortDirection.input_)
-            else:
-                return None
-        # 2. are there wire segments in the channel? 
-        if not array.runs_channel(equiv_node.position, node.orientation.dimension):
-            return None
-        # 3. find the switch box driving the segment
+        # find the switch box driving the segment
         pos_sbox = equiv_node.position - equiv_node.orientation.case(
                 (0, 1), (1, 0), (0, 0), (0, 0))
         if not array.covers_sbox(pos_sbox):
@@ -104,8 +108,6 @@ def find_segment_driver(array, node, create_input = True):
                 continue
         elif sbox.module_class.is_array:
             subnode = equiv_node.move(-sbox.position) 
-            if not sbox.model.runs_channel(subnode.position, node.orientation.dimension):
-                return None
             arraynode = subnode.to_bridge_id(bridge_type = SegmentBridgeType.array_regular)
             pin = sbox.all_nodes.get(arraynode)
             if pin is None:
@@ -234,6 +236,7 @@ def netify_array(array, top = False):
                             # search for segment driver
                             driver = find_segment_driver(array, node.to_driver_id(), not top)
                             if driver is None:
+                                find_segment_driver(array, node.to_driver_id(), not top)
                                 continue
                             pin.logical_source = driver
                         elif ((node.bridge_type.is_array_cboxout or node.bridge_type.is_array_cboxout2) and
