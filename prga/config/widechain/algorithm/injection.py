@@ -3,19 +3,15 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.arch.common import Dimension
 from prga.arch.net.port import ConfigClockPort, ConfigInputPort, ConfigOutputPort
 from prga.arch.module.common import ModuleClass
 from prga.arch.module.instance import RegularInstance
-from prga.config.widechain.algorithm.bitstream import get_config_bit_count
-from prga.util import Abstract
-from prga.exception import PRGAInternalError
+from prga.config.widechain.algorithm.stats import get_config_widechain_bitcount
+from prga.util import Abstract, uno
 
 from abc import abstractproperty, abstractmethod
-from itertools import chain
 
-__all__ = ['ConfigWidechainLibraryDelegate', 'WidechainInjectionHelper',
-        'inject_wide_chain', 'order_tile_instances']
+__all__ = ['ConfigWidechainLibraryDelegate', 'inject_widechain']
 
 # ----------------------------------------------------------------------------
 # -- Configuration Widechain Library Delegate --------------------------------
@@ -26,7 +22,7 @@ class ConfigWidechainLibraryDelegate(Abstract):
     # == low-level API =======================================================
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractproperty
-    def cfg_width(self):
+    def config_width(self):
         """:obj:`int`: Width of the config chain."""
         raise NotImplementedError
 
@@ -40,197 +36,262 @@ class ConfigWidechainLibraryDelegate(Abstract):
         raise NotImplementedError
 
     @abstractmethod
-    def get_or_create_fifo(self, depth):
-        """Get a configuration FIFO module.
+    def get_or_create_ctrl(self, depth = 2):
+        """Get a configuration ctrl module.
+        
+        Args:
+            depth (:obj:`int`): The depth of the internal FIFO of this ctrl module.
+        """
+        raise NotImplementedError
+
+# ----------------------------------------------------------------------------
+# -- Guide for Connecting Config Chains and Injecting Ctrl Modules -----------
+# ----------------------------------------------------------------------------
+class ConfigWidechainInjectionGuide(Abstract):
+    """Helper class to guide ``inject_widechain`` where to inject ctrl modules, how to group config chains and the
+    order of instances."""
+
+    @abstractmethod
+    def chain_groups(self, module):
+        """Groups of instances with chains in ``module``.
 
         Args:
-            depth (:obj:`int`):
+            module (`AbstractModule`):
+
+        Returns:
+            :obj:`Iterable` [:obj:`tuple` [:obj:`int`, :obj:`Iterable` [:obj:`tuple` [:obj:`int`, `AbstractInstance`
+                ]]]]: An iterable of \(group ID, chain group\), each group is an iterable of \(subgroup ID, instance\)
         """
         raise NotImplementedError
 
     @abstractmethod
-    def get_or_create_egen(self):
-        """Get a configuration enable generator module."""
-        raise NotImplementedError
+    def injection_level(self, module):
+        """Determine the level of injection in ``module``.
 
-# ----------------------------------------------------------------------------
-# -- Injection Helper --------------------------------------------------------
-# ----------------------------------------------------------------------------
-class WidechainInjectionHelper(Abstract):
-    """A helper class to help `inject_wide_chain` work better."""
-
-    @abstractmethod
-    def inject_fifo(self, module):
-        """:obj:`int`: Stage of the FIFO to be injected for ``module``. If a value larger than 0 is returned for
-        ``module``, FIFO and padding bits will be injected into ``module``."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def inject_chain(self, module):
-        """:obj:`bool`: If configuration chain should be injected into ``module``. This is overwritten by
-        ``inject_fifo``, and forced if ``module`` has instances that require serial configuration ports."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def iterate_instances(self, module):
-        """:obj:`Iterable` [:obj:`AbstractInstance` ]: Iterate ``module`` in a preferred order for config chain
-        injection. Return ``None`` for the default behavior."""
+        Args:
+            module `AbstractModule`):
+        
+        Returns:
+            :obj:`int`: ``2`` - connect FIFO-separated segments; ``1`` - connect and inject ctrl\(FIFO\) module; ``0``
+                - inject and connect chains
+        """
         raise NotImplementedError
 
 # ----------------------------------------------------------------------------
 # -- Algorithms for Injecting Config Circuitry into Modules ------------------
 # ----------------------------------------------------------------------------
-def inject_wide_chain(context, lib, module, helper = None):
+def _flush_parallel_sinks(lib, module, parallel, serial):
+    for sink in parallel:
+        widechain = RegularInstance(module, lib.get_or_create_widechain(len(sink)),
+                'cfgwc_inst_{}'.format(sink.parent.name))
+        sink.logical_source = widechain.logical_pins['cfg_d']
+        serial.append( (widechain, True) )
+    del parallel[:]
+
+def _groupname(name, group):
+    return name if group is None else ('{}_cg{}'.format(name, group))
+
+def _inject_widechain_level0(lib, module, top = True):
     """Inject configuration widechain into ``module`` and its sub-modules.
     
     Args:
-        context (`ArchitectureContext`):
         lib (`ConfigWidechainLibraryDelegate`):
         module (`AbstractModule`): The module in which configuration circuitry is to be injected
-        helper (`WidechainInjectionHelper`):
+        top (:obj:`bool`): If set, config chain is always injected and serial config input/output port are not created
     """
     # Injection: Submodules have cfg_i (serial configuration input port) exclusive-or cfg_d (parallel
     # configuration input port)
-    instances_requiring_serial_config_port = []
     parallel_config_sinks = []
-    try:
-        instance_iterator = helper.iterate_instances(module)
-        inject_fifo = helper.inject_fifo(module)
-        inject_chain = helper.inject_chain(module)
-    except :
-        instance_iterator = None
-        inject_fifo = 0
-        inject_chain = False
-    if instance_iterator is None:
-        instance_iterator = itervalues(module.logical_instances)
-    for instance in instance_iterator:
+    instances_requiring_serial_config_port = []
+    for instance in itervalues(module.logical_instances):
         if instance.module_class is ModuleClass.config:
             continue    # no configuration circuitry for config and extension module types
         if 'cfg_i' not in instance.logical_pins and 'cfg_d' not in instance.logical_pins:
             if instance.module_class not in (ModuleClass.primitive, ModuleClass.switch):
-                inject_wide_chain(context, lib, instance.model, helper)
+                _inject_widechain_level0(lib, instance.model, False)
             else:
                 continue
         if 'cfg_i' in instance.logical_pins:                    # check for serial ports
             # flush pending parallel ports
-            for sink in parallel_config_sinks:
-                widechain = module._add_instance(RegularInstance(module,
-                    lib.get_or_create_widechain(len(sink)), 'cfg_chain_{}'.format(sink.parent.name)))
-                sink.logical_source = widechain.logical_pins['cfg_d']
-                instances_requiring_serial_config_port.append( (widechain, len(sink)) )
-            parallel_config_sinks = []
-            instances_requiring_serial_config_port.append(
-                    (instance, get_config_bit_count(context, instance.model)) )
+            _flush_parallel_sinks(lib, module, parallel_config_sinks, instances_requiring_serial_config_port)
+            instances_requiring_serial_config_port.append( (instance, False) )
         elif 'cfg_d' in instance.logical_pins:                  # check for parallel ports
             parallel_config_sinks.append(instance.logical_pins['cfg_d'])
-    if instances_requiring_serial_config_port or inject_fifo > 0 or inject_chain:
-        # flush pending parallel ports
-        for sink in parallel_config_sinks:
-            widechain = module._add_instance(RegularInstance(module,
-                lib.get_or_create_widechain(len(sink)), 'cfg_chain_{}'.format(sink.parent.name)))
-            sink.logical_source = widechain.logical_pins['cfg_d']
-            instances_requiring_serial_config_port.append( (widechain, len(sink)) )
-        if not instances_requiring_serial_config_port:
-            return
-        cfg_clk = module._add_port(ConfigClockPort(module, 'cfg_clk'))
-        cfg_i = module._add_port(ConfigInputPort(module, 'cfg_i', lib.cfg_width))
-        cfg_o = module._add_port(ConfigOutputPort(module, 'cfg_o', lib.cfg_width))
-        cfg_we = None
-        cfg_bits = 0
-        if inject_fifo > 1:
-            egen = module._add_instance(RegularInstance(module,
-                lib.get_or_create_egen(), 'cfg_egen_inst'))
-            fifo = module._add_instance(RegularInstance(module,
-                lib.get_or_create_fifo(inject_fifo), 'cfg_fifo_inst'))
-            egen.logical_pins['cfg_empty'].logical_source = module._add_port(
-                    ConfigInputPort(module, 'cfg_empty_prev', 1))
-            egen.logical_pins['cfg_full'].logical_source = fifo.logical_pins['cfg_full']
-            cfg_we = egen.logical_pins['cfg_e']
-            module._add_port(ConfigOutputPort(module, 'cfg_rd_prev', 1)).logical_source = cfg_we
-            fifo.logical_pins['cfg_clk'].logical_source = cfg_clk
-            fifo.logical_pins['cfg_rst'].logical_source = module._add_port(ConfigInputPort(module, 'cfg_rst', 1))
-            fifo.logical_pins['cfg_rd'].logical_source = module._add_port(ConfigInputPort(module, 'cfg_rd', 1))
-            module._add_port(ConfigOutputPort(module, 'cfg_empty', 1)).logical_source = fifo.logical_pins['cfg_empty']
-            cfg_o.logical_source = fifo.logical_pins['cfg_o']
-            fifo.logical_pins['cfg_wr'].logical_source = cfg_we
-            cfg_o = fifo.logical_pins['cfg_i']
+    if parallel_config_sinks:
+        if instances_requiring_serial_config_port or top:
+            _flush_parallel_sinks(lib, module, parallel_config_sinks, instances_requiring_serial_config_port)
         else:
+            cfg_pins = [bit for sink in parallel_config_sinks for bit in sink]
+            cfg_d = module._add_port(ConfigInputPort(module, 'cfg_d', len(cfg_pins)))
+            for source, sink in zip(cfg_d, cfg_pins):
+                sink.logical_source = source
+            return
+    if not instances_requiring_serial_config_port:
+        return
+    cfg_clk = module._add_port(ConfigClockPort(module, 'cfg_clk'))
+    cfg_e = module._add_port(ConfigInputPort(module, 'cfg_e', 1))
+    cfg_we = module._add_port(ConfigInputPort(module, 'cfg_we', 1))
+    cfg_i = module._add_port(ConfigInputPort(module, 'cfg_i', lib.config_width))
+    for instance, inject in instances_requiring_serial_config_port:
+        if inject:
+            module._add_instance(instance)
+        instance.logical_pins['cfg_clk'].logical_source = cfg_clk
+        instance.logical_pins['cfg_e'].logical_source = cfg_e
+        instance.logical_pins['cfg_we'].logical_source = cfg_we
+        instance.logical_pins['cfg_i'].logical_source = cfg_i
+        cfg_i = instance.logical_pins['cfg_o']
+    cfg_o = module._add_port(ConfigOutputPort(module, 'cfg_o', lib.config_width))
+    cfg_o.logical_source = cfg_i
+
+def _inject_widechain_level1(context, lib, module, chain_head_iterator, group):
+    cfg_clk = module.logical_ports.get('cfg_clk')
+    cfg_e = module.logical_ports.get('cfg_e')
+    cfg_we, cfg_data_head, cfg_data_tail = (None,) * 3
+    chain_length = 0
+    for cfg_i in chain_head_iterator:
+        assert cfg_i.name.startswith('cfg_i')
+        if cfg_we is None:       # head of chain, inject ctrl module
+            if cfg_clk is None:
+                cfg_clk = module._add_port(ConfigClockPort(module, 'cfg_clk'))
+            if cfg_e is None:
+                cfg_e = module._add_port(ConfigInputPort(module, 'cfg_e', 1))
+            ctrl = module._add_instance(RegularInstance(module, lib.get_or_create_ctrl(),
+                _groupname('cfg_ctrlinst', group)))
+            ctrl.logical_pins['cfg_clk'].logical_source = cfg_clk
+            ctrl.logical_pins['cfg_e'].logical_source = cfg_e
+            for pin_name in ('cfg_wr', 'cfg_i', 'cfg_full_next'):
+                pin = ctrl.logical_pins[pin_name]
+                port = module._add_port(ConfigInputPort(module, _groupname(pin_name, group), pin.width))
+                pin.logical_source = port
+            for pin_name in ('cfg_full', 'cfg_o', 'cfg_wr_next'):
+                pin = ctrl.logical_pins[pin_name]
+                port = module._add_port(ConfigOutputPort(module, _groupname(pin_name, group), pin.width))
+                port.logical_source = pin
+            cfg_we = ctrl.logical_pins['cfg_data_we']
+            cfg_data_head = ctrl.logical_pins['cfg_data_head']
+            cfg_data_tail = ctrl.logical_pins['cfg_data_tail']
+        instance = cfg_i.parent
+        cfg_i.logical_source = cfg_data_head
+        instance.logical_pins['cfg_clk'].logical_source = cfg_clk
+        instance.logical_pins['cfg_e'].logical_source = cfg_e
+        instance.logical_pins['cfg_we'].logical_source = cfg_we
+        cfg_data_head = instance.logical_pins['cfg_o']
+        chain_length += get_config_widechain_bitcount(context, instance.model).get(None, 0)
+    if cfg_data_tail is None:
+        return
+    remainder = chain_length % lib.config_width
+    if remainder != 0:  # inject padding
+        instance = module._add_instance(RegularInstance(module,
+            lib.get_or_create_widechain(lib.config_width - remainder),
+            _groupname('cfgwc_padding', group)))
+        instance.logical_pins['cfg_clk'].logical_source = cfg_clk
+        instance.logical_pins['cfg_e'].logical_source = cfg_e
+        instance.logical_pins['cfg_we'].logical_source = cfg_we
+        instance.logical_pins['cfg_i'].logical_source = cfg_data_head
+        cfg_data_head = instance.logical_pins['cfg_o']
+    cfg_data_tail.logical_source = cfg_data_head
+
+def _inject_widechain_level2(lib, module, chain_iterator, group, instance_proc):
+    print( "Injecting for {} group.{}:".format(module, group))
+    cfg_clk = module.logical_ports.get('cfg_clk')
+    cfg_e = module.logical_ports.get('cfg_e')
+    # FIFO interface or chain interface
+    fifo_intf, chain_intf = False, False
+    cfg_i = None
+    # FIFO
+    cfg_full, cfg_wr = None, None
+    # chain
+    cfg_we = None
+    for subgroup, instance in chain_iterator:
+        instance_proc(instance)
+        cfg_i_cur = instance.logical_pins.get(_groupname('cfg_i', subgroup))
+        if cfg_i_cur is None:
+            continue
+        print( "\tInstance {} sub-group.{}".format(instance, subgroup) )
+        if cfg_clk is None:
+            cfg_clk = module._add_port(ConfigClockPort(module, 'cfg_clk'))
+        instance.logical_pins["cfg_clk"].logical_source = cfg_clk
+        if cfg_e is None:
+            cfg_e = module._add_port(ConfigInputPort(module, 'cfg_e', 1))
+        instance.logical_pins["cfg_e"].logical_source = cfg_e
+        # is it FIFO interface?
+        cfg_full_cur = instance.logical_pins.get(_groupname('cfg_full', subgroup))
+        if cfg_full_cur is not None:
+            if chain_intf:
+                raise PRGAInternalError("FIFO and chain interface co-exist in module '{}'".format(module))
+            fifo_intf = True
+            if cfg_i is None:
+                cfg_i = module._add_port(ConfigInputPort(module, _groupname('cfg_i', group), lib.config_width + 1))
+            if cfg_full is None:
+                cfg_full = module._add_port(ConfigOutputPort(module, _groupname('cfg_full', group), 1))
+            if cfg_wr is None:
+                cfg_wr = module._add_port(ConfigInputPort(module, _groupname('cfg_wr', group), 1))
+            cfg_full.logical_source = cfg_full_cur
+            cfg_i_cur.logical_source = cfg_i
+            instance.logical_pins[_groupname('cfg_wr', subgroup)].logical_source = cfg_wr
+            cfg_full = instance.logical_pins[_groupname('cfg_full_next', subgroup)]
+            cfg_i = instance.logical_pins[_groupname('cfg_o', subgroup)]
+            cfg_wr = instance.logical_pins[_groupname('cfg_wr_next', subgroup)]
+            continue
+        # is it chain interface?
+        cfg_we_cur = instance.logical_pins.get('cfg_we')
+        if cfg_we_cur is None:
+            raise PRGAInternalError(
+                    "Serial input found but no supplementary interface found in instance '{}' in module '{}'"
+                    .format(instance, module))
+        elif fifo_intf:
+            raise PRGAInternalError("FIFO and chain interface co-exist in module '{}'".format(module))
+        elif subgroup is not None:
+            raise PRGAInternalError("Chain interface found in instance '{}' in module '{}'. Sub-group not supported"
+                    .format(instance, module))
+        chain_intf = True
+        if cfg_i is None:
+            cfg_i = module._add_port(ConfigInputPort(module, 'cfg_i', lib.config_width))
+        if cfg_we is None:
             cfg_we = module._add_port(ConfigInputPort(module, 'cfg_we', 1))
-        for instance, bits in instances_requiring_serial_config_port:
-            instance.logical_pins['cfg_clk'].logical_source = cfg_clk
-            instance.logical_pins['cfg_we'].logical_source = cfg_we
-            instance.logical_pins['cfg_i'].logical_source = cfg_i
-            cfg_i = instance.logical_pins['cfg_o']
-            cfg_bits += bits
-        padding = cfg_bits % lib.cfg_width
-        if inject_fifo > 0 and padding > 0:
-            padding = lib.cfg_width - padding
-            padding_inst = module._add_instance(RegularInstance(module,
-                lib.get_or_create_widechain(padding), 'cfg_chain_padding_'))
-            padding_inst.logical_pins['cfg_clk'].logical_source = cfg_clk
-            padding_inst.logical_pins['cfg_we'].logical_source = cfg_we
-            padding_inst.logical_pins['cfg_i'].logical_source = cfg_i
-            cfg_i = padding_inst.logical_pins['cfg_o']
+        cfg_we_cur.logical_source = cfg_we
+        cfg_i_cur.logical_source = cfg_i
+        cfg_i = instance.logical_pins['cfg_o']
+    if fifo_intf:
+        print( "... with FIFO interface" )
+        cfg_full.logical_source = module._add_port(ConfigInputPort(module, _groupname('cfg_full_next', group), 1))
+        cfg_o = module._add_port(ConfigOutputPort(module, _groupname('cfg_o', group), lib.config_width + 1))
+        cfg_wr_next = module._add_port(ConfigOutputPort(module, _groupname('cfg_wr_next', group), 1))
         cfg_o.logical_source = cfg_i
-    elif parallel_config_sinks:
-        cfg_pins = [bit for sink in parallel_config_sinks for bit in sink]
-        cfg_d = module._add_port(ConfigInputPort(module, 'cfg_d', len(cfg_pins)))
-        for source, sink in zip(cfg_d, cfg_pins):
-            sink.logical_source = source
+        cfg_wr_next.logical_source = cfg_wr
+    elif chain_intf:
+        print( "... with chain interface" )
+        cfg_o = module._add_port(ConfigOutputPort(module, _groupname('cfg_o', group), lib.config_width))
+        cfg_o.logical_source = cfg_i
 
-# ----------------------------------------------------------------------------
-# -- Algorithms for Determining the Order of Instances for Injection ---------
-# ----------------------------------------------------------------------------
-def _iterate_cboxes(tile, orientation, direction):
-    """Iterate a column/row of connection boxes in ``tile``."""
-    if orientation.dimension.is_y:
-        y = orientation.direction.case(tile.height - 1, 0)
-        for x in direction.case(range(tile.width), reversed(range(tile.width))):
-            instance = tile.cbox_instances.get( ((x, y), Dimension.x) )
-            if instance is not None:
-                return instance
-    else:
-        x = orientation.direction.case(tile.width - 1, 0)
-        for y in direction.case(range(tile.height), reversed(range(tile.height))):
-            instance = tile.cbox_instances.get( ((x, y), Dimension.y) )
-            if instance is not None:
-                return instance
-
-def order_tile_instances(tile, input_corner, output_corner):
-    """Iterate instances in ``tile`` in an optimized order so the configuration chain flows from the
-    ``input_corner`` to the ``output_corner`` without minimal long wires.
+def inject_widechain(context, lib, module, guide, _visited = None):
+    """Connect wide chains in ``module`` and inject FIFO/ctrl modules under the guidance of ``guide``.
 
     Args:
-        tile (`Tile`):
-        input_corner (`Corner`):
-        output_corner (`Corner`):
+        context (`ArchitectureContext`):
+        lib (`ConfigWidechainLibraryDelegate`):
+        module (`AbstractModule`): The module in which sub-chains are to be connected
+        guide (`ConfigWidechainInjectionGuide`):
+        _visited (:obj:`set` [:obj:`str` ]):
     """
-    if input_corner is output_corner:               # same corner
-        ori_y, ori_x = input_corner.decompose()
-        return chain(_iterate_cboxes(tile, ori_y, ori_x.direction.opposite),
-                _iterate_cboxes(tile, ori_x.opposite, ori_y.direction.opposite),
-                itervalues(tile.block_instances),
-                _iterate_cboxes(tile, ori_y.opposite, ori_x.direction),
-                _iterate_cboxes(tile, ori_x, ori_y.direction))
-    elif input_corner is output_corner.opposite:    # opposite corner
-        ori_y, ori_x = input_corner.decompose()
-        return chain(_iterate_cboxes(tile, ori_y, ori_x.direction.opposite),
-                _iterate_cboxes(tile, ori_x.opposite, ori_y.direction.opposite),
-                itervalues(tile.block_instances),
-                _iterate_cboxes(tile, ori_x, ori_y.direction.opposite),
-                _iterate_cboxes(tile, ori_y.opposite, ori_x.direction.opposite))
-    else:                                           # adjacent corner
-        ori_iy, ori_ix = input_corner.decompose()
-        ori_oy, ori_ox = output_corner.decompose()
-        if ori_iy is ori_oy:    # same y-dimensional orientation
-            return chain(_iterate_cboxes(tile, ori_ix, ori_iy.direction.opposite),
-                    _iterate_cboxes(tile, ori_iy.opposite, ori_ox.direction),
-                    _iterate_cboxes(tile, ori_ox, ori_iy.direction),
-                    itervalues(tile.block_instances),
-                    _iterate_cboxes(tile, ori_iy, ori_ox.direction))
-        else:                   # same x-dimensional orientation
-            return chain(_iterate_cboxes(tile, ori_iy, ori_ix.direction.opposite),
-                    _iterate_cboxes(tile, ori_ix.opposite, ori_oy.direction),
-                    _iterate_cboxes(tile, ori_oy, ori_ix.direction),
-                    itervalues(tile.block_instances),
-                    _iterate_cboxes(tile, ori_ix, ori_oy.direction))
+    _visited = uno(_visited, set())
+    level = guide.injection_level(module)
+    print( " x inject_widechain: {}, {}".format(module, level) )
+    if level == 0:
+        _inject_widechain_level0(lib, module, True)
+    elif level == 1:
+        for group, chain_iterator in iter(guide.chain_groups(module)):
+            chain_heads = []
+            for subgroup, instance in chain_iterator:
+                if instance.model.name not in _visited:
+                    inject_widechain(context, lib, instance.model, guide, _visited)
+                cfg_i = instance.logical_pins.get(_groupname('cfg_i', subgroup))
+                if cfg_i is not None:
+                    chain_heads.append(cfg_i)
+            _inject_widechain_level1(context, lib, module, chain_heads, group)
+    else:
+        for group, chain_iterator in iter(guide.chain_groups(module)):
+            _inject_widechain_level2(lib, module, chain_iterator, group,
+                    lambda x: inject_widechain(context, lib, x.model, guide, _visited) if x.model.name not in _visited
+                    else None)
+    _visited.add(module.name)

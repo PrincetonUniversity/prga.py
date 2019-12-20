@@ -9,10 +9,10 @@ from prga.compatible import *
 from prga.config.bitchain.flow import BitchainConfigCircuitryDelegate, InjectBitchainConfigCircuitry
 
 # Wide multi-bit chain
-from prga.config.widechain.algorithm.injection import WidechainInjectionHelper
+from prga.config.widechain.algorithm.injection import ConfigWidechainInjectionGuide
 from prga.config.widechain.flow import WidechainConfigCircuitryDelegate, InjectWidechainConfigCircuitry
 
 __all__ = [
         'BitchainConfigCircuitryDelegate', 'InjectBitchainConfigCircuitry',
-        'WidechainConfigCircuitryDelegate', 'InjectWidechainConfigCircuitry', 'WidechainInjectionHelper',
+        'WidechainConfigCircuitryDelegate', 'InjectWidechainConfigCircuitry', 'ConfigWidechainInjectionGuide',
         ]
