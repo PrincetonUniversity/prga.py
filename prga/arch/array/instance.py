@@ -97,8 +97,8 @@ class SwitchBoxInstance(BaseRoutingInstance):
     @property
     def name(self):
         return 'sbinst_{}{}{}{}'.format(
-                    'x' if self.position.x >= 0 else 'u', self.position.x,
-                    'y' if self.position.y >= 0 else 'v', self.position.y)
+                    'x' if self.position.x >= 0 else 'u', abs(self.position.x),
+                    'y' if self.position.y >= 0 else 'v', abs(self.position.y))
 
     @property
     def key(self):

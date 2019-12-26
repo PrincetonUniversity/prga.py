@@ -83,7 +83,7 @@ def cboxify(lib, tile, segments, fc, orientation = Orientation.auto):
     for ori, position in sides:
         if ori.is_auto:
             ori = orientation
-        if orientation in (ori, Orientation.auto):
+        if orientation in (ori, Orientation.auto) and (position, ori) not in tile.cbox_instances:
             tile.instantiate_cbox(lib.get_or_create_cbox(tile.block, ori, position,
                 ori.case((0, 0), (0, 0), (0, -1), (-1, 0))), ori, position)
 

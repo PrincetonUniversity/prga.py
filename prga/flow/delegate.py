@@ -255,13 +255,15 @@ class BuiltinSwitchBoxLibrary(_BaseLibrary, SwitchBoxLibraryDelegate):
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
-    def get_or_create_sbox(self, env = SwitchBoxEnvironment(), drive_truncated = True):
-        sbox = self._sboxes.get( (env, drive_truncated) )
+    def get_or_create_sbox(self, env = SwitchBoxEnvironment(),
+            array = None, drive_truncated = True):
+        key = (env, array.name if array is not None else None, drive_truncated)
+        sbox = self._sboxes.get( key )
         if sbox is not None:
             return sbox
-        name = 'sbox_{}'.format(''.join(map(lambda d: d.name[0],
-            filter(lambda d: not d.is_auto and env[d], Orientation))))
-        sbox = self._sboxes.setdefault( (env, drive_truncated), SwitchBox(name))
+        name = '{}sbox_{}'.format((array.name + '_') if array is not None else '',
+                ''.join(map(lambda d: d.name[0], filter(lambda d: not d.is_auto and env[d], Orientation))))
+        sbox = self._sboxes.setdefault(key, SwitchBox(name))
         populate_switch_box(sbox, itervalues(self.context.segments), env, drive_truncated)
         return self.context._modules.setdefault(name, sbox)
 

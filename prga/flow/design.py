@@ -3,6 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
+from prga.arch.common import Position
 from prga.algorithm.design.cbox import generate_fc
 from prga.algorithm.design.sbox import populate_switch_box, generate_wilton
 from prga.algorithm.design.switch import switchify
@@ -29,7 +30,7 @@ class CompleteRoutingBox(Object, AbstractPass):
         cycle_free (:obj:`bool`): If set, cycle-free switch boxes will be used
     """
 
-    __slots__ = ['default_fc', 'block_fc', 'cycle_free']
+    __slots__ = ['default_fc', 'block_fc', 'cycle_free', 'visited']
     def __init__(self, default_fc, block_fc = None, cycle_free = True):
         self.default_fc = default_fc
         self.block_fc = uno(block_fc, {})
@@ -43,23 +44,27 @@ class CompleteRoutingBox(Object, AbstractPass):
     def passes_after_self(self):
         return ("completion.switch", "completion.connection", "physical", "config", "rtl", "syn", "vpr", "asicflow")
 
-    def __process_array(self, context, array, segments):
+    def __process_array(self, context, array, segments, pos_in_top):
         hierarchy = analyze_hierarchy(context)
-        for module in itervalues(hierarchy[array.name]):
-            if module.module_class.is_array:
-                self.__process_array(context, module, segments)
-            elif module.module_class.is_tile:
+        for pos, instance in iteritems(array.element_instances):
+            module = instance.model
+            if module.module_class.is_tile:
+                if module.name in self.visited:
+                    continue
+                self.visited.add(module.name)
                 cboxify(context.connection_box_library, module, segments,
                         self.block_fc.get(module.block.name, self.default_fc), module.orientation.opposite)
-                for (position, orientation), cbox in iteritems(module.cbox_instances):
+                for (cbox_pos, orientation), cbox in iteritems(module.cbox_instances):
                     if cbox.model.name in hierarchy[module.name]:
                         continue
                     generate_fc(cbox.model, segments, module.block, orientation,
                             self.block_fc.get(module.block.name, self.default_fc),
-                            position, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
+                            cbox_pos, orientation.case((0, 0), (0, 0), (0, -1), (-1, 0)))
                     hierarchy.setdefault(cbox.model.name, {})
                     hierarchy[module.name][cbox.model.name] = cbox.model
-        sboxify(context.switch_box_library, array)
+            elif module.module_class.is_array:
+                self.__process_array(context, module, segments, pos + pos_in_top)
+        sboxify(context.switch_box_library, array, context.top, pos_in_top)
         for sbox in itervalues(array.sbox_instances):
             if sbox.model.name in hierarchy[array.name]:
                 continue
@@ -68,7 +73,8 @@ class CompleteRoutingBox(Object, AbstractPass):
             hierarchy[array.name][sbox.model.name] = sbox.model
 
     def run(self, context):
-        self.__process_array(context, context.top, tuple(itervalues(context.segments)))
+        self.visited = set()
+        self.__process_array(context, context.top, tuple(itervalues(context.segments)), Position(0, 0))
 
 # ----------------------------------------------------------------------------
 # -- Create and Connect Ports/Pins in Tiles & Arrays -------------------------
@@ -76,7 +82,7 @@ class CompleteRoutingBox(Object, AbstractPass):
 class CompleteConnection(Object, AbstractPass):
     """Create and connect ports/pins in tiles & arrays."""
 
-    __slots__ = ['_directs']
+    __slots__ = ['_directs', '_visited']
 
     @property
     def key(self):
@@ -91,6 +97,9 @@ class CompleteConnection(Object, AbstractPass):
     def __process_array(self, context, array, top = False):
         hierarchy = analyze_hierarchy(context)
         for module in itervalues(hierarchy[array.name]):
+            if module.name in self._visited:
+                continue
+            self._visited.add(module.name)
             if module.module_class.is_tile:
                 netify_tile(module, self._directs)
             elif module.module_class.is_array:
@@ -99,6 +108,7 @@ class CompleteConnection(Object, AbstractPass):
 
     def run(self, context):
         self._directs = list(itervalues(context.direct_tunnels))
+        self._visited = set([context.top.name])
         self.__process_array(context, context.top, True)
 
 # ----------------------------------------------------------------------------
