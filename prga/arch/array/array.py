@@ -186,8 +186,8 @@ class Array(BaseModule, AbstractArrayElement):
             pos_in_array = position + pos_in_elem
             for dim in iter(Dimension):
                 if element.covers_channel(pos_in_elem, dim):
-                    if not (self.covers_channel(pos_in_array, dim) and
-                            element.runs_channel(pos_in_elem, dim) == self.runs_channel(pos_in_array, dim)):
+                    if (not self.covers_channel(pos_in_array, dim) or
+                            (element.runs_channel(pos_in_elem, dim) and not self.runs_channel(pos_in_array, dim))):
                         raise PRGAInternalError("Array element '{}' does not fit in array '{}' at {} (channel {})"
                                 .format(element, self, pos_in_array, dim.name))
             if element.covers_tile(pos_in_elem):
