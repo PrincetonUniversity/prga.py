@@ -14,7 +14,7 @@
         internal_we{{ portsuffix }} = we{{ portsuffix }};
         internal_addr{{ portsuffix }} = addr{{ portsuffix }};
 
-        // synopsys translate off
+        // synopsys translate_off
         if (we{{ portsuffix }} === 1'bx || we{{ portsuffix }} === 1'bz) begin
             internal_we{{ portsuffix }} = 1'b0;
         end
@@ -23,7 +23,7 @@
             internal_addr{{ portsuffix }} = 1'b0;
         end
         {%- endfor %}
-        // synopsys translate on
+        // synopsys translate_on
     end
 
     always @(posedge clk) begin

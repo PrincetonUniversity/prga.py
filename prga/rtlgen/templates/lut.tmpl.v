@@ -12,13 +12,13 @@ module {{ module.name }} (
     always @* begin
         internal_in = in;
 
-        // synopsys translate off
+        // synopsys translate_off
         {%- for i in range(width) %}
         if (in[{{ i }}] === 1'bx || in[{{ i }}] === 1'bz) begin
             internal_in[{{ i }}] = 1'b0;
         end
         {%- endfor %}
-        // synopsys translate on
+        // synopsys translate_on
     end
 
     always @* begin
