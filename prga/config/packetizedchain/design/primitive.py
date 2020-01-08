@@ -11,9 +11,9 @@ from prga.exception import PRGAInternalError
 import os
 from collections import OrderedDict
 
-__all__ = ['CONFIG_WIDECHAIN_TEMPLATE_SEARCH_PATH', 'ConfigWidechain', 'ConfigPacketizedChainCtrl']
+__all__ = ['CONFIG_PACKETIZED_CHAIN_TEMPLATE_SEARCH_PATH', 'ConfigWidechain', 'ConfigPacketizedChainCtrl']
 
-CONFIG_BITCHAIN_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
+CONFIG_PACKETIZED_CHAIN_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
 
 # ----------------------------------------------------------------------------
 # -- Configuration Chain Module ----------------------------------------------
@@ -76,6 +76,11 @@ class ConfigPacketizedChainCtrl(BaseModule, AbstractLeafModule):
         self._add_port(ConfigOutputPort(self, 'cfg_dout', config_width, 'cfg_clk'))
 
     # == low-level API =======================================================
+    @property
+    def magic_sop(self):
+        """:obj:`int`: A magic number for the start of the packet"""
+        return 0xA5
+
     # -- implementing properties/methods required by superclass --------------
     @property
     def module_class(self):

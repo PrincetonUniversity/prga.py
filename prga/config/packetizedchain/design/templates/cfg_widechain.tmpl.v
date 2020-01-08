@@ -11,7 +11,7 @@ module {{ module.name }} (
     );
 
     wire [{{ width + cfg_width - 1 }}:0] cfg_d_next;
-    assign cfg_d_next = {{ cfg_d, cfg_i }};
+    assign cfg_d_next = {{ '{' -}} cfg_d, cfg_i {{- '}' }};
 
     // combinational outputs
     always @* begin
