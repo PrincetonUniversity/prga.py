@@ -6,13 +6,14 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.arch.common import Orientation
+from prga.arch.common import Orientation, Corner
 from prga.arch.array.common import ChannelCoverage
 from prga.algorithm.design.cbox import BlockPortFCValue, BlockFCValue
 from prga.flow.context import ArchitectureContext
 
 __all__ = [
         "Orientation",
+        "Corner",
         "ChannelCoverage",
         "BlockPortFCValue",
         "BlockFCValue",

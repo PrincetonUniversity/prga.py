@@ -150,6 +150,14 @@ class Corner(Enum):
                 (Orientation.south, Orientation.east),
                 (Orientation.south, Orientation.west))
 
+    def dotx(self, dim):
+        """`Direction`: Direction in `Dimension` ``dim``."""
+        return self.case(
+                dim.case(Direction.inc, Direction.inc),
+                dim.case(Direction.dec, Direction.inc),
+                dim.case(Direction.inc, Direction.dec),
+                dim.case(Direction.dec, Direction.dec))
+
 # ----------------------------------------------------------------------------
 # -- Position ----------------------------------------------------------------
 # ----------------------------------------------------------------------------

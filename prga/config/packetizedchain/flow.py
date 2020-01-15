@@ -13,10 +13,11 @@ from prga.config.packetizedchain.design.primitive import (CONFIG_PACKETIZED_CHAI
 from prga.config.packetizedchain.algorithm.stats import ConfigPacketizedChainStatsAlgorithms as sa
 from prga.config.packetizedchain.algorithm.injection import (ConfigPacketizedChainLibraryDelegate,
         ConfigPacketizedChainInjectionAlgorithms as ia)
-from prga.exception import PRGAInternalError
+from prga.exception import PRGAInternalError, PRGAAPIError
 from prga.util import Object
 
-__all__ = ['PacketizedChainConfigCircuitryDelegate', 'InjectPacketizedChainConfigCircuitry']
+__all__ = ['PacketizedChainConfigCircuitryDelegate', 'PacketizedChainInjectionGuide',
+        'InjectPacketizedChainConfigCircuitry']
 
 # ----------------------------------------------------------------------------
 # -- Configuration Circuitry Delegate for Packetized-chain-based configuration
@@ -25,6 +26,9 @@ class PacketizedChainConfigCircuitryDelegate(ConfigPacketizedChainLibraryDelegat
 
     __slots__ = ['_config_width', '_chains', '_ctrl', '_total_config_bits']
     def __init__(self, context, config_width = 1):
+        if config_width not in (1, 2, 4, 8):
+            raise PRGAAPIError("Unsupported configuration chain width: {}\n"
+                    "\tSupported widths are: 1, 2, 4, 8")
         super(PacketizedChainConfigCircuitryDelegate, self).__init__(context)
         self._config_width = config_width
         self._chains = {}
@@ -135,24 +139,33 @@ class PacketizedChainConfigCircuitryDelegate(ConfigPacketizedChainLibraryDelegat
         return tuple(iter(retval))
 
 # ----------------------------------------------------------------------------
+# -- Configuration Circuitry Injection Guide ---------------------------------
+# ----------------------------------------------------------------------------
+class PacketizedChainInjectionGuide(Object):
+    """Abstract base class for guiding the injection of configuration chains."""
+
+    def iter_instances(self, module):
+        """Iterate sub-instances of ``module``."""
+        return None
+
+    def inject_ctrl(self, module):
+        """Test if ctrl/router instance should be injected into ``module``."""
+        return module.is_array
+
+# ----------------------------------------------------------------------------
 # -- Configuration Circuitry Injection Pass ----------------------------------
 # ----------------------------------------------------------------------------
 class InjectPacketizedChainConfigCircuitry(Object, AbstractPass):
     """Inject packetized configuration circuitry.
 
     Args:
-        func_ctrl_injection (:obj:`Function` \(`AbstractModule` \) -> :obj:`bool` ): Lambda function testing if chain
-            controller/router should be injected in a module. By default 1 single router is injected, which in most
-            cases is not the desired behavior
-        corner (`Corner`): The corner of the top-level array from where the configuration chain runs in
+        guide (`PacketizedChainInjectionGuide`): 
     """
 
-    __slots__ = ['_func', '_corner', '_processed']
-    def __init__(self, func_ctrl_injection = lambda m: m.module_class.is_array,
-            corner = Corner.southwest):
+    __slots__ = ['_guide', '_processed']
+    def __init__(self, guide = PacketizedChainInjectionGuide()):
         super(InjectPacketizedChainConfigCircuitry, self).__init__()
-        self._func = func_ctrl_injection
-        self._corner = corner
+        self._guide = guide
         self._processed = set()
 
     @property
@@ -170,19 +183,17 @@ class InjectPacketizedChainConfigCircuitry(Object, AbstractPass):
     def __process_module(self, context, module):
         self._processed.add(module.name)
         hierarchy = analyze_hierarchy(context)
-        if self._func(module):
+        if self._guide.inject_ctrl(module):
             for submod_name, submod in iteritems(hierarchy[module.name]):
                 if submod_name not in self._processed:
                     self._processed.add(submod_name)
-                    ia.inject_config_chain(context.config_circuitry_delegate, submod)
-            ia.inject_config_ctrl(context, context.config_circuitry_delegate,
-                    module, self._corner)
+                    ia.inject_config_chain(context.config_circuitry_delegate, submod, self._guide.iter_instances)
+            ia.inject_config_ctrl(context, context.config_circuitry_delegate, module, self._guide.iter_instances)
         else:
             for submod_name, submod in iteritems(hierarchy[module.name]):
                 if submod_name not in self._processed:
                     self.__process_module(context, submod)
-            ia.connect_config_chain(context.config_circuitry_delegate,
-                    module, self._corner)
+            ia.connect_config_chain(context.config_circuitry_delegate, module, self._guide.iter_instances)
 
     def run(self, context):
         self.__process_module(context, context.top)

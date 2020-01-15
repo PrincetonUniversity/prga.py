@@ -7,9 +7,10 @@ from prga.compatible import *
 
 from prga.config.bitchain.flow import BitchainConfigCircuitryDelegate, InjectBitchainConfigCircuitry
 from prga.config.packetizedchain.flow import (PacketizedChainConfigCircuitryDelegate,
-        InjectPacketizedChainConfigCircuitry)
+        PacketizedChainInjectionGuide, InjectPacketizedChainConfigCircuitry)
 
 __all__ = [
         'BitchainConfigCircuitryDelegate', 'InjectBitchainConfigCircuitry',
-        'PacketizedChainConfigCircuitryDelegate', 'InjectPacketizedChainConfigCircuitry',
+        'PacketizedChainConfigCircuitryDelegate', 'PacketizedChainInjectionGuide',
+        'InjectPacketizedChainConfigCircuitry',
         ]
