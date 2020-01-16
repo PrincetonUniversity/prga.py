@@ -14,6 +14,78 @@ class ConfigPacketizedChainStatsAlgorithms(object):
     """A holder class (not meant to be instantiated) for stats algorithms for packetized chain."""
 
     @classmethod
+    def get_config_hopcount(cls, context, module, drop_cache = False):
+        """Get the total number of hops in ``module``.
+
+        Args:
+            context (`ArchitectureContext`):
+            module (`AbstractModule`):
+            drop_cache (:obj:`bool`):
+
+        Returns:
+            :obj:`int`: Number of configuration hops in ``module``. ``1`` for leaf hop, and ``None`` for modules below
+                the leaf hop
+        """
+        key = 'config.packetizedchain.hopcount'
+        if not drop_cache:
+            cache = context._cache.get(key, {}).get(module.name)
+            if cache is not None:
+                return cache
+        # look for port cfg_pkt_data_o
+        port = module.logical_ports.get("cfg_pkt_data_o")
+        if port is None:
+            # no config ctrl module down the hierarchy
+            return None
+        cur = port.logical_source
+        if cur.parent.module_class.is_config:   # this is the leaf hop
+            context._cache.setdefault(key, {})[module.name] = 1
+            return 1
+        # construct chain
+        cls.get_config_hopmap(context, module, drop_cache)
+        return context._cache.setdefault(key, {}).get(module.name)
+
+    @classmethod
+    def get_config_hopmap(cls, context, module, drop_cache = False):
+        """Get the configuration hopcount map for ``module``.
+
+        Args:
+            context (`ArchitectureContext`):
+            module (`AbstractModule`):
+            drop_cache (:obj:`bool`):
+
+        Returns:
+            :obj:`Mapping` [:obj:`str`, :obj:`int`]: A mapping from instance name to hop count. ``None`` for leaf hop
+                and below
+        """
+        key = 'config.packetizedchain.hopmap'
+        if not drop_cache:
+            cache = context._cache.get(key, {}).get(module.name)
+            if cache is not None:
+                return cache
+        # look for port cfg_pkt_data_o
+        port = module.logical_ports.get("cfg_pkt_data_o")
+        if port is None:
+            # no config ctrl module down the hierarchy
+            return None
+        cur = port.logical_source
+        if cur.parent.module_class.is_config:
+            # leaf ctrl
+            return None
+        # construct chain
+        hopmap = context._cache.setdefault(key, {}).setdefault(module.name, {})
+        chain = []
+        while cur.net_type.is_pin:
+            chain.append( cur.parent )
+            cur = cur.parent.logical_pins["cfg_pkt_data_i"].logical_source
+        assert chain
+        hopcount = 0
+        for instance in reversed(chain):
+            hopmap[instance.name] = hopcount
+            hopcount += cls.get_config_hopcount(context, instance.model, drop_cache)
+        context._cache.setdefault('config.packetizedchain.hopcount', {})[module.name] = hopcount
+        return hopmap
+
+    @classmethod
     def get_config_bitcount(cls, context, module, drop_cache = False):
         """Get the configuration bit count of ``module``.
 

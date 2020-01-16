@@ -310,6 +310,9 @@ class ConfigPacketizedChainInjectionAlgorithms(object):
             module (`AbstractModule`):
             func_iter_instances (:obj:`Function` [:obj:`AbstractModule` ] -> :obj:`Iterable` [:obj:`AbstractInstance` ]): 
         """
+        if not module.module_class.is_array:
+            raise PRGAInternalError("'{}' is not an array. Configuration controller can only be injected into arrays"
+                    .format(module.name))
         serial = []
         for instance in uno(func_iter_instances, lambda m: itervalues(m.logical_instances))(module):
             if 'cfg_i' in instance.logical_pins:

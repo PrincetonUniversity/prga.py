@@ -58,11 +58,14 @@ class ConfigPacketizedChainCtrl(BaseModule, AbstractLeafModule):
     Args:
         config_width (:obj:`int`): Width of the config input port
         name (:obj:`str`): Name of this module. Default to 'cfgctrl_x{config_width}'
+        magic_sop (:obj:`int`): 8-bit magic number marking the start of a config packet
     """
 
-    __slots__ = ['_ports']
-    def __init__(self, config_width, name = None):
+    __slots__ = ['_ports', '_magic_sop']
+    def __init__(self, config_width, name = None, magic_sop = 0xA5):
         name = name or "cfgctrl_x{}".format(config_width)
+        if magic_sop <= 0 or magic_sop > 0xFF:
+            raise PRGAInternalError("Magic number for start of packet must be an 8-bit number larger than 0")
         super(ConfigPacketizedChainCtrl, self).__init__(name)
         self._ports = OrderedDict()
         self._add_port(ConfigClockPort(self, 'cfg_clk'))
@@ -74,12 +77,13 @@ class ConfigPacketizedChainCtrl(BaseModule, AbstractLeafModule):
         self._add_port(ConfigOutputPort(self, 'cfg_we', 1, 'cfg_clk'))
         self._add_port(ConfigInputPort(self, 'cfg_din', config_width, 'cfg_clk'))
         self._add_port(ConfigOutputPort(self, 'cfg_dout', config_width, 'cfg_clk'))
+        self._magic_sop = magic_sop
 
     # == low-level API =======================================================
     @property
     def magic_sop(self):
         """:obj:`int`: A magic number for the start of the packet"""
-        return 0xA5
+        return self._magic_sop
 
     # -- implementing properties/methods required by superclass --------------
     @property

@@ -21,7 +21,7 @@ module {{ module.name }} (
     //       8b: MESSAGE TYPE
     //      16b: [optional] HOP COUNT (minus 1 per controller, consumed where it reaches zero)
     //                  - for DATA, DATA_CHECK_HOC messages only
-    //      16b: [optional] PAYLOAD SIZE (#bits excluding header)
+    //      16b: [optional] PAYLOAD SIZE (#bits - 1 excluding header)
     //                  - for DATA, DATA_CHECK_HOC messages only
     //  Payload: PAYLOAD bits for DATA message types
 
@@ -158,21 +158,21 @@ module {{ module.name }} (
                 en_output = 1'b1;
                 if (bit_count == 0) begin                   // PAYLOAD should be in buffer[15:0] now
                     reset_bit_count = 1'b1;
-                    bit_count_reset_value = buffer[15:0] + 32;      // wait until the message passes thru
+                    bit_count_reset_value = buffer[15:0] + 33;      // wait until the message passes thru
                     state_next = ST_PASSTHRU;
                 end
             end
             ST_DATA_CHECK_HOC_HEADER: begin
                 if (bit_count == 0) begin                   // PAYLOAD should be in buffer[15:0] now
                     reset_bit_count = 1'b1;
-                    bit_count_reset_value = buffer[15:0] + 32;
+                    bit_count_reset_value = buffer[15:0] + 33;
                     state_next = ST_DATA_CHECK_HOC;
                 end
             end
             ST_DATA_HEADER: begin
                 if (bit_count == 0) begin                   // PAYLOAD should be in buffer[15:0] now
                     reset_bit_count = 1'b1;
-                    bit_count_reset_value = buffer[15:0] + 32;
+                    bit_count_reset_value = buffer[15:0] + 33;
                     state_next = ST_DATA;
                 end
             end
