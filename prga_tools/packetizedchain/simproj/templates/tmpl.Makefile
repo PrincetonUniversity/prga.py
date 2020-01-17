@@ -26,11 +26,18 @@ TARGET_SRCS := {{ target.sources|join(' ') }}
 TARGET_FLAGS :={% for inc in target.includes %} {% if compiler == 'iverilog' %}-I{{ inc }}{% elif compiler == 'vcs' %}+incdir+{{ inc }}{% endif %}{% endfor %}
 TARGET_FLAGS +={% for macro in target.defines %} {% if compiler == 'iverilog' %}-D{{ macro }}{% elif compiler == 'vcs' %}+define+{{ macro }}{% endif %}{% endfor %}
 
+{%- if host is defined %}
 HOST := {{ host.name }}
 HOST_SRCS := {{ host.sources|join(' ') }}
 HOST_FLAGS :={% for inc in host.includes %} {% if compiler == 'iverilog' %}-I{{ inc }}{% elif compiler == 'vcs' %}+incdir+{{ inc }}{% endif %}{% endfor %}
 HOST_FLAGS +={% for macro in host.defines %} {% if compiler == 'iverilog' %}-D{{ macro }}{% elif compiler == 'vcs' %}+define+{{ macro }}{% endif %}{% endfor %}
 HOST_ARGS :={% for arg in host.args %} +{{ arg }}{% endfor %}
+{%- else %}
+HOST :=
+HOST_SRCS :=
+HOST_FLAGS :=
+HOST_ARGS :=
+{%- endif %}
 
 CTX := {{ context }}
 
@@ -127,7 +134,7 @@ disp: $(SYNTHESIS_RESULT) $(PACK_RESULT) $(PLACE_RESULT) $(ROUTE_RESULT) makefil
 {# compiler options #}
 {%- if compiler not in ['iverilog', 'vcs'] %}
 makefile_validation_:
-	echo "Unknown compiler option: {{ compiler }}. This generated Makefile is invalid"
+	echo "[Error] Unknown compiler option: {{ compiler }}. This generated Makefile is invalid"
 	exit 1
 {%- else %}
 makefile_validation_: ;
@@ -167,7 +174,12 @@ $(BITGEN_RESULT): $(CTX) $(FASM_RESULT)
 	$(PYTHON) -m prga_tools.bitchain.bitgen $^ $@
 
 $(SIM): $(TESTBENCH_WRAPPER) $(TARGET_SRCS) $(HOST_SRCS) $(FPGA_RTL)
+	{%- if host is defined %}
 	$(COMP) $(FLAGS) $(HOST_FLAGS) $(TARGET_FLAGS) $< -o $@ $(addprefix -v ,$^)
+	{%- else %}
+	echo "[Error] Test host not specified during project generation"
+	exit 1
+	{%- endif %}
 
 $(SIM_LOG): $(SIM) $(BITGEN_RESULT)
 	./$< $(HOST_ARGS) +bitstream_memh=$(BITGEN_RESULT) | tee $@
