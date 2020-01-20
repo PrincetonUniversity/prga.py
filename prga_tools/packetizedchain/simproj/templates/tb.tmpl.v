@@ -224,6 +224,12 @@ module {{ behav.name }}_tb_wrapper;
         end
     end
 
+    reg [7:0] random_num;
+
+    always @(posedge sys_clk) begin
+        random_num <= $urandom_range(0, 99);
+    end
+
     always @* begin
         cfg_e = 1'b0;
         tb_rst = sys_rst;
@@ -239,12 +245,12 @@ module {{ behav.name }}_tb_wrapper;
                 cfg_e = 1'b1;
                 tb_rst = 1'b1;
 
-                // if ($urandom_range(0, 99) >= 20) begin
+                if (random_num >= 20) begin
                     cfg_pkt_val_i = 1'b1;
                     if (word_index == bs_num_qwords - 1 && bit_index == bs_last_bit_index) begin
                         state_next = PROG_STABLIZING;
                     end
-                // end
+                end
             end
             PROG_STABLIZING: begin
                 cfg_e = 1'b1;
