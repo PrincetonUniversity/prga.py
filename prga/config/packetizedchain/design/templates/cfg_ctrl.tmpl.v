@@ -15,7 +15,9 @@ module {{ module.name }} (
     input wire [{{ width - 1 }}:0] cfg_din
     );
 
+    // ============================================================
     // Packet format:
+    // ============================================================
     //  Header: 16 bits + [optional] 16 bits + [optional] 16 bits
     //       8b: MAGIC NUMBER FOR START OF PACKET
     //       8b: MESSAGE TYPE
@@ -44,41 +46,94 @@ module {{ module.name }} (
                 ST_PASSTHRU                     = 4'h6,     // processing a message passing through
                 ST_PASSTHRU_WITH_PAYLOAD_HEADER = 4'h7,     // reading the header of a pass-thru message
                 ST_FLUSH                        = 4'h8,     // flush buffer
-                ST_SEND_ERROR_MSG               = 4'h9,     // sending error message
-                ST_TRAP                         = 4'hA,     // trapped after sending an error message
-                ST_PASSTHRU_ERROR               = 4'hB;     // got an error message, transition to trap state
+                ST_TRAP                         = 4'h9,     // trapped after sending an error message
+                ST_PASSTHRU_ERROR               = 4'hA;     // got an error message, transition to trap state
 
+    // ============================================================
+    // Phit Buffer
+    // ============================================================
     // registers
+    reg [{{ 32 // width - 1 }}:0] val;          // pipelined valid signal
     reg [31:0] buffer;                          // phits buffer
+
+    // wires
+    reg drain_buffer;                           // allow the first phit in buffer to leave at the upcoming rising edge
+    reg en_output;                              // set `cfg_pkt_val_o` at the upcoming rising edge
+    reg [31:0] buffer_next;                     // value to be used to update `buffer` (only used when `drain_buffer` is set)
+
+    always @(posedge cfg_clk) begin
+        if (~cfg_e) begin
+            val <= {{ 32 // width }}'b0;
+            buffer <= 32'b0;
+            cfg_pkt_val_o <= 1'b0;
+            cfg_pkt_data_o <= {{ width }}'b0;
+        end else begin
+            if (drain_buffer) begin
+                buffer <= {{ '{' -}} buffer_next, cfg_pkt_data_i {{- '}' }};
+                val <= {{ '{' -}} val, cfg_pkt_val_i {{- '}' }};
+            end else begin
+                {%- for i in range(1, 32 // width) %}
+                if (~&val[{{ 32 // width - 1 }}:{{ i }}]) begin
+                    buffer[{{ i * width }} +: CFG_WIDTH] <= buffer[{{ (i - 1) * width }} +: CFG_WIDTH];
+                    val[{{ i }}] <= val[{{ i - 1 }}];
+                end
+                {%- endfor %}
+
+                buffer[0 +: CFG_WIDTH] <= cfg_pkt_data_i;
+                val[0] <= cfg_pkt_val_i;
+
+                {#
+                if (~val[{{ 32 // width - 1 }}]) begin
+                    buffer[31 -: CFG_WIDTH] <= cfg_pkt_data_i;
+                    val[{{ 32 // width - 1 }}] <= cfg_pkt_val_i;
+                end
+                {%- for i in reversed(range(32 // width - 1)) %}
+                else if (~val[{{ i }}] && (&val[{{ 32 // width - 1 }}:{{ i + 1 }}])) begin
+                    buffer[{{ i * width }} +: CFG_WIDTH] <= cfg_pkt_data_i;
+                    val[{{ i }}] <= cfg_pkt_val_i;
+                end
+                #}
+            end
+
+            cfg_pkt_val_o <= en_output;
+            cfg_pkt_data_o <= buffer_next[31 -: CFG_WIDTH];
+        end
+    end
+
+    always @* begin
+        #1;
+        cfg_dout = buffer[0 +: CFG_WIDTH];
+    end
+
+    // ============================================================
+    // FSM and Control Logic
+    // ============================================================
+    // registers
     reg [16:0] bit_count;                       // multi-purpose bit count
     reg [31:0] hoc;                             // head of config
     reg [3:0] state;
 
     // wires
-    reg en_output, reset_bit_count, dec_hop_count;
-    reg [31:0] buffer_next;
+    reg reset_bit_count;
     reg [16:0] bit_count_reset_value;
     reg [3:0] state_next;
 
     always @(posedge cfg_clk) begin
         if (~cfg_e) begin
-            buffer <= 32'b0;
             bit_count <= 16'b0;
-            cfg_pkt_data_o <= {{ '{' -}} CFG_WIDTH {{- '{' -}} 1'b0 {{- '}}' -}};
-            cfg_pkt_val_o <= 1'b0;
             state <= ST_IDLE;
-        end else if (cfg_pkt_val_i) begin
+        end else begin
             if (reset_bit_count) begin
-                bit_count <= bit_count_reset_value - CFG_WIDTH; // the first phit passes thru when this gets updated
-            end else begin
+                if (drain_buffer) begin
+                    bit_count <= bit_count_reset_value - CFG_WIDTH; // the first phit passes thru when this gets updated
+                end else begin
+                    bit_count <= bit_count_reset_value;             // the first phit is not ready when this gets updated
+                end
+            end else if (drain_buffer) begin
                 bit_count <= bit_count - CFG_WIDTH;
             end
 
-            {{ '{' -}} cfg_pkt_data_o, buffer {{- '}' }} <= {{ '{' -}} buffer_next, cfg_pkt_data_i {{- '}' }};
-            cfg_pkt_val_o <= en_output;
             state <= state_next;
-        end else begin
-            cfg_pkt_val_o <= 1'b0;
         end
     end
 
@@ -89,136 +144,181 @@ module {{ module.name }} (
     end
 
     always @* begin
-        cfg_dout = buffer[0 +: CFG_WIDTH];
-    end
+        #1;
 
-    always @* begin
         state_next = state;
+        drain_buffer = 1'b0;
         en_output = 1'b0;
+        buffer_next = buffer;
         reset_bit_count = 1'b0;
         bit_count_reset_value = 17'b0;
         cfg_we = 1'b0;
-        buffer_next = buffer;
 
         case (state)
             ST_IDLE: begin
-                if (buffer[24 +: 8] == MAGIC_SOP) begin     // matches SOP, this is the beginning of a packet
-                    reset_bit_count = 1'b1;                 // start counting bits
-
-                    case (buffer[16 +: 8])
-                        MSG_TYPE_CFG_DATA,
-                        MSG_TYPE_CFG_DATA_CHECK_HOC: begin
-                            if (buffer[15:0] == 0) begin    // this packet is destined here
-                                bit_count_reset_value = 17'd16;     // wait until we know payload size
-
-                                if (buffer[16 +: 8] == MSG_TYPE_CFG_DATA_CHECK_HOC) begin
-                                    state_next = ST_DATA_CHECK_HOC_HEADER;
-                                end else begin
-                                    state_next = ST_DATA_HEADER;
-                                end
-                            end else begin                  // this packet is for someone after me
+                if (&val[{{ 32 // width - 1 }}:{{ 16 // width }}]) begin    // high 16 bits in buffer are valid
+                    if (buffer[24  +: 8] == MAGIC_SOP) begin                // SOP magic number matches
+                        case (buffer[16 +: 8])
+                            MSG_TYPE_EOP: begin                 // end of programming
+                                drain_buffer = 1'b1;
                                 en_output = 1'b1;
-                                buffer_next = {{ '{' -}} buffer[31:16], buffer[15:0] - 1 {{- '}' }};
-                                bit_count_reset_value = 17'd16;     // wait until we know payload size
-                                state_next = ST_PASSTHRU_WITH_PAYLOAD_HEADER;
+                                bit_count_reset_value = 17'd16;
+                                reset_bit_count = 1'b1;
+                                state_next = ST_PASSTHRU;
                             end
-                        end
-                        MSG_TYPE_EOP: begin
-                            en_output = 1'b1;
-                            bit_count_reset_value = 17'd16;         // wait until the message passes thru
-                            state_next = ST_PASSTHRU;
-                        end
-                        MSG_TYPE_ERROR_HOC_MISMATCH,
-                        MSG_TYPE_ERROR_SOP_MISMATCH: begin
-                            en_output = 1'b1;
-                            bit_count_reset_value = 17'd16;         // wait until the message passes thru
-                            state_next = ST_PASSTHRU_ERROR;
-                        end
-                    endcase
-                end else if (buffer[24 +: 8] != 8'h0) begin // unexpected value received, something is wrong
-                    buffer_next = {{ '{' -}} MAGIC_SOP, MSG_TYPE_ERROR_SOP_MISMATCH, buffer[15:0] {{- '}' }};
-                    reset_bit_count = 1'b1;
-                    bit_count_reset_value = 17'd16;
-                    state_next = ST_SEND_ERROR_MSG;
+                            MSG_TYPE_ERROR_HOC_MISMATCH,
+                            MSG_TYPE_ERROR_SOP_MISMATCH,
+                            MSG_TYPE_ERROR_UNKNOWN_STATE: begin // error
+                                drain_buffer = 1'b1;
+                                en_output = 1'b1;
+                                bit_count_reset_value = 17'd16;
+                                reset_bit_count = 1'b1;
+                                state_next = ST_PASSTHRU_ERROR;
+                            end
+                            MSG_TYPE_CFG_DATA,
+                            MSG_TYPE_CFG_DATA_CHECK_HOC: begin
+                                if (&val[{{ 16 // width - 1 }}:0]) begin    // low 16 bits in buffer are also valid
+                                    if (buffer[15:0] == 0) begin    // this packet is detined here
+                                        drain_buffer = 1'b1;        // drain buffer but don't enable output
+                                        bit_count_reset_value = 17'd16;     // wait until we know payload size
+                                        reset_bit_count = 1'b1;
+
+                                        if (buffer[16 +: 8] == MSG_TYPE_CFG_DATA) begin
+                                            state_next = ST_DATA_HEADER;
+                                        end else begin
+                                            state_next = ST_DATA_CHECK_HOC_HEADER;
+                                        end
+                                    end else begin                  // this packet is for someone after me
+                                        drain_buffer = 1'b1;
+                                        en_output = 1'b1;
+                                        buffer_next = buffer - 1;
+                                        bit_count_reset_value = 17'd16;     // wait until we know payload size
+                                        reset_bit_count = 1'b1;
+                                        state_next = ST_PASSTHRU_WITH_PAYLOAD_HEADER;
+                                    end
+                                end
+                            end
+                        endcase
+                    end else begin                                          // SOP magic number mismatch
+                        drain_buffer = 1'b1;
+                        en_output = 1'b1;
+                        buffer_next = {{ '{' -}} MAGIC_SOP, MSG_TYPE_ERROR_SOP_MISMATCH, 16'h0 {{- '}' }};
+                        bit_count_reset_value = 17'd16;
+                        reset_bit_count = 1'b1;
+                        state_next = ST_PASSTHRU_ERROR;
+                    end
                 end
             end
             ST_PASSTHRU: begin
-                en_output = 1'b1;
-                if (bit_count == CFG_WIDTH) begin           // jump back to IDLE before the last phit leaves the buffer
-                    state_next = ST_IDLE;
+                if (val[{{ 32 // width - 1 }}]) begin                       // first phit is valid. let it pass thru
+                    drain_buffer = 1'b1;
+                    en_output = 1'b1;
+
+                    if (bit_count == CFG_WIDTH) begin       // jump back to IDLE when the last phit leaves the buffer
+                        state_next = ST_IDLE;
+                    end
                 end
             end
             ST_PASSTHRU_ERROR: begin
-                en_output = 1'b1;
-                if (bit_count == CFG_WIDTH) begin
-                    state_next = ST_TRAP;
+                if (val[{{ 32 // width - 1 }}]) begin                       // first phit is valid. let it pass thru
+                    drain_buffer = 1'b1;
+                    en_output = 1'b1;
+
+                    if (bit_count == CFG_WIDTH) begin       // jump to TRAP when the last phit leaves the buffer
+                        state_next = ST_TRAP;
+                    end
                 end
             end
             ST_PASSTHRU_WITH_PAYLOAD_HEADER: begin
-                en_output = 1'b1;
-                if (bit_count == 0) begin                   // PAYLOAD should be in buffer[15:0] now
-                    reset_bit_count = 1'b1;
-                    bit_count_reset_value = buffer[15:0] + 33;      // wait until the message passes thru
-                    state_next = ST_PASSTHRU;
-                end
-            end
-            ST_DATA_CHECK_HOC_HEADER: begin
-                if (bit_count == 0) begin                   // PAYLOAD should be in buffer[15:0] now
-                    reset_bit_count = 1'b1;
-                    bit_count_reset_value = buffer[15:0] + 33;
-                    state_next = ST_DATA_CHECK_HOC;
+                if (&val) begin
+                    drain_buffer = 1'b1;
+                    en_output = 1'b1;
+
+                    if (bit_count == 0) begin               // first 16 bits of the header has already passed thru
+                        bit_count_reset_value = buffer[15:0] + 33;
+                        reset_bit_count = 1'b1;
+                        state_next = ST_PASSTHRU;
+                    end
                 end
             end
             ST_DATA_HEADER: begin
-                if (bit_count == 0) begin                   // PAYLOAD should be in buffer[15:0] now
-                    reset_bit_count = 1'b1;
-                    bit_count_reset_value = buffer[15:0] + 33;
-                    state_next = ST_DATA;
-                end
-            end
-            ST_DATA_CHECK_HOC: begin
-                cfg_we = 1'b1;
-                if (bit_count == 64) begin                  // stop before reading HOC
-                    state_next = ST_CHECK_HOC;
-                end
-            end
-            ST_CHECK_HOC: begin
-                if (bit_count == 32) begin                  // HOC should be in buffer now
-                    if (hoc == buffer) begin                // config successful!
-                        state_next = ST_FLUSH;
-                    end else begin
-                        buffer_next = {{ '{' -}} MAGIC_SOP, MSG_TYPE_ERROR_HOC_MISMATCH, buffer[15:0] {{- '}' }};
+                if (&val) begin
+                    drain_buffer = 1'b1;
+
+                    if (bit_count == 0) begin
+                        bit_count_reset_value = buffer[15:0] + 33;
                         reset_bit_count = 1'b1;
-                        bit_count_reset_value = 17'd16;
-                        state_next = ST_SEND_ERROR_MSG;
+                        state_next = ST_DATA;
+                    end
+                end
+            end
+            ST_DATA_CHECK_HOC_HEADER: begin
+                if (&val) begin
+                    drain_buffer = 1'b1;
+
+                    if (bit_count == 0) begin
+                        bit_count_reset_value = buffer[15:0] + 33;
+                        reset_bit_count = 1'b1;
+                        state_next = ST_DATA_CHECK_HOC;
                     end
                 end
             end
             ST_DATA: begin
-                cfg_we = 1'b1;
-                if (bit_count == 32) begin
-                    state_next = ST_FLUSH;
+                if (&val) begin
+                    drain_buffer = 1'b1;
+                    cfg_we = 1'b1;
+
+                    if (bit_count == 32) begin
+                        state_next = ST_FLUSH;
+                    end
+                end
+            end
+            ST_DATA_CHECK_HOC: begin
+                if (&val) begin
+                    drain_buffer = 1'b1;
+                    cfg_we = 1'b1;
+
+                    if (bit_count == 64) begin
+                        state_next = ST_CHECK_HOC;
+                    end
+                end
+            end
+            ST_CHECK_HOC: begin
+                if (&val) begin
+                    drain_buffer = 1'b1;
+
+                    if (bit_count == 32) begin
+                        if (hoc == buffer) begin            // config successful!
+                            state_next = ST_FLUSH;
+                        end else begin                      // HOC mismatch
+                            en_output = 1'b1;
+                            buffer_next = {{ '{' -}} MAGIC_SOP, MSG_TYPE_ERROR_HOC_MISMATCH, 16'h0 {{- '}' }};
+                            bit_count_reset_value = 17'd16;
+                            reset_bit_count = 1'b1;
+                            state_next = ST_PASSTHRU_ERROR;
+                        end
+                    end
                 end
             end
             ST_FLUSH: begin
-                if (bit_count == CFG_WIDTH) begin           // jump back to IDLE before the last phit leaves the buffer
-                    state_next = ST_IDLE;
+                if (val[{{ 32 // width - 1 }}]) begin
+                    drain_buffer = 1'b1;
+
+                    if (bit_count == CFG_WIDTH) begin       // jump back to IDLE when the last phit leaves the buffer
+                        state_next = ST_IDLE;
+                    end
                 end
             end
-            ST_SEND_ERROR_MSG: begin
-                en_output = 1'b1;
-                if (bit_count == 0) begin
-                    state_next = ST_TRAP;
-                end
-            end
-            ST_TRAP: begin  // trapped after receiving an error message, must be reset before performing any useful actions
+            ST_TRAP: begin
                 state_next = ST_TRAP;
             end
             default: begin
-                buffer_next = {{ '{' -}} MAGIC_SOP, MSG_TYPE_ERROR_UNKNOWN_STATE, buffer[15:0] {{- '}' }};
-                reset_bit_count = 1'b1;
+                drain_buffer = 1'b1;
+                en_output = 1'b1;
+                buffer_next = {{ '{' -}} MAGIC_SOP, MSG_TYPE_ERROR_UNKNOWN_STATE, 16'h0 {{- '}' }};
                 bit_count_reset_value = 17'd16;
-                state_next = ST_SEND_ERROR_MSG;
+                reset_bit_count = 1'b1;
+                state_next = ST_PASSTHRU_ERROR;
             end
         endcase
     end

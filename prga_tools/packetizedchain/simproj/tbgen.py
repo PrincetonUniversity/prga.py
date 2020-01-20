@@ -7,6 +7,7 @@ from prga.arch.net.common import PortDirection
 from prga.algorithm.util.array import get_external_port
 from prga.flow.context import ArchitectureContext
 from prga.util import enable_stdout_logging, uno
+from prga.config.packetizedchain.algorithm.stats import ConfigPacketizedChainStatsAlgorithms as sa
 
 from prga_tools.util import find_verilog_top, parse_io_bindings, parse_parameters
 
@@ -33,12 +34,61 @@ def generate_testbench_wrapper(context, template, ostream, tb_top, behav_top, io
         io_bindings (:obj:`Mapping` [:obj:`str` ], :obj:`tuple` [:obj:`int`, :obj:`int`, :obj:`int`]): Mapping from
            port name in the behavioral model to \(x, y, subblock\)
     """
+    config_width = context.config_circuitry_delegate.config_width
+    total_config_bits = context.config_circuitry_delegate.total_config_bits
+    total_hopcount = context.config_circuitry_delegate.total_hopcount
+    if total_hopcount > 0x10000:
+        raise RuntimeError("Architecture '{}' has more than 65536 hops."
+                .format(context.top.name))
+    # calculate all sorts of constant numbers
+    # hop boundaries
+    hop2hierarchy = [tuple() for _ in range(total_hopcount)]
+    hop2bounds = [None for _ in range(total_hopcount)]
+    stack = [(context.top, 0, 0, tuple())]
+    while stack:
+        m, hopbase, bitbase, hierarchy = stack.pop()
+        hopmap = sa.get_config_hopmap(context, m)
+        if hopmap is None:  # we reached the leaf hop
+            if hop2bounds[hopbase] is not None:
+                raise RuntimeError("Duplicate hop ID detected at {}".format(hopbase))
+            hop2bounds[hopbase] = bitbase
+            hop2hierarchy[hopbase] = hierarchy
+        else:               # more hops below
+            bitmap = sa.get_config_bitmap(context, m)
+            for instance in itervalues(m.logical_instances):
+                hopoffset = hopmap.get(instance.name)
+                if hopoffset is None:
+                    continue
+                stack.append( (instance.model, hopbase + hopoffset, bitbase + bitmap[instance.name],
+                            hierarchy + (instance, )) )
+    hop2bounds.append( total_config_bits )
+    hop2ranges = [hop2bounds[i + 1] - hop2bounds[i] for i in range(total_hopcount)]
+    bs_size = 0
+    for sgmt in hop2ranges:
+        remainder = sgmt
+        while True:
+            bs_size += 48       # packet header
+            effective_payload = 0x10000
+            if remainder == sgmt:
+                bs_size += 32   # head of chain
+                effective_payload -= 32
+            if remainder < effective_payload:
+                if remainder < effective_payload - 32:
+                    bs_size += remainder    # fit all data into this last packet
+                    bs_size += 32           # tail of chain
+                    break
+                else:
+                    bs_size += remainder - config_width
+                    remainder = config_width
+            else:
+                remainder -= effective_payload
+                bs_size += effective_payload
+    bs_size += 16               # EOP packet
+
     # configuration info
     config_info = {}
     config_info['magic_sop'] = context.config_circuitry_delegate.magic_sop
     cfg_width = config_info['width'] = context.config_circuitry_delegate.config_width
-    bs_size = (48 * context.config_circuitry_delegate.total_hopcount +
-            context.config_circuitry_delegate.total_config_bits + 16)
     last_index = bs_size % 64
     config_info['bs_num_qwords'] = bs_size // 64 + (1 if last_index else 0)
     config_info['bs_last_bit_index'] = (last_index + 64 - cfg_width) % 64

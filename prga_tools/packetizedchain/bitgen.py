@@ -31,6 +31,9 @@ def bitgen_packetizedchain(context  # architecture context
     config_width = context.config_circuitry_delegate.config_width
     total_config_bits = context.config_circuitry_delegate.total_config_bits
     total_hopcount = context.config_circuitry_delegate.total_hopcount
+    if total_hopcount > 0x10000:
+        raise RuntimeError("Architecture '{}' has more than 65536 hops."
+                .format(context.top.name))
     # calculate all sorts of constant numbers
     # hop boundaries
     hop2hierarchy = [tuple() for _ in range(total_hopcount)]
@@ -98,28 +101,50 @@ def bitgen_packetizedchain(context  # architecture context
         if not sgmt.any():
             continue
         # reverse segment but add header first
-        index = len(sgmt)
+        remainder = len(sgmt)
+        hoc = bitarray()
+        hoc.frombytes(bytes([0xC5, 0X7A, 0X86, 0X1E]))                  # hard-coded HOC magic number
         while True:
-            payload = min(0x10000, index)
+            hoc_head = remainder == len(sgmt)                           # attach HOC at the beginning for the first packet
+            effective_payload = 0x10000 - (32 if hoc_head else 0)
+            hoc_tail = False
+            if remainder < effective_payload:                           # last packet?
+                if remainder < effective_payload - 32:                  # yep. we can fit the tail HOC in
+                    effective_payload = remainder
+                    hoc_tail = True
+                else:                                                   # no because we cannot fit the tail HOC in
+                    effective_payload = remainder - config_width
+            # construct head
             header = bitarray(endian='big')
             header.frombytes(bytes([
                 context.config_circuitry_delegate.magic_sop,    # Start of packet
-                0x01 if index == payload else 0x00,      # msg type (0x01: DATA_LAST, 0x00: DATA)
+                0x01 if hoc_tail else 0x00,                     # msg type (0x01: DATA_LAST, 0x00: DATA)
                 ]))
             header.frombytes(struct.pack('>H', hop))
-            header.frombytes(struct.pack('>H', payload - 1))
+            header.frombytes(struct.pack('>H', effective_payload + (32 if hoc_head else 0) + (32 if hoc_tail else 0) - 1))
             for i in range(len(header) // config_width):
                 buf = header[i * config_width : (i+1) * config_width] + buf
                 if len(buf) == 64:
                     ostream.write('{:0>16x}'.format(struct.unpack('>Q', buf.tobytes())[0]) + '\n')
                     buf = bitarray(endian='big')
-            for _ in range(payload // config_width):
-                buf = bitarray(reversed(sgmt[index - config_width:index])) + buf
+            if hoc_head:
+                for i in reversed(range(32 // config_width)):
+                    buf = bitarray(reversed(hoc[i * config_width : (i + 1) * config_width])) + buf
+                    if len(buf) == 64:
+                        ostream.write('{:0>16x}'.format(struct.unpack('>Q', buf.tobytes())[0]) + '\n')
+                        buf = bitarray(endian='big')
+            for _ in range(effective_payload // config_width):
+                buf = bitarray(reversed(sgmt[remainder - config_width:remainder])) + buf
                 if len(buf) == 64:
                     ostream.write('{:0>16x}'.format(struct.unpack('>Q', buf.tobytes())[0]) + '\n')
                     buf = bitarray(endian='big')
-                index -= config_width
-            if index == 0:
+                remainder -= config_width
+            if hoc_tail:
+                for i in reversed(range(32 // config_width)):
+                    buf = bitarray(reversed(hoc[i * config_width : (i + 1) * config_width])) + buf
+                    if len(buf) == 64:
+                        ostream.write('{:0>16x}'.format(struct.unpack('>Q', buf.tobytes())[0]) + '\n')
+                        buf = bitarray(endian='big')
                 break
     # add a end of programming packet
     header = bitarray(endian='big')

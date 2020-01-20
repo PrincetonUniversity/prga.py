@@ -337,7 +337,7 @@ class ConfigPacketizedChainInjectionAlgorithms(object):
         clk = module._add_port(ConfigClockPort(module, 'cfg_clk'))
         ctrl.logical_pins['cfg_clk'].logical_source = clk
         en = module._add_port(ConfigInputPort(module, 'cfg_e', 1))
-        ctrl.logical_pins['cfg_e'].logical_source = clk
+        ctrl.logical_pins['cfg_e'].logical_source = en
         we = ctrl.logical_pins['cfg_we']
         prev = ctrl.logical_pins['cfg_dout']
         for inst in serial:

@@ -13,7 +13,7 @@ COMP ?= iverilog
 FLAGS := -g2005 -gspecify
 {%- elif compiler == 'vcs' %}
 COMP ?= vcs
-FLAGS := -full64 -v2005
+FLAGS := -full64 -sverilog
 {%- endif %}
 
 # ----------------------------------------------------------------------------
@@ -171,7 +171,7 @@ $(FASM_RESULT): $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) $(VPR_RRGRAPH) $(PACK_RESULT)
 		| tee $(FASM_LOG)
 
 $(BITGEN_RESULT): $(CTX) $(FASM_RESULT)
-	$(PYTHON) -m prga_tools.bitchain.bitgen $^ $@
+	$(PYTHON) -m prga_tools.packetizedchain.bitgen $^ $@
 
 $(SIM): $(TESTBENCH_WRAPPER) $(TARGET_SRCS) $(HOST_SRCS) $(FPGA_RTL)
 	{%- if host is defined %}

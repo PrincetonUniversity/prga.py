@@ -206,14 +206,14 @@ module {{ behav.name }}_tb_wrapper;
         end else begin
             state <= state_next;
 
-            if (state == PROGRAMMING) begin
+            if (cfg_pkt_val_i) begin
                 if (bit_index == 64 - cfg_width) begin
                     bit_index <= 6'd0;
                     word_index <= word_index + 1;
                 end else begin
                     bit_index <= bit_index + cfg_width;
                 end
-            end else begin
+            end else if (state != PROGRAMMING) begin
                 bit_index <= 0;
                 word_index <= 0;
             end
@@ -238,10 +238,13 @@ module {{ behav.name }}_tb_wrapper;
             PROGRAMMING: begin
                 cfg_e = 1'b1;
                 tb_rst = 1'b1;
-                cfg_pkt_val_i = 1'b1;
-                if (word_index == bs_num_qwords - 1 && bit_index == bs_last_bit_index) begin
-                    state_next = PROG_STABLIZING;
-                end
+
+                // if ($urandom_range(0, 99) >= 20) begin
+                    cfg_pkt_val_i = 1'b1;
+                    if (word_index == bs_num_qwords - 1 && bit_index == bs_last_bit_index) begin
+                        state_next = PROG_STABLIZING;
+                    end
+                // end
             end
             PROG_STABLIZING: begin
                 cfg_e = 1'b1;
