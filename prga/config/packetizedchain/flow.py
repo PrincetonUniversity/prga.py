@@ -9,7 +9,8 @@ from prga.flow.delegate import (PrimitiveRequirement, PRGAPrimitiveNotFoundError
         BuiltinPrimitiveLibrary)
 from prga.flow.util import analyze_hierarchy, get_switch_path
 from prga.config.packetizedchain.design.primitive import (CONFIG_PACKETIZED_CHAIN_TEMPLATE_SEARCH_PATH,
-        ConfigWidechain, ConfigPacketizedChainCtrl)
+        ConfigWidechain, ConfigPacketizedChainCtrl,
+        PacketizedChainFracturableLUT6, PacketizedChainFracturableLUT6WithSFFnCarry)
 from prga.config.packetizedchain.algorithm.stats import ConfigPacketizedChainStatsAlgorithms as sa
 from prga.config.packetizedchain.algorithm.injection import (ConfigPacketizedChainLibraryDelegate,
         ConfigPacketizedChainInjectionAlgorithms as ia)
@@ -18,6 +19,42 @@ from prga.util import Object
 
 __all__ = ['PacketizedChainConfigCircuitryDelegate', 'PacketizedChainInjectionGuide',
         'InjectPacketizedChainConfigCircuitry']
+
+# ----------------------------------------------------------------------------
+# -- Primitive Library for Packetized-chain-based configuration --------------
+# ----------------------------------------------------------------------------
+class PacketizedChainPrimitiveLibrary(BuiltinPrimitiveLibrary):
+    """Primitive library for packetized-chain-based configuration circuitry.
+    
+    Args:
+        context (`ArchitectureContext`):
+        config_width (:obj:`int`): Width of the configuration chain 
+    """
+
+    __slots__ = ['config_width']
+    def __init__(self, context, config_width):
+        super(PacketizedChainPrimitiveLibrary, self).__init__(context)
+        self.config_width = config_width
+
+    # == low-level API =======================================================
+    # -- implementing properties/methods required by superclass --------------
+    def get_or_create_primitive(self, name, requirement = PrimitiveRequirement.physical_preferred):
+        try:
+            return super(PacketizedChainPrimitiveLibrary, self).get_or_create_primitive(name, requirement)
+        except PRGAPrimitiveNotFoundError:
+            if name == 'fraclut6':
+                self._is_empty = False
+                return self.context._modules.setdefault(name, PacketizedChainFracturableLUT6(self.context))
+            elif name == 'fraclut6sffc':
+                self._is_empty = False
+                self.context.yosys_template_registry.register_blackbox_template(name,
+                        techmap_template = 'fraclut6sffc.techmap.tmpl.v',
+                        premap_commands = ["simplemap t:$dff t:$dffe t:$dffsr", "dffsr2dff", "dff2dffe", "opt -full"])
+                return self.context._modules.setdefault(name,
+                        PacketizedChainFracturableLUT6WithSFFnCarry(self.context, self.config_width,
+                            requirement.is_physical_preferred or requirement.is_physical_required))
+            else:
+                raise
 
 # ----------------------------------------------------------------------------
 # -- Configuration Circuitry Delegate for Packetized-chain-based configuration
@@ -52,7 +89,10 @@ class PacketizedChainConfigCircuitryDelegate(ConfigPacketizedChainLibraryDelegat
                     hopcount += hopmap[instance.name]
             if leaf_ctrl_reached:
                 bitmap = sa.get_config_bitmap(self.context, instance.parent)
-                total += bitmap[instance.name]
+                offset = bitmap.get(instance.name)
+                if offset is None:
+                    return None, None
+                total += offset
         return hopcount, total
 
     # == low-level API =======================================================
@@ -84,7 +124,7 @@ class PacketizedChainConfigCircuitryDelegate(ConfigPacketizedChainLibraryDelegat
 
     # -- implementing properties/methods required by superclass --------------
     def get_primitive_library(self, context):
-        return BuiltinPrimitiveLibrary(context)
+        return PacketizedChainPrimitiveLibrary(context, self.config_width)
 
     def get_or_create_chain(self, width):
         try:
@@ -101,6 +141,8 @@ class PacketizedChainConfigCircuitryDelegate(ConfigPacketizedChainLibraryDelegat
 
     def fasm_prefix_for_tile(self, hierarchical_instance):
         hopcount, bitoffset = self.__config_bit_offset_instance(hierarchical_instance)
+        if bitoffset is None:
+            return tuple()
         bitmap = sa.get_config_bitmap(self.context, hierarchical_instance[-1].model)
         prefix = []
         for subblock in range(hierarchical_instance[-1].model.block.capacity):
@@ -113,17 +155,51 @@ class PacketizedChainConfigCircuitryDelegate(ConfigPacketizedChainLibraryDelegat
                 prefix.append('h{}.b{}'.format(hopcount, bitoffset + bitmap[blk_inst.name]))
         return tuple(iter(prefix))
 
+    def fasm_mode(self, hierarchical_instance, mode):
+        hopcount, bitoffset = self.__config_bit_offset_instance(hierarchical_instance)
+        assert hopcount is None
+        if bitoffset is None:
+            return tuple()
+        primitive = hierarchical_instance[-1].model
+        if primitive.primitive_class.is_iopad:
+            if mode == 'outpad':
+                return ('b' + str(bitoffset), )
+            else:
+                return tuple()
+        elif primitive.primitive_class.is_multimode:
+            return tuple('b' + str(bitoffset + bit) for bit in primitive.modes[mode].mode_enabling_bits)
+        else:
+            raise NotImplementedError
+
     def fasm_lut(self, hierarchical_instance):
         hopcount, bitoffset = self.__config_bit_offset_instance(hierarchical_instance)
         assert hopcount is None
+        if bitoffset is None:
+            return ''
         # if bitoffset is None:
         #     return ''
         return 'b{}[{}:0]'.format(bitoffset, len(hierarchical_instance[-1].logical_pins['cfg_d']) - 1)
+
+    def fasm_params(self, hierarchical_instance):
+        hopcount, bitoffset = self.__config_bit_offset_instance(hierarchical_instance)
+        assert hopcount is None
+        if bitoffset is None:
+            return {}
+        params = {}
+        for param, info in iteritems(hierarchical_instance[-1].model.parameters):
+            offset = info.get("config_bitmap")
+            if offset is None:
+                continue
+            width = info.get("config_bitcount", 1)
+            params[param] = "b{}[{}:{}]".format(bitoffset + offset, width - 1, 0)
+        return params
 
     def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy):
         module = source.parent if source.net_type.is_port else source.parent.parent
         hopcount, bitoffset = (None, 0) if not hierarchy else self.__config_bit_offset_instance(hierarchy)
         assert hopcount is None
+        if bitoffset is None:
+            return []
         bitmap = sa.get_config_bitmap(self.context, module)
         path = get_switch_path(self.context, source, sink)
         retval = []
@@ -131,8 +207,9 @@ class PacketizedChainConfigCircuitryDelegate(ConfigPacketizedChainLibraryDelegat
             config_bits = bit.index
             config_bit_offset = bitmap.get(bit.parent.name, None)
             if config_bit_offset is None:
-                raise PRGAInternalError("No configuration circuitry for switch '{}'"
-                        .format(bit.parent))
+                continue
+                # raise PRGAInternalError("No configuration circuitry for switch '{}'"
+                #         .format(bit.parent))
             config_bit_offset += bitoffset
             while config_bits:
                 if config_bits % 2 == 1:
@@ -147,6 +224,8 @@ class PacketizedChainConfigCircuitryDelegate(ConfigPacketizedChainLibraryDelegat
         hierarchy = hierarchy[:-1]
         module = hierarchy[-1].model
         hopcount, bitoffset = self.__config_bit_offset_instance(hierarchy)
+        if bitoffset is None:
+            return []
         config_bit_offset = sa.get_config_bitmap(self.context, module).get(switch_instance.name)
         if config_bit_offset is None:
             raise PRGAInternalError("No configuration circuitry for switch '{}'"

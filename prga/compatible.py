@@ -12,6 +12,7 @@ if ((_sys.version_info > (3, ) and _sys.version_info < (3, 3)) or
 
 from future.utils import with_metaclass, raise_from, iteritems, itervalues, string_types
 from future.builtins import object, range
+from past.builtins import basestring
 
 try:
     from itertools import imap as map, ifilter as filter, izip as zip

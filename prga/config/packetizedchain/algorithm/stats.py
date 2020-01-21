@@ -102,6 +102,10 @@ class ConfigPacketizedChainStatsAlgorithms(object):
             cache = context._cache.get(key, {}).get(module.name)
             if cache is not None:
                 return cache
+        # scenario 0: multi-mode primitive
+        if module.module_class.is_primitive and module.primitive_class.is_multimode:
+            bitcount = context._cache.setdefault(key, {})[module.name] = module.config_bitcount
+            return bitcount
         # scenario 1: parallel configuration ports
         cfg_d = module.logical_ports.get("cfg_d")
         if cfg_d is not None:

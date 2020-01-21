@@ -60,8 +60,11 @@ class ClusterLike(BaseModule):
             raise PRGAInternalError("'{}' is not a sink in the user domain in module '{}'"
                     .format(sink, self))
         sink.add_user_sources( (source, ) )
-        if pack_pattern is not None:
+        if isinstance(pack_pattern, basestring):
             self._pack_patterns.setdefault((self.__net_id(source), self.__net_id(sink)), set()).add(pack_pattern)
+        elif pack_pattern is not None:
+            for pattern in pack_pattern:
+                self._pack_patterns.setdefault((self.__net_id(source), self.__net_id(sink)), set()).add(pattern)
 
     # == low-level API =======================================================
     def get_pack_patterns(self, source, sink):
@@ -144,7 +147,8 @@ class ClusterLike(BaseModule):
             sinks (:obj:`Sequence` [`AbstractSinkBit` ]):
             fully_connected (:obj:`bool`): Connections are created bit-wise by default. If ``fully_connected`` is set,
                 connections are created in an all-to-all manner
-            pack_pattern (:obj:`str`): An advanced feature in VPR. This is the name of the pack pattern
+            pack_pattern (:obj:`str` or :obj:`Iterable` [:obj:`str` ]): An advanced feature in VPR. This is the name
+                of the pack pattern
         """
         sources = sources if isinstance(sources, Iterable) else (sources, )
         sinks = sinks if isinstance(sinks, Iterable) else (sinks, )
