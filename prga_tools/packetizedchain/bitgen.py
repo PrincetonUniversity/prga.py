@@ -7,6 +7,8 @@ from prga.flow.context import ArchitectureContext
 from prga.config.packetizedchain.algorithm.stats import ConfigPacketizedChainStatsAlgorithms as sa
 from prga.util import enable_stdout_logging
 
+from prga_tools.packetizedchain.util import packetizedchain_hop2ranges, packetizedchain_packetize
+
 import re   # for the simple FASM, regexp processing is good enough
 import struct
 from bitarray import bitarray
@@ -29,39 +31,7 @@ def bitgen_packetizedchain(context  # architecture context
         ostream (file-like object):
     """
     config_width = context.config_circuitry_delegate.config_width
-    total_config_bits = context.config_circuitry_delegate.total_config_bits
-    total_hopcount = context.config_circuitry_delegate.total_hopcount
-    if total_hopcount > 0x10000:
-        raise RuntimeError("Architecture '{}' has more than 65536 hops."
-                .format(context.top.name))
-    # calculate all sorts of constant numbers
-    # hop boundaries
-    hop2hierarchy = [tuple() for _ in range(total_hopcount)]
-    hop2bounds = [None for _ in range(total_hopcount)]
-    stack = [(context.top, 0, 0, tuple())]
-    while stack:
-        m, hopbase, bitbase, hierarchy = stack.pop()
-        hopmap = sa.get_config_hopmap(context, m)
-        if hopmap is None:  # we reached the leaf hop
-            if hop2bounds[hopbase] is not None:
-                raise RuntimeError("Duplicate hop ID detected at {}".format(hopbase))
-            hop2bounds[hopbase] = bitbase
-            hop2hierarchy[hopbase] = hierarchy
-        else:               # more hops below
-            bitmap = sa.get_config_bitmap(context, m)
-            for instance in itervalues(m.logical_instances):
-                hopoffset = hopmap.get(instance.name)
-                if hopoffset is None:
-                    continue
-                stack.append( (instance.model, hopbase + hopoffset, bitbase + bitmap[instance.name],
-                            hierarchy + (instance, )) )
-    for hop, elem in enumerate(hop2bounds):
-        if elem is None:
-            raise RuntimeError("Unassigned hop ID detected at {}".format(hop))
-        _logger.info("Hop {}: {} {}/{}".format(hop, elem,
-            context.top.name, "/".join(i.name for i in hop2hierarchy[hop])))
-    hop2bounds.append( total_config_bits )
-    hop2ranges = [hop2bounds[i + 1] - hop2bounds[i] for i in range(total_hopcount)]
+    hop2ranges = packetizedchain_hop2ranges(context)
     # Actual bitstream
     bitsgmts = [bitarray('0') * r for r in hop2ranges]
     # process features
@@ -98,22 +68,13 @@ def bitgen_packetizedchain(context  # architecture context
     buf = bitarray(endian='big')        # this is the bit-endianness
     for hop, sgmt in enumerate(bitsgmts):
         # skip if no config data for a hop
-        if not sgmt.any():
-            continue
+        # if not sgmt.any():
+        #     continue
         # reverse segment but add header first
         remainder = len(sgmt)
         hoc = bitarray()
         hoc.frombytes(bytes([0xC5, 0X7A, 0X86, 0X1E]))                  # hard-coded HOC magic number
-        while True:
-            hoc_head = remainder == len(sgmt)                           # attach HOC at the beginning for the first packet
-            effective_payload = 0x10000 - (32 if hoc_head else 0)
-            hoc_tail = False
-            if remainder < effective_payload:                           # last packet?
-                if remainder < effective_payload - 32:                  # yep. we can fit the tail HOC in
-                    effective_payload = remainder
-                    hoc_tail = True
-                else:                                                   # no because we cannot fit the tail HOC in
-                    effective_payload = remainder - config_width
+        for hoc_head, effective_payload, hoc_tail in packetizedchain_packetize(remainder):
             # construct head
             header = bitarray(endian='big')
             header.frombytes(bytes([
