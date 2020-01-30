@@ -54,8 +54,6 @@ class Module(Object, AbstractModule):
             self._instances = instances
         self._allow_multisource = allow_multisource
         self._conn_graph = nx.DiGraph()
-        self._conn_graph.add_node( 0 )  # constant low
-        self._conn_graph.add_node( 1 )  # constant high
 
     def __str__(self):
         return 'Module({})'.format(self.name)
@@ -73,24 +71,49 @@ class Module(Object, AbstractModule):
                     .format(self, net))
         # check name conflict
         if net.name in self._children:
-            raise PRGAInternalError("Name '{}' already exists in module '{}'".format(net.name, self))
+            raise PRGAInternalError("Name '{}' taken by {} in module '{}'".format(net.name,
+                self._children[net.name], self))
         # check ports/logics modifiable and key conflict
         try:
             if net.net_type.is_port:
-                if self._ports.setdefault(net.key, net) is not net:
-                    raise PRGAInternalError("Port key '{}' already exists in module '{}'".format(net.key, self))
+                port = self._ports.setdefault(net.key, net)
+                if port is not net:
+                    raise PRGAInternalError("Port key '{}' taken by {} in module '{}'".format(net.key, port, self))
             elif net.net_type.is_logic:
-                if self._logics.setdefault(net.key, net) is not net:
-                    raise PRGAInternalError("Logic net key '{}' already exists in module '{}'".format(net.key, self))
+                logic = self._logics.setdefault(net.key, net)
+                if logic is not net:
+                    raise PRGAInternalError("Logic net key '{}' taken by {} in module '{}'".format(net.key, logic, self))
             else:
                 raise PRGAInternalError("Cannot add '{}' to module '{}'".format(net, self))
         except AttributeError:
             raise PRGAInternalError("Cannot add '{}' to module '{}'".format(net, self))
-        # register nodes
-        for i in range(len(net)):
-            self._conn_graph.add_node( (i, net.key) )
         # add net to children mapping
         return self._children.setdefault(net.name, net)
+
+    def _add_instance(self, instance):
+        """Add ``instance`` into this module.
+
+        Args:
+            instance (`AbstractInstance`):
+        """
+        # check parent of the instance
+        if instance.parent is not self:
+            raise PRGAInternalError("Module '{}' is not the parent of '{}'"
+                    .format(self, instance))
+        # check name conflict
+        if instance.name in self._children:
+            raise PRGAInternalError("Name '{}' taken by {} in module '{}'"
+                    .format(instance.name, self._children[net.name], self))
+        # check instances modifiable and key conflict
+        try:
+            value = self._instances.setdefault(instance.key, instance)
+            if value is not instance:
+                raise PRGAInternalError("Instance key '{}' taken by {} in module '{}'"
+                        .format(instance.key, value, self))
+        except AttributeError:
+            raise PRGAInternalError("Cannot add '{}' to module '{}'".format(instance, self))
+        # add instance to children mapping
+        return self._children.setdefault(instance.name, instance)
 
     # -- implementing properties/methods required by superclass --------------
     @property

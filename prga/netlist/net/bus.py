@@ -23,14 +23,15 @@ class _BaseNet(Object, AbstractNet):
         width (:obj:`int`): Number of bits in this net
         key (:obj:`Hashable`): A hashable key used to index this net in the parent module/instance. If not given
             \(default argument: ``None``\), ``name`` is used by default
+        clock (:obj:`Hashable`): Key of the clock net controlling this net. If not set, the net is combinational
         **kwargs: Arbitrary key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
             is executed at the BEGINNING of ``__init__``
     """
 
-    __slots__ = ['_parent', '_name', '_width', '_key', '__dict__']
+    __slots__ = ['_parent', '_name', '_width', '_key', '_clock', '__dict__']
 
     # == internal API ========================================================
-    def __init__(self, parent, name, width, key = None, **kwargs):
+    def __init__(self, parent, name, width, key = None, clock = None, **kwargs):
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
         self._parent = parent
@@ -38,8 +39,18 @@ class _BaseNet(Object, AbstractNet):
         self._width = width
         if key is not None:
             self._key = key
+        if clock is not None:
+            self._clock = clock
 
     # == low-level API =======================================================
+    @property
+    def clock(self):
+        """:obj:`Hashable`: Key of the clock controlling this net. If not set, the net is combinational."""
+        try:
+            return self._clock
+        except AttributeError:
+            return None
+
     # -- implementing properties/methods required by superclass --------------
     @property
     def bus_type(self):
@@ -84,6 +95,7 @@ class Logic(_BaseNet):
         width (:obj:`int`): Number of bits in this net
         key (:obj:`Hashable`): A hashable key used to index this net in the parent module. If not given
             \(default argument: ``None``\), ``name`` is used by default
+        clock (:obj:`Hashable`): Key of the clock net controlling this net. If not set, the net is combinational
         **kwargs: Arbitrary key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
             is executed at the BEGINNING of ``__init__``
     """
@@ -119,6 +131,7 @@ class Port(_BaseNet, AbstractInterfaceNet):
         direction (`PortDirection`): Direction of the port
         key (:obj:`Hashable`): A hashable key used to index this net in the parent module. If not given
             \(default argument: ``None``\), ``name`` is used by default
+        clock (:obj:`Hashable`): Key of the clock net controlling this net. If not set, the net is combinational
         is_clock (:obj:`bool`): Mark this port as a clock port
         **kwargs: Arbitrary key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
             is executed at the BEGINNING of ``__init__``
@@ -127,8 +140,8 @@ class Port(_BaseNet, AbstractInterfaceNet):
     __slots__ = ['_direction', '_is_clock']
 
     # == internal API ========================================================
-    def __init__(self, parent, name, width, direction, key = None, is_clock = False, **kwargs):
-        super(Port, self).__init__(parent, name, width, key, **kwargs)
+    def __init__(self, parent, name, width, direction, key = None, clock = None, is_clock = False, **kwargs):
+        super(Port, self).__init__(parent, name, width, key, clock, **kwargs)
         if is_clock and (width != 1 or not direction.is_input):
             raise PRGATypeError("is_clock", "bool", "Only single-bit input port may be marked as a clock")
         self._is_clock = is_clock

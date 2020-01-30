@@ -6,6 +6,7 @@ from prga.compatible import *
 from .common import AbstractInstance
 from prga.netlist.net.bus import Pin
 from prga.util import Object
+from prga.exception import PRGAInternalError
 
 __all__ = ['Instance']
 
@@ -36,10 +37,9 @@ class _InstancePinsProxy(Object, Mapping):
                 return pin
         except (KeyError, AttributeError):
             pass
-        try:
-            del self.instance._mutable_pins[key]
-        except KeyError:
-            pass
+        if key in self.instance._mutable_pins:
+            raise PRGAInternalError("Port key '{}' is deleted from model '{}' of instance '{}'"
+                    .format(key, self.instance.model, self.instance))
         raise KeyError(key)
 
     def __len__(self):

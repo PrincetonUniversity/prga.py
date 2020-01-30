@@ -8,6 +8,8 @@ from .const import Unconnected, Const
 from prga.util import Object, uno
 from prga.exception import PRGAInternalError, PRGATypeError, PRGAIndexError
 
+from networkx.exception import NetworkXError
+
 import logging
 _logger = logging.getLogger(__name__)
 
@@ -165,14 +167,17 @@ class NetUtils(object):
             elif src.net_type.is_unconnected:
                 continue    # use disconnect to disconnect instead of connect it to "unconnected"
             parent = sink.parent.parent if sink.net_type.is_pin else sink.parent
-            if not parent._allow_multisource and parent._conn_graph.in_degree( cls._node_key(sink) ):
+            sink_node = cls._node_key(sink)
+            if not (parent._allow_multisource or
+                    sink_node not in parent._conn_graph or
+                    parent._conn_graph.in_degree( sink_node ) == 0):
                 raise PRGAInternalError(
                         "{} is already connected to {} and module {} does not allow multi-source connections"
                         .format(sink, cls.get_source(sink), parent))
             elif not (sink.net_type.is_const or parent is (src.parent.parent if src.net_type.is_pin else src.parent)):
                 raise PRGAInternalError("Cannot connect {} and {}. Different contexts.".format(src, sink))
             else:
-                parent._conn_graph.add_edge( cls._node_key(src), cls._node_key(sink) )
+                parent._conn_graph.add_edge( cls._node_key(src), sink_node )
 
     @classmethod
     def get_source(cls, sink):
@@ -189,7 +194,7 @@ class NetUtils(object):
         for bit in sink:
             try:
                 key = next(parent._conn_graph.predecessors( cls._node_key(bit) ))
-            except StopIteration:
+            except (StopIteration, NetworkXError):
                 sources.append( Unconnected(1) )
                 continue
 
@@ -205,7 +210,7 @@ class NetUtils(object):
                 except KeyError:
                     sources.append( parent.logics[net_key][index] )
             else:
-                source.append( parent.instances[hierarchy[0]].pins[net_key][index] )
+                sources.append( parent.instances[hierarchy[0]].pins[net_key][index] )
         return cls.concat(sources)
 
 # ----------------------------------------------------------------------------
