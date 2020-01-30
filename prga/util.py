@@ -161,14 +161,20 @@ class Enum(enum.IntEnum):
                 raise AttributeError(attr)
 
     def case(self, *args, **kwargs):
-        """Use this enum as a variable in a switch-case clause."""
+        """Use this enum as a variable in a switch-case clause.
+        
+        Note that ``default`` is a reserved keyword. If set, the value will be used if no matching case specified.
+        """
         try:
             return args[self.value]
         except IndexError:
             try:
                 return kwargs[self.name]
             except KeyError:
-                raise PRGAInternalError("Value unspecified for case {}".format(self))
+                try:
+                    return kwargs['default']
+                except KeyError:
+                    raise PRGAInternalError("Value unspecified for case {}".format(self))
 
 def enable_stdout_logging(name, level=logging.WARNING, verbose=False):
     hdl = logging.StreamHandler(sys.stdout)
