@@ -79,10 +79,10 @@ class WiltonSwitchBoxPattern(Object):
             )
 
     _counterclockwise = (
-            (Orientation.south, Orientation.east),
             (Orientation.east, Orientation.north),
             (Orientation.north, Orientation.west),
             (Orientation.west, Orientation.south),
+            (Orientation.south, Orientation.east),
             )
 
     classic = ReadonlyMappingProxy({
@@ -92,10 +92,10 @@ class WiltonSwitchBoxPattern(Object):
         (Orientation.west, Orientation.north): -1,
         (Orientation.north, Orientation.east): 1,
         # counter-clockwise
-        (Orientation.south, Orientation.east): -1,
         (Orientation.east, Orientation.north): 1,
         (Orientation.north, Orientation.west): 1,
         (Orientation.west, Orientation.south): 1,
+        (Orientation.south, Orientation.east): -1,
         })
 
     cfoptimal = ReadonlyMappingProxy({
@@ -105,10 +105,10 @@ class WiltonSwitchBoxPattern(Object):
         (Orientation.west, Orientation.north): 1,
         (Orientation.north, Orientation.east): -2,
         # counter-clockwise
-        (Orientation.south, Orientation.east): 1,
-        (Orientation.east, Orientation.north): 1,
-        (Orientation.north, Orientation.west): 1,
-        (Orientation.west, Orientation.south): -2,
+        (Orientation.east, Orientation.north): 3,
+        (Orientation.north, Orientation.west): -1,
+        (Orientation.west, Orientation.south): 0,
+        (Orientation.south, Orientation.east): -1,
         })
 
 def generate_wilton(box, segments, pattern = None, cycle_free = False):
@@ -150,21 +150,39 @@ def generate_wilton(box, segments, pattern = None, cycle_free = False):
                 box.connect(source, sink)
     # generate connections
     W = sum(sgmt.width for sgmt in segments)
-    for turns in (WiltonSwitchBoxPattern._clockwise, WiltonSwitchBoxPattern._counterclockwise):
-        logical_class_offset = 0
-        for turn_id, (from_ori, to_ori) in enumerate(turns):
-            track_offset = pattern.get((from_ori, to_ori), None)
-            cycle_free_offset = logical_class_offset + track_offset
-            if track_offset is None:
-                raise PRGAInternalError("No offset given for {}-{} turn"
-                        .format(from_ori.name, to_ori.name))
-            assert W == len(inputs[from_ori])
-            for i, inodes in enumerate(inputs[from_ori]):
-                o = (W + i + track_offset) % W
-                onodes = outputs[to_ori][o]
-                if len(inodes) == 0 or len(onodes) == 0:
-                    continue
-                elif cycle_free and turn_id == 3 and o < cycle_free_offset:
-                    continue
-                box.connect(inodes, onodes, fully_connected = True)
-            logical_class_offset += track_offset
+    # clockwise
+    logical_class_offsets = {}
+    logical_class_offset = 0
+    for turn_id, (from_ori, to_ori) in enumerate(WiltonSwitchBoxPattern._clockwise):
+        track_offset = pattern.get((from_ori, to_ori), None)
+        if track_offset is None:
+            raise PRGAInternalError("No offset given for {}-{} turn"
+                    .format(from_ori.name, to_ori.name))
+        logical_class_offsets[from_ori] = logical_class_offset
+        logical_class_offset += track_offset
+        assert W == len(inputs[from_ori])
+        for i, inodes in enumerate(inputs[from_ori]):
+            o = (W + i + track_offset) % W
+            onodes = outputs[to_ori][o]
+            if len(inodes) == 0 or len(onodes) == 0:
+                continue
+            elif (cycle_free and turn_id == 3 and
+                    (W + i - logical_class_offsets[from_ori]) % W >= (W + o - logical_class_offsets[to_ori]) % W):
+                continue
+            box.connect(inodes, onodes, fully_connected = True)
+    # counterclockwise
+    for turn_id, (from_ori, to_ori) in enumerate(WiltonSwitchBoxPattern._counterclockwise):
+        track_offset = pattern.get((from_ori, to_ori), None)
+        if track_offset is None:
+            raise PRGAInternalError("No offset given for {}-{} turn"
+                    .format(from_ori.name, to_ori.name))
+        assert W == len(inputs[from_ori])
+        for i, inodes in enumerate(inputs[from_ori]):
+            o = (W + i + track_offset) % W
+            onodes = outputs[to_ori][o]
+            if len(inodes) == 0 or len(onodes) == 0:
+                continue
+            elif (cycle_free and turn_id == 2 and
+                    (W + i - logical_class_offsets[from_ori]) % W >= (W + o - logical_class_offsets[to_ori]) % W):
+                continue
+            box.connect(inodes, onodes, fully_connected = True)

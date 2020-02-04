@@ -64,36 +64,74 @@ class NetUtils(object):
             return Slice(bus, index)
 
     @classmethod
-    def _node_key(cls, net, hierarchy = tuple()):
+    def _reference(cls, net, hierarchy = tuple()):
         """:obj:`tuple` [:obj:`int` or ``None``, :obj:`Hashable`, ... ]: Get the key of ``net`` to be used in
         accessing the connection graph.
 
         Args:
             net (`Slice` or `AbstractNet`): 
-            hierarchy (:obj:`Sequence` [`AbstractInstance` ]):
+            hierarchy (:obj:`Sequence` [`AbstractInstance` ]): Hierarchical instance in ascending order
 
         The first element is the index of the bit in the bus if it is an :obj:`int`, or representing the entire bus if
         it is ``None``.
 
         The second element is the key of the bus.
 
-        The rest of the sequence are the instance keys down the hierarchy. If the referred net is a port, zero
+        The rest of the sequence are the instance keys up the hierarchy. If the referred net is a port, zero
         elements follow the bus key; if the referred net is a pin, one element follows the bus key, which is the key
         of the instance; if the referred net is a hierarchical pin, more elements may follow the bus key, which are
-        the keys of the instances down the hierarchy.
+        the keys of the instances in the hierarchy in ascending order.
         """
         if net.net_type.is_const:
             return net.value
         key = (0, net.key) if net.bus_type.is_nonref else (net.index, net.bus.key)
         if hierarchy:
             key += tuple(inst.key for inst in hierarchy)
-        if net.net_type.is_pin:
-            if net.bus_type.is_nonref:
-                return key + (net.parent.key, )
-            else:
-                return key + (net.bus.parent.key, )
+        if net.net_type.is_pin and (not hierarchy or net.parent is not hierarchy[0]):
+            return key + (net.parent.key, )
         else:
             return key
+
+    @classmethod
+    def _dereference(cls, module, node, hierarchical = False):
+        """Dereference ``node`` in ``modules``'s connection graph.
+
+        Args:
+            module (`AbstractModule`):
+            node (:obj:`int` or :obj:`tuple` [:obj:`int`, :obj:`Hashable`, ... ]):
+            hierarchical (:obj:`bool`): If set, allow dereferencing hierarchical references
+
+        Return:
+            net (`Port`, `Pin`, `Slice` or `Const`): 
+            hierarchy (:obj:`tuple` [`AbstractInstance` ]): Hierarchy in ascending order. Only available if
+                ``hierarchical`` is set
+        """
+        if isinstance(node, int):
+            if hierarchical:
+                return Const(node, 1), tuple()
+            else:
+                return Const(node, 1)
+        index, net_key, hierarchy = node[0], node[1], node[2:]
+        if len(hierarchy) > 1 and not hierarchical:
+            raise PRGATypeError("Node '{}' is a hierarchical reference".format(node))
+        instances, parent = [], module
+        for instance_key in reversed(hierarchy):
+            instance = parent.instances[instance_key]
+            instances.append(instance)
+            parent = instance.model
+        hierarchy = tuple(reversed(instances))
+        if hierarchical:
+            try:
+                return parent.ports[net_key][index], hierarchy
+            except KeyError:
+                return parent.logics[net_key][index], hierarchy
+        elif instances:
+            return instances[0].pins[net_key][index]
+        else:
+            try:
+                return module.ports[net_key][index]
+            except KeyError:
+                return module.logics[net_key][index]
 
     @classmethod
     def concat(cls, items, skip_flatten = False):
@@ -167,7 +205,7 @@ class NetUtils(object):
             elif src.net_type.is_unconnected:
                 continue    # use disconnect to disconnect instead of connect it to "unconnected"
             parent = sink.parent.parent if sink.net_type.is_pin else sink.parent
-            sink_node = cls._node_key(sink)
+            sink_node = cls._reference(sink)
             if not (parent._allow_multisource or
                     sink_node not in parent._conn_graph or
                     parent._conn_graph.in_degree( sink_node ) == 0):
@@ -177,7 +215,7 @@ class NetUtils(object):
             elif not (sink.net_type.is_const or parent is (src.parent.parent if src.net_type.is_pin else src.parent)):
                 raise PRGAInternalError("Cannot connect {} and {}. Different contexts.".format(src, sink))
             else:
-                parent._conn_graph.add_edge( cls._node_key(src), sink_node )
+                parent._conn_graph.add_edge( cls._reference(src), sink_node )
 
     @classmethod
     def get_source(cls, sink):
@@ -193,25 +231,36 @@ class NetUtils(object):
         sources = []
         for bit in sink:
             try:
-                key = next(parent._conn_graph.predecessors( cls._node_key(bit) ))
+                node = next(parent._conn_graph.predecessors( cls._reference(bit) ))
             except (StopIteration, NetworkXError):
                 sources.append( Unconnected(1) )
                 continue
 
-            if isinstance(key, int):
-                sources.append( Const(key, 1) )
-                continue
-
-            index, net_key, hierarchy = key[0], key[1], key[2:]
-            assert len(hierarchy) <= 1
-            if len(hierarchy) == 0:
-                try:
-                    sources.append( parent.ports[net_key][index] )
-                except KeyError:
-                    sources.append( parent.logics[net_key][index] )
-            else:
-                sources.append( parent.instances[hierarchy[0]].pins[net_key][index] )
+            sources.append( cls._dereference(parent, node) )
         return cls.concat(sources)
+
+    @classmethod
+    def get_multisource(cls, sink):
+        """Get the sources connected to ``sink``. This method is for accessing connections in modules that allow
+        multi-source connections."""
+        if not sink.is_sink:
+            raise PRGAInternalError("{} is not a sink".format(sink))
+        elif len(sink) != 1:
+            raise PRGAInternalError("{} is not 1-bit wide".format(sink))
+        parent = sink.parent.parent if sink.net_type.is_pin else sink.parent
+        try:
+            return tuple( cls._dereference(parent, node) for node in
+                    parent._conn_graph.predecessors( cls._reference(sink) ) )
+        except NetworkXError:
+            return tuple()
+
+    @classmethod
+    def verilog_str(cls, net, hierarchy = tuple()):
+        """:obj:`str`: Generate the Verilog string for ``net`` in ``hierarchy``."""
+        if hierarchy:
+            return "/".join(i.name for i in reversed(hierarchy)) + "/" + net.name
+        else:
+            return net.name
 
 # ----------------------------------------------------------------------------
 # -- Slice Reference of a Bus ------------------------------------------------

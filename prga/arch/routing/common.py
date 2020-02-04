@@ -13,7 +13,7 @@ from collections import namedtuple
 from abc import abstractproperty
 from copy import copy
 
-__all__ = ['Segment', 'SegmentBridgeType', 'SegmentID', 'BlockPortID', 'DirectTunnel']
+__all__ = ['Segment', 'SegmentBridgeType', 'SegmentID', 'SegmentBridgeID', 'BlockPortID', 'DirectTunnel']
 
 # ----------------------------------------------------------------------------
 # -- Segment Prototype -------------------------------------------------------
@@ -135,6 +135,8 @@ class SegmentID(Object, AbstractRoutingNodeID):
         return self
 
     def __eq__(self, other):
+        if not isinstance(other, type(self)):
+            return False
         return (other.node_type.is_segment_driver and
                 self.position == other.position and
                 self.prototype is other.prototype and
@@ -204,6 +206,8 @@ class SegmentBridgeID(SegmentID):
                 self.prototype, self.orientation, self.section - n, self.bridge_type)
 
     def __eq__(self, other):
+        if not isinstance(other, type(self)):
+            return False
         return (other.node_type.is_segment_bridge and
                 self.position == other.position and
                 self.prototype is other.prototype and
@@ -243,6 +247,8 @@ class BlockPortID(Object, AbstractRoutingNodeID):
                 self.prototype.parent.name, self.prototype.name)
 
     def __eq__(self, other):
+        if not isinstance(other, type(self)):
+            return False
         return (other.node_type.is_blockport_bridge and
                 self.position == other.position and
                 self.prototype is other.prototype and

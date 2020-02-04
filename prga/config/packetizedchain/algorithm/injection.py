@@ -9,6 +9,7 @@ from prga.arch.module.common import ModuleClass
 from prga.arch.module.instance import RegularInstance
 from prga.config.packetizedchain.algorithm.stats import ConfigPacketizedChainStatsAlgorithms
 from prga.util import Abstract, uno
+from prga.exception import PRGAInternalError
 
 from abc import abstractproperty, abstractmethod
 import logging

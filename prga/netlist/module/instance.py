@@ -62,7 +62,7 @@ class Instance(Object, AbstractInstance):
         parent (`AbstractModule`): Parent module
         model (`AbstractModule`): Model of this instance
         name (:obj:`str`): Name of the instance
-        key (:obj:`Hashable`): A hashable key used to index this net in the parent module/instance. If not given
+        key (:obj:`Hashable`): A hashable key used to index this instance in the parent module. If not given
             \(default argument: ``None``\), ``name`` is used by default
         **kwargs: Arbitrary key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
             is executed at the BEGINNING of ``__init__``
