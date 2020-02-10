@@ -5,10 +5,11 @@ from prga.compatible import *
 
 from .common import BusType, NetType, AbstractGenericBus, AbstractInterfaceNet
 from .const import Unconnected, Const
-from prga.util import Object, uno
-from prga.exception import PRGAInternalError, PRGATypeError, PRGAIndexError
+from ...util import Object, uno
+from ...exception import PRGAInternalError, PRGATypeError, PRGAIndexError
 
 from networkx.exception import NetworkXError
+from itertools import product
 
 import logging
 _logger = logging.getLogger(__name__)
@@ -134,6 +135,15 @@ class NetUtils(object):
                 return module.logics[net_key][index]
 
     @classmethod
+    def _get_connection_by_node(cls, module, source, sink):
+        """Get an edittable :obj:`dict` for key-value attributes associated with the edge from ``source`` to
+        ``sink``."""
+        try:
+            return module._conn_graph.edges[source, sink]
+        except KeyError:
+            return None
+
+    @classmethod
     def concat(cls, items, skip_flatten = False):
         """`Slice`, `Concat` or other nets: Concatenate the provided iterable of nets. Set ``skip_flatten`` if
         ``items`` does not contain a `Concat` object."""
@@ -187,17 +197,21 @@ class NetUtils(object):
             return Concat(tuple(iter(concat)))
 
     @classmethod
-    def connect(cls, sources, sinks):
+    def connect(cls, sources, sinks, fully = False, **kwargs):
         """Connect ``sources`` and ``sinks``.
 
         Args:
             sources: a bus, a slice of a bus, a bit of a bus, or an iterable of the items listed above
             sink: a bus, a slice of a bus, a bit of a bus, or an iterable of the items listed above
+            fully (:obj:`bool`): If set, every bit in ``sources`` is connected to all bits in ``sinks`` 
+            **kwargs: Custom attibutes assigned to the connections
         """
         sources, sinks = map(cls.concat, (sources, sinks))
-        if len(sources) != len(sinks):
-            _logger.warning("Width mismatch: len({}) = {} != len({}) = {}".format(sources, len(sources), sinks, len(sinks)))
-        for src, sink in zip(sources, sinks):
+        if not fully and len(sources) != len(sinks):
+            _logger.warning("Width mismatch: len({}) = {} != len({}) = {}"
+                    .format(sources, len(sources), sinks, len(sinks)))
+        pairs = product(sources, sinks) if fully else zip(sources, sinks)
+        for src, sink in pairs:
             if not src.is_source:
                 raise PRGAInternalError("{} of {} is not a source".format(src, sources))
             elif not sink.is_sink:
@@ -212,10 +226,11 @@ class NetUtils(object):
                 raise PRGAInternalError(
                         "{} is already connected to {} and module {} does not allow multi-source connections"
                         .format(sink, cls.get_source(sink), parent))
-            elif not (sink.net_type.is_const or parent is (src.parent.parent if src.net_type.is_pin else src.parent)):
-                raise PRGAInternalError("Cannot connect {} and {}. Different contexts.".format(src, sink))
+            elif not (sink.net_type.is_const or
+                    parent is (src.parent.parent if src.net_type.is_pin else src.parent)):
+                raise PRGAInternalError("Cannot connect {} and {}. Different parent modules.".format(src, sink))
             else:
-                parent._conn_graph.add_edge( cls._reference(src), sink_node )
+                parent._conn_graph.add_edge( cls._reference(src), sink_node, **kwargs )
 
     @classmethod
     def get_source(cls, sink):
@@ -253,6 +268,22 @@ class NetUtils(object):
                     parent._conn_graph.predecessors( cls._reference(sink) ) )
         except NetworkXError:
             return tuple()
+
+    @classmethod
+    def get_connection(cls, source, sink, source_hierarchy = tuple(), sink_hierarchy = tuple()):
+        """Get an edittable :obj:`dict` for key-value attributes associated with the edge from ``source`` to
+        ``sink``."""
+        source_parent = (source_hierarchy[-1].parent if source_hierarchy else
+                source.parent.parent if source.net_type.is_pin else source.parent)
+        sink_parent = (sink_hierarchy[-1].parent if sink_hierarchy else
+                sink.parent.parent if sink.net_type.is_pin else sink.parent)
+        if source_parent is not sink_parent:
+            raise PRGAInternalError("Source net '{}' (hierarchy : [{}]) and sink net '{}' (hierarchy: [{}]) "
+                    .format(source, ', '.join(map(str, reversed(source_hierarchy))),
+                        sink, ', '.join(map(str, reversed(sink_hierarchy)))) +
+                    "are not in the same module")
+        return cls._get_connection_by_node(source_parent,
+                cls._reference(source, source_hierarchy), cls._reference(sink, sink_hierarchy))
 
     @classmethod
     def verilog_str(cls, net, hierarchy = tuple()):

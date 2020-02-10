@@ -3,10 +3,10 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.netlist.net.common import NetType
 from .common import AbstractModule
-from prga.util import Object, ReadonlyMappingProxy
-from prga.exception import PRGAInternalError
+from ..net.common import NetType
+from ...util import Object, ReadonlyMappingProxy
+from ...exception import PRGAInternalError
 
 from collections import OrderedDict
 import networkx as nx
@@ -30,7 +30,7 @@ class Module(Object, AbstractModule):
         instances (:obj:`Mapping`): A mapping object used to index instances by keys. No object by default, disallowing
             instances to be added into this module
         allow_multisource (:obj:`bool`): If set, a sink net may be driven by multiple source nets
-        **kwargs: Arbitrary key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
+        **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
             is executed at the BEGINNING of ``__init__``
     """
 

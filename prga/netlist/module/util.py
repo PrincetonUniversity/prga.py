@@ -3,15 +3,20 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.netlist.net.common import PortDirection
-from prga.netlist.net.util import NetUtils
-from prga.netlist.net.const import Const
-from prga.netlist.net.bus import Port, Pin
-from prga.netlist.module.module import Module
-from prga.netlist.module.instance import Instance
+from .module import Module
+from .instance import Instance
+from ..net.common import PortDirection
+from ..net.util import NetUtils
+from ..net.const import Const
+from ..net.bus import Port, Pin
+from ...exception import PRGAInternalError
 
 from collections import OrderedDict
 from itertools import chain, product
+from networkx import NetworkXError
+
+import logging
+_logger = logging.getLogger(__name__)
 
 __all__ = ['ModuleUtils']
 
@@ -22,6 +27,63 @@ class ModuleUtils(object):
     """A wrapper class for utility functions for modules."""
 
     @classmethod
+    def _elaborate_clocks(cls, module, instance):
+        """Elaborate clock connections for hierarchical instance ``instance`` in ``module``."""
+        submodule = instance[0].model if instance else module
+        # 1. find all clocks and assign clock groups
+        for net in itervalues(submodule.ports):
+            if not net.is_clock:
+                continue
+            if net.clock is not None:
+                _logger.warning("Clock '{}' marked as clocked by '{}' in '{}'"
+                        .format(net, net.clock, submodule))
+            # 1.1 find the predecessor(s) of this net
+            net_node = NetUtils._reference(net, instance)
+            try:
+                predit = module._conn_graph.predecessors( net_node )
+                # 1.2 make sure there is one predecessor
+                pred_node = next(predit)
+            except (NetworkXError, StopIteration):  # no predecessors
+                if instance:
+                    _logger.warning("Clock '{}' (hierarchy: [{}]) is unconnected"
+                            .format(net, ', '.join(map(str, reversed(instance)))))
+                module._conn_graph.add_node(net_node, clock_group = net_node)   # clock grouped to itself
+                continue
+            # 1.3 make sure there is only one predecessor
+            try:
+                next(predit)
+                raise PRGAInternalError("Clock '{}' (hierarchy: [{}]) is connected to multiple sources"
+                        .format(net, ', '.join(map(str, reversed(instance)))))
+            except StopIteration:
+                pass
+            # 1.4 use the same clock group as the predecessor
+            try:
+                module._conn_graph.add_node(net_node,
+                        clock_group = module._conn_graph.nodes[pred_node]['clock_group'])
+            except KeyError:
+                pred_net, pred_hierarchy = NetUtils._dereference(module, pred_node, True)
+                raise PRGAInternalError("Clock '{}' (hierarchy: [{}]) is connected to '{}' (hierarchy: [{}]) "
+                        .format(net, ', '.join(map(str, reversed(instance))),
+                            pred_net, ', '.join(map(str, reversed(pred_hierarchy)))) +
+                        "which is not assigned a clock group")
+        # 2. find all clocked nets
+        hierarchy = tuple(inst.key for inst in instance)
+        for net in chain(itervalues(submodule.ports), itervalues(submodule.logics)):
+            if (net.net_type.is_port and net.is_clock) or net.clock is None:
+                continue
+            clock = submodule.ports.get(net.clock)
+            if clock is None:
+                raise PRGAInternalError("Net '{}' is marked as clocked by '{}' but no such port in '{}'"
+                        .format(net, net.clock, submodule))
+            elif not clock.is_clock:
+                raise PRGAInternalError("Net '{}' is marked as clocked by '{}' but '{}' is not a clock"
+                        .format(net, net.clock, clock))
+            clock_node = NetUtils._reference(clock, instance)
+            for i in range(len(net)):
+                module._conn_graph.add_node( (i, net.key) + hierarchy,
+                        clock = module._conn_graph.nodes[clock_node]['clock_group'] )
+
+    @classmethod
     def _elaborate_one(cls, module, instance, skip):
         """Elaborate one hierarchical instance ``instance``."""
         submodule = instance[0].model
@@ -29,7 +91,9 @@ class ModuleUtils(object):
         hierarchy = tuple(inst.key for inst in instance)
         for u, v in submodule._conn_graph.edges:
             module._conn_graph.add_edge(u + hierarchy, v + hierarchy)
-        # 2. iterate sub-instances 
+        # 2. clocks
+        cls._elaborate_clocks(module, instance)
+        # 3. iterate sub-instances 
         for subinstance in itervalues(submodule.instances):
             hierarchy = (subinstance, ) + instance
             if skip(hierarchy):
@@ -46,7 +110,7 @@ class ModuleUtils(object):
             skip (:obj:`Function` [:obj:`Sequence` [`AbstractInstance` ]] -> :obj:`bool`): If ``hierarchical`` is set,
                 this is a function testing if a specific hierarchical instance should be skipped during elaboration.
         """
-        # TODO: validate
+        cls._elaborate_clocks(module, tuple())
         if not hierarchical:
             return
         for instance in itervalues(module.instances):
@@ -132,3 +196,19 @@ class ModuleUtils(object):
             **kwargs: Arbitrary attributes assigned to the instantiated instance
         """
         return parent._add_instance(Instance(parent, model, name, key, **kwargs))
+
+    @classmethod
+    def create_port(cls, module, name, width, direction, key = None, clock = None, is_clock = False, **kwargs):
+        """Create a port in ``module``.
+
+        Args:
+            module (`AbstractModule`):
+            name (:obj:`str`): Name of the port
+            width (:obj:`int`): Number of bits in the port
+            direction (`PortDirection`): Direction of the port
+            key (:obj:`Hashable`): A hashable key used to index the instance in the parent module. If not given
+                \(default argument: ``None``\), ``name`` is used by default
+            is_clock (:obj:`bool`): Test if this is a clock
+            **kwargs: Arbitrary attributes assigned to the created port
+        """
+        return module._add_net(Port(module, name, width, direction, key, clock, is_clock, **kwargs))

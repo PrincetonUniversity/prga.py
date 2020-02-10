@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.util import Enum, Abstract
+from ...util import Enum, Abstract
 
 from abc import abstractproperty
 

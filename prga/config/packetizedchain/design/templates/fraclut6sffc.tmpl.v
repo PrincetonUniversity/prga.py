@@ -96,9 +96,12 @@ module {{ module.name }} (
     // -- invert clock, CE & SR ---------------------------------------------
     // ----------------------------------------------------------------------
     wire internal_clk, internal_ce, internal_sr;
-    assign internal_clk = cfg_d[`CLOCK_INVERSION] ? ~clk : clk;
-    assign internal_ce = cfg_d[`CE_INVERSION] ? ~ce : ce;
-    assign internal_sr = cfg_d[`SR_INVERSION] ? ~sr : sr;
+    // assign internal_clk = cfg_d[`CLOCK_INVERSION] ? ~clk : clk;
+    // assign internal_ce = cfg_d[`CE_INVERSION] ? ~ce : ce;
+    // assign internal_sr = cfg_d[`SR_INVERSION] ? ~sr : sr;
+    assign internal_clk = clk;
+    assign internal_ce = ce;
+    assign internal_sr = sr;
 
     // ----------------------------------------------------------------------
     // -- LUTs --------------------------------------------------------------

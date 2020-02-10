@@ -6,8 +6,8 @@ from prga.compatible import *
 from .common import NetType, BusType, PortDirection, AbstractNet, AbstractInterfaceNet
 from .const import Unconnected
 from .util import NetUtils, Slice
-from prga.util import Object, uno
-from prga.exception import PRGATypeError
+from ...util import Object, uno
+from ...exception import PRGATypeError
 
 __all__ = []
 
@@ -24,7 +24,7 @@ class _BaseNet(Object, AbstractNet):
         key (:obj:`Hashable`): A hashable key used to index this net in the parent module/instance. If not given
             \(default argument: ``None``\), ``name`` is used by default
         clock (:obj:`Hashable`): Key of the clock net controlling this net. If not set, the net is combinational
-        **kwargs: Arbitrary key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
+        **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
             is executed at the BEGINNING of ``__init__``
     """
 
@@ -96,7 +96,7 @@ class Logic(_BaseNet):
         key (:obj:`Hashable`): A hashable key used to index this net in the parent module. If not given
             \(default argument: ``None``\), ``name`` is used by default
         clock (:obj:`Hashable`): Key of the clock net controlling this net. If not set, the net is combinational
-        **kwargs: Arbitrary key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
+        **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
             is executed at the BEGINNING of ``__init__``
     """
 
@@ -133,7 +133,7 @@ class Port(_BaseNet, AbstractInterfaceNet):
             \(default argument: ``None``\), ``name`` is used by default
         clock (:obj:`Hashable`): Key of the clock net controlling this net. If not set, the net is combinational
         is_clock (:obj:`bool`): Mark this port as a clock port
-        **kwargs: Arbitrary key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
+        **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
             is executed at the BEGINNING of ``__init__``
     """
 
@@ -174,7 +174,7 @@ class Pin(Object, AbstractInterfaceNet):
     Args:
         parent (`AbstractInstance`): Parent instance of this pin
         model (`Port`): Model port of this pin
-        **kwargs: Arbitrary key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
+        **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
             is executed at the BEGINNING of ``__init__``
     """
 

@@ -4,9 +4,9 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .common import AbstractInstance
-from prga.netlist.net.bus import Pin
-from prga.util import Object
-from prga.exception import PRGAInternalError
+from ..net.bus import Pin
+from ...util import Object
+from ...exception import PRGAInternalError
 
 __all__ = ['Instance']
 
@@ -64,7 +64,7 @@ class Instance(Object, AbstractInstance):
         name (:obj:`str`): Name of the instance
         key (:obj:`Hashable`): A hashable key used to index this instance in the parent module. If not given
             \(default argument: ``None``\), ``name`` is used by default
-        **kwargs: Arbitrary key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
+        **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
             is executed at the BEGINNING of ``__init__``
     """
 

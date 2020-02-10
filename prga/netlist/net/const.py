@@ -4,8 +4,8 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .common import NetType, BusType, AbstractGenericNet
-from prga.util import Object
-from prga.exception import PRGATypeError, PRGAIndexError
+from ...util import Object
+from ...exception import PRGATypeError, PRGAIndexError
 
 __all__ = ['Unconnected', 'Const']
 

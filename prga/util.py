@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.exception import PRGAInternalError
+from .exception import PRGAInternalError
 
 from abc import ABCMeta
 import enum
