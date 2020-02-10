@@ -3,8 +3,8 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .common import (ModuleClass, NetClass, Position, Orientation, Corner, Dimension,
-        SegmentType, SegmentID, BlockPinID)
+from .common import (ModuleClass, NetClass, Position, Orientation, Corner, Dimension, Direction,
+        SegmentType, SegmentID, BlockPinID, BlockFCValue)
 from ..netlist.net.common import PortDirection
 from ..netlist.net.util import NetUtils
 from ..netlist.module.module import Module
@@ -15,6 +15,7 @@ from ..exception import PRGAAPIError
 from abc import abstractmethod
 from collections import OrderedDict, namedtuple
 from copy import copy
+from itertools import product
 
 __all__ = ['PrimitiveBuilder', 'ClusterBuilder', 'IOBlockBuilder', 'LogicBlockBuilder',
         'ConnectionBoxBuilder', 'SwitchBoxBuilder', 'ArrayBuilder']
@@ -459,6 +460,59 @@ class ConnectionBoxBuilder(_BaseRoutableBuilder):
             else:
                 return ModuleUtils.create_port(self._module, self._node_name(node),
                         len(port), port.direction.opposite, key = node)
+
+    def fill(self, segments, fc, dont_create = False):
+        """Add port-segment connections using FC values.
+
+        Args:
+            segments (:obj:`Sequence` [:obj:`Segment` ] or :obj:`Mapping` [:obj:`Hashable`, :obj:`Segment` ]):
+            fc (`BlockFCValue`): A `BlockFCValue` or arguments that can be used to construct a `BlockFCValue`, for
+                example, an :obj:`int`, or a :obj:`tuple` of :obj:`int` and overrides. Refer to `BlockFCValue` for
+                more details
+            dont_create (:obj:`bool`): If set, connections are made only between already created nodes
+        """
+        fc = BlockFCValue._construct(fc)
+        if isinstance(segments, Mapping):
+            segments = tuple(itervalues(segments))
+        block, orientation, position, _ = self._module.key
+        # start generation
+        iti = [0 for _ in segments]
+        oti = [0 for _ in segments]
+        for port in itervalues(block.ports):
+            if not (port.position == position and port.orientation in (orientation, Orientation.auto)):
+                continue
+            for sgmt_idx, sgmt in enumerate(segments):
+                nc = fc.port_fc(port, sgmt, port.direction.is_input)  # number of connections
+                if nc == 0:
+                    continue
+                imax = port.direction.case(sgmt.length * sgmt.width, sgmt.width)
+                istep = max(1, imax // nc)                  # index step
+                for _, port_idx, subblock in product(range(nc), range(len(port)),
+                        range(getattr(block, "capacity", 1))):
+                    section = port.direction.case(iti[sgmt_idx] % sgmt.length, 0)
+                    track_idx = port.direction.case(iti[sgmt_idx] // sgmt.length, oti[sgmt_idx])
+                    for sgmt_dir in iter(Direction):
+                        port_bus = self.get_blockpin(port.name, subblock, dont_create)
+                        if port_bus is None:
+                            continue
+                        if port.direction.is_input:
+                            sgmt_bus = self.get_segment_input(sgmt,
+                                    Orientation.compose(orientation.dimension.perpendicular, sgmt_dir),
+                                    section, dont_create)
+                            if sgmt_bus is None:
+                                continue
+                            self.connect(sgmt_bus[track_idx], port_bus[port_idx])
+                        else:
+                            sgmt_bus = self.get_segment_output(sgmt,
+                                    Orientation.compose(orientation.dimension.perpendicular, sgmt_dir),
+                                    dont_create)
+                            if sgmt_bus is None:
+                                continue
+                            self.connect(port_bus[port_idx], sgmt_bus[track_idx])
+                    ni = port.direction.case(iti, oti)[sgmt_idx] + istep    # next index
+                    if istep > 1 and ni >= imax:
+                        ni += 1
+                    port.direction.case(iti, oti)[sgmt_idx] = ni % imax
  
     @classmethod
     def new(cls, block, orientation, position = None, identifier = None, name = None):
@@ -511,7 +565,8 @@ class SwitchBoxBuilder(_BaseRoutableBuilder):
         return corner, identifier
 
     # == high-level API ======================================================
-    def get_segment_input(self, segment, orientation, section = None, dont_create = False):
+    def get_segment_input(self, segment, orientation, section = None, dont_create = False,
+            segment_type = SegmentType.sboxin_regular):
         """Get the segment input to this switch box.
 
         Args:
@@ -520,11 +575,13 @@ class SwitchBoxBuilder(_BaseRoutableBuilder):
             section (:obj:`int`): Section of the segment
             dont_create (:obj:`bool`): If set, return ``None`` when the requested segment input is not already created
                 instead of create it
+            segment_type (`SegmentType`): Which type of segment input needed. Valid types are:
+                `SegmentType.sboxin_regular`, `SegmentType.sboxin_cboxout` and `SegmentType.sboxin_cboxout2`
         """
         section = uno(section, segment.length)
         corner, _ = self._module.key
         node = SegmentID(self._segment_relative_position(corner, segment, orientation, section),
-                segment, orientation, SegmentType.sboxin_regular)
+                segment, orientation, segment_type)
         try:
             return self.ports[node]
         except KeyError:
@@ -555,6 +612,75 @@ class SwitchBoxBuilder(_BaseRoutableBuilder):
             else:
                 return ModuleUtils.create_port(self._module, self._node_name(node),
                         segment.width, PortDirection.output, key = node)
+
+    def fill(self, segments, output_orientation, drive_at_crosspoints = False,
+            crosspoints_only = False, exclude_input_orientations = tuple(), dont_create = False):
+        """Create switches implementing a cycle-free variation of the Wilton switch box.
+
+        Args:
+            segments (:obj:`Sequence` [:obj:`Segment` ] or :obj:`Mapping` [:obj:`Hashable`, :obj:`Segment` ]):
+            output_orientation (`Orientation`):
+            drive_at_crosspoints (:obj:`bool`): If set, outputs are generated driving non-zero sections of long
+                segments
+            crosspoints_only (:obj:`bool`): If set, outputs driving the first section of segments are not generated
+            exclude_input_orientations (:obj:`Container` [`Orientation` ]): Exclude segments in the given orientations
+            dont_create (:obj:`bool`): If set, connections are made only between already created nodes
+        """
+        # sort by length (descending order)
+        if isinstance(segments, Mapping):
+            segments = tuple(sorted(itervalues(segments), key = lambda x: x.length, reverse = True))
+        else:
+            segments = tuple(sorted(segments, key = lambda x: x.length, reverse = True))
+        # tracks
+        tracks = []
+        for sgmt_idx, sgmt in enumerate(segments):
+            tracks.extend( (sgmt, i) for i in range(sgmt.width) )
+        # logical class offsets
+        lco = {
+                Orientation.east: 0,
+                Orientation.south: -1,
+                Orientation.west: -2,
+                Orientation.north: -3,
+                }
+        # generate connections
+        for iori in iter(Orientation):  # input orientation
+            if iori in (output_orientation.opposite, Orientation.auto):     # no U-turn
+                continue
+            elif iori in exclude_input_orientations:                        # exclude some orientations manually
+                continue
+            elif iori is output_orientation:                                # straight connections
+                for sgmt in segments:
+                    for section in range(1 if crosspoints_only else 0,
+                            sgmt.length if drive_at_crosspoints else 1):
+                        input_ = self.get_segment_input(sgmt, iori, sgmt.length - section, dont_create)
+                        output = self.get_segment_output(sgmt, output_orientation, section, dont_create)
+                        if input_ is not None and output is not None:
+                            self.connect(input_, output)
+                continue
+            # turns
+            cycle_break_turn = ((output_orientation.is_east and iori.is_north) or
+                    (output_orientation.is_south and iori.is_west))
+            # iti: input track index
+            # isgmt: input segment
+            # isi: index in the input segment
+            for iti, (isgmt, isi) in enumerate(tracks):
+                ilc = (iti + lco[iori] + len(tracks)) % len(tracks)                         # input logical class
+                olc = (ilc + (1 if cycle_break_turn else 0) + len(tracks)) % len(tracks)    # output logical class
+                for isec in range(isgmt.length):
+                    input_ = self.get_segment_input(isgmt, iori, isec + 1, dont_create)
+                    if input_ is None:
+                        continue
+                    elif olc < ilc or (olc == ilc and cycle_break_turn):
+                        continue
+                    oti = (olc - lco[output_orientation] + len(tracks)) % len(tracks)       # output track index
+                    osgmt, osi = tracks[oti]
+                    for osec in range(1 if crosspoints_only else 0,
+                            osgmt.length if drive_at_crosspoints else 1):
+                        output = self.get_segment_output(osgmt, output_orientation, osec, dont_create)
+                        if output is None:
+                            continue
+                        self.connect(input_[isi], output[osi])
+                    olc = (olc + 1) % len(tracks)
 
     @classmethod
     def new(cls, corner, identifier = None, name = None):

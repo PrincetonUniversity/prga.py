@@ -9,10 +9,12 @@ from ..exception import PRGAInternalError
 from collections import namedtuple
 from abc import abstractproperty
 from copy import copy
+from math import ceil
 
 __all__ = ['Dimension', 'Direction', 'Orientation', 'Corner', 'Subtile', 'Position',
         'NetClass', 'ModuleClass', 'PrimitiveClass', 'PrimitivePortClass',
-        'Global', 'Segment', 'SegmentType', 'SegmentID', 'BlockPinID']
+        'Global', 'Segment', 'SegmentType', 'SegmentID', 'BlockPinID',
+        'BlockPortFCValue', 'BlockFCValue']
 
 # ----------------------------------------------------------------------------
 # -- Dimension ---------------------------------------------------------------
@@ -459,7 +461,7 @@ class AbstractRoutingNodeID(Hashable, Abstract):
 # ----------------------------------------------------------------------------
 # -- Segment/Bridge ID -------------------------------------------------------
 # ----------------------------------------------------------------------------
-class SegmentID(Object, AbstractRoutingNodeID):
+class SegmentID(namedtuple('SegmentID', 'position prototype orientation segment_type'), AbstractRoutingNodeID):
     """ID of segments and bridges.
 
     Args:
@@ -469,12 +471,8 @@ class SegmentID(Object, AbstractRoutingNodeID):
         segment_type (`SegmentType`): type of the segment/bridge
     """
 
-    __slots__ = ['position', 'prototype', 'orientation', 'segment_type']
-    def __init__(self, position, prototype, orientation, segment_type):
-        self.position = Position(*position)
-        self.prototype = prototype
-        self.orientation = orientation
-        self.segment_type = segment_type
+    def __new__(cls, position, prototype, orientation, segment_type):
+        return super(SegmentID, cls).__new__(cls, Position(*position), prototype, orientation, segment_type)
 
     def __hash__(self):
         return hash( (self.position.x, self.position.y, self.prototype.name, self.orientation, self.segment_type) )
@@ -483,17 +481,6 @@ class SegmentID(Object, AbstractRoutingNodeID):
         return 'SegmentID({}, ({}, {}), {}, {})'.format(self.segment_type.name,
                 self.position.x, self.position.y, self.prototype.name, self.orientation.name)
 
-    def __eq__(self, other):
-        if not isinstance(other, type(self)):
-            return False
-        return (self.position == other.position and
-                self.prototype is other.prototype and
-                self.orientation is other.orientation and
-                self.segment_type is other.segment_type)
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
     def convert(self, segment_type, override_position = None):
         """`SegmentID`: Convert to another segment ID.
 
@@ -501,7 +488,7 @@ class SegmentID(Object, AbstractRoutingNodeID):
             segment_type (`SegmentType`): convert to another segment type
             override_position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): override the position of this segment ID
         """
-        return SegmentID(uno(override_position, self.position), self.prototype, self.orientation, segment_type)
+        return type(self)(uno(override_position, self.position), self.prototype, self.orientation, segment_type)
 
     @property
     def node_type(self):
@@ -510,7 +497,7 @@ class SegmentID(Object, AbstractRoutingNodeID):
 # ----------------------------------------------------------------------------
 # -- Block Pin ID ------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class BlockPinID(Object, AbstractRoutingNodeID):
+class BlockPinID(namedtuple('BlockPinID', 'position prototype subblock'), AbstractRoutingNodeID):
     """ID of block pin nodes.
 
     Args:
@@ -519,14 +506,11 @@ class BlockPinID(Object, AbstractRoutingNodeID):
         subblock (:obj:`int`): sub-block in a tile
     """
 
-    __slots__ = ['position', 'prototype', 'subblock']
-    def __init__(self, position, prototype, subblock = 0):
-        self.position = Position(*position)
-        self.prototype = prototype
-        self.subblock = subblock
+    def __new__(cls, position, prototype, subblock = 0):
+        return super(BlockPinID, cls).__new__(cls, Position(*position), prototype, subblock)
 
     def __hash__(self):
-        return hash( (self.position.x, self.position.y, self.prototype.parent.name, self.prototype.name,
+        return hash( (self.position.x, self.position.y, self.prototype.parent.key, self.prototype.key,
             self.subblock) )
 
     def __str__(self):
@@ -534,17 +518,110 @@ class BlockPinID(Object, AbstractRoutingNodeID):
                 self.position.x, self.position.y, self.subblock,
                 self.prototype.parent.name, self.prototype.name)
 
-    def __eq__(self, other):
-        if not isinstance(other, type(self)):
-            return False
-        return (other.node_type.is_blockpin and
-                self.position == other.position and
-                self.prototype is other.prototype and
-                self.subblock == other.subblock)
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
     @property
     def node_type(self):
         return NetClass.blockpin
+
+# ----------------------------------------------------------------------------
+# -- Block FC Value ----------------------------------------------------------
+# ----------------------------------------------------------------------------
+class BlockPortFCValue(namedtuple('BlockPortFCValue', 'default overrides')):
+    """A named tuple used for defining FC values for a specific block port.
+
+    Args:
+        default (:obj:`int` or :obj:`float`): the default FC value for this port
+        overrides (:obj:`Mapping` [:obj:`str`, :obj:`int` or :obj:`float` ]): the FC value for a
+            specific segment type
+    """
+
+    def __new__(cls, default, overrides = None):
+        return super(BlockPortFCValue, cls).__new__(cls, default, uno(overrides, {}))
+
+    @classmethod
+    def _construct(cls, *args):
+        """Quick construction of a `BlockPortFCValue`."""
+        if len(args) == 1:
+            if isinstance(args[0], BlockPortFCValue):
+                return args[0]
+            elif isinstance(args[0], tuple):
+                return cls(*args[0])
+        return cls(*args)
+
+    @property
+    def default(self):
+        """:obj:`int` or :obj:`float`: Default FC value for this block port."""
+        return super(BlockPortFCValue, self).default
+
+    @property
+    def overrides(self):
+        """:obj:`Mapping` [:obj:`str`, :obj:`int` or :obj:`float` ]): the FC value for a specific segment type."""
+        return super(BlockPortFCValue, self).overrides
+
+    def segment_fc(self, segment, all_sections = False):
+        """Get the FC value for a specific segment.
+
+        Args:
+            segment (`Segment`):
+            all_sections (:obj:`bool`): if all sections of a segment longer than 1 should be taken into consideration
+
+        Returns:
+            :obj:`int`: the calculated FC value
+        """
+        multiplier = segment.length if all_sections else 1
+        fc = self.overrides.get(segment.name, self.default)
+        if isinstance(fc, int):
+            if fc < 0 or fc >= segment.width:
+                raise PRGAInternalError("Invalid FC value ({}) for segment '{}'".format(fc, segment.name))
+            return fc * multiplier
+        elif isinstance(fc, float):
+            if fc < 0 or fc > 1:
+                raise PRGAInternalError("Invalid FC value ({}) for segment '{}'".format(fc, segment.name))
+            return int(ceil(fc * segment.width * multiplier))
+        else:
+            raise PRGAInternalError("Invalid FC value ({}) for segment '{}'".format(fc, segment.name))
+
+class BlockFCValue(namedtuple('BlockFCValue', 'default_in default_out overrides')):
+    """A named tuple used for defining FC values for a specific block.
+
+    Args:
+        default_in (:obj:`int`, :obj:`float`, or `BlockPortFCValue`): the default FC value for all input ports
+        default_out (:obj:`int`, :obj:`float`, or `BlockPortFCValue`): the default FC value for all output ports.
+            Same as the default value for input ports if not set
+        overrides (:obj:`Mapping` [:obj:`str`, :obj:`int` or :obj:`float` or `BlockPortFCValue` ]): the FC value for
+            a specific port
+    """
+    def __new__(cls, default_in, default_out = None, overrides = None):
+        default_in = BlockPortFCValue._construct(default_in)
+        if default_out is None:
+            default_out = default_in
+        else:
+            default_out = BlockPortFCValue._construct(default_out)
+        if overrides is None:
+            overrides = {}
+        else:
+            overrides = {k: BlockPortFCValue._construct(v) for k, v in iteritems(overrides)}
+        return super(BlockFCValue, cls).__new__(cls, default_in, default_out, uno(overrides, {}))
+
+    @classmethod
+    def _construct(cls, *args):
+        """Quick construction of a `BlockFCValue`."""
+        if len(args) == 1:
+            if isinstance(args[0], BlockFCValue):
+                return args[0]
+            elif isinstance(args[0], tuple):
+                return cls(*args[0])
+        return cls(*args)
+
+    def port_fc(self, port, segment, all_sections = False):
+        """Get the FC value for a specific port and a specific segment.
+
+        Args:
+            port (`Port`): 
+            segment (`Segment`):
+            all_sections (:obj:`bool`): if all sections of a segment longer than 1 should be taken into consideration
+
+        Returns:
+            :obj:`int`: the calculated FC value
+        """
+        return self.overrides.get(port.name, port.direction.case(self.default_in, self.default_out)).segment_fc(
+                segment, all_sections)
