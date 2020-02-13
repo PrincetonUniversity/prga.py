@@ -193,19 +193,20 @@ class Corner(Enum):
 # ----------------------------------------------------------------------------
 class Subtile(Enum):
     """Sub-tile positions in a tile."""
-    center = 0      #: center of the tile, typically occupied by a logic/io block
-
     # edges
-    north = 1       #: north edge of the tile, typically occupied by a connection box
-    east = 2        #: east edge of the tile, typically occupied by a connection box
-    south = 3       #: south edge of the tile, typically occupied by a connection box
-    west = 4        #: west edge of the tile, typically occupied by a connection box
+    north = -1      #: north edge of the tile, typically occupied by a connection box
+    east = -2       #: east edge of the tile, typically occupied by a connection box
+    south = -3      #: south edge of the tile, typically occupied by a connection box
+    west = -4       #: west edge of the tile, typically occupied by a connection box
 
     # corners
-    northeast = 5   #: northeast corner of the tile, typically occupied by a switch box
-    northwest = 6   #: northeast corner of the tile, typically occupied by a switch box
-    southeast = 7   #: northeast corner of the tile, typically occupied by a switch box
-    southwest = 8   #: northeast corner of the tile, typically occupied by a switch box
+    northeast = -5  #: northeast corner of the tile, typically occupied by a switch box
+    northwest = -6  #: northeast corner of the tile, typically occupied by a switch box
+    southeast = -7  #: northeast corner of the tile, typically occupied by a switch box
+    southwest = -8  #: northeast corner of the tile, typically occupied by a switch box
+
+    # center
+    center = 0      #: center of the tile, typically occupied by a logic/io block
 
     def to_orientation(self):
         """`Orientation`: Convert to orientation."""

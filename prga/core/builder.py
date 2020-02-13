@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .common import (ModuleClass, NetClass, Position, Orientation, Corner, Dimension, Direction,
+from .common import (ModuleClass, NetClass, Position, Orientation, Corner, Dimension, Direction, Subtile,
         SegmentType, SegmentID, BlockPinID, BlockFCValue)
 from ..netlist.net.common import PortDirection
 from ..netlist.net.util import NetUtils
@@ -528,6 +528,18 @@ class ConnectionBoxBuilder(_BaseRoutableBuilder):
                 key = key)
 
 # ----------------------------------------------------------------------------
+# -- Switch Box Key ----------------------------------------------------------
+# ----------------------------------------------------------------------------
+class _SwitchBoxKey(namedtuple('_SwitchBoxKey', 'corner identifier')):
+    """Connection box key.
+
+    Args:
+        corner (`Corner`): 
+        identifier (:obj:`str`): Unique identifier to differentiate switch boxes for the same corner
+    """
+    pass
+
+# ----------------------------------------------------------------------------
 # -- Switch Box Builder ------------------------------------------------------
 # ----------------------------------------------------------------------------
 class SwitchBoxBuilder(_BaseRoutableBuilder):
@@ -562,7 +574,7 @@ class SwitchBoxBuilder(_BaseRoutableBuilder):
 
     @classmethod
     def _sbox_key(cls, corner, identifier = None):
-        return corner, identifier
+        return _SwitchBoxKey(corner, identifier)
 
     # == high-level API ======================================================
     def get_segment_input(self, segment, orientation, section = None, dont_create = False,
@@ -579,8 +591,7 @@ class SwitchBoxBuilder(_BaseRoutableBuilder):
                 `SegmentType.sboxin_regular`, `SegmentType.sboxin_cboxout` and `SegmentType.sboxin_cboxout2`
         """
         section = uno(section, segment.length)
-        corner, _ = self._module.key
-        node = SegmentID(self._segment_relative_position(corner, segment, orientation, section),
+        node = SegmentID(self._segment_relative_position(self._module.key.corner, segment, orientation, section),
                 segment, orientation, segment_type)
         try:
             return self.ports[node]
@@ -601,8 +612,7 @@ class SwitchBoxBuilder(_BaseRoutableBuilder):
             dont_create (:obj:`bool`): If set, return ``None`` when the requested segment output is not already created
                 instead of create it
         """
-        corner, _ = self._module.key
-        node = SegmentID(self._segment_relative_position(corner, segment, orientation, section),
+        node = SegmentID(self._segment_relative_position(self._module.key.corner, segment, orientation, section),
                 segment, orientation, SegmentType.sboxout)
         try:
             return self.ports[node]
@@ -686,9 +696,262 @@ class SwitchBoxBuilder(_BaseRoutableBuilder):
     def new(cls, corner, identifier = None, name = None):
         """Create a new module for building."""
         key = cls._sbox_key(corner, identifier)
-        name = name or 'sbox_{}{}'.format(corner, ('_' + identifier) if identifier is not None else '')
+        name = name or 'sbox_{}{}'.format(corner.case("ne", "nw", "se", "sw"),
+                ('_' + identifier) if identifier is not None else '')
         return Module(name,
                 ports = OrderedDict(),
                 allow_multisource = True,
                 module_class = ModuleClass.switch_box,
                 key = key)
+
+# ----------------------------------------------------------------------------
+# -- Array Instance Mapping --------------------------------------------------
+# ----------------------------------------------------------------------------
+class _ArrayInstanceMapping(Object, MutableMapping):
+    """Helper class for ``Array.instances`` property.
+
+    Args:
+        width (:obj:`int`): Width of the array
+        height (:obj:`int`): Height of the array
+    """
+
+    __slots__ = ['grid']
+    def __init__(self, width, height):
+        self.grid = tuple(tuple([None] * len(Subtile) for y in range(height)) for x in range(width))
+
+    def __getitem__(self, key):
+        try:
+            (x, y), subtile = key
+        except (ValueError, TypeError):
+            raise KeyError(key)
+        try:
+            tile = self.grid[x][y]
+        except (IndexError, TypeError):
+            raise KeyError(key)
+        if subtile > len(tile) - len(Subtile):
+            raise KeyError(key)
+        try:
+            obj = tile[subtile]
+        except (IndexError, TypeError):
+            raise KeyError(key)
+        if obj is None or isinstance(obj, Position):
+            raise KeyError(key)
+        return obj
+
+    def __setitem__(self, key, value):
+        try:
+            (x, y), subtile = key
+        except (ValueError, TypeError):
+            raise PRGAInternalError("Unsupported key: {}".format(key))
+        try:
+            tile = self.grid[x][y]
+        except (IndexError, TypeError):
+            raise PRGAInternalError("Unsupported key: {}".format(key))
+        if subtile < 0:
+            try:
+                if tile[subtile] is not None:
+                    raise PRGAInternalError("Subtile '{}' of '{}' already occupied"
+                            .format(subtile.name, Position(x, y)))
+                tile[subtile] = value
+            except IndexError:
+                raise PRGAInternalError("Unsupported key: {}".format(key))
+        else:
+            last_subblock = len(tile) - len(Subtile)
+            if subtile == last_subblock:
+                if tile[last_subblock] is not None:
+                    raise PRGAInternalError("Subblock '{}' of '{}' already occupied"
+                            .format(subtile, Position(x, y)))
+                tile[last_subblock] = value
+            elif subtile == last_subblock + 1:
+                if tile[last_subblock] is None or isinstance(tile[last_subblock], Position):
+                    raise PRGAInternalError("Invalid subblock '{}' placed at subblock {} of '{}'"
+                            .format(value, subtile, Position(x, y)))
+                tile.insert(last_subblock + 1, value)
+            else:
+                raise PRGAInternalError("Invalid subblock '{}' placed at subblock {} of '{}'"
+                        .format(value, subtile, Position(x, y)))
+
+    def __delitem__(self, key):
+        raise PRGAInternalError("Deleting from an array instances mapping is not supported")
+
+    def __len__(self):
+        return sum(1 for _ in iter(self))
+
+    def __iter__(self):
+        for x, col in enumerate(self.grid):
+            for y, tile in enumerate(col):
+                pos = Position(x, y)
+                for i, instance in enumerate(tile):
+                    if instance is None or isinstance(instance, Position):
+                        continue
+                    if i > len(tile) - len(Subtile):
+                        yield pos, Subtile(i - len(tile))
+                    else:
+                        yield pos, i
+
+    def get_root(self, position, subtile):
+        x, y = position
+        try:
+            tile = self.grid[x][y]
+        except (IndexError, TypeError):
+            raise PRGAInternalError("Invalid position '{}'".format(Position(x, y)))
+        if subtile > len(tile) - len(Subtile):
+            raise PRGAInternalError("Invalid subblock: {}".format(subtile))
+        obj = tile[subtile]
+        if isinstance(obj, Position):
+            return self.grid[x - obj.x][y - obj.y][Subtile.center]
+        return obj
+
+# ----------------------------------------------------------------------------
+# -- Array Builder -----------------------------------------------------------
+# ----------------------------------------------------------------------------
+class ArrayBuilder(_BaseRoutableBuilder):
+    """Array builder.
+
+    Args:
+        module (`AbstractModule`): The module to be built
+    """
+
+    # == low-level API =======================================================
+    @classmethod
+    def _checklist(cls, model, x, y, exclude_root = False):
+        if model.module_class.is_array:
+            for i in Subtile:
+                if exclude_root and i.is_center and x == 0 and y == 0:
+                    continue
+                yield i
+        elif model.module_class.is_logic_block:
+            north = y < model.height - 1
+            south = y > 0
+            east = x < model.width - 1
+            west = x > 0
+            if not exclude_root or x != 0 or y != 0:
+                yield Subtile.center
+            if north:
+                yield Subtile.north
+                if east:
+                    yield Subtile.northeast
+                if west:
+                    yield Subtile.northwest
+            if south:
+                yield Subtile.south
+                if east:
+                    yield Subtile.southeast
+                if west:
+                    yield Subtile.southwest
+            if west:
+                yield Subtile.west
+            if east:
+                yield Subtile.east
+        else:
+            raise PRGAInternalError("Unsupported module class '{}'".format(model.module_class.name))
+
+    # == high-level API ======================================================
+    @property
+    def width(self):
+        """:obj:`int`: Width of the array."""
+        return self._module.width
+
+    @property
+    def height(self):
+        """:obj:`int`: Height of the array."""
+        return self._module.height
+
+    @property
+    def instances(self):
+        """:obj:`Mapping` [:obj:`tuple` [:obj:`tuple` [:obj:`int`, :obj:`int` ], :obj:`int` or `Subtile` ],
+            `AbstractInstances` ]: Proxy to ``module.instances``.
+            
+        The key is composed of the position in the array and the subtile/subblock in the array.
+        """
+        return self._module.instances
+
+    @classmethod
+    def new(cls, name, width, height):
+        """Create a new module for building."""
+        return Module(name,
+                ports = OrderedDict(),
+                instances = _ArrayInstanceMapping(width, height),
+                module_class = ModuleClass.array,
+                width = width,
+                height = height)
+
+    def instantiate(self, model, position, name = None):
+        """Instantiate ``model`` at the speicified position in the array.
+
+        Args:
+            model (`AbstractModule`): A logic/IO block, connection/switch box, or sub array
+            position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position in the array
+            name (:obj:`int`): Custom name of the instance
+        """
+        position = Position(*position)
+        # 1. make sure all subtiles are not already occupied
+        if model.module_class.is_logic_block or model.module_class.is_array:
+            for x, y in product(range(model.width), range(model.height)):
+                pos = position + (x, y)
+                if pos.x >= self.width or pos.y >= self.height:
+                    raise PRGAAPIError("'{}' is not in array '{}' ({} x {})"
+                            .format(pos, self._module, self.width, self.height))
+                for subtile in self._checklist(model, x, y):
+                    root = self._module._instances.get_root(pos, subtile)
+                    if root is not None:
+                        raise PRGAAPIError("Subtile '{}' of '{}' in array '{}' already occupied by '{}'"
+                                .format(subtile.name, pos, self._module, root))
+        else:
+            subtile = (Subtile.center if model.module_class.is_io_block else
+                    model.key.orientation.to_subtile() if model.module_class.is_connection_box else
+                    model.key.corner.to_subtile() if model.module_class.is_switch_box else None)
+            if subtile is None:
+                raise PRGAAPIError("Cannot instantiate '{}' in array '{}'. Unsupported module class: {}"
+                        .format(model, self._module, model.module_class.name))
+            root = self._module._instances.get_root(position, subtile)
+            if root is not None:
+                raise PRGAAPIError("Subtile '{}' of '{}' in array '{}' already occupied by '{}'"
+                        .format(subtile.name, position, self._module, root))
+            if model.module_class.is_connection_box:    # special check when instantiating a connection box
+                root = self._module._instances.get_root(position, Subtile.center)
+                if root is None:
+                    raise PRGAAPIError("Connection box cannot be placed at '{}' in array '{}'"
+                            .format(position, self._module))
+                rootpos, _ = root.key
+                offset = position - rootpos
+                if root.model is not model.key.block or offset != model.key.position:
+                    raise PRGAAPIError("Connection box cannot be placed at '{}' in array '{}'"
+                            .format(position, self._module))
+        # 2. instantiation
+        if name is None:
+            if model.module_class.is_io_block:
+                name = "iob_x{}y{}".format(position.x, position.y)
+            elif model.module_class.is_logic_block:
+                name = "clb_x{}y{}".format(position.x, position.y)
+            elif model.module_class.is_array:
+                name = "subarray_x{}y{}".format(position.x, position.y)
+            elif model.module_class.is_connection_box:
+                name = "cb_x{}y{}{}".format(position.x, position.y, model.key.orientation.name[0])
+            else:
+                name = "sb_x{}y{}{}".format(position.x, position.y,
+                        model.key.corner.case('ne', 'nw', 'se', 'sw'))
+        if model.module_class.is_io_block:
+            if model.capacity == 1:
+                ModuleUtils.instantiate(self._module, model, name, key = (position, Subtile.center))
+            else:
+                for i in range(model.capacity):
+                    ModuleUtils.instantiate(self._module, model, name + '_' + str(i), key = (position, i))
+        elif model.module_class.is_logic_block or model.module_class.is_array:
+            ModuleUtils.instantiate(self._module, model, name, key = (position, Subtile.center))
+            for x, y in product(range(model.width), range(model.height)):
+                for subtile in self._checklist(model, x, y, True):
+                    self._module._instances.grid[x][y][subtile] = Position(x, y)
+        elif model.module_class.is_connection_box:
+            ModuleUtils.instantiate(self._module, model, name, key = (position, model.key.orientation.to_subtile()))
+        elif model.module_class.is_switch_box:
+            ModuleUtils.instantiate(self._module, model, name, key = (position, model.key.corner.to_subtile()))
+
+    def fill(self, context, identifier = None):
+        """Fill routing boxes into the array being built."""
+        # TODO
+        pass
+
+    def commit(self):
+        # TODO: auto connect stuff
+        return super(ArrayBuilder, self).commit()

@@ -95,6 +95,13 @@ class TranslationPass(Object, AbstractPass):
                     net_class = NetClass.segment
                 else:
                     net_class = NetClass.blockpin
+            elif module.module_class.is_array:
+                if hasattr(port, 'global_'):
+                    net_class = NetClass.global_
+                elif isinstance(port.key.prototype, Segment):
+                    net_class = NetClass.segment
+                else:
+                    net_class = NetClass.blockpin
             if net_class is None:
                 raise NotImplementedError("Unsupport net class '{}' of port '{}' in module '{}'"
                         .format(net_class.name, port.name, module.name))

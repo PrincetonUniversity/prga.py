@@ -4,7 +4,8 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .common import Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass
-from .builder import ClusterBuilder, IOBlockBuilder, LogicBlockBuilder, ConnectionBoxBuilder, SwitchBoxBuilder
+from .builder import (ClusterBuilder, IOBlockBuilder, LogicBlockBuilder, ConnectionBoxBuilder, SwitchBoxBuilder,
+        ArrayBuilder)
 from ..netlist.net.common import PortDirection
 from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
@@ -236,7 +237,8 @@ class Context(Object):
             if dont_create:
                 return None
             else:
-                return ConnectionBoxBuilder(ConnectionBoxBuilder.new(block, orientation, position, identifier))
+                return ConnectionBoxBuilder(self._logical_modules.setdefault(key,
+                        ConnectionBoxBuilder.new(block, orientation, position, identifier)))
 
     # -- Switch Boxes --------------------------------------------------------
     def get_switch_box(self, corner, identifier = None, dont_create = False):
@@ -259,4 +261,18 @@ class Context(Object):
             if dont_create:
                 return None
             else:
-                return SwitchBoxBuilder(SwitchBoxBuilder.new(corner, identifier))
+                return SwitchBoxBuilder(self._logical_modules.setdefault(key,
+                    SwitchBoxBuilder.new(corner, identifier)))
+
+    # -- Arrays --------------------------------------------------------------
+    @property
+    def arrays(self):
+        """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to arrays."""
+        return ReadonlyMappingProxy(self._logical_modules, lambda kv: kv[1].module_class.is_array)
+
+    def create_array(self, name, width = 1, height = 1):
+        """`ArrayBuilder`: Create an array builder."""
+        if name in self._logical_modules:
+            raise PRGAAPIError("Module with name '{}' already created".format(name))
+        array = self._logical_modules[name] = ArrayBuilder.new(name, width, height)
+        return ArrayBuilder(array)
