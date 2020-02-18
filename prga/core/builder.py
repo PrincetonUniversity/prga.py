@@ -18,7 +18,7 @@ from copy import copy
 from itertools import product
 
 __all__ = ['PrimitiveBuilder', 'ClusterBuilder', 'IOBlockBuilder', 'LogicBlockBuilder',
-        'ConnectionBoxBuilder', 'SwitchBoxBuilder', 'ArrayBuilder']
+        'ConnectionBoxBuilder', 'SwitchBoxBuilder', 'ArrayEdgeSettings', 'ArrayBuilder']
 
 # ----------------------------------------------------------------------------
 # -- Base Builder for All Modules --------------------------------------------
@@ -27,11 +27,13 @@ class _BaseBuilder(Object):
     """Base class for all module builders.
 
     Args:
+        context (`Context`): The context of the builder
         module (`AbstractModule`): The module to be built
     """
 
-    __slots__ = ['_module']
-    def __init__(self, module):
+    __slots__ = ['_context', '_module']
+    def __init__(self, context, module):
+        self._context = context
         self._module = module
 
     @property
@@ -374,7 +376,7 @@ class ConnectionBoxBuilder(_BaseRoutableBuilder):
         else:
             if segment_ori.is_north:
                 return (cbox_ori.case(west = -1, east = 0), -section)
-            elif segment_ori.is_west:
+            elif segment_ori.is_south:
                 return (cbox_ori.case(west = -1, east = 0),  section)
         raise PRGAAPIError("Section {} of segment '{}' going {} does not go through cbox '{}'"
                 .format(section, segment, segment_ori.name, self._module))
@@ -461,18 +463,21 @@ class ConnectionBoxBuilder(_BaseRoutableBuilder):
                 return ModuleUtils.create_port(self._module, self._node_name(node),
                         len(port), port.direction.opposite, key = node)
 
-    def fill(self, segments, fc, dont_create = False):
+    def fill(self, fc, segments = None, dont_create = False):
         """Add port-segment connections using FC values.
 
         Args:
-            segments (:obj:`Sequence` [:obj:`Segment` ] or :obj:`Mapping` [:obj:`Hashable`, :obj:`Segment` ]):
             fc (`BlockFCValue`): A `BlockFCValue` or arguments that can be used to construct a `BlockFCValue`, for
                 example, an :obj:`int`, or a :obj:`tuple` of :obj:`int` and overrides. Refer to `BlockFCValue` for
                 more details
+            segments (:obj:`Sequence` [:obj:`Segment` ] or :obj:`Mapping` [:obj:`Hashable`, :obj:`Segment` ]): If not
+                set, segments from the context is used
             dont_create (:obj:`bool`): If set, connections are made only between already created nodes
         """
         fc = BlockFCValue._construct(fc)
-        if isinstance(segments, Mapping):
+        if segments is None:
+            segments = tuple(itervalues(self._context.segments))
+        elif isinstance(segments, Mapping):
             segments = tuple(itervalues(segments))
         block, orientation, position, _ = self._module.key
         # start generation
@@ -623,13 +628,14 @@ class SwitchBoxBuilder(_BaseRoutableBuilder):
                 return ModuleUtils.create_port(self._module, self._node_name(node),
                         segment.width, PortDirection.output, key = node)
 
-    def fill(self, segments, output_orientation, drive_at_crosspoints = False,
+    def fill(self, output_orientation, segments = None, drive_at_crosspoints = False,
             crosspoints_only = False, exclude_input_orientations = tuple(), dont_create = False):
         """Create switches implementing a cycle-free variation of the Wilton switch box.
 
         Args:
-            segments (:obj:`Sequence` [:obj:`Segment` ] or :obj:`Mapping` [:obj:`Hashable`, :obj:`Segment` ]):
             output_orientation (`Orientation`):
+            segments (:obj:`Sequence` [:obj:`Segment` ] or :obj:`Mapping` [:obj:`Hashable`, :obj:`Segment` ]): If not
+                set, segments from the context are used
             drive_at_crosspoints (:obj:`bool`): If set, outputs are generated driving non-zero sections of long
                 segments
             crosspoints_only (:obj:`bool`): If set, outputs driving the first section of segments are not generated
@@ -637,7 +643,9 @@ class SwitchBoxBuilder(_BaseRoutableBuilder):
             dont_create (:obj:`bool`): If set, connections are made only between already created nodes
         """
         # sort by length (descending order)
-        if isinstance(segments, Mapping):
+        if segments is None:
+            segments = tuple(sorted(itervalues(self._context.segments), key = lambda x: x.length, reverse = True))
+        elif isinstance(segments, Mapping):
             segments = tuple(sorted(itervalues(segments), key = lambda x: x.length, reverse = True))
         else:
             segments = tuple(sorted(segments, key = lambda x: x.length, reverse = True))
@@ -742,7 +750,7 @@ class _ArrayInstanceMapping(Object, MutableMapping):
         try:
             (x, y), subtile = key
         except (ValueError, TypeError):
-            raise PRGAInternalError("Unsupported key: {}".format(key))
+            raise KeyError(key)
         try:
             tile = self.grid[x][y]
         except (IndexError, TypeError):
@@ -803,6 +811,18 @@ class _ArrayInstanceMapping(Object, MutableMapping):
         return obj
 
 # ----------------------------------------------------------------------------
+# -- Array Edge Settings -----------------------------------------------------
+# ----------------------------------------------------------------------------
+class ArrayEdgeSettings(namedtuple('ArrayEdgeSettings', 'north east south west')):
+
+    def __new__(cls, default = False, north = None, east = None, south = None, west = None):
+        return super(ArrayEdgeSettings, cls).__new__(cls,
+                north = north if north is not None else default,
+                south = south if south is not None else default,
+                east = east if east is not None else default,
+                west = west if west is not None else default)
+
+# ----------------------------------------------------------------------------
 # -- Array Builder -----------------------------------------------------------
 # ----------------------------------------------------------------------------
 class ArrayBuilder(_BaseRoutableBuilder):
@@ -846,6 +866,29 @@ class ArrayBuilder(_BaseRoutableBuilder):
         else:
             raise PRGAInternalError("Unsupported module class '{}'".format(model.module_class.name))
 
+    @classmethod
+    def _no_channel(cls, model, position, corner, ori):
+        # calculate position
+        corrected = position
+        if corner.dotx(Dimension.x).is_inc and ori.is_west:
+            corrected += (1, 0)
+        elif corner.dotx(Dimension.x).is_dec and not ori.is_west:
+            corrected -= (1, 0)
+        if corner.dotx(Dimension.y).is_inc and ori.is_south:
+            corrected += (0, 1)
+        elif corner.dotx(Dimension.y).is_dec and not ori.is_south:
+            corrected -= (0, 1)
+        x, y = corrected
+        if model.module_class.is_logic_block:
+            return ori.dimension.case(0 <= x < model.width and 0 <= y < model.height - 1,
+                    0 <= x < model.width - 1 and 0 <= y < model.height)
+        elif model.module_class.is_array:
+            if 0 <= x < model.width and 0 <= y < model.height:
+                instance = model._instances.get_root(corrected, Subtile.center)
+                if instance is not None:
+                    return cls._no_channel(instance.model, position - instance.key[0], corner, ori)
+        return False
+
     # == high-level API ======================================================
     @property
     def width(self):
@@ -872,6 +915,7 @@ class ArrayBuilder(_BaseRoutableBuilder):
         return Module(name,
                 ports = OrderedDict(),
                 instances = _ArrayInstanceMapping(width, height),
+                coalesce_connections = True,
                 module_class = ModuleClass.array,
                 width = width,
                 height = height)
@@ -947,11 +991,109 @@ class ArrayBuilder(_BaseRoutableBuilder):
         elif model.module_class.is_switch_box:
             ModuleUtils.instantiate(self._module, model, name, key = (position, model.key.corner.to_subtile()))
 
-    def fill(self, context, identifier = None):
+    def connect(self, sources, sinks):
+        """Connect ``sources`` to ``sinks``."""
+        NetUtils.connect(sources, sinks, coalesced = self._module._coalesce_connections)
+
+    def fill(self,
+            default_fc,
+            fc_override = None,
+            channel_on_edge = ArrayEdgeSettings(True),
+            closure_on_edge = ArrayEdgeSettings(False),
+            identifier = None):
         """Fill routing boxes into the array being built."""
-        # TODO
-        pass
+        fc_override = uno(fc_override, {})
+        for x, y in product(range(self._module.width), range(self._module.height)):
+            on_edge = ArrayEdgeSettings(
+                    north = y == self._module.height - 1,
+                    east = x == self._module.width - 1,
+                    south = y == 0,
+                    west = x == 0)
+            next_to_edge = ArrayEdgeSettings(
+                    north = y == self._module.height - 2,
+                    east = x == self._module.width - 2,
+                    south = y == 1,
+                    west = x == 1)
+            position = Position(x, y)
+            # connection boxes
+            for ori in Orientation:
+                if ori.is_auto:
+                    continue
+                elif self._module._instances.get_root(position, ori.to_subtile()) is not None:
+                    continue
+                elif any(on_edge[ori2] and not channel_on_edge[ori2] for ori2 in Orientation
+                        if ori2 not in (Orientation.auto, ori.opposite)):
+                    continue
+                block_instance = self._module._instances.get_root(position, Subtile.center)
+                if block_instance is None:
+                    continue
+                fc = BlockFCValue._construct(fc_override.get(block_instance.model.name, default_fc))
+                if block_instance.model.module_class.is_logic_block:
+                    cbox_needed = False
+                    for port in itervalues(block_instance.model.ports):
+                        if port.position != position - block_instance.key[0] or port.orientation != ori:
+                            continue
+                        elif hasattr(port, 'global_'):
+                            continue
+                        elif any(fc.port_fc(port, segment) for segment in itervalues(self._context.segments)):
+                            cbox_needed = True
+                            break
+                    if not cbox_needed:
+                        continue
+                cbox = self._context.get_connection_box(block_instance.model, ori, position - block_instance.key[0],
+                        identifier)
+                cbox.fill(fc_override.get(block_instance.model.name, default_fc))
+                self.instantiate(cbox.commit(), position)
+            # switch boxes
+            for corner in Corner:
+                if self._module._instances.get_root(position, corner.to_subtile()) is not None:
+                    continue
+                elif any(on_edge[ori] and not channel_on_edge[ori] for ori in corner.decompose()):
+                    continue
+                # analyze the environment of this switch box (output orientations, excluded inputs, crosspoints, etc.)
+                outputs = []                        # orientation, drive_at_crosspoints, crosspoints_only
+                sbox_identifier = [identifier] if identifier else []
+                # 1. primary output
+                primary_output = Orientation[corner.case("south", "east", "west", "north")]
+                if not on_edge[primary_output] or channel_on_edge[primary_output]:
+                    if on_edge[primary_output.opposite] and closure_on_edge[primary_output.opposite]:
+                        outputs.append( (primary_output, True, False) )
+                        sbox_identifier.append( "pc" )
+                    else:
+                        outputs.append( (primary_output, False, False) )
+                        sbox_identifier.append( "p" )
+                # 2. secondary output
+                secondary_output = Orientation[corner.case("west", "south", "north", "east")]
+                if (on_edge[primary_output.opposite] and not on_edge[secondary_output] and 
+                        closure_on_edge[primary_output.opposite]):
+                    if on_edge[secondary_output.opposite] and closure_on_edge[secondary_output.opposite]:
+                        outputs.append( (secondary_output, True, False) )
+                        sbox_identifier.append( "sc" )
+                    else:
+                        outputs.append( (secondary_output, False, False) )
+                        sbox_identifier.append( "s" )
+                # 3. tertiary output
+                tertiary_output = primary_output.opposite
+                if on_edge[tertiary_output.opposite] and not channel_on_edge[tertiary_output.opposite]:
+                    outputs.append( (tertiary_output, True, True) )
+                    sbox_identifier.append( "tc" )
+                # 4. exclude inputs
+                exclude_input_orientations = set(ori for ori in Orientation
+                        if not ori.is_auto and self._no_channel(self._module, position, corner, ori))
+                for ori in corner.decompose():
+                    if next_to_edge[ori] and not channel_on_edge[ori]:
+                        exclude_input_orientations.add( ori.opposite )
+                    ori = ori.opposite
+                    if on_edge[ori] and not channel_on_edge[ori]:
+                        exclude_input_orientations.add( ori.opposite )
+                if exclude_input_orientations:
+                    sbox_identifier.append( "ex_" + "".join(o.name[0] for o in sorted(exclude_input_orientations)) )
+                sbox_identifier = "_".join(sbox_identifier)
+                sbox = self._context.get_switch_box(corner, sbox_identifier)
+                for output, drivex, xo in outputs:
+                    sbox.fill(output, drive_at_crosspoints = drivex, crosspoints_only = xo,
+                            exclude_input_orientations = exclude_input_orientations)
+                self.instantiate(sbox.commit(), position)
 
     def commit(self):
-        # TODO: auto connect stuff
         return super(ArrayBuilder, self).commit()

@@ -61,7 +61,7 @@ class Orientation(Enum):
     east = 1        #: Direction.inc x Dimension.x
     south = 2       #: Direction.dec x Dimension.y
     west = 3        #: Direction.dec x Dimension.x
-    auto = 4        #: automatically determine the orientation. Not valid in some cases
+    auto = -1       #: automatically determine the orientation. Not valid in some cases
 
     @property
     def dimension(self):

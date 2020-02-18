@@ -9,9 +9,103 @@ from ...util import Object, ReadonlyMappingProxy
 from ...exception import PRGAInternalError
 
 from collections import OrderedDict
+from enum import Enum
 import networkx as nx
 
 __all__ = ['Module']
+
+# ----------------------------------------------------------------------------
+# -- Memory-optimized Connection Graph ---------------------------------------
+# ----------------------------------------------------------------------------
+class _Placeholder(Enum):
+    placeholder = 0
+
+class _MemoptConnGraphDict(MutableMapping):
+    __slots__ = ['_d']
+    def __init__(self):
+        self._d = {}
+
+    def __getitem__(self, k):
+        idx, key = k[0], k[1:]
+        try:
+            v = self._d[key][idx]
+        except (KeyError, IndexError):
+            raise KeyError(k)
+        if v is _Placeholder.placeholder:
+            raise KeyError(k)
+        else:
+            return v
+
+    def __setitem__(self, k, v):
+        idx, key = k[0], k[1:]
+        try:
+            l = self._d[key]
+        except KeyError:
+            self._d[key] = tuple(_Placeholder.placeholder for i in range(idx)) + (v, )
+            return
+        if len(l) > idx:
+            self._d[key] = tuple(v if i == idx else item for i, item in enumerate(l))
+        else:
+            self._d[key] = tuple(l[i] if i < len(l) else _Placeholder.placeholder for i in range(idx)) + (v, )
+
+    def __delitem__(self, k):
+        idx, key = k[0], k[1:]
+        l = self._d[key]
+        if idx >= len(l):
+            raise KeyError(k)
+        self._d[key] = tuple(_Placeholder.placeholder if i == idx else item for i, item in enumerate(l))
+
+    def __len__(self, k):
+        return sum(1 for _ in iter(self))
+
+    def __iter__(self):
+        for k, l in iteritems(self._d):
+            for idx, v in enumerate(l):
+                if v is not _Placeholder.placeholder:
+                    yield (idx, ) + k
+
+class _LazyDict(MutableMapping):
+    __slots__ = ['_d']
+
+    def __getitem__(self, k):
+        try:
+            return self._d[k]
+        except AttributeError:
+            raise KeyError(k)
+
+    def __setitem__(self, k, v):
+        try:
+            self._d[k] = v
+        except AttributeError:
+            self._d = {k: v}
+
+    def __delitem__(self, k):
+        try:
+            del self._d[k]
+        except AttributeError:
+            raise KeyError(k)
+
+    def __len__(self):
+        try:
+            return len(self._d)
+        except AttributeError:
+            return 0
+
+    def __iter__(self):
+        try:
+            for k in self._d:
+                yield k
+        except AttributeError:
+            return
+
+class _CoalescedConnGraph(nx.DiGraph):
+    node_attr_dict_factory = _LazyDict
+    edge_attr_dict_factory = _LazyDict
+    graph_attr_dict_factory = _LazyDict
+
+class _MemoptConnGraph(_CoalescedConnGraph):
+    node_dict_factory = _MemoptConnGraphDict
+    adjlist_outer_dict_factory = _MemoptConnGraphDict
 
 # ----------------------------------------------------------------------------
 # -- Module ------------------------------------------------------------------
@@ -29,17 +123,23 @@ class Module(Object, AbstractModule):
             logic nets to be added into this module
         instances (:obj:`Mapping`): A mapping object used to index instances by keys. No object by default, disallowing
             instances to be added into this module
-        allow_multisource (:obj:`bool`): If set, a sink net may be driven by multiple source nets
+        allow_multisource (:obj:`bool`): If set, a sink net may be driven by multiple source nets. Incompatible with
+            ``coalesce_connections``
+        coalesce_connections (:obj:`bool`): If set, all connections are made at the granularity of buses.
+            Incompatible with ``allow_multisource``.
         **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
             is executed at the BEGINNING of ``__init__``
     """
 
-    __slots__ = ['_name', '_key', '_children', '_ports', '_logics', '_instances', '_conn_graph', '_allow_multisource',
+    __slots__ = ['_name', '_key', '_children', '_ports', '_logics', '_instances', '_conn_graph',
+            '_allow_multisource', '_coalesce_connections',
             '__dict__']
 
     # == internal API ========================================================
-    def __init__(self, name, key = None, ports = None, logics = None, instances = None, allow_multisource = False,
-            **kwargs):
+    def __init__(self, name, key = None, ports = None, logics = None, instances = None,
+            allow_multisource = False, coalesce_connections = False, **kwargs):
+        if allow_multisource and coalesce_connections:
+            raise PRGAInternalError("`allow_multisource` and `coalesce_connections` are incompatible")
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
         self._name = name
@@ -53,7 +153,12 @@ class Module(Object, AbstractModule):
         if instances is not None:
             self._instances = instances
         self._allow_multisource = allow_multisource
-        self._conn_graph = nx.DiGraph()
+        self._coalesce_connections = coalesce_connections
+        if coalesce_connections:
+            self._conn_graph = _CoalescedConnGraph()
+        else:
+            self._conn_graph = _MemoptConnGraph()
+        # self._conn_graph = nx.DiGraph()
 
     def __str__(self):
         return 'Module({})'.format(self.name)

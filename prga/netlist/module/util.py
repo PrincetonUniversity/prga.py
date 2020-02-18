@@ -38,7 +38,7 @@ class ModuleUtils(object):
                 _logger.warning("Clock '{}' marked as clocked by '{}' in '{}'"
                         .format(net, net.clock, submodule))
             # 1.1 find the predecessor(s) of this net
-            net_node = NetUtils._reference(net, instance)
+            net_node = NetUtils._reference(net, instance, coalesced = module._coalesce_connections)
             try:
                 predit = module._conn_graph.predecessors( net_node )
                 # 1.2 make sure there is one predecessor
@@ -61,7 +61,8 @@ class ModuleUtils(object):
                 module._conn_graph.add_node(net_node,
                         clock_group = module._conn_graph.nodes[pred_node]['clock_group'])
             except KeyError:
-                pred_net, pred_hierarchy = NetUtils._dereference(module, pred_node, True)
+                pred_net, pred_hierarchy = NetUtils._dereference(module, pred_node, True,
+                        coalesced = module._coalesce_connections)
                 raise PRGAInternalError("Clock '{}' (hierarchy: [{}]) is connected to '{}' (hierarchy: [{}]) "
                         .format(net, ', '.join(map(str, reversed(instance))),
                             pred_net, ', '.join(map(str, reversed(pred_hierarchy)))) +
@@ -78,19 +79,34 @@ class ModuleUtils(object):
             elif not clock.is_clock:
                 raise PRGAInternalError("Net '{}' is marked as clocked by '{}' but '{}' is not a clock"
                         .format(net, net.clock, clock))
-            clock_node = NetUtils._reference(clock, instance)
-            for i in range(len(net)):
-                module._conn_graph.add_node( (i, net.key) + hierarchy,
+            if module._coalesce_connections:
+                clock_node = NetUtils._reference(clock, instance, coalesced = True)
+                module._conn_graph.add_node( (net.key, ) + hierarchy,
                         clock = module._conn_graph.nodes[clock_node]['clock_group'] )
+            else:
+                clock_node = NetUtils._reference(clock, instance)
+                for i in range(len(net)):
+                    module._conn_graph.add_node( (i, (net.key, ) + hierarchy),
+                            clock = module._conn_graph.nodes[clock_node]['clock_group'] )
 
     @classmethod
     def _elaborate_one(cls, module, instance, skip):
         """Elaborate one hierarchical instance ``instance``."""
         submodule = instance[0].model
+        if module._coalesce_connections != submodule._coalesce_connections:
+            raise PRGAInternalError(
+                    "Module '{}' has `coalesce_connections` {} but submodule '{}' (hierarchy: {}) has it {}"
+                    .format(module, "set" if module._coalesce_connections else "unset",
+                        submodule, "/".join(i.name for i in reversed(instance)),
+                        "set" if submodule._coalesce_connections else "unset"))
         # 1. add connections in this instance to the connection graph
         hierarchy = tuple(inst.key for inst in instance)
-        for u, v in submodule._conn_graph.edges:
-            module._conn_graph.add_edge(u + hierarchy, v + hierarchy)
+        if module._coalesce_connections:
+            for u, v in submodule._conn_graph.edges:
+                module._conn_graph.add_edge(u + hierarchy, v + hierarchy)
+        else:
+            for u, v in submodule._conn_graph.edges:
+                module._conn_graph.add_edge((u[0], u[1] + hierarchy), (v[0], v[1] + hierarchy))
         # 2. clocks
         cls._elaborate_clocks(module, instance)
         # 3. iterate sub-instances 

@@ -48,6 +48,7 @@ class Context(Object):
             '_segments',            # wire segments
             '_logical_modules',     # logical modules
             '_physical_modules',    # physical modules
+            '_top',                 # logical top
             '__dict__']
 
     def __init__(self, logical_modules = None, physical_modules = None, **kwargs):
@@ -175,7 +176,7 @@ class Context(Object):
         if name in self._logical_modules:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
         cluster = self._logical_modules[name] = ClusterBuilder.new(name)
-        return ClusterBuilder(cluster)
+        return ClusterBuilder(self, cluster)
 
     # -- IO Blocks -----------------------------------------------------------
     @property
@@ -197,7 +198,7 @@ class Context(Object):
         else:
             raise PRGAAPIError("At least one of 'input_' and 'output' must be True.")
         iob = self._logical_modules[name] = IOBlockBuilder.new(name, capacity)
-        builder = IOBlockBuilder(iob)
+        builder = IOBlockBuilder(self, iob)
         builder.instantiate(io_primitive, 'io')
         return builder
 
@@ -212,7 +213,7 @@ class Context(Object):
         if name in self._logical_modules:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
         clb = self._logical_modules[name] = LogicBlockBuilder.new(name, width, height)
-        return LogicBlockBuilder(clb)
+        return LogicBlockBuilder(self, clb)
 
     # -- Connection Boxes ----------------------------------------------------
     def get_connection_box(self, block, orientation, position = None, identifier = None, dont_create = False):
@@ -232,12 +233,12 @@ class Context(Object):
         """
         key = ConnectionBoxBuilder._cbox_key(block, orientation, position, identifier)
         try:
-            return ConnectionBoxBuilder(self._logical_modules[key])
+            return ConnectionBoxBuilder(self, self._logical_modules[key])
         except KeyError:
             if dont_create:
                 return None
             else:
-                return ConnectionBoxBuilder(self._logical_modules.setdefault(key,
+                return ConnectionBoxBuilder(self, self._logical_modules.setdefault(key,
                         ConnectionBoxBuilder.new(block, orientation, position, identifier)))
 
     # -- Switch Boxes --------------------------------------------------------
@@ -256,12 +257,12 @@ class Context(Object):
         """
         key = SwitchBoxBuilder._sbox_key(corner, identifier)
         try:
-            return SwitchBoxBuilder(self._logical_modules[key])
+            return SwitchBoxBuilder(self, self._logical_modules[key])
         except KeyError:
             if dont_create:
                 return None
             else:
-                return SwitchBoxBuilder(self._logical_modules.setdefault(key,
+                return SwitchBoxBuilder(self, self._logical_modules.setdefault(key,
                     SwitchBoxBuilder.new(corner, identifier)))
 
     # -- Arrays --------------------------------------------------------------
@@ -270,9 +271,47 @@ class Context(Object):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to arrays."""
         return ReadonlyMappingProxy(self._logical_modules, lambda kv: kv[1].module_class.is_array)
 
-    def create_array(self, name, width = 1, height = 1):
+    @property
+    def top(self):
+        """`AbstractModule`: Logical top-level array."""
+        try:
+            return self._top
+        except AttributeError:
+            return None
+
+    @top.setter
+    def top(self, v):
+        self._top = v
+
+    def create_array(self, name, width = 1, height = 1, set_as_top = False):
         """`ArrayBuilder`: Create an array builder."""
         if name in self._logical_modules:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
         array = self._logical_modules[name] = ArrayBuilder.new(name, width, height)
-        return ArrayBuilder(array)
+        if set_as_top:
+            self._top = array
+        return ArrayBuilder(self, array)
+
+    # -- Serialization -------------------------------------------------------
+    def pickle(self, file_):
+        """Pickle the architecture context into a file.
+
+        Args:
+            file_ (:obj:`str` or file-like object): output file or its name
+        """
+        if isinstance(file_, basestring):
+            pickle.dump(self, open(file_, OpenMode.wb))
+        else:
+            pickle.dump(self, file_)
+
+    @staticmethod
+    def unpickle(file_):
+        """Unpickle a pickled architecture context.
+
+        Args:
+            file_ (:obj:`str` or file-like object): the pickled file
+        """
+        if isinstance(file_, basestring):
+            return pickle.load(open(file_, OpenMode.rb))
+        else:
+            return pickle.load(file_)
