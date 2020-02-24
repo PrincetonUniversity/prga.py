@@ -3,9 +3,9 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .common import Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass
-from .builder import (ClusterBuilder, IOBlockBuilder, LogicBlockBuilder, ConnectionBoxBuilder, SwitchBoxBuilder,
-        ArrayBuilder)
+from .common import Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView
+from .builder.block import ClusterBuilder, IOBlockBuilder, LogicBlockBuilder
+from .builder.box import ConnectionBoxBuilder, SwitchBoxBuilder
 from ..netlist.net.common import PortDirection
 from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
@@ -34,11 +34,9 @@ class Context(Object):
     Architecture context manages all resources created/added to the FPGA, including all modules, the
     routing graph, configration circuitry and more.
 
-    Args:
-        logical_modules (:obj:`MutableMapping` [:obj:`Hashable`, `AbstractModule` ]): The logical module database. If
-            not set, a new database is created
-        physical_modules (:obj:`MutableMapping` [:obj:`Hashable`, `AbstractModule` ]): The physical module database.
-            If not set, a new database is created
+    Keyword Args:
+        database (:obj:`MutableMapping` [:obj:`Hashable`, `AbstractModule` ]): The module database. If not set, a new
+            database is created
         **kwargs: Custom attributes assigned to the created context 
     """
 
@@ -46,26 +44,24 @@ class Context(Object):
             '_globals',             # global wires
             '_directs',             # direct inter-block tunnels
             '_segments',            # wire segments
-            '_logical_modules',     # logical modules
-            '_physical_modules',    # physical modules
+            '_database',            # module database
             '_top',                 # logical top
             '__dict__']
 
-    def __init__(self, logical_modules = None, physical_modules = None, **kwargs):
-        for k, v in iteritems(kwargs):
-            setattr(self, k, v)
+    def __init__(self, *, database = None, **kwargs):
         self._globals = OrderedDict()
         self._directs = OrderedDict()
         self._segments = OrderedDict()
-        self._logical_modules = logical_modules or self._new_logical_modules_database()
-        self._physical_modules = physical_modules or OrderedDict()
+        self._database = database or self._new_database()
+        for k, v in iteritems(kwargs):
+            setattr(self, k, v)
 
     @classmethod
-    def _new_logical_modules_database(cls):
-        logical_modules = OrderedDict()
+    def _new_database(cls):
+        database = {}
 
         # 1. register built-in modules: LUTs
-        for i in range(2, 8):
+        for i in range(2, 9):
             lut = Module('lut' + str(i),
                     ports = OrderedDict(),
                     allow_multisource = True,
@@ -75,8 +71,8 @@ class Context(Object):
                     port_class = PrimitivePortClass.lut_in)
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
                     port_class = PrimitivePortClass.lut_out)
-            NetUtils.connect(in_, out, True)
-            logical_modules[lut.key] = lut
+            NetUtils.connect(in_, out, fully = True)
+            database[ModuleView.logical, lut.key] = lut
 
         # 2. register built-in modules: D-flipflop
         while True:
@@ -91,7 +87,7 @@ class Context(Object):
                     clock = 'clk', port_class = PrimitivePortClass.D)
             ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
                     clock = 'clk', port_class = PrimitivePortClass.Q)
-            logical_modules[flipflop.key] = flipflop
+            database[ModuleView.logical, flipflop.key] = flipflop
             break
 
         # 3. register built-in modules: iopads
@@ -105,9 +101,15 @@ class Context(Object):
                 ModuleUtils.create_port(pad, 'inpad', 1, PortDirection.output)
             if class_ in (PrimitiveClass.outpad, PrimitiveClass.iopad):
                 ModuleUtils.create_port(pad, 'outpad', 1, PortDirection.input_)
-            logical_modules[pad.key] = pad
+            database[ModuleView.logical, pad.key] = pad
 
-        return logical_modules
+        return database
+
+    # == low-level API =======================================================
+    @property
+    def database(self):
+        """:obj:`Mapping` [:obj:`tuple` [`ModuleView`, :obj:`Hashable` ], `AbstractModule` ]: Module database."""
+        return self._database
 
     # == high-level API ======================================================
     # -- Global Wires --------------------------------------------------------
@@ -116,13 +118,15 @@ class Context(Object):
         """:obj:`Mapping` [:obj:`str`, `Global` ]: A mapping from names to global wires."""
         return ReadonlyMappingProxy(self._globals)
 
-    def create_global(self, name, width = 1, is_clock = False,
-            bind_to_position = None, bind_to_subblock = None):
+    def create_global(self, name, width = 1, *,
+            is_clock = False, bind_to_position = None, bind_to_subblock = None):
         """Create a global wire.
 
         Args:
             name (:obj:`str`): Name of the global wire
             width (:obj:`int`): Number of bits in the global wire
+
+        Keyword Args:
             is_clock (:obj:`bool`): If this global wire is a clock. A global clock must be 1-bit wide
             bind_to_position (:obj:`Position`): Assign the IOB at the position as the driver of this global wire. If
                 not specified, use `Global.bind` to bind later
@@ -163,41 +167,43 @@ class Context(Object):
     @property
     def primitives(self):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to primitives."""
-        return ReadonlyMappingProxy(self._logical_modules, lambda kv: kv[1].module_class.is_primitive)
+        return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_primitive,
+                lambda k: (ModuleView.logical, k), lambda k: k[1])
 
     # -- Clusters ------------------------------------------------------------
     @property
     def clusters(self):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to clusters."""
-        return ReadonlyMappingProxy(self._logical_modules, lambda kv: kv[1].module_class.is_cluster)
+        return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_cluster,
+                lambda k: (ModuleView.logical, k), lambda k: k[1])
 
     def create_cluster(self, name):
         """`ClusterBuilder`: Create a cluster builder."""
-        if name in self._logical_modules:
+        if (ModuleView.logical, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        cluster = self._logical_modules[name] = ClusterBuilder.new(name)
+        cluster = self._database[ModuleView.logical, name] = ClusterBuilder.new(name)
         return ClusterBuilder(self, cluster)
 
     # -- IO Blocks -----------------------------------------------------------
     @property
     def io_blocks(self):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to IO blocks."""
-        return ReadonlyMappingProxy(self._logical_modules, lambda kv: kv[1].module_class.is_io_block)
+        return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_io_block)
 
-    def create_io_block(self, name, capacity = 1, input_ = True, output = True):
+    def create_io_block(self, name, capacity = 1, *, no_input = False, no_output = False):
         """`IOBlockBuilder`: Create an IO block builder."""
-        if name in self._logical_modules:
+        if (ModuleView.logical, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
         io_primitive = None
-        if input_ and output:
+        if not no_input and not no_output:
             io_primitive = self.primitives['iopad']
-        elif input_:
+        elif not no_input:
             io_primitive = self.primitives['inpad']
-        elif output:
+        elif not no_output:
             io_primitive = self.primitives['outpad']
         else:
-            raise PRGAAPIError("At least one of 'input_' and 'output' must be True.")
-        iob = self._logical_modules[name] = IOBlockBuilder.new(name, capacity)
+            raise PRGAAPIError("At least one of 'no_input' and 'no_output' must be False.")
+        iob = self._database[ModuleView.logical, name] = IOBlockBuilder.new(name, capacity)
         builder = IOBlockBuilder(self, iob)
         builder.instantiate(io_primitive, 'io')
         return builder
@@ -206,23 +212,26 @@ class Context(Object):
     @property
     def logic_blocks(self):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to logic blocks."""
-        return ReadonlyMappingProxy(self._logical_modules, lambda kv: kv[1].module_class.is_logic_block)
+        return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_logic_block,
+                lambda k: (ModuleView.logical, k), lambda k: k[1])
 
     def create_logic_block(self, name, width = 1, height = 1):
         """`LogicBlockBuilder`: Create a logic block builder."""
-        if name in self._logical_modules:
+        if (ModuleView.logical, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        clb = self._logical_modules[name] = LogicBlockBuilder.new(name, width, height)
+        clb = self._database[ModuleView.logical, name] = LogicBlockBuilder.new(name, width, height)
         return LogicBlockBuilder(self, clb)
 
     # -- Connection Boxes ----------------------------------------------------
-    def get_connection_box(self, block, orientation, position = None, identifier = None, dont_create = False):
+    def get_connection_box(self, block, orientation, position = None, *, identifier = None, dont_create = False):
         """Get the connection box at a specific location near ``block``.
 
         Args:
             block (`AbstractModule`): A logic/io block
             orientation (`Orientation`): One side of the block which the connection box is at
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of the block which the connection box is at
+
+        Keyword Args:
             identifier (:obj:`str`): If different connection boxes are needed for the same location near ``block``,
                 use identifier to differentiate them
             dont_create (:obj:`bool`): If set, return ``None`` when the requested connection box is not already created
@@ -233,20 +242,22 @@ class Context(Object):
         """
         key = ConnectionBoxBuilder._cbox_key(block, orientation, position, identifier)
         try:
-            return ConnectionBoxBuilder(self, self._logical_modules[key])
+            return ConnectionBoxBuilder(self, self._database[ModuleView.logical, key])
         except KeyError:
             if dont_create:
                 return None
             else:
-                return ConnectionBoxBuilder(self, self._logical_modules.setdefault(key,
-                        ConnectionBoxBuilder.new(block, orientation, position, identifier)))
+                return ConnectionBoxBuilder(self, self._database.setdefault((ModuleView.logical, key),
+                        ConnectionBoxBuilder.new(block, orientation, position, identifier = identifier)))
 
     # -- Switch Boxes --------------------------------------------------------
-    def get_switch_box(self, corner, identifier = None, dont_create = False):
+    def get_switch_box(self, corner, *, identifier = None, dont_create = False):
         """Get the switch box at a specific corner.
 
         Args:
             corner (`Corner`): On which corner of a tile is the switch box
+
+        Keyword Args:
             identifier (:obj:`str`): If different switches boxes are needed for the same corner of a tile,
                 use identifier to differentiate them
             dont_create (:obj:`bool`): If set, return ``None`` when the requested switch box is not already created
@@ -257,13 +268,13 @@ class Context(Object):
         """
         key = SwitchBoxBuilder._sbox_key(corner, identifier)
         try:
-            return SwitchBoxBuilder(self, self._logical_modules[key])
+            return SwitchBoxBuilder(self, self._database[ModuleView.logical, key])
         except KeyError:
             if dont_create:
                 return None
             else:
-                return SwitchBoxBuilder(self, self._logical_modules.setdefault(key,
-                    SwitchBoxBuilder.new(corner, identifier)))
+                return SwitchBoxBuilder(self, self._database.setdefault((ModuleView.logical, key),
+                    SwitchBoxBuilder.new(corner, identifier = identifier)))
 
     # -- Arrays --------------------------------------------------------------
     @property

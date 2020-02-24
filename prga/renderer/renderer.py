@@ -37,11 +37,11 @@ class FileRenderer(Object):
             else:
                 return '{}[{}:{}]'.format(net.bus.name, net.index.stop - 1, net.index.start)
         elif net.bus_type.is_nonref:
-            return '{}__{}'.format(net.parent.name, net.name)
+            return '_{}__{}'.format(net.hierarchy[-1].name, net.model.name)
         elif isinstance(net.index, int):
-            return '{}__{}[{}]'.format(net.bus.parent.name, net.bus.name, net.index)
+            return '_{}__{}[{}]'.format(net.bus.hierarchy[-1].name, net.bus.model.name, net.index)
         else:
-            return '{}__{}[{}:{}]'.format(net.bus.parent.name, net.bus.name, net.index.stop - 1, net.index.start)
+            return '_{}__{}[{}:{}]'.format(net.bus.hierarchy[-1].name, net.bus.model.name, net.index.stop - 1, net.index.start)
 
     @classmethod
     def _source2verilog(cls, net):

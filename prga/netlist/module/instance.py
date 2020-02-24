@@ -4,8 +4,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .common import AbstractInstance
-from ..net.bus import Pin
-from ...util import Object
+from ...util import Object, uno
 from ...exception import PRGAInternalError
 
 __all__ = ['Instance']
@@ -14,43 +13,29 @@ __all__ = ['Instance']
 # -- Instance Pins Mapping Proxy ---------------------------------------------
 # ----------------------------------------------------------------------------
 class _InstancePinsProxy(Object, Mapping):
-    """Helper class for `AbstractInstance.children` and `AbstractInstance.pins` properties.
+    """Helper class for `AbstractInstance.pins` properties.
 
     Args:
         instance (`AbstractInstance`): 
-        children (:obj:`bool`):
     """
 
-    __slots__ = ['instance', 'children']
-    def __init__(self, instance, children):
+    __slots__ = ['instance']
+    def __init__(self, instance):
         super(_InstancePinsProxy, self).__init__()
         self.instance = instance
-        self.children = children
 
     def __getitem__(self, key):
         try:
-            port = (self.instance.model.children if self.children else self.instance.model.ports)[key]
-            if port.net_type.is_port:
-                pin = self.instance._mutable_pins.get(key)
-                if pin is None:
-                    pin = self.instance._mutable_pins[key] = Pin(self.instance, port)
-                return pin
+            return self.instance.model.ports[key]._to_pin([self.instance])
         except (KeyError, AttributeError):
-            pass
-        if key in self.instance._mutable_pins:
-            raise PRGAInternalError("Port key '{}' is deleted from model '{}' of instance '{}'"
-                    .format(key, self.instance.model, self.instance))
-        raise KeyError(key)
+            raise KeyError(key)
 
     def __len__(self):
         return len(self.instance.model.ports)
 
     def __iter__(self):
-        for key, port in iteritems(self.instance.model.ports):
-            if self.children:
-                yield port.name
-            else:
-                yield key
+        for key in self.instance.model.ports:
+            yield key
 
 # ----------------------------------------------------------------------------
 # -- Instance ----------------------------------------------------------------
@@ -62,27 +47,25 @@ class Instance(Object, AbstractInstance):
         parent (`AbstractModule`): Parent module
         model (`AbstractModule`): Model of this instance
         name (:obj:`str`): Name of the instance
+
+    Keyword Args:
         key (:obj:`Hashable`): A hashable key used to index this instance in the parent module. If not given
             \(default argument: ``None``\), ``name`` is used by default
         **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
             is executed at the BEGINNING of ``__init__``
     """
 
-    __slots__ = ['_parent', '_model', '_name', '_key', '_mutable_pins',
-            '_children', '_pins', '__dict__']
+    __slots__ = ['_parent', '_model', '_name', '_key', '_pins', '__dict__']
 
     # == internal API ========================================================
-    def __init__(self, parent, model, name, key = None, **kwargs):
-        for k, v in iteritems(kwargs):
-            setattr(self, k, v)
+    def __init__(self, parent, model, name, *, key = None, **kwargs):
         self._parent = parent
         self._model = model
         self._name = name
-        if key is not None:
-            self._key = key
-        self._mutable_pins = {}
-        self._children = _InstancePinsProxy(self, True)
-        self._pins = _InstancePinsProxy(self, False)
+        self._key = uno(key, name)
+        self._pins = _InstancePinsProxy(self)
+        for k, v in iteritems(kwargs):
+            setattr(self, k, v)
 
     def __str__(self):
         return 'Instance({}/{})'.format(self._parent.name, self._name)
@@ -95,14 +78,7 @@ class Instance(Object, AbstractInstance):
 
     @property
     def key(self):
-        try:
-            return self._key
-        except AttributeError:
-            return self._name
-
-    @property
-    def children(self):
-        return self._children
+        return self._key
 
     @property
     def pins(self):

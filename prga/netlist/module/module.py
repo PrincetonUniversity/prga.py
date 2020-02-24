@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from .common import AbstractModule
 from ..net.common import NetType
-from ...util import Object, ReadonlyMappingProxy
+from ...util import Object, ReadonlyMappingProxy, uno
 from ...exception import PRGAInternalError
 
 from collections import OrderedDict
@@ -20,7 +20,7 @@ __all__ = ['Module']
 class _Placeholder(Enum):
     placeholder = 0
 
-class _MemoptConnGraphDict(MutableMapping):
+class _MemoptBitwiseConnGraphDict(MutableMapping):
     __slots__ = ['_d']
     def __init__(self):
         self._d = {}
@@ -68,44 +68,72 @@ class _LazyDict(MutableMapping):
     __slots__ = ['_d']
 
     def __getitem__(self, k):
-        try:
-            return self._d[k]
-        except AttributeError:
-            raise KeyError(k)
+        if k in self.__slots__:
+            try:
+                return getattr(self, k)
+            except AttributeError:
+                raise KeyError(k)
+        else:
+            try:
+                return self._d[k]
+            except AttributeError:
+                raise KeyError(k)
 
     def __setitem__(self, k, v):
-        try:
-            self._d[k] = v
-        except AttributeError:
-            self._d = {k: v}
+        if k in self.__slots__:
+            setattr(self, k, v)
+        else:
+            try:
+                self._d[k] = v
+            except AttributeError:
+                self._d = {k: v}
 
     def __delitem__(self, k):
-        try:
-            del self._d[k]
-        except AttributeError:
-            raise KeyError(k)
+        if k in self.__slots__:
+            try:
+                delattr(self, k)
+            except AttributeError:
+                raise KeyError(k)
+        else:
+            try:
+                del self._d[k]
+            except AttributeError:
+                raise KeyError(k)
 
     def __len__(self):
+        base = sum(1 for attr in self.__slots__ if hasattr(self, attr))
         try:
-            return len(self._d)
+            return base + len(self._d)
         except AttributeError:
-            return 0
+            return base
 
     def __iter__(self):
+        for attr in self.__slots__:
+            if hasattr(self, attr):
+                yield attr
         try:
             for k in self._d:
                 yield k
         except AttributeError:
             return
 
+class _NodeAttrDict(_LazyDict):
+    __slots__ = ['clock_group', 'clock', 'min_setup', 'max_setup', 'min_hold', 'max_setup', 'min_clk2q', 'max_clk2q']
+
+class _EdgeAttrDict(_LazyDict):
+    __slots__ = ['min_delay', 'max_delay']
+
+class _GraphAttrDict(_LazyDict):
+    __slots__ = ['clock_groups']
+
 class _CoalescedConnGraph(nx.DiGraph):
-    node_attr_dict_factory = _LazyDict
-    edge_attr_dict_factory = _LazyDict
-    graph_attr_dict_factory = _LazyDict
+    node_attr_dict_factory = _NodeAttrDict
+    edge_attr_dict_factory = _EdgeAttrDict
+    graph_attr_dict_factory = _GraphAttrDict
 
 class _MemoptConnGraph(_CoalescedConnGraph):
-    node_dict_factory = _MemoptConnGraphDict
-    adjlist_outer_dict_factory = _MemoptConnGraphDict
+    node_dict_factory = _MemoptBitwiseConnGraphDict
+    adjlist_outer_dict_factory = _MemoptBitwiseConnGraphDict
 
 # ----------------------------------------------------------------------------
 # -- Module ------------------------------------------------------------------
@@ -115,85 +143,78 @@ class Module(Object, AbstractModule):
 
     Args:
         name (:obj:`str`): Name of the module
-        key (:obj:`Hashable`): A hashable key used to index this net in the parent module/instance. If not given
-            \(default argument: ``None``\), ``name`` is used by default
-        ports (:obj:`Mapping`): A mapping object used to index ports by keys. No object by default, disallowing ports
-            to be added into this module
-        logics (:obj:`Mapping`): A mapping object used to index logic nets by keys. No object by default, disallowing
-            logic nets to be added into this module
-        instances (:obj:`Mapping`): A mapping object used to index instances by keys. No object by default, disallowing
-            instances to be added into this module
+
+    Keyword Args:
+        key (:obj:`Hashable`): A hashable key used to index this module in the database. If not given \(default
+            argument: ``None``\), ``name`` is used by default
+        ports (:obj:`Mapping`): A mapping object used to index ports by keys. ``None`` by default, which disallows
+            ports to be added into this module
+        instances (:obj:`Mapping`): A mapping object used to index instances by keys. ``None`` by default, which
+            disallows instances to be added into this module
+        conn_graph (`networkx.DiGraph`_): Connection & Timing Graph. It's strongly recommended to subclass
+            `networkx.DiGraph`_ to optimize memory usage
         allow_multisource (:obj:`bool`): If set, a sink net may be driven by multiple source nets. Incompatible with
             ``coalesce_connections``
         coalesce_connections (:obj:`bool`): If set, all connections are made at the granularity of buses.
             Incompatible with ``allow_multisource``.
         **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
             is executed at the BEGINNING of ``__init__``
+
+    .. _networkx.DiGraph: https://networkx.github.io/documentation/stable/reference/classes/digraph.html#networkx.DiGraph
     """
 
-    __slots__ = ['_name', '_key', '_children', '_ports', '_logics', '_instances', '_conn_graph',
-            '_allow_multisource', '_coalesce_connections',
-            '__dict__']
+    __slots__ = ['_name', '_key', '_children', '_ports', '_instances', '_conn_graph',
+            '_allow_multisource', '_coalesce_connections', '__dict__']
 
     # == internal API ========================================================
-    def __init__(self, name, key = None, ports = None, logics = None, instances = None,
-            allow_multisource = False, coalesce_connections = False, **kwargs):
+    def __init__(self, name, *,
+            key = None, ports = None, instances = None, allow_multisource = False, coalesce_connections = False,
+            **kwargs):
         if allow_multisource and coalesce_connections:
             raise PRGAInternalError("`allow_multisource` and `coalesce_connections` are incompatible")
-        for k, v in iteritems(kwargs):
-            setattr(self, k, v)
         self._name = name
-        if key is not None:
-            self._key = key
-        self._children = OrderedDict()  # Mapping from names to children (ports, logics and instances)
+        self._key = uno(key, name)
+        self._children = OrderedDict()  # Mapping from names to children (ports and instances)
         if ports is not None:
             self._ports = ports
-        if logics is not None:
-            self._logics = logics
         if instances is not None:
             self._instances = instances
         self._allow_multisource = allow_multisource
         self._coalesce_connections = coalesce_connections
-        if coalesce_connections:
-            self._conn_graph = _CoalescedConnGraph()
-        else:
-            self._conn_graph = _MemoptConnGraph()
-        # self._conn_graph = nx.DiGraph()
+        # if coalesce_connections:
+        #     self._conn_graph = _CoalescedConnGraph()
+        # else:
+        #     self._conn_graph = _MemoptConnGraph()
+        self._conn_graph = nx.DiGraph()
+        for k, v in iteritems(kwargs):
+            setattr(self, k, v)
 
     def __str__(self):
         return 'Module({})'.format(self.name)
 
     # == low-level API =======================================================
-    def _add_net(self, net):
-        """Add ``net`` into this module.
+    def _add_port(self, port):
+        """Add ``port`` into this module.
 
         Args:
-            net (`AbstractNet`):
+            port (`AbstractPort`):
         """
-        # check parent of the net
-        if net.parent is not self:
-            raise PRGAInternalError("Module '{}' is not the parent of '{}'"
-                    .format(self, net))
+        # check parent of the port
+        if port.parent is not self:
+            raise PRGAInternalError("Module '{}' is not the parent of '{}'".format(self, port))
         # check name conflict
-        if net.name in self._children:
-            raise PRGAInternalError("Name '{}' taken by {} in module '{}'".format(net.name,
-                self._children[net.name], self))
-        # check ports/logics modifiable and key conflict
+        if port.name in self._children:
+            raise PRGAInternalError("Name '{}' taken by {} in module '{}'"
+                    .format(port.name, self._children[port.name], self))
+        # check ports modifiable and key conflict
         try:
-            if net.net_type.is_port:
-                port = self._ports.setdefault(net.key, net)
-                if port is not net:
-                    raise PRGAInternalError("Port key '{}' taken by {} in module '{}'".format(net.key, port, self))
-            elif net.net_type.is_logic:
-                logic = self._logics.setdefault(net.key, net)
-                if logic is not net:
-                    raise PRGAInternalError("Logic net key '{}' taken by {} in module '{}'".format(net.key, logic, self))
-            else:
-                raise PRGAInternalError("Cannot add '{}' to module '{}'".format(net, self))
+            value = self._ports.setdefault(port.key, port)
+            if value is not port:
+                raise PRGAInternalError("Port key '{}' taken by {} in module '{}'".format(port.key, value, self))
         except AttributeError:
-            raise PRGAInternalError("Cannot add '{}' to module '{}'".format(net, self))
-        # add net to children mapping
-        return self._children.setdefault(net.name, net)
+            raise PRGAInternalError("Cannot add '{}' to module '{}'".format(port, self))
+        # add port to children mapping
+        return self._children.setdefault(port.name, port)
 
     def _add_instance(self, instance):
         """Add ``instance`` into this module.
@@ -203,8 +224,7 @@ class Module(Object, AbstractModule):
         """
         # check parent of the instance
         if instance.parent is not self:
-            raise PRGAInternalError("Module '{}' is not the parent of '{}'"
-                    .format(self, instance))
+            raise PRGAInternalError("Module '{}' is not the parent of '{}'".format(self, instance))
         # check name conflict
         if instance.name in self._children:
             raise PRGAInternalError("Name '{}' taken by {} in module '{}'"
@@ -227,10 +247,7 @@ class Module(Object, AbstractModule):
 
     @property
     def key(self):
-        try:
-            return self._key
-        except AttributeError:
-            return self._name
+        return self._key
 
     @property
     def children(self):
@@ -240,13 +257,6 @@ class Module(Object, AbstractModule):
     def ports(self):
         try:
             return ReadonlyMappingProxy(self._ports)
-        except AttributeError:
-            return ReadonlyMappingProxy({})
-
-    @property
-    def logics(self):
-        try:
-            return ReadonlyMappingProxy(self._logics)
         except AttributeError:
             return ReadonlyMappingProxy({})
 

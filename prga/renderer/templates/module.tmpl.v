@@ -7,8 +7,8 @@ module {{ module.name }} (
     );
     {% for instance in itervalues(module.instances) %}
         {%- for pin in itervalues(instance.pins) %}
-            {%- if pin.direction.is_output %}
-    wire [{{ pin|length - 1 }}:0] {{ instance.name }}__{{ pin.name }};
+            {%- if pin.model.direction.is_output %}
+    wire [{{ pin|length - 1 }}:0] _{{ instance.name }}__{{ pin.model.name }};
             {%- endif %}
         {%- endfor %}
     {%- endfor %}
@@ -16,10 +16,10 @@ module {{ module.name }} (
     {{ instance.model.name }} {{ instance.name }} (
         {%- set pincomma = joiner(",") %}
         {%- for pin in itervalues(instance.pins) %}{{ pincomma() }}
-            {%- if pin.direction.is_input %}
-        .{{ pin.name }}({{ source2verilog(pin) }})
+            {%- if pin.model.direction.is_input %}
+        .{{ pin.model.name }}({{ source2verilog(pin) }})
             {%- else %}
-        .{{ pin.name }}({{ instance.name }}__{{ pin.name }})
+        .{{ pin.model.name }}(_{{ instance.name }}__{{ pin.model.name }})
             {%- endif %}
         {%- endfor %}
         );

@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .common import BusType, NetType, AbstractGenericBus, AbstractInterfaceNet
+from .common import BusType, NetType, AbstractGenericBus, AbstractGenericNet
 from .const import Unconnected, Const
 from ...util import Object, uno
 from ...exception import PRGAInternalError, PRGATypeError, PRGAIndexError
@@ -65,116 +65,59 @@ class NetUtils(object):
             return Slice(bus, index)
 
     @classmethod
-    def _reference(cls, net, hierarchy = tuple(), coalesced = False):
-        """Get the node ID of ``net`` to be used in accessing the connection graph.
+    def _reference(cls, net, *, coalesced = False):
+        """Get the node corresponding to ``net`` in its parent module's connection graph.
 
         Args:
-            net (`Slice` or `AbstractNet`): 
-            hierarchy (:obj:`Sequence` [`AbstractInstance` ]): Hierarchical instance in ascending order
-            coalesced (:obj:`bool`): See below
+            net (`AbstractGenericNet`):
 
-        Returns:
-            :obj:`tuple` [:obj:`Hashable`, ... ]: Returns the hierarchy of the bus if ``coalesced`` is set
-            :obj:`tuple` [:obj:`int`, :obj:`tuple` [:obj:`Hashable`, ... ]]: Returns the index of the bit in the bus
-                plus the hierarchy of the bus if ``coalesced`` is not set
-
-        The returned value if ``coalesced`` is set, or the second element in the returned tuple if ``coalesced`` is
-        not set, is a sequence of keys. The contents of this sequence are as follows:
-        
-        If the referred net is a port, the sequence contains only one element, the key of the port in its parent
-        module's port mapping.
-        
-        If the referred net is a pin, the sequence contains two elements: 1. the key of the pin in its parent
-        instance's pin mapping, and 2. the key of the instance in its parent module's instance mapping.
-
-        If the referred net is a hierarchical pin, the sequence may contain more than two elements: the first being
-        the key of the pin in its parent instance's pin mapping, and the rest being the keys of the instances in the
-        hierarchy in bottom-up order.
+        Keyword Args:
+            coalesced (:obj:`bool`): Set if ``net`` is a nonref-bus
         """
-        if net.net_type.is_const:
-            return net.value
-        elif net.net_type.is_pin and (not hierarchy or net.parent is not hierarchy[0]):
-            hierarchy = (net.parent.key, ) + tuple(inst.key for inst in hierarchy)
-        else:
-            hierarchy = tuple(inst.key for inst in hierarchy)
         if coalesced:
-            if not net.bus_type.is_nonref:
-                raise PRGAInternalError("Cannot get the reference to {} when `coalesced` is set"
-                        .format(net))
-            return (net.key, ) + hierarchy
-        else:
-            if len(net) != 1:
-                raise PRGAInternalError("Cannot get the reference to {} when `coalesced` is not set"
-                        .format(net))
-            elif net.bus_type.is_nonref:
-                return 0, (net.key, ) + hierarchy
+            if net.bus_type.is_slice:
+                raise PRGAInternalError("Cannot create coalesced reference for {}".format(net))
             else:
-                return net.index, (net.bus.key, ) + hierarchy
+                return net.node
+        else:
+            return (0, net.node) if net.bus_type.is_nonref else net.node
 
     @classmethod
-    def _dereference(cls, module, node, hierarchical = False, coalesced = False):
+    def _dereference(cls, module, node, *, coalesced = False):
         """Dereference ``node`` in ``modules``'s connection graph.
 
         Args:
             module (`AbstractModule`):
-            node (:obj:`int`, :obj:`tuple` [:obj:`Hashable`, ... ] or :obj:`tuple` [:obj:`int`, :obj:`tuple`
-                [:obj:`Hashable`, ... ]]):
-            hierarchical (:obj:`bool`): If set, allow dereferencing hierarchical references
-            coalesced (:obj:`bool`): See ``coalesced`` in `NetUtils._reference`
+            node (:obj:`tuple` [:obj:`int`, :obj:`tuple` [:obj:`Hashable`, ... ]]):
+
+        Keyword Args:
+            coalesced (:obj:`bool`): Set if ``node`` is a reference to a bus
 
         Return:
             net (`Port`, `Pin`, `Slice` or `Const`): 
             hierarchy (:obj:`tuple` [`AbstractInstance` ]): Hierarchy in bottom-up order. Only available if
                 ``hierarchical`` is set
         """
-        if isinstance(node, int):
-            if hierarchical:
-                return Const(node, 1), tuple()
-            else:
-                return Const(node, 1)
+        # no matter if `coalesced` is set, check if the node refers to a constant net
+        if node[0] is NetType.const:
+            return Const(*node[1:])
         index, node = (None, node) if coalesced else node
         net_key, hierarchy = node[0], node[1:]
-        if len(hierarchy) > 1 and not hierarchical:
-            raise PRGATypeError("Node '{}' is a hierarchical reference".format(node))
         instances, parent = [], module
         for instance_key in reversed(hierarchy):
             instance = parent.instances[instance_key]
             instances.append(instance)
             parent = instance.model
-        bus, hierarchy = None, tuple(reversed(instances))
-        if hierarchical:
-            try:
-                bus = parent.ports[net_key]
-            except KeyError:
-                bus = parent.logics[net_key]
-            if index is None:
-                return bus, hierarchy
-            else:
-                return bus[index], hierarchy
+        bus = parent.ports[net_key]
+        if instances:
+            bus = bus._to_pin(reversed(instances))
+        if index is not None:
+            return bus[index]
         else:
-            if instances:
-                bus = instances[0].pins[net_key]
-            else:
-                try:
-                    bus = module.ports[net_key]
-                except KeyError:
-                    bus = module.logics[net_key]
-            if index is None:
-                return bus
-            else:
-                return bus[index]
+            return bus
 
     @classmethod
-    def _get_connection_by_node(cls, module, source, sink):
-        """Get an edittable :obj:`dict` for key-value attributes associated with the edge from ``source`` to
-        ``sink``."""
-        try:
-            return module._conn_graph.edges[source, sink]
-        except KeyError:
-            return None
-
-    @classmethod
-    def concat(cls, items, skip_flatten = False):
+    def concat(cls, items, *, skip_flatten = False):
         """`Slice`, `Concat` or other nets: Concatenate the provided iterable of nets. Set ``skip_flatten`` if
         ``items`` does not contain a `Concat` object."""
         # flatten the iterable
@@ -227,137 +170,98 @@ class NetUtils(object):
             return Concat(tuple(iter(concat)))
 
     @classmethod
-    def connect(cls, sources, sinks, fully = False, coalesced = False, **kwargs):
+    def connect(cls, sources, sinks, *, fully = False, **kwargs):
         """Connect ``sources`` and ``sinks``.
 
         Args:
             sources: a bus, a slice of a bus, a bit of a bus, or an iterable of the items listed above
             sink: a bus, a slice of a bus, a bit of a bus, or an iterable of the items listed above
-            fully (:obj:`bool`): If set, every bit in ``sources`` is connected to all bits in ``sinks``. Incompatible
-                with ``coalesced``
-            coalesced (:obj:`bool`): If set, connections are made in the granularity of buses. Incompatible with
-                ``fully``
+
+        Keyword Args:
+            fully (:obj:`bool`): If set, every bit in ``sources`` is connected to all bits in ``sinks``.
             **kwargs: Custom attibutes assigned to the connections
         """
-        if fully and coalesced:
-            raise PRGAInternalError("`fully` and `coalesced` are incompatible")
+        # 1. concat the sources & sinks
         sources, sinks = map(cls.concat, (sources, sinks))
-        if coalesced:
-            if sources.bus_type.is_slice:
-                raise PRGAInternalError(
-                        "Source '{}' is not a bus so cannot be connected with a coalesced connection"
-                        .format(sources))
-            elif sources.bus_type.is_nonref:
-                sources = (sources, )
-            else:
-                for source in sources.items:
-                    if not source.bus_type.is_slice:
-                        raise PRGAInternalError(
-                                "Source '{}' is not a bus so cannot be connected with a coalesced connection"
-                                .format(source))
-                sources = sources.items
-            if sinks.bus_type.is_slice:
-                raise PRGAInternalError(
-                        "Sink '{}' is not a bus so cannot be connected with a coalesced connection"
-                        .format(sinks))
-            elif sinks.bus_type.is_nonref:
-                sinks = (sinks, )
-            else:
-                for sink in sinks.items:
-                    if not sink.bus_type.is_slice:
-                        raise PRGAInternalError(
-                                "Sink '{}' is not a bus so cannot be connected with a coalesced connection"
-                                .format(sink))
-                sinks = sinks.items
-            if len(sources) != len(sinks):
-                _logger.warning("Length mismatch: sources({}) != sinks({})"
-                        .format(len(sources), len(sinks)))
-            for src, sink in zip(sources, sinks):
-                if len(src) != len(sink):
-                    raise PRGAInternalError("Width mismatch: len({}) = {} != len({}) = {}"
-                            .format(src, len(src), sink, len(sink)))
-                parent = sink.parent.parent if sink.net_type.is_pin else sink.parent
-                if not (sink.net_type.is_const or
-                        parent is (src.parent.parent if src.net_type.is_pin else src.parent)):
-                    raise PRGAInternalError("Cannot connect {} and {}. Different parent modules.".format(src, sink))
-                elif not parent._coalesce_connections:
-                    raise PRGAInternalError("'{}' does not support coalesced connections".format(parent))
-                sink_node = cls._reference(sink, coalesced = True)
-                if not (sink_node not in parent._conn_graph or parent._conn_graph.in_degree( sink_node ) == 0):
-                    raise PRGAInternalError(
-                            "{} is already connected to {} and module {} does not allow multi-source connections"
-                            .format(sink, cls.get_source(sink), parent))
-                parent._conn_graph.add_edge( cls._reference(src, coalesced = True), sink_node, **kwargs )
-        else:
-            if not fully and len(sources) != len(sinks):
-                _logger.warning("Width mismatch: len({}) = {} != len({}) = {}"
-                        .format(sources, len(sources), sinks, len(sinks)))
-            pairs = product(sources, sinks) if fully else zip(sources, sinks)
-            for src, sink in pairs:
-                if not src.is_source:
-                    raise PRGAInternalError("{} of {} is not a source".format(src, sources))
-                elif not sink.is_sink:
-                    raise PRGAInternalError("{} of {} is not a sink".format(sink, sinks))
-                elif src.net_type.is_unconnected:
-                    continue    # use disconnect to disconnect instead of connect it to "unconnected"
-                parent = sink.parent.parent if sink.net_type.is_pin else sink.parent
-                if parent._coalesce_connections:
-                    raise PRGAInternalError("{} requires coalesced connections".format(parent))
-                sink_node = cls._reference(sink)
-                if not (parent._allow_multisource or
-                        sink_node not in parent._conn_graph or
-                        parent._conn_graph.in_degree( sink_node ) == 0):
-                    raise PRGAInternalError(
-                            "{} is already connected to {} and module {} does not allow multi-source connections"
-                            .format(sink, cls.get_source(sink), parent))
-                elif not (sink.net_type.is_const or
-                        parent is (src.parent.parent if src.net_type.is_pin else src.parent)):
-                    raise PRGAInternalError("Cannot connect {} and {}. Different parent modules.".format(src, sink))
+        # 2. get the parent module
+        module = sources.items[0].parent if sources.bus_type.is_concat else sources.parent
+        # 3. if module does not support bitwise connection, recreate the source list and sink list
+        if module._coalesce_connections:
+            if fully:
+                raise PRGAInternalError("'{}' does not support bitwise connections (invalid 'fully' flag)"
+                        .format(module))
+            source_list, sink_list = [], []
+            for concat, list_ in ( (sources, source_list), (sinks, sink_list) ):
+                if concat.bus_type.is_slice:
+                    raise PRGAInternalError("'{}' does not support bitwise connections ('{}' is a slice)"
+                            .format(module, concat))
+                elif concat.bus_type.is_nonref:
+                    list_.append( concat )
                 else:
-                    parent._conn_graph.add_edge( cls._reference(src), sink_node, **kwargs )
+                    for i in concat.items:
+                        if i.bus_type.is_slice:
+                            raise PRGAInternalError("'{}' does not support bitwise connections ('{}' is a slice)"
+                                    .format(module, i))
+                        else:
+                            list_.append( i )
+            sources, sinks = source_list, sink_list
+        # 4. connect!
+        if not fully and len(sources) != len(sinks):
+            _logger.warning("Width mismatch: len({}) = {} != len({}) = {}"
+                    .format(sources, len(sources), sinks, len(sinks)))
+        pairs = product(sources, sinks) if fully else zip(sources, sinks)
+        for src, sink in pairs:
+            if not src.is_source:
+                raise PRGAInternalError("'{}' is not a valid source".format(src))
+            elif not sink.is_sink:
+                raise PRGAInternalError("'{}' is not a valid sink".format(sink))
+            elif src.net_type.is_unconnected:
+                continue
+            src_node, sink_node = map(lambda x: cls._reference(x, coalesced = module._coalesce_connections),
+                    (src, sink))
+            if not (module._allow_multisource or
+                    sink_node not in module._conn_graph or 
+                    module._conn_graph.in_degree( sink_node ) == 0):
+                raise PRGAInternalError(
+                        "'{}' does not support multi-source connections. ('{}' is already connected to '{}')"
+                        .format(module, sink, cls.get_source(sink)))
+            module._conn_graph.add_edge( src_node, sink_node, **kwargs )
 
     @classmethod
     def get_source(cls, sink):
         """Get the source connected to ``sink``. This method is for accessing connections in modules that do not allow
         multi-source connections only."""
         if not sink.is_sink:
-            raise PRGAInternalError("{} is not a sink".format(sink))
-        parent = sink.parent.parent if sink.net_type.is_pin else sink.parent
-        if parent._allow_multisource:
+            raise PRGAInternalError("{} is not a valid sink".format(sink))
+        if sink.parent._allow_multisource:
             raise PRGAInternalError(
                     "Module {} allows multi-source connections. Use `NetUtils.get_multisource` instead"
-                    .format(parent))
-        if parent._coalesce_connections:
+                    .format(sink.parent))
+        if sink.parent._coalesce_connections:
             sinks = sink.items if sink.bus_type.is_concat else (sink, )
             sources = []
             for sink_ in sinks:
-                if sink_.bus_type.is_slice:
-                    try:
-                        node = next(parent._conn_graph.predecessors( cls._reference(sink_.bus, coalesced = True) ))
-                    except (StopIteration, NetworkXError):
-                        sources.append( Unconnected( len(sink_) ))
-                        continue
+                try:
+                    node = next(sink.parent._conn_graph.predecessors( cls._reference(sink_, coalesced = True) ))
+                except (StopIteration, NetworkXError):
+                    sources.append( Unconnected( len(sink_) ))
+                    continue
 
-                    sources.append( cls._dereference(parent, node, coalesced = True)[sink_.index] )
+                if sink_.bus_type.is_slice:
+                    sources.append( cls._dereference(sink.parent, node, coalesced = True)[sink_.index] )
                 else:
-                    try:
-                        node = next(parent._conn_graph.predecessors( cls._reference(sink_, coalesced = True) ))
-                    except (StopIteration, NetworkXError):
-                        sources.append( Unconnected( len(sink_) ))
-                        continue
-                    
-                    sources.append( cls._dereference(parent, node, coalesced = True) )
+                    sources.append( cls._dereference(sink.parent, node, coalesced = True) )
             return cls.concat(sources)
         else:
             sources = []
             for bit in sink:
                 try:
-                    node = next(parent._conn_graph.predecessors( cls._reference(bit) ))
+                    node = next(sink.parent._conn_graph.predecessors( cls._reference(bit) ))
                 except (StopIteration, NetworkXError):
                     sources.append( Unconnected(1) )
                     continue
 
-                sources.append( cls._dereference(parent, node) )
+                sources.append( cls._dereference(sink.parent, node) )
             return cls.concat(sources)
 
     @classmethod
@@ -368,48 +272,47 @@ class NetUtils(object):
             raise PRGAInternalError("{} is not a sink".format(sink))
         elif len(sink) != 1:
             raise PRGAInternalError("{} is not 1-bit wide".format(sink))
-        parent = sink.parent.parent if sink.net_type.is_pin else sink.parent
+        elif not sink.parent._allow_multisource:
+            raise PRGAInternalError("'{}' does not allow multi-source connections".format(sink.parent))
         try:
-            return tuple( cls._dereference(parent, node) for node in
-                    parent._conn_graph.predecessors( cls._reference(sink) ) )
+            return tuple( cls._dereference(sink.parent, node) for node in
+                    sink.parent._conn_graph.predecessors( cls._reference(sink) ))
         except NetworkXError:
             return tuple()
 
     @classmethod
-    def get_connection(cls, source, sink, source_hierarchy = tuple(), sink_hierarchy = tuple(), coalesced = False):
+    def get_connection(cls, source, sink):
         """Get an edittable :obj:`dict` for key-value attributes associated with the edge from ``source`` to
         ``sink``."""
-        source_parent = (source_hierarchy[-1].parent if source_hierarchy else
-                source.parent.parent if source.net_type.is_pin else source.parent)
-        sink_parent = (sink_hierarchy[-1].parent if sink_hierarchy else
-                sink.parent.parent if sink.net_type.is_pin else sink.parent)
-        if source_parent is not sink_parent:
-            raise PRGAInternalError("Source net '{}' (hierarchy : [{}]) and sink net '{}' (hierarchy: [{}]) "
-                    .format(source, ', '.join(map(str, reversed(source_hierarchy))),
-                        sink, ', '.join(map(str, reversed(sink_hierarchy)))) +
-                    "are not in the same module")
-        elif coalesced and not source_parent._coalesce_connections:
-            raise PRGAInternalError("'{}' does not support coalesced connections".format(source_parent))
-        return cls._get_connection_by_node(source_parent,
-                cls._reference(source, source_hierarchy, coalesced = coalesced),
-                cls._reference(sink, sink_hierarchy, coalesced = coalesced))
-
-    @classmethod
-    def verilog_str(cls, net, hierarchy = tuple()):
-        """:obj:`str`: Generate the Verilog string for ``net`` in ``hierarchy``."""
-        if hierarchy:
-            return "/".join(i.name for i in reversed(hierarchy)) + "/" + net.name
-        else:
-            return net.name
+        if source.parent is not sink.parent:
+            raise PRGAInternalError("Source net '{}' and sink net '{}' are not in the same module"
+                    .format(source, sink))
+        elif source.parent._coalesce_connections:
+            if not source.bus_type.is_nonref:
+                raise PRGAInternalError("'{}' does not support bitwise connection (source net '{}' is not a bus)"
+                        .format(source.parent, source))
+            elif not sink.bus_type.is_nonref:
+                raise PRGAInternalError("'{}' does not support bitwise connection (sink net '{}' is not a bus)"
+                        .format(source.parent, sink))
+        elif len(source) != 1:
+            raise PRGAInternalError("source net: len({}) != 1".format(source))
+        elif len(sink) != 1:
+            raise PRGAInternalError("sink net: len({}) != 1".format(sink))
+        try:
+            return source.parent._conn_graph.edges[
+                    cls._reference(source, coalesced = source.parent._coalesce_connections),
+                    cls._reference(sink, coalesced = source.parent._coalesce_connections)]
+        except KeyError:
+            return None
 
 # ----------------------------------------------------------------------------
 # -- Slice Reference of a Bus ------------------------------------------------
 # ----------------------------------------------------------------------------
-class Slice(Object, AbstractInterfaceNet):
+class Slice(Object, AbstractGenericNet):
     """Reference to a consecutive subset of a port/pin/logic bus.
 
     Args:
-        bus (`AbstractBus`): The referred bus
+        bus (`AbstractGenericBus`): The referred bus
         index (:obj:`int` or :obj:`slice`): Index of the bit(s) in the bus.
 
     Direct instantiation of this class is not recommended.
@@ -453,19 +356,12 @@ class Slice(Object, AbstractInterfaceNet):
         return self.bus.is_sink
 
     @property
+    def node(self):
+        return self.index, self.bus.node
+
+    @property
     def parent(self):
         return self.bus.parent
-
-    @property
-    def key(self):
-        return self.bus.key, self.index
-
-    @property
-    def direction(self):
-        try:
-            return self.bus.direction
-        except AttributeError:
-            raise PRGAInternalError("{} is a logic wire without direction".format(self))
 
     def __len__(self):
         if isinstance(self.index, int):
@@ -491,7 +387,7 @@ class Concat(Object, AbstractGenericBus):
     Args:
         items (:obj:`Sequence` [`AbstractGenericNet` ]): Items to be contenated together
 
-    Direct instantiation of this class is not recommended.
+    Direct instantiation of this class is not recommended. Use `NetUtils.concat` instead.
     """
 
     __slots__ = ['items']

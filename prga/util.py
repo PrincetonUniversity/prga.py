@@ -20,14 +20,20 @@ class ReadonlyMappingProxy(Mapping):
         m (:obj:`Mapping`): The :obj:`Mapping` object to be proxied
         filter_ (``lambda (key, value) -> bool``, default=None): An optional filter which filters the :obj:`Mapping`
             items
+        cast (``lambda (key) -> key``, default=None): An optional key caster to cast a key in this proxy to a key in
+            the proxied mapping
+        uncast (``lambda (key) -> key``, default=None): An optional key caster to cast a key in the proxied maping to
+            a key in this proxy
 
     A read-only proxy of a :obj:`Mapping` object. All read-only methods of :obj:`Mapping` are implemented while all
     mutating methods are removed.
     """
-    __slots__ = ['m', 'filter_']
-    def __init__(self, m, filter_=None):
+    __slots__ = ['m', 'filter_', 'cast', 'uncast']
+    def __init__(self, m, filter_=None, cast=None, uncast=None):
         self.m = m              #: the :obj:`Mapping` object to be proxied
         self.filter_ = filter_   #: an optional filter which filters the :obj:`Mapping` items
+        self.cast = cast
+        self.uncast = uncast
 
     def __len__(self):
         """Return the number of items in the filtered mapping."""
@@ -37,29 +43,32 @@ class ReadonlyMappingProxy(Mapping):
             return sum(1 for _ in filter(self.filter_, iteritems(self.m)))
 
     def __getitem__(self, key):
-        """Return the item with key *key* in the filtered mapping.
+        """Return the item with key *key* in the proxy.
         
         Args:
             key:
 
         Raises:
-            `KeyError`: Raised if *key* is not in the filtered mapping.
+            `KeyError`: Raised if *key* is not in the proxy.
         """
+        casted = self.cast(key) if callable(self.cast) else key
         try:
-            value = self.m[key]
+            value = self.m[casted]
         except KeyError:
             raise KeyError(key)
-        if self.filter_ is not None and not self.filter_((key, value)):
+        if self.filter_ is not None and not self.filter_((casted, value)):
             raise KeyError(key)
         else:
             return value
 
     def __iter__(self):
         """Return an iterator over the keys of the filtered mapping."""
-        if self.filter_ is None:
-            return iter(self.m)
+        if callable(self.uncast):
+            for k in (filter(self.filter_, iteritems(self.m)) if callable(self.filter_) else iter(self.m)):
+                yield self.uncast(k)
         else:
-            return iter(k for k, _ in filter(self.filter_, iteritems(self.m)))
+            for k in (filter(self.filter_, iteritems(self.m)) if callable(self.filter_) else iter(self.m)):
+                yield k
 
 class ReadonlySequenceProxy(Sequence):
     """A read-only proxy of a :obj:`Sequence` object.

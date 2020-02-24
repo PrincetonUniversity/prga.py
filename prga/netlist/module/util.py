@@ -47,6 +47,7 @@ class ModuleUtils(object):
                 if instance:
                     _logger.warning("Clock '{}' (hierarchy: [{}]) is unconnected"
                             .format(net, ', '.join(map(str, reversed(instance)))))
+                # module._conn_graph.setdefault("clock_groups", {}).setdefault(net_node, []).append( net_node )
                 module._conn_graph.add_node(net_node, clock_group = net_node)   # clock grouped to itself
                 continue
             # 1.3 make sure there is only one predecessor
@@ -56,17 +57,19 @@ class ModuleUtils(object):
                         .format(net, ', '.join(map(str, reversed(instance)))))
             except StopIteration:
                 pass
-            # 1.4 use the same clock group as the predecessor
+            # 1.4 get the clock group of the predecessor
             try:
-                module._conn_graph.add_node(net_node,
-                        clock_group = module._conn_graph.nodes[pred_node]['clock_group'])
+                clock_group = module._conn_graph.nodes[pred_node]['clock_group']
             except KeyError:
                 pred_net, pred_hierarchy = NetUtils._dereference(module, pred_node, True,
                         coalesced = module._coalesce_connections)
                 raise PRGAInternalError("Clock '{}' (hierarchy: [{}]) is connected to '{}' (hierarchy: [{}]) "
                         .format(net, ', '.join(map(str, reversed(instance))),
                             pred_net, ', '.join(map(str, reversed(pred_hierarchy)))) +
-                        "which is not assigned a clock group")
+                        "which is not assigned into any clock group")
+            # 1.5 assign this clock into the predecessor's clock group
+            # module._conn_graph["clock_groups"][clock_group].append( net_node )
+            module._conn_graph.add_node(net_node, clock_group = clock_group)
         # 2. find all clocked nets
         hierarchy = tuple(inst.key for inst in instance)
         for net in chain(itervalues(submodule.ports), itervalues(submodule.logics)):
@@ -147,7 +150,7 @@ class ModuleUtils(object):
         if module.name in database:
             raise RuntimeError("Module '{}' already converted into database".format(module))
         m = database.setdefault(module.name, Module(module.name, ports = OrderedDict(), instances = OrderedDict(),
-            allow_multisource = module.is_leaf_module))
+            allow_multisource = module.is_leaf_module, module_class = module.module_class))
         ports = module.logical_ports if logical else module.physical_ports
         instances = module.logical_instances if logical else module.logical_instances
         # 1. ports
@@ -187,7 +190,7 @@ class ModuleUtils(object):
                 sink = m.ports[port.key]
                 try:
                     if port.clock:
-                        sink._clock = m.ports[ports[port.clock].key]
+                        sink._clock = ports[port.clock].key
                 except AttributeError:
                     pass
                 if not port.is_sink:
@@ -200,21 +203,23 @@ class ModuleUtils(object):
         return m
 
     @classmethod
-    def instantiate(cls, parent, model, name, key = None, **kwargs):
+    def instantiate(cls, parent, model, name, *, key = None, **kwargs):
         """Instantiate ``model`` in ``parent``.
 
         Args:
             parent (`AbstractModule`):
             model (`AbstractModule`):
             name (:obj:`str`): Name of the instance
+
+        Keyword Args:
             key (:obj:`Hashable`): A hashable key used to index the instance in the parent module. If not given
                 \(default argument: ``None``\), ``name`` is used by default
             **kwargs: Arbitrary attributes assigned to the instantiated instance
         """
-        return parent._add_instance(Instance(parent, model, name, key, **kwargs))
+        return parent._add_instance(Instance(parent, model, name, key = key, **kwargs))
 
     @classmethod
-    def create_port(cls, module, name, width, direction, key = None, clock = None, is_clock = False, **kwargs):
+    def create_port(cls, module, name, width, direction, *, key = None, clock = None, is_clock = False, **kwargs):
         """Create a port in ``module``.
 
         Args:
@@ -222,9 +227,11 @@ class ModuleUtils(object):
             name (:obj:`str`): Name of the port
             width (:obj:`int`): Number of bits in the port
             direction (`PortDirection`): Direction of the port
-            key (:obj:`Hashable`): A hashable key used to index the instance in the parent module. If not given
+
+        Keyword Args:
+            key (:obj:`Hashable`): A hashable key used to index the port in the parent module. If not given
                 \(default argument: ``None``\), ``name`` is used by default
             is_clock (:obj:`bool`): Test if this is a clock
             **kwargs: Arbitrary attributes assigned to the created port
         """
-        return module._add_net(Port(module, name, width, direction, key, clock, is_clock, **kwargs))
+        return module._add_port(Port(module, name, width, direction, key = key, clock = clock, is_clock = is_clock, **kwargs))

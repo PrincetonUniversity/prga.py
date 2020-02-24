@@ -10,32 +10,25 @@ from abc import abstractproperty
 __all__ = []
 
 # ----------------------------------------------------------------------------
-# -- Abstract Netlist Object (Module/Instance) -------------------------------
+# -- Abstract Module ---------------------------------------------------------
 # ----------------------------------------------------------------------------
-class AbstractNetlistObject(Abstract):
-    """Abstract class for modules and instances."""
+class AbstractModule(Abstract):
+    """Abstract class for modules."""
 
     @abstractproperty
     def name(self):
-        """:obj:`str`: String name of this module/instance (to be used in Verilog/VPR)"""
+        """:obj:`str`: Name of this module."""
         raise NotImplementedError
 
     @abstractproperty
     def key(self):
-        """:obj:`Hashable`: A hashable key used to index this instance in the parent module, or this module in the
-        database."""
+        """:obj:`Hashable`: A hashable key used to index this module in the database."""
         raise NotImplementedError
-
-# ----------------------------------------------------------------------------
-# -- Abstract Module ---------------------------------------------------------
-# ----------------------------------------------------------------------------
-class AbstractModule(AbstractNetlistObject):
-    """Abstract class for modules."""
 
     @abstractproperty
     def children(self):
-        """:obj:`Mapping` [:obj:`str`, `AbstractNetlistObject` or `AbstractNet` ]: A mapping from names to
-        ports/logic nets/instances."""
+        """:obj:`Mapping` [:obj:`str`, `AbstractPort` or `AbstractInstance` ]: A mapping from names to
+        ports/instances."""
         raise NotImplementedError
 
     @abstractproperty
@@ -44,24 +37,24 @@ class AbstractModule(AbstractNetlistObject):
         raise NotImplementedError
 
     @abstractproperty
-    def logics(self):
-        """:obj:`Mapping` [:obj:`Hashable`, `Logic` ]: A mapping from logic keys to logic nets."""
-        raise NotImplementedError
-
-    @abstractproperty
     def instances(self):
-        """:obj:`Mapping` [:obj:`Hashable`, `AbstractInstance` ]: A mapping from instance keys to instances."""
+        """:obj:`Mapping` [:obj:`Hashable`, `AbstractInstance` ]: A mapping from instance keys to immediate instances."""
         raise NotImplementedError
 
 # ----------------------------------------------------------------------------
 # -- Abstract Instance -------------------------------------------------------
 # ----------------------------------------------------------------------------
-class AbstractInstance(AbstractNetlistObject):
+class AbstractInstance(Abstract):
     """Abstract class for instances."""
 
     @abstractproperty
-    def children(self):
-        """:obj:`Mapping` [:obj:`str`, `AbstractNet` ]: A mapping from names to pins."""
+    def name(self):
+        """:obj:`str`: Name of this instance."""
+        raise NotImplementedError
+
+    @abstractproperty
+    def key(self):
+        """:obj:`Hashable`: A hashable key used to index this instance in its parent module."""
         raise NotImplementedError
 
     @abstractproperty

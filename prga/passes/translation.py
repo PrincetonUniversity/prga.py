@@ -8,7 +8,7 @@ from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
 from ..netlist.net.common import PortDirection
 from ..netlist.net.util import NetUtils
-from ..core.common import ModuleClass, NetClass, Segment
+from ..core.common import ModuleClass, NetClass, Segment, ModuleView
 from ..util import Abstract, Object
 from ..exception import PRGAInternalError, PRGAAPIError
 
@@ -28,11 +28,12 @@ class AbstractSwitchDatabase(Abstract):
     # == low-level API =======================================================
     # -- properties/methods to be implemented/overriden by subclasses --------
     @abstractmethod
-    def get_switch(self, width):
+    def get_switch(self, width, module = None):
         """Get a switch module with ``width`` input bits.
 
         Args:
             width (:obj:`int`): Number of inputs needed
+            module (`AbstractModule`): The module to which the switch is going to be added
 
         Returns:
             `AbstractModule`: Switch module found
@@ -56,8 +57,8 @@ class TranslationPass(Object, AbstractPass):
     def key(self):
         return "translation"
 
-    def _process_module(self, module, module_db, disable_coalesce = False):
-        physical = module_db.get(module.key)
+    def _process_module(self, module, context, disable_coalesce = False):
+        physical = context.database.get((ModuleView.physical, module.key))
         if physical is not None:
             return physical
         if module.module_class not in (ModuleClass.cluster, ModuleClass.io_block, ModuleClass.logic_block,
@@ -68,26 +69,27 @@ class TranslationPass(Object, AbstractPass):
                 'ports': OrderedDict(),
                 'instances': OrderedDict(),
                 'module_class': module.module_class,
+                'key': module.key,
                 }
         refmap = {}
-        if module.key != module.name:
-            kwargs['key'] = module.key
         if not disable_coalesce and module._coalesce_connections:
-            if (not module.module_class.is_array or
-                    all(i.model.module_class.is_array for i in itervalues(module.instances))):
-                kwargs['coalesced_connections'] = True
+            kwargs['coalesced_connections'] = True
+        # if not disable_coalesce and module._coalesce_connections:
+        #     if (not module.module_class.is_array or
+        #             all(i.model.module_class.is_array for i in itervalues(module.instances))):
+        #         kwargs['coalesced_connections'] = True
         if module.module_class.is_io_block:
             physical = Module(module.name, refmap = refmap, **kwargs)
             i, o = map(module.instances['io'].pins.get, ('inpad', 'outpad'))
             if i:
                 physical_net = ModuleUtils.create_port(
-                        physical, '_inpad', 1, PortDirection.output, net_class = NetClass.io)
+                        physical, '_inpad', 1, PortDirection.input_, net_class = NetClass.io)
                 logical_ref = NetUtils._reference(i, coalesced = module._coalesce_connections)
                 physical_ref = NetUtils._reference(physical_net, coalesced = physical._coalesce_connections)
                 refmap[logical_ref] = physical_ref
             if o:
                 physical_net = ModuleUtils.create_port(
-                        physical, '_outpad', 1, PortDirection.input_, net_class = NetClass.io)
+                        physical, '_outpad', 1, PortDirection.output, net_class = NetClass.io)
                 logical_ref = NetUtils._reference(o, coalesced = module._coalesce_connections)
                 physical_ref = NetUtils._reference(physical_net, coalesced = physical._coalesce_connections)
                 refmap[logical_ref] = physical_ref
@@ -109,70 +111,75 @@ class TranslationPass(Object, AbstractPass):
                     net_class = NetClass.segment
                 else:
                     net_class = NetClass.blockpin
-            elif module.module_class.is_array:
-                if hasattr(port, 'global_'):
-                    net_class = NetClass.global_
-                elif isinstance(port.key.prototype, Segment):
-                    net_class = NetClass.segment
-                else:
-                    net_class = NetClass.blockpin
+            # elif module.module_class.is_array:
+            #     if hasattr(port, 'global_'):
+            #         net_class = NetClass.global_
+            #     elif isinstance(port.key.prototype, Segment):
+            #         net_class = NetClass.segment
+            #     else:
+            #         net_class = NetClass.blockpin
             if net_class is None:
                 raise NotImplementedError("Unsupport net class '{}' of port '{}' in module '{}'"
                         .format(net_class.name, port.name, module.name))
-            if port.key != port.name:
-                ModuleUtils.create_port(physical, port.name, len(port), port.direction,
-                        key = port.key, is_clock = port.is_clock, net_class = net_class)
-            else:
-                ModuleUtils.create_port(physical, port.name, len(port), port.direction,
-                        is_clock = port.is_clock, net_class = net_class)
+            ModuleUtils.create_port(physical, port.name, len(port), port.direction,
+                    key = port.key, is_clock = port.is_clock, net_class = net_class)
         for instance in itervalues(module.instances):
             if instance.name == 'io' and module.module_class.is_io_block:
                 continue
-            model = self._process_module(instance.model, module_db,
-                    disable_coalesce or not module._coalesce_connections)
-            if instance.key != instance.name:
-                ModuleUtils.instantiate(physical, model, instance.name, key = instance.key)
-            else:
-                ModuleUtils.instantiate(physical, model, instance.name)
+            model = self._process_module(instance.model, context,
+                    disable_coalesce or not physical._coalesce_connections)
+            ModuleUtils.instantiate(physical, model, instance.name, key = instance.key)
         if not module._allow_multisource:
             if module._coalesce_connections is physical._coalesce_connections:
                 for u, v in module._conn_graph.edges:
-                    physical._conn_graph.add_edge(u, v)
+                    physical._conn_graph.add_edge(refmap.get(u, u), refmap.get(v, v))
             else:   # module._coalesce_connections and not physical._coalesce_connections
                 for u, v in module._conn_graph.edges:
-                    src, sink = map(lambda x: NetUtils._dereference(physical, x, coalesced = True), (u, v))
-                    NetUtils.connect(src, sink)
-        elif module._allow_multisource:
+                    if u in refmap:
+                        u = NetUtils._dereference(physical, refmap[u])
+                    else:
+                        u = NetUtils._dereference(physical, u, coalesced = True)
+                    if v in refmap:
+                        v = NetUtils._dereference(physical, refmap[v])
+                    else:
+                        v = NetUtils._dereference(physical, v, coalesced = True)
+                    NetUtils.connect(u, v)
+        else:
             for net in chain(itervalues(module.ports),
                     iter(pin for instance in itervalues(module.instances) for pin in itervalues(instance.pins))):
                 if not net.is_sink:
                     continue
                 for bit in net:
-                    sink = NetUtils._reference(bit)
+                    logical_sink = NetUtils._reference(bit)
                     try:
-                        sources = tuple(module._conn_graph.predecessors( sink ))
+                        logical_sources = tuple(module._conn_graph.predecessors( logical_sink ))
                     except NetworkXError:
-                        sources = tuple()
-                    if len(sources) == 0:
+                        logical_sources = tuple()
+                    if len(logical_sources) == 0:
                         continue
-                    sink = refmap.get(sink, sink)
-                    if len(sources) == 1:
-                        physical._conn_graph.add_edge(refmap.get(sources[0], sources[0]), sink)
+                    physical_sink = refmap.get(logical_sink, logical_sink)
+                    if len(logical_sources) == 1:
+                        physical._conn_graph.add_edge(refmap.get(logical_sources[0], logical_sources[0]),
+                                physical_sink)
                         continue
-                    switch_model = self.switch_database.get_switch(len(sources))
-                    switch_name = ('_sw' + ('_' + bit.parent.name if bit.net_type.is_pin else '') + '_' +
+                    bit = NetUtils._dereference(physical, physical_sink)
+                    switch_model = self.switch_database.get_switch(len(logical_sources), physical)
+                    switch_name = ('_sw' + ('_' + bit.hierarchy[-1].name if bit.net_type.is_pin else '') + '_' +
                             (bit.bus.name + '_' + str(bit.index) if bit.bus_type.is_slice else bit.name))
                     switch = ModuleUtils.instantiate(physical, switch_model, switch_name,
-                            key = (ModuleClass.switch, ) + sink)
-                    for source, switch_input in zip(sources, switch.pins['i']):
-                        source = refmap.get(source, source)
-                        physical._conn_graph.add_edge(source, NetUtils._reference(switch_input))
-                    physical._conn_graph.add_edge(NetUtils._reference(switch.pins['o']), sink)
-        module_db[module.key] = physical
+                            key = (ModuleClass.switch, ) + physical_sink)
+                    for logical_source, switch_input in zip(logical_sources, switch.pins['i']):
+                        physical_source = refmap.get(logical_source, logical_source)
+                        physical._conn_graph.add_edge(physical_source, NetUtils._reference(switch_input))
+                    physical._conn_graph.add_edge(NetUtils._reference(switch.pins['o']), physical_sink)
+        if module.module_class.is_io_block:
+            print("?")
+            pass
+        context.database[ModuleView.physical, module.key] = physical
         return physical
 
     def run(self, context):
         top = context.top
         if top is None:
             raise PRGAAPIError("Top-level array not set yet.")
-        self._process_module(top, context.database.physical_modules)
+        self._process_module(top, context)

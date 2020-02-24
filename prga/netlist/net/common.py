@@ -30,9 +30,8 @@ class NetType(Enum):
     const = 1           #: constant value
 
     # netlist net types
-    logic = 2           #: non-interface net
-    port = 3            #: port in a module
-    pin = 4             #: pin in an instance
+    port = 2            #: port in a module
+    pin = 3             #: [hierarchical] pin
 
 # ----------------------------------------------------------------------------
 # -- Port Direction ----------------------------------------------------------
@@ -88,40 +87,83 @@ class AbstractGenericNet(AbstractGenericBus):
         """`NetType`: Type of this net."""
         raise NotImplementedError
 
-# ----------------------------------------------------------------------------
-# -- Abstract Port/Pin/Logic Net ---------------------------------------------
-# ----------------------------------------------------------------------------
-class AbstractNet(AbstractGenericNet):
-    """Abstract class for all port/pin/logic nets."""
+    @abstractproperty
+    def node(self):
+        """:obj:`Hashable`: A hashable value to index this net in the connection graph."""
+        raise NotImplementedError
 
     @abstractproperty
     def parent(self):
-        """`AbstractNetlistObject`: Parent module/instance of this net."""
-        raise NotImplementedError
-
-    @abstractproperty
-    def key(self):
-        """:obj:`Hashable`: A hashable key used to index this net in the parent module/instance."""
-        raise NotImplementedError
-
-# ----------------------------------------------------------------------------
-# -- Abstract Port/Pin Net ---------------------------------------------------
-# ----------------------------------------------------------------------------
-class AbstractInterfaceNet(AbstractNet):
-    """Abstract class for all port/pin nets."""
-
-    @abstractproperty
-    def direction(self):
-        """`PortDirection`: Direction of this port/pin."""
+        """`AbstractModule`: Parent module of this net."""
         raise NotImplementedError
 
     # -- implementing properties/methods required by superclass --------------
     @property
+    def bus_type(self):
+        return BusType.nonref
+
+# ----------------------------------------------------------------------------
+# -- Abstract Port -----------------------------------------------------------
+# ----------------------------------------------------------------------------
+class AbstractPort(AbstractGenericNet):
+    """Abstract class for ports."""
+
+    @abstractproperty
+    def direction(self):
+        """`PortDirection`: Direction of this port."""
+        raise NotImplementedError
+
+    @abstractproperty
+    def key(self):
+        """:obj:`Hashable`: A hashable key to index this port in its parent module's ports mapping."""
+        raise NotImplementedError
+
+    # -- implementing properties/methods required by superclass --------------
+    @property
+    def net_type(self):
+        return NetType.port
+
+    @property
     def is_source(self):
-        return self.net_type.case(port = self.direction.is_input,
-                pin = self.direction.is_output)
+        return self.direction.is_input
 
     @property
     def is_sink(self):
-        return self.net_type.case(port = self.direction.is_output,
-                pin = self.direction.is_input)
+        return self.direction.is_output
+
+# ----------------------------------------------------------------------------
+# -- Abstract Pin ------------------------------------------------------------
+# ----------------------------------------------------------------------------
+class AbstractPin(AbstractGenericNet):
+    """Abstract class for [hierarchical] pins."""
+
+    @abstractproperty
+    def model(self):
+        """`AbstractPort`: Model port of this pin."""
+        raise NotImplementedError
+
+    @abstractproperty
+    def hierarchy(self):
+        """:obj:`Sequence` [`AbstractInstance`]: Hierarchy of instances down to the pin in ascending order.
+
+        For example, assume 1\) module 'clb' has an instance 'alm0' of module 'alm', and 2\) module 'alm' has an
+        instance 'lutA' of module 'LUT4', and 3\) module 'LUT4' has an input port 'in'. This net can be referred to by
+        a pin, whose model is the port, and the hierarchy is [instance 'lutA', instance 'alm0']."""
+        raise NotImplementedError
+
+    # -- implementing properties/methods required by superclass --------------
+    @property
+    def net_type(self):
+        return NetType.pin
+
+    @property
+    def is_source(self):
+        return len(self.hierarchy) == 1 and self.model.is_sink
+
+    @property
+    def is_sink(self):
+        return len(self.hierarchy) == 1 and self.model.is_source
+
+    @property
+    def parent(self):
+        return self.hierarchy[-1].parent

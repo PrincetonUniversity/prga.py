@@ -3,73 +3,87 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .common import NetType, BusType, PortDirection, AbstractNet, AbstractInterfaceNet
+from .common import NetType, PortDirection, AbstractPort, AbstractPin
 from .const import Unconnected
-from .util import NetUtils, Slice
+from .util import NetUtils
 from ...util import Object, uno
 from ...exception import PRGATypeError
 
-__all__ = []
+__all__ = ['Port', 'Pin']
 
 # ----------------------------------------------------------------------------
-# -- Base Net ----------------------------------------------------------------
+# -- Port --------------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class _BaseNet(Object, AbstractNet):
-    """Base class of all nets.
+class Port(Object, AbstractPort):
+    """Ports in a module.
 
     Args:
-        parent (`AbstractNetlistObject`): Parent module/instance of this net
-        name (:obj:`str`): Name of this net
+        parent (`AbstractModule`): Parent module of this port
+        name (:obj:`str`): Name of this port
         width (:obj:`int`): Number of bits in this net
-        key (:obj:`Hashable`): A hashable key used to index this net in the parent module/instance. If not given
+        direction (`PortDirection`): Direction of the port
+
+    Keyword Args:
+        key (:obj:`Hashable`): A hashable key used to index this net in the parent module. If not given
             \(default argument: ``None``\), ``name`` is used by default
-        clock (:obj:`Hashable`): Key of the clock net controlling this net. If not set, the net is combinational
-        **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
-            is executed at the BEGINNING of ``__init__``
+        clock (:obj:`Hashable`): Mark this port as a sequential startpoint/endpoint controlled by the specified clock
+            in the parent module
+        is_clock (:obj:`bool`): Mark this port as a clock port
+        **kwargs: Custom key-value arguments. These attributes are to be added to the ``__dict__`` of this port object
+            and accessible as dynamic attributes
     """
 
-    __slots__ = ['_parent', '_name', '_width', '_key', '_clock', '__dict__']
-
-    # == internal API ========================================================
-    def __init__(self, parent, name, width, key = None, clock = None, **kwargs):
-        for k, v in iteritems(kwargs):
-            setattr(self, k, v)
+    __slots__ = ['_parent', '_name', '_width', '_direction', '_key', '_clock', '_is_clock', '__dict__']
+    def __init__(self, parent, name, width, direction, *,
+            key = None, clock = None, is_clock = False, **kwargs):
         self._parent = parent
         self._name = name
         self._width = width
-        if key is not None:
-            self._key = key
-        if clock is not None:
-            self._clock = clock
+        self._direction = direction
+        self._key = uno(key, name)
+        self._clock = clock
+        self._is_clock = is_clock
+        for k, v in iteritems(kwargs):
+            setattr(self, k, v)
+
+    def __str__(self):
+        return '{}Port({}/{})'.format(self._direction.case('In', 'Out'), self._parent.name, self._name)
+
+    # == internal API ========================================================
+    def _to_pin(self, hierarchy):
+        return Pin(self, hierarchy)
 
     # == low-level API =======================================================
     @property
+    def is_clock(self):
+        """:obj:`bool`: Test if this is a clock port."""
+        return self._is_clock
+
+    @property
     def clock(self):
-        """:obj:`Hashable`: Key of the clock controlling this net. If not set, the net is combinational."""
-        try:
-            return self._clock
-        except AttributeError:
-            return None
+        """:obj:`bool`: Test if this is a sequential startpoint/endpoint and if so, which clock controls it."""
+        return self._clock
 
     # -- implementing properties/methods required by superclass --------------
     @property
-    def bus_type(self):
-        return BusType.nonref
+    def parent(self):
+        return self._parent
 
     @property
     def name(self):
         return self._name
 
     @property
-    def parent(self):
-        return self._parent
+    def direction(self):
+        return self._direction
 
     @property
     def key(self):
-        try:
-            return self._key
-        except AttributeError:
-            return self._name
+        return self._key
+
+    @property
+    def node(self):
+        return (self._key, )
 
     def __len__(self):
         return self._width
@@ -84,147 +98,52 @@ class _BaseNet(Object, AbstractNet):
             return NetUtils._slice(self, index)
 
 # ----------------------------------------------------------------------------
-# -- Logic Net ---------------------------------------------------------------
-# ----------------------------------------------------------------------------
-class Logic(_BaseNet):
-    """Non-interface nets in a module.
-
-    Args:
-        parent (`AbstractModule`): Parent module of this logic net
-        name (:obj:`str`): Name of this logic net
-        width (:obj:`int`): Number of bits in this net
-        key (:obj:`Hashable`): A hashable key used to index this net in the parent module. If not given
-            \(default argument: ``None``\), ``name`` is used by default
-        clock (:obj:`Hashable`): Key of the clock net controlling this net. If not set, the net is combinational
-        **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
-            is executed at the BEGINNING of ``__init__``
-    """
-
-    # == internal API ========================================================
-    def __str__(self):
-        return 'Logic({}/{})'.format(self._parent.name, self._name)
-
-    # == low-level API =======================================================
-    # -- implementing properties/methods required by superclass --------------
-    @property
-    def net_type(self):
-        return NetType.logic
-
-    @property
-    def is_source(self):
-        return True
-
-    @property
-    def is_sink(self):
-        return True
-
-# ----------------------------------------------------------------------------
-# -- Port --------------------------------------------------------------------
-# ----------------------------------------------------------------------------
-class Port(_BaseNet, AbstractInterfaceNet):
-    """Ports in a module.
-
-    Args:
-        parent (`AbstractModule`): Parent module of this port
-        name (:obj:`str`): Name of this port
-        width (:obj:`int`): Number of bits in this net
-        direction (`PortDirection`): Direction of the port
-        key (:obj:`Hashable`): A hashable key used to index this net in the parent module. If not given
-            \(default argument: ``None``\), ``name`` is used by default
-        clock (:obj:`Hashable`): Key of the clock net controlling this net. If not set, the net is combinational
-        is_clock (:obj:`bool`): Mark this port as a clock port
-        **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
-            is executed at the BEGINNING of ``__init__``
-    """
-
-    __slots__ = ['_direction', '_is_clock']
-
-    # == internal API ========================================================
-    def __init__(self, parent, name, width, direction, key = None, clock = None, is_clock = False, **kwargs):
-        super(Port, self).__init__(parent, name, width, key, clock, **kwargs)
-        if is_clock and (width != 1 or not direction.is_input):
-            raise PRGATypeError("is_clock", "bool", "Only single-bit input port may be marked as a clock")
-        self._is_clock = is_clock
-        self._direction = direction
-
-    def __str__(self):
-        return '{}Port({}/{})'.format(self._direction.case('In', 'Out'), self._parent.name, self._name)
-
-    # == low-level API =======================================================
-    @property
-    def is_clock(self):
-        """:obj:`bool`: Test if this port is a clock."""
-        return self._is_clock
-
-    # -- implementing properties/methods required by superclass --------------
-    @property
-    def net_type(self):
-        return NetType.port
-
-    @property
-    def direction(self):
-        return self._direction
-
-# ----------------------------------------------------------------------------
 # -- Pin ---------------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Pin(Object, AbstractInterfaceNet):
-    """Pins in an instance.
+class Pin(Object, AbstractPin):
+    """Pins of [Hierarchical] instances in a module.
 
     Args:
-        parent (`AbstractInstance`): Parent instance of this pin
-        model (`Port`): Model port of this pin
-        **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
-            is executed at the BEGINNING of ``__init__``
+        model (`Port`): Model of this pin
+        hierarchy (:obj:`Iterable` [`AbstractInstance` ]): Hierarchy of instances down to the pin in ascending order.
+            See `Pin.hierarchy` for more information
+
+    Keyword Args:
+        **kwargs: Custom key-value arguments. These attributes are to be added to the ``__dict__`` of this port object
+            and accessible as dynamic attributes
     """
 
-    __slots__ = ['_parent', '_model', '__dict__']
+    __slots__ = ['_model', '_hierarchy', '__dict__']
 
     # == internal API ========================================================
-    def __init__(self, parent, model, **kwargs):
+    def __init__(self, model, hierarchy, **kwargs):
+        self._model = model
+        self._hierarchy = tuple(iter(hierarchy))
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
-        self._parent = parent
-        self._model = model
 
     def __str__(self):
-        return 'Pin({}/{}/{})'.format(self._parent.parent.name, self._parent.name, self._model.name)
+        return 'Pin({}/{}/{})'.format(self.parent.name,
+                "/".join(i.name for i in self._hierarchy),
+                self._model.name)
 
     # == low-level API =======================================================
     @property
     def model(self):
-        """`Port`: Model port of this pin."""
         return self._model
 
     @property
-    def is_clock(self):
-        """:obj:`bool`: Test if this pin is a clock."""
-        return self._model.is_clock
+    def hierarchy(self):
+        return self._hierarchy
 
     # -- implementing properties/methods required by superclass --------------
     @property
-    def bus_type(self):
-        return BusType.nonref
-
-    @property
-    def net_type(self):
-        return NetType.pin
-
-    @property
     def name(self):
-        return self._model.name
+        return '{}/{}'.format('/'.join(i.name for i in self._hierarchy), self._model.name)
 
     @property
-    def parent(self):
-        return self._parent
-
-    @property
-    def key(self):
-        return self._model.key
-
-    @property
-    def direction(self):
-        return self._model.direction
+    def node(self):
+        return self.model.node + tuple(inst.key for inst in self._hierarchy)
 
     def __len__(self):
         return len(self._model)

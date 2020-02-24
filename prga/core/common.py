@@ -11,8 +11,8 @@ from abc import abstractproperty
 from copy import copy
 from math import ceil
 
-__all__ = ['Dimension', 'Direction', 'Orientation', 'Corner', 'Subtile', 'Position',
-        'NetClass', 'ModuleClass', 'PrimitiveClass', 'PrimitivePortClass',
+__all__ = ['Dimension', 'Direction', 'Orientation', 'OrientationTuple', 'Corner', 'Subtile', 'Position',
+        'NetClass', 'ModuleClass', 'PrimitiveClass', 'PrimitivePortClass', 'ModuleView',
         'Global', 'Segment', 'SegmentType', 'SegmentID', 'BlockPinID',
         'BlockPortFCValue', 'BlockFCValue']
 
@@ -125,6 +125,18 @@ class Orientation(Enum):
         """
         return dimension.case(direction.case(Orientation.east, Orientation.west),
                 direction.case(Orientation.north, Orientation.south))
+
+# ----------------------------------------------------------------------------
+# -- Orientation Tuple -------------------------------------------------------
+# ----------------------------------------------------------------------------
+class OrientationTuple(namedtuple('OrientationTuple', 'north east south west')):
+
+    def __new__(cls, default = False, *, north = None, east = None, south = None, west = None):
+        return super(OrientationTuple, cls).__new__(cls,
+                north = north if north is not None else default,
+                south = south if south is not None else default,
+                east = east if east is not None else default,
+                west = west if west is not None else default)
 
 # ----------------------------------------------------------------------------
 # -- Corner ------------------------------------------------------------------
@@ -336,6 +348,15 @@ class PrimitivePortClass(Enum):
     data_out2   = 16    #: 2nd data output for dual-port memory
 
 # ----------------------------------------------------------------------------
+# -- Module View -------------------------------------------------------------
+# ----------------------------------------------------------------------------
+class ModuleView(Enum):
+    """A specific view of a module."""
+
+    logical = 0     #: logical view of a module
+    physical = 1    #: physical view of a module
+
+# ----------------------------------------------------------------------------
 # -- Global ------------------------------------------------------------------
 # ----------------------------------------------------------------------------
 class Global(Object):
@@ -427,8 +448,8 @@ class SegmentType(Enum):
     cboxin = 5              #: connection box inputs
     # array ports
     array_regular = 6       #: array inputs/outputs that are connected all the way to a switch box output
-    array_cboxin = 7        #: array inputs/outputs that are connected all the way to a connection box output
-    array_cboxin2 = 8       #: in case two connection boxes are used per routing channel
+    array_cboxout = 7       #: array inputs/outputs that are connected all the way to a connection box output
+    array_cboxout2 = 8      #: in case two connection boxes are used per routing channel
 
 # ----------------------------------------------------------------------------
 # -- Abstract Routing Node ID ------------------------------------------------
@@ -437,12 +458,6 @@ class AbstractRoutingNodeID(Hashable, Abstract):
     """Abstract base class for routing node IDs."""
 
     # == low-level API =======================================================
-    def move(self, position, inplace = False):
-        """`AbstractRoutingNodeID`: Move this routing node ID by ``position``."""
-        id_ = self if inplace else copy(self)
-        id_.position += position
-        return id_
-
     # -- properties/methods to be overriden by subclasses --------------------
     @abstractproperty
     def position(self):
@@ -482,14 +497,15 @@ class SegmentID(namedtuple('SegmentID', 'position prototype orientation segment_
         return 'SegmentID({}, ({}, {}), {}, {})'.format(self.segment_type.name,
                 self.position.x, self.position.y, self.prototype.name, self.orientation.name)
 
-    def convert(self, segment_type, override_position = None):
+    def convert(self, segment_type = None, position_adjustment = (0, 0)):
         """`SegmentID`: Convert to another segment ID.
 
         Args:
             segment_type (`SegmentType`): convert to another segment type
             override_position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): override the position of this segment ID
         """
-        return type(self)(uno(override_position, self.position), self.prototype, self.orientation, segment_type)
+        return type(self)(self.position + position_adjustment, self.prototype, self.orientation, uno(segment_type,
+            self.segment_type))
 
     @property
     def node_type(self):
@@ -518,6 +534,10 @@ class BlockPinID(namedtuple('BlockPinID', 'position prototype subblock'), Abstra
         return 'BlockPinID(({}, {}, {}), {}.{})'.format(
                 self.position.x, self.position.y, self.subblock,
                 self.prototype.parent.name, self.prototype.name)
+
+    def move(self, position_adjustment):
+        """`BlockPinID`: Move and adjust the position of the block pin ID."""
+        return type(self)(self.position + position_adjustment, self.prototype, self.subblock)
 
     @property
     def node_type(self):
