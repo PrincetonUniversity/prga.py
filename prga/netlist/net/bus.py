@@ -107,25 +107,25 @@ class Pin(Object, AbstractPin):
         model (`Port`): Model of this pin
         hierarchy (:obj:`Iterable` [`AbstractInstance` ]): Hierarchy of instances down to the pin in ascending order.
             See `Pin.hierarchy` for more information
-
-    Keyword Args:
-        **kwargs: Custom key-value arguments. These attributes are to be added to the ``__dict__`` of this port object
-            and accessible as dynamic attributes
     """
 
-    __slots__ = ['_model', '_hierarchy', '__dict__']
+    __slots__ = ['_model', '_hierarchy']
 
     # == internal API ========================================================
-    def __init__(self, model, hierarchy, **kwargs):
+    def __init__(self, model, hierarchy):
         self._model = model
         self._hierarchy = tuple(iter(hierarchy))
-        for k, v in iteritems(kwargs):
-            setattr(self, k, v)
 
     def __str__(self):
         return 'Pin({}/{}/{})'.format(self.parent.name,
                 "/".join(i.name for i in self._hierarchy),
                 self._model.name)
+
+    def __eq__(self, other):
+        return isinstance(other, type(self)) and self._model is other._model and self._hierarchy == other._hierarchy
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     # == low-level API =======================================================
     @property

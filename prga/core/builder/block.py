@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .base import BaseBuilder
+from .base import BaseBuilder, MemOptUserConnGraph
 from ..common import ModuleClass, NetClass, Position, Orientation
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
@@ -99,6 +99,7 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
         return Module(name,
                 ports = OrderedDict(),
                 instances = OrderedDict(),
+                conn_graph = MemOptUserConnGraph(),
                 allow_multisource = True,
                 module_class = ModuleClass.cluster,
                 clock = None)
@@ -158,6 +159,7 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
         return Module(name,
                 ports = OrderedDict(),
                 instances = OrderedDict(),
+                conn_graph = MemOptUserConnGraph(),
                 allow_multisource = True,
                 module_class = ModuleClass.io_block,
                 clock = None,
@@ -257,6 +259,7 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
         return Module(name,
                 ports = OrderedDict(),
                 instances = OrderedDict(),
+                conn_graph = MemOptUserConnGraph(),
                 allow_multisource = True,
                 module_class = ModuleClass.logic_block,
                 clock = None,

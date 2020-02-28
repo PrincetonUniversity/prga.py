@@ -168,8 +168,8 @@ class Module(Object, AbstractModule):
 
     # == internal API ========================================================
     def __init__(self, name, *,
-            key = None, ports = None, instances = None, allow_multisource = False, coalesce_connections = False,
-            **kwargs):
+            key = None, ports = None, instances = None, conn_graph = None,
+            allow_multisource = False, coalesce_connections = False, **kwargs):
         if allow_multisource and coalesce_connections:
             raise PRGAInternalError("`allow_multisource` and `coalesce_connections` are incompatible")
         self._name = name
@@ -181,11 +181,7 @@ class Module(Object, AbstractModule):
             self._instances = instances
         self._allow_multisource = allow_multisource
         self._coalesce_connections = coalesce_connections
-        # if coalesce_connections:
-        #     self._conn_graph = _CoalescedConnGraph()
-        # else:
-        #     self._conn_graph = _MemoptConnGraph()
-        self._conn_graph = nx.DiGraph()
+        self._conn_graph = uno(conn_graph, nx.DiGraph())
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
 

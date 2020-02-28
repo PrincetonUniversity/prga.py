@@ -75,7 +75,7 @@ class NetUtils(object):
             coalesced (:obj:`bool`): Set if ``net`` is a nonref-bus
         """
         if coalesced:
-            if net.bus_type.is_slice:
+            if not net.bus_type.is_nonref:
                 raise PRGAInternalError("Cannot create coalesced reference for {}".format(net))
             else:
                 return net.node
@@ -138,7 +138,7 @@ class NetUtils(object):
             if len(concat) == 0 or i.bus_type is not concat[-1].bus_type:
                 concat.append( i )
             elif i.bus_type.is_slice:
-                if i.bus is not concat[-1].bus:
+                if i.bus != concat[-1].bus:
                     concat.append( i )
                 elif isinstance(i.index, int):
                     if isinstance(concat[-1].index, int) and i.index == concat[-1].index + 1:

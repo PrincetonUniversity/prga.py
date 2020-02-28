@@ -3,9 +3,22 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
+from ...netlist.module.common import MemOptNonCoalescedConnGraph, LazyDict
 from ...util import Object
 
+from enum import Enum
+import networkx as nx
+
 __all__ = []
+
+# ----------------------------------------------------------------------------
+# -- Memory-Optimized Connection Graph for User Modules ----------------------
+# ----------------------------------------------------------------------------
+class MemOptUserNodeDict(LazyDict):
+    __slots__ = ['logical_cp']
+
+class MemOptUserConnGraph(MemOptNonCoalescedConnGraph):
+    node_attr_dict_factory = MemOptUserNodeDict
 
 # ----------------------------------------------------------------------------
 # -- Base Builder for All Modules --------------------------------------------

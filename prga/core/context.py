@@ -6,6 +6,7 @@ from prga.compatible import *
 from .common import Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView
 from .builder.block import ClusterBuilder, IOBlockBuilder, LogicBlockBuilder
 from .builder.box import ConnectionBoxBuilder, SwitchBoxBuilder
+from .builder.array import LeafArrayBuilder, NonLeafArrayBuilder
 from ..netlist.net.common import PortDirection
 from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
@@ -53,6 +54,7 @@ class Context(Object):
         self._directs = OrderedDict()
         self._segments = OrderedDict()
         self._database = database or self._new_database()
+        self._top = None
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
 
@@ -72,7 +74,7 @@ class Context(Object):
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
                     port_class = PrimitivePortClass.lut_out)
             NetUtils.connect(in_, out, fully = True)
-            database[ModuleView.logical, lut.key] = lut
+            database[ModuleView.user, lut.key] = lut
 
         # 2. register built-in modules: D-flipflop
         while True:
@@ -87,7 +89,7 @@ class Context(Object):
                     clock = 'clk', port_class = PrimitivePortClass.D)
             ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
                     clock = 'clk', port_class = PrimitivePortClass.Q)
-            database[ModuleView.logical, flipflop.key] = flipflop
+            database[ModuleView.user, flipflop.key] = flipflop
             break
 
         # 3. register built-in modules: iopads
@@ -101,7 +103,7 @@ class Context(Object):
                 ModuleUtils.create_port(pad, 'inpad', 1, PortDirection.output)
             if class_ in (PrimitiveClass.outpad, PrimitiveClass.iopad):
                 ModuleUtils.create_port(pad, 'outpad', 1, PortDirection.input_)
-            database[ModuleView.logical, pad.key] = pad
+            database[ModuleView.user, pad.key] = pad
 
         return database
 
@@ -168,20 +170,20 @@ class Context(Object):
     def primitives(self):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to primitives."""
         return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_primitive,
-                lambda k: (ModuleView.logical, k), lambda k: k[1])
+                lambda k: (ModuleView.user, k), lambda k: k[1])
 
     # -- Clusters ------------------------------------------------------------
     @property
     def clusters(self):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to clusters."""
         return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_cluster,
-                lambda k: (ModuleView.logical, k), lambda k: k[1])
+                lambda k: (ModuleView.user, k), lambda k: k[1])
 
     def create_cluster(self, name):
         """`ClusterBuilder`: Create a cluster builder."""
-        if (ModuleView.logical, name) in self._database:
+        if (ModuleView.user, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        cluster = self._database[ModuleView.logical, name] = ClusterBuilder.new(name)
+        cluster = self._database[ModuleView.user, name] = ClusterBuilder.new(name)
         return ClusterBuilder(self, cluster)
 
     # -- IO Blocks -----------------------------------------------------------
@@ -192,7 +194,7 @@ class Context(Object):
 
     def create_io_block(self, name, capacity = 1, *, no_input = False, no_output = False):
         """`IOBlockBuilder`: Create an IO block builder."""
-        if (ModuleView.logical, name) in self._database:
+        if (ModuleView.user, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
         io_primitive = None
         if not no_input and not no_output:
@@ -203,7 +205,7 @@ class Context(Object):
             io_primitive = self.primitives['outpad']
         else:
             raise PRGAAPIError("At least one of 'no_input' and 'no_output' must be False.")
-        iob = self._database[ModuleView.logical, name] = IOBlockBuilder.new(name, capacity)
+        iob = self._database[ModuleView.user, name] = IOBlockBuilder.new(name, capacity)
         builder = IOBlockBuilder(self, iob)
         builder.instantiate(io_primitive, 'io')
         return builder
@@ -213,13 +215,13 @@ class Context(Object):
     def logic_blocks(self):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to logic blocks."""
         return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_logic_block,
-                lambda k: (ModuleView.logical, k), lambda k: k[1])
+                lambda k: (ModuleView.user, k), lambda k: k[1])
 
     def create_logic_block(self, name, width = 1, height = 1):
         """`LogicBlockBuilder`: Create a logic block builder."""
-        if (ModuleView.logical, name) in self._database:
+        if (ModuleView.user, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        clb = self._database[ModuleView.logical, name] = LogicBlockBuilder.new(name, width, height)
+        clb = self._database[ModuleView.user, name] = LogicBlockBuilder.new(name, width, height)
         return LogicBlockBuilder(self, clb)
 
     # -- Connection Boxes ----------------------------------------------------
@@ -242,12 +244,12 @@ class Context(Object):
         """
         key = ConnectionBoxBuilder._cbox_key(block, orientation, position, identifier)
         try:
-            return ConnectionBoxBuilder(self, self._database[ModuleView.logical, key])
+            return ConnectionBoxBuilder(self, self._database[ModuleView.user, key])
         except KeyError:
             if dont_create:
                 return None
             else:
-                return ConnectionBoxBuilder(self, self._database.setdefault((ModuleView.logical, key),
+                return ConnectionBoxBuilder(self, self._database.setdefault((ModuleView.user, key),
                         ConnectionBoxBuilder.new(block, orientation, position, identifier = identifier)))
 
     # -- Switch Boxes --------------------------------------------------------
@@ -268,40 +270,39 @@ class Context(Object):
         """
         key = SwitchBoxBuilder._sbox_key(corner, identifier)
         try:
-            return SwitchBoxBuilder(self, self._database[ModuleView.logical, key])
+            return SwitchBoxBuilder(self, self._database[ModuleView.user, key])
         except KeyError:
             if dont_create:
                 return None
             else:
-                return SwitchBoxBuilder(self, self._database.setdefault((ModuleView.logical, key),
+                return SwitchBoxBuilder(self, self._database.setdefault((ModuleView.user, key),
                     SwitchBoxBuilder.new(corner, identifier = identifier)))
 
     # -- Arrays --------------------------------------------------------------
     @property
     def arrays(self):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to arrays."""
-        return ReadonlyMappingProxy(self._logical_modules, lambda kv: kv[1].module_class.is_array)
+        return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_array,
+                lambda k: (ModuleView.user, k), lambda k: k[1])
 
     @property
     def top(self):
         """`AbstractModule`: Logical top-level array."""
-        try:
-            return self._top
-        except AttributeError:
-            return None
+        return self._top
 
     @top.setter
     def top(self, v):
         self._top = v
 
-    def create_array(self, name, width = 1, height = 1, set_as_top = False):
-        """`ArrayBuilder`: Create an array builder."""
-        if name in self._logical_modules:
+    def create_array(self, name, width = 1, height = 1, *, set_as_top = False, hierarchical = False):
+        """`LeafArrayBuilder`: Create an leaf array builder."""
+        if (ModuleView.user, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        array = self._logical_modules[name] = ArrayBuilder.new(name, width, height)
+        builder_factory = NonLeafArrayBuilder if hierarchical else LeafArrayBuilder
+        array = self._database[ModuleView.user, name] = builder_factory.new(name, width, height)
         if set_as_top:
             self._top = array
-        return ArrayBuilder(self, array)
+        return builder_factory(self, array)
 
     # -- Serialization -------------------------------------------------------
     def pickle(self, file_):

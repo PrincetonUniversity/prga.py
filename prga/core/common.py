@@ -123,6 +123,8 @@ class Orientation(Enum):
             dimension (`Dimension`):
             direction (`Direction`):
         """
+        if isinstance(dimension, Direction):
+            dimension, direction = direction, dimension
         return dimension.case(direction.case(Orientation.east, Orientation.west),
                 direction.case(Orientation.north, Orientation.south))
 
@@ -161,11 +163,14 @@ class Corner(Enum):
         """
         if ori_a.dimension is ori_b.dimension:
             raise PRGAInternalError("Cannot compose '{}' and '{}'".format(ori_a, ori_b))
-        return ori_a.case(
-                ori_b.case(west = Corner.northwest, east = Corner.northeast),
-                ori_b.case(north = Corner.northeast, south = Corner.southeast),
-                ori_b.case(west = Corner.southwest, east = Corner.southwest),
-                ori_b.case(north = Corner.northwest, south = Corner.southwest))
+        if ori_a.is_north:
+            return ori_b.case(west = Corner.northwest, east = Corner.northeast)
+        elif ori_a.is_east:
+            return ori_b.case(north = Corner.northeast, south = Corner.southeast)
+        elif ori_a.is_south:
+            return ori_b.case(west = Corner.southwest, east = Corner.southeast)
+        else:
+            return ori_b.case(north = Corner.northwest, south = Corner.southwest)
 
     @property
     def opposite(self):
@@ -289,8 +294,9 @@ class ModuleClass(Enum):
     logic_block = 4         #: logic block
     switch_box = 5          #: switch box
     connection_box = 6      #: connection box
-    array = 7               #: array
-    switch = 8              #: switch
+    leaf_array = 7          #: leaf array
+    nonleaf_array = 8       #: non-leaf array
+    switch = 9              #: switch
 
     @property
     def is_block(self):
@@ -301,6 +307,11 @@ class ModuleClass(Enum):
     def is_routing_box(self):
         """:obj:`bool`: Test if this module is a routing box."""
         return self in (ModuleClass.switch_box, ModuleClass.connection_box)
+
+    @property
+    def is_array(self):
+        """:obj:`bool`: Test if this module is an array."""
+        return self in (ModuleClass.leaf_array, ModuleClass.nonleaf_array)
 
 # ----------------------------------------------------------------------------
 # -- Primitive Class ---------------------------------------------------------
@@ -353,8 +364,9 @@ class PrimitivePortClass(Enum):
 class ModuleView(Enum):
     """A specific view of a module."""
 
-    logical = 0     #: logical view of a module
-    physical = 1    #: physical view of a module
+    user = 0        #: user view of a module
+    logical = 1     #: logical view of a module
+    physical = 2    #: physical view of a module
 
 # ----------------------------------------------------------------------------
 # -- Global ------------------------------------------------------------------
@@ -447,9 +459,10 @@ class SegmentType(Enum):
     # connection box inputs
     cboxin = 5              #: connection box inputs
     # array ports
-    array_regular = 6       #: array inputs/outputs that are connected all the way to a switch box output
-    array_cboxout = 7       #: array inputs/outputs that are connected all the way to a connection box output
-    array_cboxout2 = 8      #: in case two connection boxes are used per routing channel
+    array_input = 6         #: array inputs that are connected all the way to a switch box output
+    array_output = 7        #: array outputs that are connected all the way to a switch box output
+    array_cboxout = 8       #: array inputs/outputs that are connected all the way to a connection box output
+    array_cboxout2 = 9      #: in case two connection boxes are used per routing channel
 
 # ----------------------------------------------------------------------------
 # -- Abstract Routing Node ID ------------------------------------------------

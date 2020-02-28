@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .base import BaseBuilder
+from .base import BaseBuilder, MemOptUserConnGraph
 from .block import LogicBlockBuilder
 from ..common import (Orientation, Direction, Dimension, Position, ModuleClass, SegmentID, BlockPinID, SegmentType,
         BlockFCValue)
@@ -11,11 +11,13 @@ from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
 from ...netlist.module.module import Module
 from ...netlist.module.util import ModuleUtils
-from ...exception import PRGAAPIError
+from ...exception import PRGAAPIError, PRGAInternalError
 from ...util import uno
 
 from collections import namedtuple, OrderedDict
 from itertools import product
+
+__all__ = ['ConnectionBoxBuilder', 'SwitchBoxBuilder']
 
 # ----------------------------------------------------------------------------
 # -- Base Builder for Routing Boxes ------------------------------------------
@@ -260,6 +262,7 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                 ('_' + identifier) if identifier is not None else '')
         return Module(name,
                 ports = OrderedDict(),
+                conn_graph = MemOptUserConnGraph(),
                 allow_multisource = True,
                 module_class = ModuleClass.connection_box,
                 key = key)
@@ -280,7 +283,7 @@ class _SwitchBoxKey(namedtuple('_SwitchBoxKey', 'corner identifier')):
 # -- Switch Box Builder ------------------------------------------------------
 # ----------------------------------------------------------------------------
 class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
-    """Connection box builder.
+    """Switch box builder.
 
     Args:
         context (`Context`): The context of the builder
@@ -313,6 +316,21 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
     @classmethod
     def _sbox_key(cls, corner, identifier = None):
         return _SwitchBoxKey(corner, identifier)
+
+    def _add_cboxout(self, node):
+        """Add and connect a cboxout input."""
+        if node.segment_type.is_sboxin_cboxout and node in self.ports:
+            node = node.convert(SegmentType.sboxin_cboxout2)
+        if node in self.ports:
+            raise PRGAInternalError("'{}' already added to {}".format(node, self._module))
+        sboxout = node.convert(SegmentType.sboxout)
+        sink = self.ports.get(sboxout)
+        if sink is None:
+            raise PRGAInternalError("{} does not have output '{}'".format(self._module, sboxout))
+        port = ModuleUtils.create_port(self._module, self._node_name(node), node.prototype.width,
+                PortDirection.input_, key = node)
+        self.connect(port, sink)
+        return port
 
     # == high-level API ======================================================
     def get_segment_input(self, segment, orientation, section = None, *,
@@ -441,6 +459,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                 ('_' + identifier) if identifier is not None else '')
         return Module(name,
                 ports = OrderedDict(),
+                conn_graph = MemOptUserConnGraph(),
                 allow_multisource = True,
                 module_class = ModuleClass.switch_box,
                 key = key)
