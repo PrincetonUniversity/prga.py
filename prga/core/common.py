@@ -12,7 +12,7 @@ from copy import copy
 from math import ceil
 
 __all__ = ['Dimension', 'Direction', 'Orientation', 'OrientationTuple', 'Corner', 'Subtile', 'Position',
-        'NetClass', 'ModuleClass', 'PrimitiveClass', 'PrimitivePortClass', 'ModuleView',
+        'NetClass', 'IOType', 'ModuleClass', 'PrimitiveClass', 'PrimitivePortClass', 'ModuleView',
         'Global', 'Segment', 'SegmentType', 'SegmentID', 'BlockPinID',
         'BlockPortFCValue', 'BlockFCValue']
 
@@ -277,10 +277,21 @@ class NetClass(Enum):
     mode = 1                #: input/outputs of a multi-mode primitive mapped into one of its logical modes
     cluster = 2             #: input/outputs of intermediate level modules inside blocks
     blockport = 3           #: input/outputs of blocks
-    io = 4                  #: external input/outputs of IOB/arrays
+    io = 4                  #: external inputs/outputs of IOB/arrays
     global_ = 5             #: global wires/clocks of blocks/arrays
     segment = 6             #: routing wire segments and bridges
     blockpin = 7            #: ports in connection box that correspond to block ports
+    switch = 8              #: switch inputs/outputs
+    cfg = 9                 #: configuration ports
+
+# ----------------------------------------------------------------------------
+# -- IO Type -----------------------------------------------------------------
+# ----------------------------------------------------------------------------
+class IOType(Enum):
+    """Types of top-level IOs."""
+    ipin = 0                #: input 
+    opin = 1                #: output 
+    oe = 2                  #: output enable 
 
 # ----------------------------------------------------------------------------
 # -- Module Class ------------------------------------------------------------
@@ -297,6 +308,7 @@ class ModuleClass(Enum):
     leaf_array = 7          #: leaf array
     nonleaf_array = 8       #: non-leaf array
     switch = 9              #: switch
+    cfg = 10                #: configuration modules
 
     @property
     def is_block(self):

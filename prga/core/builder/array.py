@@ -805,7 +805,7 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
                 continue
             self._module._instances.grid[position.x + x][position.y + y] = Position(x, y)
 
-    def auto_connect(self, *, is_top = False):
+    def auto_connect(self, *, is_top = None):
         is_top = self._module is self._context.top if is_top is None else is_top
         # 1st pass: auto-connect all sub-arrays
         auto_connected = set()

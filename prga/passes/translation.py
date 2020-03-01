@@ -8,7 +8,7 @@ from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
 from ..netlist.net.common import PortDirection
 from ..netlist.net.util import NetUtils
-from ..core.common import ModuleClass, NetClass, Segment, ModuleView
+from ..core.common import ModuleClass, NetClass, IOType, ModuleView, SegmentID, BlockPinID
 from ..util import Abstract, Object
 from ..exception import PRGAInternalError, PRGAAPIError
 
@@ -49,9 +49,8 @@ class AbstractSwitchDatabase(Abstract):
 class TranslationPass(Object, AbstractPass):
     """Translate user-defined modules to logical modules."""
 
-    __slots__ = ['switch_database', 'top']
-    def __init__(self, switch_database, top = None):
-        self.switch_database = switch_database
+    __slots__ = ['top']
+    def __init__(self, top = None):
         self.top = top
 
     @classmethod
@@ -79,7 +78,7 @@ class TranslationPass(Object, AbstractPass):
                 'module_class': module.module_class,
                 'key': module.key,
                 }
-        if not disable_coalesce and module._coalesce_connections and not module.module_class.is_nonleaf_array:
+        if not disable_coalesce and module._coalesce_connections: # and not module.module_class.is_nonleaf_array:
             kwargs['coalesced_connections'] = True
         # special case for IO block
         if module.module_class.is_io_block:
@@ -88,13 +87,13 @@ class TranslationPass(Object, AbstractPass):
             i, o = map(module.instances['io'].pins.get, ('inpad', 'outpad'))
             if i:
                 logical_net = ModuleUtils.create_port(
-                        logical, '_inpad', 1, PortDirection.input_, net_class = NetClass.io)
+                        logical, '_ipin', 1, PortDirection.input_, net_class = NetClass.io)
                 user_ref = NetUtils._reference(i)
                 logical_ref = NetUtils._reference(logical_net)
                 module._conn_graph.add_node(user_ref, logical_cp = logical_ref)
             if o:
                 logical_net = ModuleUtils.create_port(
-                        logical, '_outpad', 1, PortDirection.output, net_class = NetClass.io)
+                        logical, '_opin', 1, PortDirection.output, net_class = NetClass.io)
                 user_ref = NetUtils._reference(o)
                 logical_ref = NetUtils._reference(logical_net)
                 module._conn_graph.add_node(user_ref, logical_cp = logical_ref)
@@ -103,6 +102,7 @@ class TranslationPass(Object, AbstractPass):
         else:
             logical = Module(module.name, **kwargs)
         # translate ports
+        globals_ = {}
         for port in itervalues(module.ports):
             net_class = None
             if module.module_class.is_cluster:
@@ -113,16 +113,22 @@ class TranslationPass(Object, AbstractPass):
                 else:
                     net_class = NetClass.blockport
             elif module.module_class.is_routing_box:
-                if isinstance(port.key.prototype, Segment):
+                if isinstance(port.key, SegmentID):
                     net_class = NetClass.segment
-                else:
+                elif isinstance(port.key, BlockPinID):
                     net_class = NetClass.blockpin
             elif module.module_class.is_array:
                 if hasattr(port, 'global_'):
+                    if is_top:
+                        if not port.global_.is_bound:
+                            raise PRGAInternalError("Global wire '{}' not bound to an IO block yet"
+                                    .format(port.global_.name))
+                        globals_[port.global_.bound_to_position, port.global_.bound_to_subblock] = port
+                        continue
                     net_class = NetClass.global_
-                elif isinstance(port.key.prototype, Segment):
+                elif isinstance(port.key, SegmentID):
                     net_class = NetClass.segment
-                else:
+                elif isinstance(port.key, BlockPinID):
                     net_class = NetClass.blockpin
             if net_class is None:
                 raise NotImplementedError("Unsupport net class '{}' of port '{}' in module '{}'"
@@ -131,12 +137,51 @@ class TranslationPass(Object, AbstractPass):
                     key = port.key, is_clock = port.is_clock, net_class = net_class)
         # translate instances
         for instance in itervalues(module.instances):
-            # skip user-only instance: "IO"
+            # skip user-only instance in IO block: "io"
             if instance.name == 'io' and module.module_class.is_io_block:
                 continue
-            model = self._process_module(instance.model, context,
+            logical_model = self._process_module(instance.model, context,
                     disable_coalesce = disable_coalesce or not logical._coalesce_connections)
-            ModuleUtils.instantiate(logical, model, instance.name, key = instance.key)
+            logical_instance = ModuleUtils.instantiate(logical, logical_model, instance.name, key = instance.key)
+            # special processing for IO blocks in arrays
+            if logical_model.module_class.is_io_block:
+                for iotype in IOType:
+                    pin = logical_instance.pins.get('_' + iotype.name)
+                    if pin is None:
+                        continue
+                    port = ModuleUtils.create_port(logical,
+                            '{}_x{}y{}_{}'.format(iotype.name, *instance.key[0], instance.key[1]),
+                            len(pin), pin.model.direction, key = (iotype, ) + instance.key, net_class = NetClass.io)
+                    if port.direction.is_input:
+                        global_ = globals_.pop( port.key[1:], None )
+                        if global_ is not None:
+                            module._conn_graph.add_node(
+                                    NetUtils._reference(global_, coalesced = module._coalesce_connections),
+                                    logical_cp = NetUtils._reference(port, coalesced = module._coalesce_connections))
+                        NetUtils.connect(port, pin)
+                    else:
+                        NetUtils.connect(pin, port)
+            # and also IO pins of arrays
+            elif logical_model.module_class.is_array:
+                for key, pin in iteritems(logical_instance.pins):
+                    if not pin.model.net_class.is_io:
+                        continue
+                    iotype, pos, subblock = newkey = key[0], key[1] + instance.key, key[2]
+                    port = ModuleUtils.create_port(logical, "{}_x{}y{}_{:d}".format(iotype.name, *pos, subblock),
+                            len(pin), pin.model.direction, key = newkey, net_class = NetClass.io)
+                    if port.direction.is_input:
+                        global_ = globals_.pop( port.key[1:], None )
+                        if global_ is not None:
+                            module._conn_graph.add_node(
+                                    NetUtils._reference(global_, coalesced = module._coalesce_connections),
+                                    logical_cp = NetUtils._reference(port, coalesced = module._coalesce_connections))
+                        NetUtils.connect(port, pin)
+                    else:
+                        NetUtils.connect(pin, port)
+        # raise error for unbound globals
+        for port in itervalues(globals_):
+            raise PRGAInternalError("Global wire '{}' bound to subblock {} at {} but no IO input found there"
+                    .format(port.global_.name, port.global_.bound_to_subblock, port.global_.bound_to_position))
         # translate connections
         if not module._allow_multisource:
             if module._coalesce_connections is logical._coalesce_connections:
@@ -147,7 +192,7 @@ class TranslationPass(Object, AbstractPass):
                     lu, lv = map(lambda x: NetUtils._dereference(logical, self._u2l(module, x), coalesced = True),
                             (u, v))
                     NetUtils.connect(lu, lv)
-        else:       # module._coalesce_connections is True
+        else:       # module._coalesce_connections is False
             for net in chain(itervalues(module.ports),
                     iter(pin for instance in itervalues(module.instances) for pin in itervalues(instance.pins))):
                 if not net.is_sink:
@@ -165,7 +210,7 @@ class TranslationPass(Object, AbstractPass):
                         logical._conn_graph.add_edge(self._u2l(module, user_sources[0]), logical_sink)
                         continue
                     bit = NetUtils._dereference(logical, logical_sink)
-                    switch_model = self.switch_database.get_switch(len(user_sources), logical)
+                    switch_model = context.switch_database.get_switch(len(user_sources), logical)
                     switch_name = ('sw' + ('_' + bit.hierarchy[-1].name if bit.net_type.is_pin else '') + '_' +
                             (bit.bus.name + '_' + str(bit.index) if bit.bus_type.is_slice else bit.name))
                     switch = ModuleUtils.instantiate(logical, switch_model, switch_name,

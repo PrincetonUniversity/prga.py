@@ -47,6 +47,7 @@ class Context(Object):
             '_segments',            # wire segments
             '_database',            # module database
             '_top',                 # logical top
+            '_switch_database',     # switch database
             '__dict__']
 
     def __init__(self, *, database = None, **kwargs):
@@ -112,6 +113,15 @@ class Context(Object):
     def database(self):
         """:obj:`Mapping` [:obj:`tuple` [`ModuleView`, :obj:`Hashable` ], `AbstractModule` ]: Module database."""
         return self._database
+
+    @property
+    def switch_database(self):
+        """`AbstractSwitchDatabase`: Switch database."""
+        try:
+            return self._switch_database
+        except AttributeError:
+            raise PRGAInternalError("Switch database not set.\n"
+                    "Possible cause: the context is not created by a configuration circuitry entry point.")
 
     # == high-level API ======================================================
     # -- Global Wires --------------------------------------------------------
