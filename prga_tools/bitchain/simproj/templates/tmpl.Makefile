@@ -167,7 +167,7 @@ $(BITGEN_RESULT): $(CTX) $(FASM_RESULT)
 	$(PYTHON) -m prga_tools.bitchain.bitgen $^ $@
 
 $(SIM): $(TESTBENCH_WRAPPER) $(TARGET_SRCS) $(HOST_SRCS) $(FPGA_RTL)
-	$(COMP) $(FLAGS) $(HOST_FLAGS) $(TARGET_FLAGS) $< -o $@ $(addprefix -v ,$^)
+	$(COMP) $(FLAGS) $(HOST_FLAGS) $(TARGET_FLAGS) $< -o $@ $(addprefix -v ,$(wordlist 2,$(words $^),$^))
 
 $(SIM_LOG): $(SIM) $(BITGEN_RESULT)
 	./$< $(HOST_ARGS) +bitstream_memh=$(BITGEN_RESULT) | tee $@
