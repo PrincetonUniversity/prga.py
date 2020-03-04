@@ -163,7 +163,9 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
                 allow_multisource = True,
                 module_class = ModuleClass.io_block,
                 clock = None,
-                capacity = capacity)
+                capacity = capacity,
+                width = 1,
+                height = 1)
 
 # ----------------------------------------------------------------------------
 # -- Logic Block Builder -----------------------------------------------------
@@ -263,5 +265,6 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
                 allow_multisource = True,
                 module_class = ModuleClass.logic_block,
                 clock = None,
+                capacity = 1,
                 width = width,
                 height = height)

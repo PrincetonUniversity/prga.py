@@ -908,13 +908,14 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
                             if done:
                                 continue
                             # no bridge already available. create a new one
-                            bridge_node = source.key.convert(SegmentType.sboxin_cboxout)
+                            bridge_node = source.model.key.convert(SegmentType.sboxin_cboxout)
                             bridge = SwitchBoxBuilder(self._context, sbox[0].model)._add_cboxout(bridge_node)
                             bridge = sbox[0].pins[bridge.key]
                             bridge_node = bridge_node.convert(position_adjustment = sbox[0].key[0])
                             for inst in sbox[1:]:
                                 bridge = self._expose_routable_pin(inst.model, bridge_node, bridge)
                                 bridge_node = bridge_node.convert(position_adjustment = inst.key)
+                                bridge = inst.pins[bridge.key]
                             self.connect(pin, bridge)
                         elif not is_top:
                             self._expose_routable_pin(self._module, key.convert(position_adjustment = pos), pin)

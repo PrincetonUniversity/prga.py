@@ -78,7 +78,7 @@ class Context(Object):
             database[ModuleView.user, lut.key] = lut
 
         # 2. register built-in modules: D-flipflop
-        while True:
+        if True:
             flipflop = Module('flipflop',
                     ports = OrderedDict(),
                     allow_multisource = True,
@@ -91,7 +91,6 @@ class Context(Object):
             ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
                     clock = 'clk', port_class = PrimitivePortClass.Q)
             database[ModuleView.user, flipflop.key] = flipflop
-            break
 
         # 3. register built-in modules: iopads
         for class_ in (PrimitiveClass.inpad, PrimitiveClass.outpad, PrimitiveClass.iopad):

@@ -226,8 +226,7 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                     continue
                 imax = port.direction.case(sgmt.length * sgmt.width, sgmt.width)
                 istep = max(1, imax // nc)                  # index step
-                for _, port_idx, subblock in product(range(nc), range(len(port)),
-                        range(getattr(block, "capacity", 1))):
+                for _, port_idx, subblock in product(range(nc), range(len(port)), range(block.capacity)):
                     section = port.direction.case(iti[sgmt_idx] % sgmt.length, 0)
                     track_idx = port.direction.case(iti[sgmt_idx] // sgmt.length, oti[sgmt_idx])
                     for sgmt_dir in iter(Direction):

@@ -275,10 +275,10 @@ class NetUtils(object):
         elif not sink.parent._allow_multisource:
             raise PRGAInternalError("'{}' does not allow multi-source connections".format(sink.parent))
         try:
-            return tuple( cls._dereference(sink.parent, node) for node in
-                    sink.parent._conn_graph.predecessors( cls._reference(sink) ))
+            return cls.concat( iter(cls._dereference(sink.parent, node) for node in
+                    sink.parent._conn_graph.predecessors( cls._reference(sink) )) )
         except NetworkXError:
-            return tuple()
+            return Unconnected(0)
 
     @classmethod
     def get_connection(cls, source, sink):
@@ -452,5 +452,7 @@ class Concat(Object, AbstractGenericBus):
                 range_ -= ll
                 if range_ == 0:
                     break
+        if not items and isinstance(index, int):
+            raise IndexError(index)
         # convert concatenation to a valid form
-        return NetUtils.concat(items, True)
+        return NetUtils.concat(items, skip_flatten = True)

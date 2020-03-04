@@ -9,7 +9,7 @@ from ..netlist.module.util import ModuleUtils
 from ..netlist.net.common import PortDirection
 from ..netlist.net.util import NetUtils
 from ..core.common import ModuleClass, NetClass, IOType, ModuleView, SegmentID, BlockPinID
-from ..util import Abstract, Object
+from ..util import Abstract, Object, uno
 from ..exception import PRGAInternalError, PRGAAPIError
 
 from abc import abstractmethod

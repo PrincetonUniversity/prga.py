@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from ...core.common import NetClass, ModuleClass, ModuleView
+from ...core.common import NetClass, ModuleClass, ModuleView, Subtile
 from ...core.context import Context
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
@@ -63,6 +63,21 @@ class Scanchain(object):
     """Scanchain configuration circuitry entry point."""
 
     @classmethod
+    def _get_or_create_cfg_ports(cls, module, cfg_width):
+        try:
+            return tuple(map(lambda x: module.ports[x], ("cfg_clk", "cfg_e", "cfg_i", "cfg_o")))
+        except KeyError:
+            cfg_clk = ModuleUtils.create_port(module, 'cfg_clk', 1, PortDirection.input_,
+                    is_clock = True, net_class = NetClass.cfg)
+            cfg_e = ModuleUtils.create_port(module, 'cfg_e', 1, PortDirection.input_,
+                    net_class = NetClass.cfg)
+            cfg_i = ModuleUtils.create_port(module, 'cfg_i', cfg_width, PortDirection.input_,
+                    net_class = NetClass.cfg)
+            cfg_o = ModuleUtils.create_port(module, 'cfg_o', cfg_width, PortDirection.output,
+                    net_class = NetClass.cfg)
+            return cfg_clk, cfg_e, cfg_i, cfg_o
+
+    @classmethod
     def new_context(cls, cfg_width = 1):
         context = Context(cfg_width = cfg_width)
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width)
@@ -72,7 +87,8 @@ class Scanchain(object):
             lut = Module('lut' + str(i),
                     ports = OrderedDict(),
                     allow_multisource = True,
-                    module_class = ModuleClass.primitive)
+                    module_class = ModuleClass.primitive,
+                    cfg_bitcount = 2 ** i)
             # user ports
             in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_, net_class = NetClass.primitive)
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output, net_class = NetClass.primitive)
@@ -89,7 +105,7 @@ class Scanchain(object):
             context._database[ModuleView.logical, lut.key] = lut
 
         # register flipflops
-        while True:
+        if True:
             flipflop = Module('flipflop',
                     ports = OrderedDict(),
                     allow_multisource = True,
@@ -101,14 +117,14 @@ class Scanchain(object):
             ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
                     clock = 'clk', net_class = NetClass.primitive)
             context._database[ModuleView.logical, flipflop.key] = flipflop
-            break
 
         # register single-bit configuration filler
-        while True:
+        if True:
             cfg_bit = Module('cfg_bit',
                     ports = OrderedDict(),
                     allow_multisource = True,
-                    module_class = ModuleClass.config)
+                    module_class = ModuleClass.cfg,
+                    cfg_bitcount = 1)
             cfg_clk = ModuleUtils.create_port(cfg_bit, 'cfg_clk', 1, PortDirection.input_,
                     is_clock = True, net_class = NetClass.cfg)
             cfg_e = ModuleUtils.create_port(cfg_bit, 'cfg_e', 1, PortDirection.input_,
@@ -119,9 +135,38 @@ class Scanchain(object):
                     net_class = NetClass.cfg)
             cfg_d = ModuleUtils.create_port(cfg_bit, 'cfg_d', 1, PortDirection.output,
                     net_class = NetClass.cfg)
-            break
+            context._database[ModuleView.logical, cfg_bit.key] = cfg_bit
 
         return context
 
     @classmethod
-    def inject_
+    def complete_scanchain(cls, context, module):
+        """Complete the scanchain."""
+        # special process needed for IO blocks (output enable)
+        if module.module_class.is_io_block:
+            oe = module.ports.get('_oe')
+            if oe is not None:
+                inst = ModuleUtils.instantiate(module, context.database[ModuleView.logical, 'cfg_bit'], '_cfg_oe')
+                NetUtils.connect(inst.pins["cfg_d"], oe)
+        # connecting scanchain ports
+        cfg_bitoffset = 0
+        cfg_clk, cfg_e, cfg_i, cfg_o = (None, ) * 4
+        for instance in itervalues(module.instances):
+            if instance.model.module_class not in (ModuleClass.primitive, ModuleClass.switch, ModuleClass.cfg):
+                if not hasattr(instance.model, 'cfg_bitcount'):
+                    cls.complete_scanchain(context, instance.model)
+            inst_cfg_i = instance.pins.get('cfg_i')
+            if inst_cfg_i is None:
+                continue
+            assert len(inst_cfg_i) == context.cfg_width
+            if cfg_clk is None:
+                cfg_clk, cfg_e, cfg_i, cfg_o = cls._get_or_create_cfg_ports(module, context.cfg_width)
+            instance.cfg_bitoffset = cfg_bitoffset
+            NetUtils.connect(cfg_clk, instance.pins['cfg_clk'])
+            NetUtils.connect(cfg_e, instance.pins['cfg_e'])
+            NetUtils.connect(cfg_i, inst_cfg_i)
+            cfg_i = instance.pins['cfg_o']
+            cfg_bitoffset += instance.model.cfg_bitcount
+        if cfg_i is not None:
+            NetUtils.connect(cfg_i, cfg_o)
+        module.cfg_bitcount = cfg_bitoffset

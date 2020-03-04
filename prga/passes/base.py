@@ -30,6 +30,11 @@ class AbstractPass(Abstract):
         pass
 
     @property
+    def is_readonly_pass(self):
+        """:obj:`bool`: Test if this is a read-only pass that can be run multiple times."""
+        return False
+
+    @property
     def dependences(self):
         """Passes that this pass depend on."""
         return tuple()
