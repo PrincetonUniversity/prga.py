@@ -241,16 +241,18 @@ class NetUtils(object):
             sinks = sink.items if sink.bus_type.is_concat else (sink, )
             sources = []
             for sink_ in sinks:
+                bus, index = (sink_.bus, sink.index) if sink_.bus_type.is_slice else (sink_, None)
+
                 try:
-                    node = next(sink.parent._conn_graph.predecessors( cls._reference(sink_, coalesced = True) ))
+                    node = next(sink.parent._conn_graph.predecessors( cls._reference(bus, coalesced = True) ))
                 except (StopIteration, NetworkXError):
                     sources.append( Unconnected( len(sink_) ))
                     continue
 
-                if sink_.bus_type.is_slice:
-                    sources.append( cls._dereference(sink.parent, node, coalesced = True)[sink_.index] )
+                if index is not None:
+                    sources.append( cls._dereference(bus.parent, node, coalesced = True)[index] )
                 else:
-                    sources.append( cls._dereference(sink.parent, node, coalesced = True) )
+                    sources.append( cls._dereference(bus.parent, node, coalesced = True) )
             return cls.concat(sources)
         else:
             sources = []
@@ -279,6 +281,61 @@ class NetUtils(object):
                     sink.parent._conn_graph.predecessors( cls._reference(sink) )) )
         except NetworkXError:
             return Unconnected(0)
+
+    @classmethod
+    def get_hierarchical_multisource(cls, sink):
+        """Get the hierarchical sources connected to ``sink``."""
+        if sink.net_type.is_port:
+            if sink.parent._allow_multisource:
+                return cls.get_multisource(sink)
+            else:
+                s = cls.get_source(sink)
+                if s.net_type.is_unconnected:
+                    return Unconnected(0)
+                else:
+                    return s
+        elif sink.net_type.is_pin:
+            flat_sink, hierarchy = None, None
+            if sink.bus_type.is_nonref:
+                if sink.model.direction.is_output:
+                    flat_sink = sink.model
+                    hierarchy = sink.hierarchy
+                else:
+                    flat_sink = sink.model._to_pin(sink.hierarchy[:1])
+                    hierarchy = sink.hierarchy[1:]
+            else:
+                if sink.bus.model.direction.is_output:
+                    flat_sink = sink.bus.model[sink.index]
+                    hierarchy = sink.bus.hierarchy
+                else:
+                    flat_sink = sink.bus.model._to_pin(sink.bus.hierarchy[:1])[sink.index]
+                    hierarchy = sink.bus.hierarchy[1:]
+            flat_sources = None
+            if flat_sink.parent._allow_multisource:
+                flat_sources = cls.get_multisource(flat_sink)
+            else:
+                flat_sources = cls.get_source(flat_sink)
+                if flat_sources.net_type.is_unconnected:
+                    flat_sources = Unconnected(0)
+            if not hierarchy:
+                return cls.concat(flat_sources)
+            else:
+                flat_sources = flat_sources.items if flat_sources.bus_type.is_concat else (flat_sources, )
+                sources = []
+                for source in flat_sources:
+                    if source.bus_type.is_nonref:
+                        if source.net_type.is_port:
+                            sources.append( source._to_pin(hierarchy) )
+                        elif source.net_type.is_pin:
+                            sources.append( source.model._to_pin(source.hierarchy + hierarchy) )
+                        elif source.net_type.is_const:
+                            sources.append( source )
+                    else:
+                        if source.net_type.is_port:
+                            sources.append( source.bus._to_pin(hierarchy)[source.index] )
+                        else:
+                            sources.append( source.bus.model._to_pin(source.bus.hierarchy + hierarchy)[source.index] )
+                return cls.concat(sources)
 
     @classmethod
     def get_connection(cls, source, sink):

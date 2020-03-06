@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .common import Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView
+from .common import Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView, OrientationTuple
 from .builder.block import ClusterBuilder, IOBlockBuilder, LogicBlockBuilder
 from .builder.box import ConnectionBoxBuilder, SwitchBoxBuilder
 from .builder.array import LeafArrayBuilder, NonLeafArrayBuilder
@@ -11,7 +11,7 @@ from ..netlist.net.common import PortDirection
 from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
 from ..netlist.net.util import NetUtils
-from ..util import Object, ReadonlyMappingProxy
+from ..util import Object, ReadonlyMappingProxy, uno
 from ..exception import PRGAAPIError
 
 from collections import OrderedDict
@@ -303,12 +303,17 @@ class Context(Object):
     def top(self, v):
         self._top = v
 
-    def create_array(self, name, width = 1, height = 1, *, set_as_top = False, hierarchical = False):
+    def create_array(self, name, width = 1, height = 1, *,
+            set_as_top = None, edge = None, hierarchical = False):
         """`LeafArrayBuilder`: Create an leaf array builder."""
         if (ModuleView.user, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
         builder_factory = NonLeafArrayBuilder if hierarchical else LeafArrayBuilder
-        array = self._database[ModuleView.user, name] = builder_factory.new(name, width, height)
+        set_as_top = uno(set_as_top, self._top is None)
+        edge = uno(edge, OrientationTuple(True) if set_as_top else OrientationTuple(False))
+        if set_as_top and not all(edge):
+            raise PRGAAPIError("Top array must have an all-True 'edge' settings")
+        array = self._database[ModuleView.user, name] = builder_factory.new(name, width, height, edge = edge)
         if set_as_top:
             self._top = array
         return builder_factory(self, array)

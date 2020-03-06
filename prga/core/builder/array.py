@@ -229,6 +229,16 @@ class _BaseArrayBuilder(BaseBuilder):
             return ori.dimension.case(0 <= x < model.width and 0 <= y < model.height - 1,
                     0 <= x < model.width - 1 and 0 <= y < model.height)
         elif model.module_class.is_array:
+            if ori.dimension.is_x:
+                if ((x == 0 and model.edge.west) or
+                        (x == model.width - 1 and model.edge.east) or
+                        (y == model.height - 1 and model.edge.north)):
+                    return True
+            else:
+                if ((y == 0 and model.edge.south) or
+                        (y == model.height - 1 and model.edge.north) or
+                        (x == model.width - 1 and model.edge.east)):
+                    return True
             if 0 <= x < model.width and 0 <= y < model.height:
                 instance = model._instances.get_root(position)
                 if instance is not None:
@@ -447,7 +457,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
 
     # == high-level API ======================================================
     @classmethod
-    def new(cls, name, width, height):
+    def new(cls, name, width, height, *, edge = OrientationTuple(False)):
         """Create a new module for building."""
         return Module(name,
                 ports = OrderedDict(),
@@ -455,7 +465,8 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                 conn_graph = MemOptUserConnGraph(),
                 module_class = ModuleClass.leaf_array,
                 width = width,
-                height = height)
+                height = height,
+                edge = edge)
 
     def instantiate(self, model, position, *, name = None):
         """Instantiate ``model`` at the speicified position in the array.
@@ -472,21 +483,62 @@ class LeafArrayBuilder(_BaseArrayBuilder):
         if model.module_class.is_logic_block:
             for x, y in product(range(model.width), range(model.height)):
                 pos = position + (x, y)
-                if pos.x >= self.width or pos.y >= self.height:
+                if not (0 <= pos.x < self.width and 0 <= pos.y < self.height):
                     raise PRGAAPIError("'{}' is not in leaf array '{}' ({} x {})"
                             .format(pos, self._module, self.width, self.height))
+                if pos.x == 0 and self._module.edge.west:
+                    raise PRGAAPIError("Logic block '{}' cannot be placed on the west edge of the FPGA"
+                            .format(model))
+                elif pos.x == self.width - 1 and self._module.edge.east:
+                    raise PRGAAPIError("Logic block '{}' cannot be placed on the east east of the FPGA"
+                            .format(model))
+                if pos.y == 0 and self._module.edge.south:
+                    raise PRGAAPIError("Logic block '{}' cannot be placed on the south edge of the FPGA"
+                            .format(model))
+                elif pos.y == self.height - 1 and self._module.edge.north:
+                    raise PRGAAPIError("Logic block '{}' cannot be placed on the north east of the FPGA"
+                            .format(model))
                 for subtile in self._block_subtile_checklist(model, x, y):
                     root = self._module._instances.get_root(pos, subtile)
                     if root is not None:
                         raise PRGAAPIError("Subtile '{}' of '{}' in leaf array '{}' already occupied by '{}'"
                                 .format(subtile.name, pos, self._module, root))
+        elif model.module_class.is_io_block:
+            if position == (0, 0) and self._module.edge.west and self._module.edge.south:
+                raise PRGAAPIError("IO block '{}' cannot be placed on the southwest corner of the FPGA".format(model))
+            elif position == (0, self.height - 1) and self._module.edge.west and self._module.edge.north:
+                raise PRGAAPIError("IO block '{}' cannot be placed on the northwest corner of the FPGA".format(model))
+            elif position == (self.width - 1, 0) and self._module.edge.east and self._module.edge.south:
+                raise PRGAAPIError("IO block '{}' cannot be placed on the southeast corner of the FPGA".format(model))
+            elif position == (self.width - 1, self.height - 1) and self._module.edge.east and self._module.edge.north:
+                raise PRGAAPIError("IO block '{}' cannot be placed on the northeast corner of the FPGA".format(model))
+            elif not ((position.x == 0 and self._module.edge.west) or
+                    (position.x == self.width - 1 and self._module.edge.east) or
+                    (position.y == 0 and self._module.edge.south) or
+                    (position.y == self.height - 1 and self._module.edge.north)):
+                raise PRGAAPIError("IO block '{}' must be placed on an edge of the FPGA".format(model))
+            root = self._module._instances.get_root(position, Subtile.center)
+            if root is not None:
+                raise PRGAAPIError("Subtile '{}' of '{}' in leaf array '{}' already occupied by '{}'"
+                        .format(subtile.name, position, self._module, root))
         else:
-            subtile = (Subtile.center if model.module_class.is_io_block else
-                    model.key.orientation.to_subtile() if model.module_class.is_connection_box else
+            subtile = (model.key.orientation.to_subtile() if model.module_class.is_connection_box else
                     model.key.corner.to_subtile() if model.module_class.is_switch_box else None)
             if subtile is None:
                 raise PRGAAPIError("Cannot instantiate '{}' in leaf array '{}'. Unsupported module class: {}"
                         .format(model, self._module, model.module_class.name))
+            elif (position.x == 0 and self._module.edge.west and
+                    subtile not in (Subtile.northeast, Subtile.southeast, Subtile.east)):
+                raise PRGAAPIError("Routing box '{}' cannot be placed on the west edge of the FPGA".format(model))
+            elif (position.x == self.width - 1 and self._module.edge.east and
+                    subtile not in (Subtile.northwest, Subtile.southwest, Subtile.west)):
+                raise PRGAAPIError("Routing box '{}' cannot be placed on the east edge of the FPGA".format(model))
+            elif (position.y == 0 and self._module.edge.south and
+                    subtile not in (Subtile.northwest, Subtile.northeast, Subtile.north)):
+                raise PRGAAPIError("Routing box '{}' cannot be placed on the south edge of the FPGA".format(model))
+            elif (position.y == self.height - 1 and self._module.edge.north and
+                    subtile not in (Subtile.southwest, Subtile.southeast, Subtile.south)):
+                raise PRGAAPIError("Routing box '{}' cannot be placed on the north edge of the FPGA".format(model))
             root = self._module._instances.get_root(position, subtile)
             if root is not None:
                 raise PRGAAPIError("Subtile '{}' of '{}' in leaf array '{}' already occupied by '{}'"
@@ -532,7 +584,6 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             default_fc,
             *,
             fc_override = None,
-            channel_on_edge = OrientationTuple(True),
             closure_on_edge = OrientationTuple(False),
             identifier = None):
         """Fill routing boxes into the array being built."""
@@ -555,7 +606,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                     continue
                 elif self._module._instances.get_root(position, ori.to_subtile()) is not None:
                     continue
-                elif any(on_edge[ori2] and not channel_on_edge[ori2] for ori2 in Orientation
+                elif any(on_edge[ori2] and self._module.edge[ori2] for ori2 in Orientation
                         if ori2 not in (Orientation.auto, ori.opposite)):
                     continue
                 block_instance = self._module._instances.get_root(position, Subtile.center)
@@ -582,14 +633,14 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             for corner in Corner:
                 if self._module._instances.get_root(position, corner.to_subtile()) is not None:
                     continue
-                elif any(on_edge[ori] and not channel_on_edge[ori] for ori in corner.decompose()):
+                elif any(on_edge[ori] and self._module.edge[ori] for ori in corner.decompose()):
                     continue
                 # analyze the environment of this switch box (output orientations, excluded inputs, crosspoints, etc.)
                 outputs = []                        # orientation, drive_at_crosspoints, crosspoints_only
                 sbox_identifier = [identifier] if identifier else []
                 # 1. primary output
                 primary_output = Orientation[corner.case("south", "east", "west", "north")]
-                if not on_edge[primary_output] or channel_on_edge[primary_output]:
+                if not on_edge[primary_output] or not self._module.edge[primary_output]:
                     if on_edge[primary_output.opposite] and closure_on_edge[primary_output.opposite]:
                         outputs.append( (primary_output, True, False) )
                         sbox_identifier.append( "pc" )
@@ -608,7 +659,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                         sbox_identifier.append( "s" )
                 # 3. tertiary output
                 tertiary_output = primary_output.opposite
-                if on_edge[tertiary_output.opposite] and not channel_on_edge[tertiary_output.opposite]:
+                if on_edge[tertiary_output.opposite] and self._module.edge[tertiary_output.opposite]:
                     outputs.append( (tertiary_output, True, True) )
                     sbox_identifier.append( "tc" )
                 # 4. exclude inputs
@@ -616,10 +667,10 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                         if not ori.is_auto and self._no_channel_for_switchbox(self._module, position,
                             corner.to_subtile(), ori))
                 for ori in corner.decompose():
-                    if next_to_edge[ori] and not channel_on_edge[ori]:
+                    if next_to_edge[ori] and self._module.edge[ori]:
                         exclude_input_orientations.add( ori.opposite )
                     ori = ori.opposite
-                    if on_edge[ori] and not channel_on_edge[ori]:
+                    if on_edge[ori] and self._module.edge[ori]:
                         exclude_input_orientations.add( ori.opposite )
                 if exclude_input_orientations:
                     sbox_identifier.append( "ex_" + "".join(o.name[0] for o in sorted(exclude_input_orientations)) )
@@ -766,7 +817,7 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
 
     # == high-level API ======================================================
     @classmethod
-    def new(cls, name, width, height):
+    def new(cls, name, width, height, *, edge = OrientationTuple(False)):
         """Create a new module for building."""
         return Module(name,
                 ports = OrderedDict(),
@@ -774,7 +825,8 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
                 coalesce_connections = True,
                 module_class = ModuleClass.nonleaf_array,
                 width = width,
-                height = height)
+                height = height, 
+                edge = edge)
 
     def instantiate(self, model, position, *, name = None):
         """Instantiate ``model`` at the speicified position in the array.
@@ -793,6 +845,25 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
             if pos.x >= self.width or pos.y >= self.height:
                 raise PRGAAPIError("'{}' is not in non-leaf array '{}' ({} x {})"
                         .format(pos, self._module, self.width, self.height))
+            sub_on_edge = OrientationTuple(
+                    north = y == model.height - 1 and model.edge.north,
+                    east = x == model.width - 1 and model.edge.east,
+                    south = y == 0 and model.edge.south,
+                    west = x == 0 and model.edge.west)
+            self_on_edge = OrientationTuple(
+                    north = pos.y == self.height - 1 and self._module.edge.north,
+                    east = pos.x == self.width - 1 and self._module.edge.east,
+                    south = pos.y == 0 and self._module.edge.south,
+                    west = pos.x == 0 and self._module.edge.west)
+            for ori in Orientation:
+                if ori.is_auto:
+                    continue
+                if sub_on_edge[ori] and not self_on_edge[ori]:
+                    raise PRGAAPIError("Subarray '{}' must be placed on the {} edge of the FPGA"
+                            .format(model, ori.name))
+                elif not sub_on_edge[ori] and self_on_edge[ori]:
+                    raise PRGAAPIError("Subarray '{}' cannot be placed on the {} edge of the FPGA"
+                            .format(model, ori.name))
             root = self._module._instances.get_root(pos)
             if root is not None:
                 raise PRGAAPIError("'{}' in non-leaf array '{}' already occupied by '{}'"

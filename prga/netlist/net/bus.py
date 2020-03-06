@@ -118,7 +118,7 @@ class Pin(Object, AbstractPin):
 
     def __str__(self):
         return 'Pin({}/{}/{})'.format(self.parent.name,
-                "/".join(i.name for i in self._hierarchy),
+                "/".join(i.name for i in reversed(self._hierarchy)),
                 self._model.name)
 
     def __eq__(self, other):
