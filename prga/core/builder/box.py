@@ -310,7 +310,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
             y = section + sbox_corner.dotx(Dimension.y).case(0, -1)
         if x is None:
             raise PRGAAPIError("Invalid segment orientation: {}".format(segment_ori))
-        return x, y
+        return Position(x, y)
 
     @classmethod
     def _sbox_key(cls, corner, identifier = None):
@@ -342,8 +342,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
             section (:obj:`int`): Section of the segment
             dont_create (:obj:`bool`): If set, return ``None`` when the requested segment input is not already created
                 instead of create it
-            segment_type (`SegmentType`): Which type of segment input needed. Valid types are:
-                `SegmentType.sboxin_regular`, `SegmentType.sboxin_cboxout` and `SegmentType.sboxin_cboxout2`
+            segment_type (`SegmentType`): For internal use only
         """
         section = uno(section, segment.length)
         node = SegmentID(self._segment_relative_position(self._module.key.corner, segment, orientation, section),
@@ -418,12 +417,10 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                 continue
             elif iori is output_orientation:                                # straight connections
                 for sgmt in segments:
-                    for section in range(1 if crosspoints_only else 0,
-                            sgmt.length if drive_at_crosspoints else 1):
-                        input_ = self.get_segment_input(sgmt, iori, sgmt.length - section, dont_create = dont_create)
-                        output = self.get_segment_output(sgmt, output_orientation, section, dont_create = dont_create)
-                        if input_ is not None and output is not None:
-                            self.connect(input_, output)
+                    input_ = self.get_segment_input(sgmt, iori, sgmt.length, dont_create = dont_create)
+                    output = self.get_segment_output(sgmt, output_orientation, 0, dont_create = dont_create)
+                    if input_ is not None and output is not None:
+                        self.connect(input_, output)
                 continue
             # turns
             cycle_break_turn = ((output_orientation.is_east and iori.is_north) or

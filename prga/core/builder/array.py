@@ -6,7 +6,7 @@ from prga.compatible import *
 from .base import BaseBuilder, MemOptUserConnGraph
 from .box import SwitchBoxBuilder
 from ..common import (ModuleClass, Subtile, Position, Orientation, Dimension, Corner, OrientationTuple, SegmentID,
-        SegmentType, BlockPinID, BlockFCValue)
+        SegmentType, BlockPinID, BlockFCValue, Direction)
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
 from ...netlist.module.util import ModuleUtils
@@ -206,12 +206,6 @@ class _BaseArrayBuilder(BaseBuilder):
                 node.prototype.name)
         else:
             prefix = node.segment_type.case(
-                    # sboxout = 'so',
-                    # cboxout = 'co',
-                    # sboxin_regular = 'si',
-                    # sboxin_cboxout = 'co',
-                    # sboxin_cboxout2 = 'co2',
-                    # cboxin = 'ci',
                     array_input = 'ai',
                     array_output = 'ao',
                     array_cboxout = 'co',
@@ -267,19 +261,23 @@ class _BaseArrayBuilder(BaseBuilder):
         # 1. create a list of all possible position + corner where we may find the source
         searchlist = []
         # 1.1 initial search position
+        skip = 0
         try:
             corner = Corner.compose(node.orientation.opposite, subtile.to_orientation())
-            skip = False
         except PRGAInternalError:
             corner = subtile.to_corner()
-            skip = not forward
+            if not forward:
+                if corner.dotx(node.orientation.dimension) is node.orientation.direction:
+                    skip = 2
+                else:
+                    skip = 4
         # 1.2 constants
         paradim, perpdim = node.orientation.dimension, node.orientation.dimension.perpendicular
         sgmt_paradir, preferred_perpdir = node.orientation.direction, corner.dotx(perpdim)
         while True:
             # 1.3 check if the given position + corner is inside the boundary
             if skip:
-                skip = False
+                skip -= 1
             elif 0 <= position.x < width and 0 <= position.y < height:
                 searchlist.append( (position, corner.to_subtile()) )
             # 1.4 check if we've done constructing the search list
@@ -323,7 +321,7 @@ class _BaseArrayBuilder(BaseBuilder):
     @classmethod
     def _expose_routable_pin(cls, array, key, pin):
         """Expose ``pin`` as a port, and connect them."""
-        node = None
+        node, port = None, None
         if key.node_type.is_segment:
             node = key.convert(key.segment_type.case(
                 sboxout = SegmentType.array_output,
@@ -347,25 +345,46 @@ class _BaseArrayBuilder(BaseBuilder):
                     cur_source = NetUtils.get_source(sink)
                     if cur_source.net_type.is_unconnected:
                         NetUtils.connect(source, sink)
-                        return port
+                        break
                     elif cur_source == source:
-                        return port
+                        break
                 if port is not None and node.segment_type.is_array_cboxout:
                     node = node.convert(SegmentType.array_cboxout2)
                     continue
                 raise PRGAInternalError("'{}' already exposed but not correctly connected".format(pin))
-        if array.module_class.is_leaf_array:
+        new_box_key = (pin.hierarchy[-1].key if array.module_class.is_leaf_array else 
+                (pin.hierarchy[-1].key + pin.model.boxkey[0], pin.model.boxkey[1]))
+        if port is None:
             port = ModuleUtils.create_port(array, cls._node_name(node),
                     len(pin), pin.model.direction, key = node,
-                    boxkey = pin.hierarchy[-1].key)
-        else:
-            port = ModuleUtils.create_port(array, cls._node_name(node),
-                    len(pin), pin.model.direction, key = node,
-                    boxkey = (pin.hierarchy[-1].key + pin.model.boxkey[0], pin.model.boxkey[1]))
-        if pin.model.direction.is_input:
-            NetUtils.connect(port, pin)
-        else:
-            NetUtils.connect(pin, port)
+                    boxkey = new_box_key)
+            if pin.model.direction.is_input:
+                NetUtils.connect(port, pin)
+            else:
+                NetUtils.connect(pin, port)
+        elif array.module_class.is_leaf_array and key.segment_type.is_sboxin_regular:
+            try:
+                old_box_key = port.boxkey
+                oldcorner = old_box_key[1].to_corner()
+            except PRGAInternalError:
+                return port
+            if node.orientation.is_north:
+                if (old_box_key[0].y > new_box_key[0].y or (old_box_key[0].y == new_box_key[0].y and 
+                    oldcorner.dotx(Dimension.y).is_inc)):
+                    new_box_key = old_box_key
+            elif node.orientation.is_east:
+                if (old_box_key[0].x > new_box_key[0].x or (old_box_key[0].x == new_box_key[0].x and 
+                    oldcorner.dotx(Dimension.x).is_inc)):
+                    new_box_key = old_box_key
+            elif node.orientation.is_south:
+                if (old_box_key[0].y < new_box_key[0].y or (old_box_key[0].y == new_box_key[0].y and 
+                    oldcorner.dotx(Dimension.y).is_dec)):
+                    new_box_key = old_box_key
+            else:
+                if (old_box_key[0].x < new_box_key[0].x or (old_box_key[0].x == new_box_key[0].x and 
+                    oldcorner.dotx(Dimension.x).is_dec)):
+                    new_box_key = old_box_key
+            port.boxkey = new_box_key
         return port
 
     @classmethod
@@ -424,12 +443,6 @@ class LeafArrayBuilder(_BaseArrayBuilder):
     # == low-level API =======================================================
     @classmethod
     def _block_subtile_checklist(cls, model, x, y, exclude_root = False):
-        # if model.module_class.is_leaf_array:
-        #     for i in Subtile:
-        #         if exclude_root and i.is_center and x == 0 and y == 0:
-        #             continue
-        #         yield i
-        # elif model.module_class.is_logic_block:
         north = y < model.height - 1
         south = y > 0
         east = x < model.width - 1
@@ -452,8 +465,6 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             yield Subtile.west
         if east:
             yield Subtile.east
-        # else:
-        #     raise PRGAInternalError("Unsupported module class '{}'".format(model.module_class.name))
 
     # == high-level API ======================================================
     @classmethod
@@ -696,11 +707,11 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                 continue
             # 2. if the instance is a block, process global wires
             if instance.model.module_class.is_block:
-                for pin in itervalues(instance.pins):
-                    if hasattr(pin.model, 'global_'):
-                        self.connect(self._get_or_create_global_input(self._module, pin.model.global_), pin)
-                continue
-            elif instance.model.module_class.is_io_block:
+                for subblock in range(instance.model.capacity):
+                    instance = self._module.instances.get( (pos, subblock) )
+                    for pin in itervalues(instance.pins):
+                        if hasattr(pin.model, 'global_'):
+                            self.connect(self._get_or_create_global_input(self._module, pin.model.global_), pin)
                 continue
             # 3. connect segments and block pins
             for key, pin in iteritems(instance.pins):

@@ -182,6 +182,35 @@ class VPRInputsGeneration(Object, AbstractPass):
     def _calc_hierarchical_position(cls, hierarchy, base = Position(0, 0)):
         return sum(iter(i.key[0] if i.parent.module_class.is_leaf_array else i.key for i in hierarchy), base)
 
+    @classmethod
+    def _analyze_routable_pin(cls, pin):
+        bus = pin.bus if pin.bus_type.is_slice else pin
+        if isinstance(bus.model.key, SegmentID):    # segment
+            node = bus.model.key
+            chan_offset = Position(*bus.hierarchy[0].key[1].case(
+                    northeast = node.orientation.case((0, 1), (1, 0), (0, 0), (0, 0)),
+                    northwest = node.orientation.case((-1, 1), (0, 0), (-1, 0), (-1, 0)),
+                    southeast = node.orientation.case((0, 0), (1, -1), (0, -1), (0, -1)),
+                    southwest = node.orientation.case((-1, 0), (0, -1), (-1, -1), (-1, -1)),
+                    ))
+            section = node.orientation.case(
+                    chan_offset.y - node.position.y,
+                    chan_offset.x - node.position.x,
+                    node.position.y - chan_offset.y,
+                    node.position.x - chan_offset.x,
+                    )
+            chanpos = cls._calc_hierarchical_position(bus.hierarchy) + chan_offset
+            return chanpos, node.orientation.dimension, node.orientation.direction, node.prototype.length - section
+        else:                                       # block pin
+            ori = None
+            if bus.hierarchy[0].model.module_class.is_io_block:
+                ori = cls._iob_orientation(bus.hierarchy[0]).opposite
+            else:
+                ori = bus.model.orientation
+            chanpos = (cls._calc_hierarchical_position(bus.hierarchy) + bus.model.position +
+                    ori.case( (0, 0), (0, 0), (0, -1), (-1, 0) ))
+            return chanpos, ori.dimension.perpendicular, None, None
+
     def _arch_layout_array(self, array, hierarchy = tuple()):
         if array.module_class.is_nonleaf_array:
             for instance in itervalues(array.instances):
@@ -536,7 +565,7 @@ class VPRInputsGeneration(Object, AbstractPass):
         return (self.sgmt2ptc[name] + 2 * (remainder * node.prototype.width + i) +
                 node.orientation.direction.case(0, 1))
 
-    def _rrg_edges(self, sink, sink_node):
+    def _rrg_edges(self, sink, sink_node, sinkpos, sinkdim, sinkdir, sinkspan):
         stack = [sink]
         while stack:
             cur = stack.pop()
@@ -548,11 +577,49 @@ class VPRInputsGeneration(Object, AbstractPass):
                 prev_bus, prev_index = (prev.bus, prev.index) if prev.bus_type.is_slice else (prev, 0)
                 node = prev_bus.model.key
                 if isinstance(node, SegmentID) and node.segment_type.is_sboxout:
+                    srcpos, srcdim, srcdir, srcspan = self._analyze_routable_pin(prev)
+                    srcori = Orientation.compose(srcdim, srcdir)
+                    diff = sinkpos - srcpos
+                    if sinkdir is None:    # track to block pin
+                        # 1. same dimension
+                        if not (srcdim is sinkdim and srcdim.case(diff.y, diff.x) == 0):
+                            continue
+                        # 2. within reach
+                        elif not (0 <= srcori.case(diff.y, diff.x, -diff.y, -diff.x) < srcspan):
+                            continue
+                    else:               # track to track
+                        # 1. if in the same dimension
+                        if srcdim is sinkdim:
+                            # 1.1 same direction
+                            if not (srcdir is sinkdir and srcdim.case(diff.y, diff.x) == 0):
+                                continue
+                            # 1.2 within reach
+                            elif not (0 < srcori.case(diff.y, diff.x, -diff.y, -diff.x) <= srcspan):
+                                continue
+                        # 2. if in perpendicular dimensions
+                        else:
+                            if not srcori.case(
+                                    diff.x == sinkdir.case(1, 0) and 0 <= diff.y < srcspan,
+                                    diff.y == sinkdir.case(1, 0) and 0 <= diff.x < srcspan,
+                                    diff.x == sinkdir.case(1, 0) and 0 < -diff.y <= srcspan,
+                                    diff.y == sinkdir.case(1, 0) and 0 < -diff.x <= srcspan,
+                                    ):
+                                continue
                     self.xml.element_leaf("edge", {
                         "src_node": self._calc_track_id(prev),
                         "sink_node": sink_node,
                         "switch_id": 1})
                 elif prev_bus.hierarchy[0].model.module_class.is_block:
+                    if sinkdir is not None:        #  track to block pin
+                        srcpos, srcdim, _0, _1 = self._analyze_routable_pin(prev)
+                        sinkori = Orientation.compose(sinkdim, sinkdir)
+                        diff = srcpos - sinkpos
+                        # 1. same dimension
+                        if not (srcdim is sinkdim and srcdim.case(diff.y, diff.x) == 0):
+                            continue
+                        # 2. within reach
+                        elif not 0 <= sinkori.case(diff.y, diff.x, -diff.y, -diff.x) < sinkspan:
+                            continue
                     self.xml.element_leaf("edge", {
                         "src_node": self._calc_blockpin_id(prev),
                         "sink_node": sink_node,
@@ -786,15 +853,19 @@ class VPRInputsGeneration(Object, AbstractPass):
                                 if key == "#":
                                     continue
                                 port = block.ports[key]
-                                for bit in Pin(port, inst):
+                                channel = pos + port.position + port.orientation.case(
+                                        (0, 0), (0, 0), (0, -1), (-1, 0))
+                                pin = Pin(port, inst)
+                                for bit in pin:
                                     xml.element_leaf('edge', {
                                         'src_node': self._calc_blockpin_id(bit, port.direction.is_output, pos),
                                         'sink_node': self._calc_blockpin_id(bit, port.direction.is_input, pos),
                                         'switch_id': 0,
                                         })
                                 if port.direction.is_input:
-                                    for bit in Pin(port, inst):
-                                        self._rrg_edges(bit, self._calc_blockpin_id(bit, False, pos))
+                                    args = self._analyze_routable_pin(pin)
+                                    for bit in pin:
+                                        self._rrg_edges(bit, self._calc_blockpin_id(bit, False, pos), *args)
                     # segments
                     for corner in Corner:
                         inst = NonLeafArrayBuilder._get_hierarchical_root(context.top, pos, corner.to_subtile())
@@ -803,6 +874,8 @@ class VPRInputsGeneration(Object, AbstractPass):
                         for node, port in iteritems(inst[0].model.ports):
                             if not node.segment_type.is_sboxout:
                                 continue
+                            pin = Pin(port, inst)
+                            args = self._analyze_routable_pin(pin)
                             for bit in Pin(port, inst):
-                                self._rrg_edges(bit, self._calc_track_id(bit))
+                                self._rrg_edges(bit, self._calc_track_id(bit), *args)
             del self.xml
