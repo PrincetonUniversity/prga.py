@@ -569,6 +569,7 @@ class VPRInputsGeneration(Object, AbstractPass):
         return True
 
     def run(self, context):
+        makedirs(os.path.abspath(self.output_dir))
         arch_f = os.path.join(os.path.abspath(self.output_dir), "arch.vpr.xml")
         rrg_f = os.path.join(os.path.abspath(self.output_dir), "rrg.vpr.xml")
         # runtime-generated data

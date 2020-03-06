@@ -258,9 +258,9 @@ class _BaseArrayBuilder(BaseBuilder):
             corrected -= (1, 0)
         if corner.dotx(Dimension.y).is_inc and ori.case(output, False, not output, False):
             corrected += (0, 1)
-        elif corner.dotx(Dimension.y).is_dec and not ori.case(not output, True, output, True):
+        elif corner.dotx(Dimension.y).is_dec and ori.case(not output, True, output, True):
             corrected -= (0, 1)
-        return cls._no_channel(model, position, ori)
+        return cls._no_channel(model, corrected, ori)
 
     @classmethod
     def _segment_searchlist(cls, node, position, subtile, width, height, *, forward = False):
@@ -662,6 +662,8 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                 if on_edge[tertiary_output.opposite] and self._module.edge[tertiary_output.opposite]:
                     outputs.append( (tertiary_output, True, True) )
                     sbox_identifier.append( "tc" )
+                if not outputs:                             # no outputs
+                    continue
                 # 4. exclude inputs
                 exclude_input_orientations = set(ori for ori in Orientation
                         if not ori.is_auto and self._no_channel_for_switchbox(self._module, position,
@@ -672,6 +674,8 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                     ori = ori.opposite
                     if on_edge[ori] and self._module.edge[ori]:
                         exclude_input_orientations.add( ori.opposite )
+                if len(exclude_input_orientations) == 4:    # no inputs
+                    continue
                 if exclude_input_orientations:
                     sbox_identifier.append( "ex_" + "".join(o.name[0] for o in sorted(exclude_input_orientations)) )
                 sbox_identifier = "_".join(sbox_identifier)

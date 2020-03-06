@@ -19,7 +19,7 @@ module {{ module.name }} (
         end else begin
             case (cfg_d)
                 {%- for i in range(width) %}
-                {{ module.cfg_bitcount }}'d{{ i }}: i[{{ i }}];
+                {{ module.cfg_bitcount }}'d{{ i }}: o = i[{{ i }}];
                 {%- endfor %}
             endcase
         end
