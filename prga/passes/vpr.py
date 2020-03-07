@@ -25,12 +25,13 @@ __all__ = ['FASMDelegate', 'VPRInputsGeneration']
 class FASMDelegate(Object):
     """FASM delegate supplying FASM metadata."""
 
-    def fasm_mux_for_intrablock_switch(self, source, sink):
+    def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy):
         """Get the "fasm_mux" string for the connection from ``source`` to ``sink``.
 
         Args:
             source (`AbstractGenericNet`): Source bit
             sink (`AbstractGenericNet`): Sink bit
+            hierarchy (:obj:`Sequence` [`AbstractInstance` ]): Hierarchical instance in bottom-up order in a block
         
         Returns:
             :obj:`Sequence` [:obj:`str` ]: "fasm_mux" features
@@ -89,7 +90,8 @@ class FASMDelegate(Object):
         return ''
     
     def fasm_prefix_for_tile(self, hierarchical_instance):
-        """Get the "fasm_prefix" strings for the block instances in tile instance ``hierarchical_instance``.
+        """Get the "fasm_prefix" strings for the block instance ``hierarchical_instance``. If the block instance is
+        one of a few IO block instances, the fasm prefix for all its siblings will be produced.
 
         Args:
             hierarchical_instance (:obj:`Sequence` [`AbstractInstance` ]): Hierarchical instance in bottom-up order in
@@ -119,7 +121,7 @@ class VPRInputsGeneration(Object, AbstractPass):
 
     __slots__ = ['output_dir', 'xml', 'active_blocks', 'active_primitives', 'block2id', 'blockpin2ptc',
             'sgmt2id', 'sgmt2ptc', 'sgmt2node_id', 'sgmt2node_id_truncated', 'chanx_id', 'chany_id',
-            'srcsink_id', 'blockpin_id']
+            'srcsink_id', 'blockpin_id', 'delegate']
     def __init__(self, output_dir = "."):
         self.output_dir = output_dir
 
@@ -221,6 +223,7 @@ class VPRInputsGeneration(Object, AbstractPass):
                 blk_inst = array.instances.get( ((x, y), Subtile.center) )
                 if blk_inst is None:
                     continue
+                fasm_prefix = '\n'.join(self.delegate.fasm_prefix_for_tile( (blk_inst, ) + hierarchy ))
                 attrs = {'priority': 1, 'x': position.x + x, 'y': position.y + y}
                 if blk_inst.model.module_class.is_io_block:
                     # special process needed for IO blocks
@@ -231,7 +234,11 @@ class VPRInputsGeneration(Object, AbstractPass):
                 else:
                     self.active_blocks[blk_inst.model.key] = True
                     attrs['type'] = blk_inst.model.name
-                self.xml.element_leaf('single', attrs)
+                if fasm_prefix:
+                    with self.xml.element('single', attrs), self.xml.element("meta"):
+                        self.xml.element_leaf("meta", {"name": "fasm_prefix"}, fasm_prefix)
+                else:
+                    self.xml.element_leaf("single", attrs)
 
     def _rrg_grid_array(self, array):
         for x, y in product(range(array.width), range(array.height)):
@@ -260,6 +267,7 @@ class VPRInputsGeneration(Object, AbstractPass):
             return
         type_ = "direct" if len(sources) == 1 else "mux"
         name = [type_]
+        fasm_muxes = {}
         if sink.net_type.is_pin:
             if sink.bus_type.is_slice:
                 name.append( sink.bus.hierarchy[0].name )
@@ -279,7 +287,16 @@ class VPRInputsGeneration(Object, AbstractPass):
             "input": self._net2vpr(sources, parent_name),
             "output": self._net2vpr(sink, parent_name),
             }):
+            sink_vpr = self._net2vpr(sink, parent_name)
             for src in sources:
+                src_vpr = self._net2vpr(src, parent_name)
+                # FASM mux
+                fasm_mux = self.delegate.fasm_mux_for_intrablock_switch(src, sink, hierarchy)
+                if fasm_mux:
+                    fasm_muxes[src_vpr] = ", ".join(fasm_mux)
+                elif len(sources) > 1:
+                    fasm_muxes[src_vpr] = 'ignored'
+                # pack pattern
                 conn = NetUtils.get_connection(src, sink)
                 if conn is None:
                     continue
@@ -290,6 +307,10 @@ class VPRInputsGeneration(Object, AbstractPass):
                         "in_port": self._net2vpr(src, parent_name),
                         "out_port": self._net2vpr(sink, parent_name),
                         })
+            if fasm_muxes:
+                with self.xml.element("metadata"):
+                    self.xml.element_leaf("meta", {"name": "fasm_mux"},
+                            '\n'.join('{} : {}'.format(src, features) for src, features in iteritems(fasm_muxes)))
 
     def _leaf_pb_type(self, hierarchical_instance):
         instance = hierarchical_instance[0]
@@ -368,6 +389,12 @@ class VPRInputsGeneration(Object, AbstractPass):
                                 'in_port': self._net2vpr(NetUtils.get_multisource(sink), instance.name),
                                 'out_port': self._net2vpr(sink, instance.name),
                                 })
+        # FASM parameters
+        fasm_params = self.delegate.fasm_params_for_primitive(hierarchical_instance)
+        if fasm_params:
+            with self.xml.element('metadata'):
+                self.xml.element_leaf("meta", {"name": "fasm_params"},
+                    '\n'.join("{} = {}".format(config, param) for param, config in iteritems(fasm_params)))
 
     def _pb_type(self, module, hierarchy = tuple()):
         parent_name = hierarchy[0].name if hierarchy else module.name
@@ -384,11 +411,19 @@ class VPRInputsGeneration(Object, AbstractPass):
                         'clock' if port.is_clock else port.direction.case('input', 'output'),
                         attrs)
             # 2. emit cluster/primitive instances
+            fasm_luts = {}
             for instance in itervalues(module.instances):
+                hierarchical_instance = (instance, ) + hierarchy
                 if instance.model.module_class.is_cluster:
-                    self._pb_type(instance.model, (instance, ) + hierarchy)
+                    self._pb_type(instance.model, hierarchical_instance)
                 elif instance.model.module_class.is_primitive:
-                    self._leaf_pb_type((instance, ) + hierarchy)
+                    self._leaf_pb_type(hierarchical_instance)
+                    if instance.model.primitive_class.is_lut:
+                        fasm_lut = self.delegate.fasm_lut(hierarchical_instance)
+                        if fasm_lut:
+                            fasm_luts[instance.name] = fasm_lut
+                        else:
+                            fasm_luts[instance.name] = 'ignored[{}:0]'.format(2 ** len(instance.pins['in']) - 1)
             # 3. emit interconnect
             with self.xml.element('interconnect'):
                 for net in chain(itervalues(module.ports),
@@ -397,6 +432,27 @@ class VPRInputsGeneration(Object, AbstractPass):
                         continue
                     for sink in net:
                         self._interconnect(sink, hierarchy, parent_name)
+            # 4. FASM metadata
+            fasm_features = ''
+            if module.module_class.is_mode:
+                fasm_features = '\n'.join(self.delegate.fasm_features_for_mode(hierarchy, module.key))
+            fasm_prefix = self.delegate.fasm_prefix_for_intrablock_module(hierarchy)
+            if not (fasm_features or fasm_prefix or fasm_luts):
+                return
+            with self.xml.element("metadata"):
+                if fasm_features:
+                    self.xml.element_leaf('meta', {'name': 'fasm_features'}, fasm_features)
+                if fasm_prefix:
+                    self.xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefix)
+                if len(fasm_luts) > 1:
+                    self.xml.element_leaf('meta', {'name': 'fasm_type'}, 'SPLIT_LUT')
+                    self.xml.element_leaf('meta', {'name': 'fasm_lut'},
+                            '\n'.join('{} = {}[0]'.format(lut, name) for name, lut in iteritems(fasm_luts)))
+                elif len(fasm_luts) == 1:
+                    name, lut = next(iter(iteritems(fasm_luts)))
+                    self.xml.element_leaf('meta', {'name': 'fasm_type'}, 'LUT')
+                    self.xml.element_leaf('meta', {'name': 'fasm_lut'},
+                            '{} = {}'.format(lut, name))
 
     def _arch_tile(self, block, ori = None):
         tile_name = block.name if ori is None else '{}_{}'.format(block.name, ori.name[0])
@@ -639,6 +695,7 @@ class VPRInputsGeneration(Object, AbstractPass):
         makedirs(os.path.abspath(self.output_dir))
         arch_f = os.path.join(os.path.abspath(self.output_dir), "arch.vpr.xml")
         rrg_f = os.path.join(os.path.abspath(self.output_dir), "rrg.vpr.xml")
+        self.delegate = context.fasm_delegate
         # runtime-generated data
         self.active_blocks = {}
         self.active_primitives = set()

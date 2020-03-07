@@ -228,6 +228,21 @@ class NetUtils(object):
             module._conn_graph.add_edge( src_node, sink_node, **kwargs )
 
     @classmethod
+    def make_hierarchical_pin(cls, net, hierarchy):
+        """Add ``hierarchy`` to ``net`` to make a hierarchical pin."""
+        if net.bus_type.is_concat:
+            raise PRGAInternalError("Cannot make a hierarchical pin out of a concatenation.")
+        bus, index = (net.bus, net.index) if net.bus_type.is_slice else (net, None)
+        if bus.net_type.is_port:
+            bus = bus._to_pin(hierarchy)
+        elif bus.net_type.is_pin:
+            bus = bus.model._to_pin(bus.hierarchy + hierarchy)
+        if index is None:
+            return bus
+        else:
+            return cls._slice(bus, index)
+
+    @classmethod
     def get_source(cls, sink):
         """Get the source connected to ``sink``. This method is for accessing connections in modules that do not allow
         multi-source connections only."""

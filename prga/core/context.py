@@ -48,6 +48,7 @@ class Context(Object):
             '_database',            # module database
             '_top',                 # logical top
             '_switch_database',     # switch database
+            '_fasm_delegate',       # FASM delegate
             '__dict__']
 
     def __init__(self, *, database = None, **kwargs):
@@ -120,6 +121,15 @@ class Context(Object):
             return self._switch_database
         except AttributeError:
             raise PRGAInternalError("Switch database not set.\n"
+                    "Possible cause: the context is not created by a configuration circuitry entry point.")
+
+    @property
+    def fasm_delegate(self):
+        """`FASMDelegate`: FASM delegate for bitstream generation."""
+        try:
+            return self._fasm_delegate
+        except AttributeError:
+            raise PRGAInternalError("FASM delegate not set.\n"
                     "Possible cause: the context is not created by a configuration circuitry entry point.")
 
     # == high-level API ======================================================

@@ -10,6 +10,7 @@ from ...netlist.net.util import NetUtils
 from ...netlist.module.module import Module
 from ...netlist.module.util import ModuleUtils
 from ...passes.translation import AbstractSwitchDatabase
+from ...passes.vpr import FASMDelegate
 from ...renderer.renderer import FileRenderer
 from ...util import Object
 
@@ -59,6 +60,51 @@ class ScanchainSwitchDatabase(Object, AbstractSwitchDatabase):
         return self.context.database.setdefault((ModuleView.logical, key), switch)
 
 # ----------------------------------------------------------------------------
+# -- FASM Delegate -----------------------------------------------------------
+# ----------------------------------------------------------------------------
+class ScanchainFASMDelegate(FASMDelegate):
+    """FASM delegate for scanchain configuration circuitry.
+    
+    Args:
+        context (`Context`):
+    """
+
+    __slots__ = ['context']
+    def __init__(self, context):
+        self.context = context
+
+    def _hierarchical_bitoffset(self, hierarchical_instance):
+        cfg_bitoffset = 0
+        for inst in reversed(hierarchical_instance):
+            inst = self.context.database[ModuleView.logical, inst.parent.key].instances[inst.key]
+            inst_bitoffset = getattr(inst, 'cfg_bitoffset', None)
+            if inst_bitoffset is None:
+                return None
+            cfg_bitoffset += inst_bitoffset
+        return cfg_bitoffset
+
+    def fasm_prefix_for_tile(self, hierarchical_instance):
+        cfg_bitoffset = self._hierarchical_bitoffset(hierarchical_instance[1:])
+        if cfg_bitoffset is None:
+            return tuple()
+        retval = []
+        leaf_array = self.context.database[ModuleView.logical, hierarchical_instance[0].parent.key]
+        for subblock in range(hierarchical_instance[0].model.capacity):
+            blk_inst = leaf_array.instances[hierarchical_instance[0].key[0], subblock]
+            inst_bitoffset = getattr(blk_inst, 'cfg_bitoffset', None)
+            if inst_bitoffset is None:
+                return tuple()
+            retval.append( 'b{}'.format(cfg_bitoffset + inst_bitoffset) )
+        return retval
+
+    def fasm_lut(self, hierarchical_instance):
+        cfg_bitoffset = self._hierarchical_bitoffset(hierarchical_instance)
+        if cfg_bitoffset is None:
+            return ''
+        lut = self.context.database[ModuleView.logical, hierarchical_instance[0].model.key]
+        return 'b{}[{}:0]'.format(str(cfg_bitoffset), lut.cfg_bitcount - 1)
+
+# ----------------------------------------------------------------------------
 # -- Scanchain Configuration Circuitry Main Entry ----------------------------
 # ----------------------------------------------------------------------------
 class Scanchain(object):
@@ -88,6 +134,7 @@ class Scanchain(object):
     def new_context(cls, cfg_width = 1):
         context = Context(cfg_width = cfg_width)
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width)
+        context._fasm_delegate = ScanchainFASMDelegate(context)
 
         # register luts
         for i in range(2, 9):
