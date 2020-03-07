@@ -30,7 +30,7 @@ class AbstractModule(Abstract):
     @abstractproperty
     def children(self):
         """:obj:`Mapping` [:obj:`str`, `AbstractPort` or `AbstractInstance` ]: A mapping from names to
-        ports/instances."""
+        ports/immediate instances."""
         raise NotImplementedError
 
     @abstractproperty
@@ -43,10 +43,16 @@ class AbstractModule(Abstract):
         """:obj:`Mapping` [:obj:`Hashable`, `AbstractInstance` ]: A mapping from instance keys to immediate instances."""
         raise NotImplementedError
 
+    @abstractproperty
+    def hierarchy(self):
+        """:obj:`Mapping` [:obj:`Hashable`, `AbstractInstance` ]: A mapping from hierarchical instance keys to
+        hierarchical instances."""
+        raise NotImplementedError
+
 # ----------------------------------------------------------------------------
 # -- Abstract Instance -------------------------------------------------------
 # ----------------------------------------------------------------------------
-class AbstractInstance(Abstract):
+class AbstractInstance(Abstract, Sequence):
     """Abstract class for instances."""
 
     @abstractproperty
@@ -57,6 +63,12 @@ class AbstractInstance(Abstract):
     @abstractproperty
     def key(self):
         """:obj:`Hashable`: A hashable key used to index this instance in its parent module."""
+        raise NotImplementedError
+
+    @abstractproperty
+    def node(self):
+        """:obj:`Hashable`: A hashable key used to compose the node ID of pins in the parent module's connection
+        graph."""
         raise NotImplementedError
 
     @abstractproperty

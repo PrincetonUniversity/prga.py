@@ -144,7 +144,7 @@ class AbstractPin(AbstractGenericNet):
 
     @abstractproperty
     def hierarchy(self):
-        """:obj:`Sequence` [`AbstractInstance`]: Hierarchy of instances down to the pin in ascending order.
+        """`HierarchicalInstance`: Hierarchy of instances down to the pin in bottom-up order.
 
         For example, assume 1\) module 'clb' has an instance 'alm0' of module 'alm', and 2\) module 'alm' has an
         instance 'lutA' of module 'LUT4', and 3\) module 'LUT4' has an input port 'in'. This net can be referred to by
@@ -166,4 +166,4 @@ class AbstractPin(AbstractGenericNet):
 
     @property
     def parent(self):
-        return self.hierarchy[-1].parent
+        return self.hierarchy.parent

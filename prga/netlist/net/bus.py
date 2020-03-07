@@ -105,7 +105,7 @@ class Pin(Object, AbstractPin):
 
     Args:
         model (`Port`): Model of this pin
-        hierarchy (:obj:`Iterable` [`AbstractInstance` ]): Hierarchy of instances down to the pin in ascending order.
+        hierarchy (`AbstractInstance`): Hierarchy of instances down to the pin in bottom-up order.
             See `Pin.hierarchy` for more information
     """
 
@@ -114,12 +114,10 @@ class Pin(Object, AbstractPin):
     # == internal API ========================================================
     def __init__(self, model, hierarchy):
         self._model = model
-        self._hierarchy = tuple(iter(hierarchy))
+        self._hierarchy = hierarchy
 
     def __str__(self):
-        return 'Pin({}/{}/{})'.format(self.parent.name,
-                "/".join(i.name for i in reversed(self._hierarchy)),
-                self._model.name)
+        return 'Pin({}/{}/{})'.format(self.parent.name, self._hierarchy.name, self._model.name)
 
     def __eq__(self, other):
         return isinstance(other, type(self)) and self._model is other._model and self._hierarchy == other._hierarchy
@@ -139,11 +137,11 @@ class Pin(Object, AbstractPin):
     # -- implementing properties/methods required by superclass --------------
     @property
     def name(self):
-        return '{}/{}'.format('/'.join(i.name for i in self._hierarchy), self._model.name)
+        return '{}/{}'.format(self._hierarchy.name, self._model.name)
 
     @property
     def node(self):
-        return self.model.node + tuple(inst.key for inst in self._hierarchy)
+        return self.model.node + self._hierarchy.node
 
     def __len__(self):
         return len(self._model)

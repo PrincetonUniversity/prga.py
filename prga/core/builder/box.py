@@ -51,9 +51,6 @@ class _BaseRoutingBoxBuilder(BaseBuilder):
                     sboxin_cboxout2 = 'co2',
                     cboxin = 'ci',
                     )
-                    # array_regular = 'as',
-                    # array_cboxout = 'co',
-                    # array_cboxout2 = 'co2')
             return '{}_{}_{}{}{}{}{}'.format(
                     prefix, node.prototype.name,
                     'x' if node.position.x >= 0 else 'u', abs(node.position.x),

@@ -4,6 +4,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .common import AbstractModule
+from .instance import HierarchicalInstance
 from ..net.common import NetType
 from ...util import Object, ReadonlyMappingProxy, uno
 from ...exception import PRGAInternalError
@@ -15,125 +16,38 @@ import networkx as nx
 __all__ = ['Module']
 
 # ----------------------------------------------------------------------------
-# -- Memory-optimized Connection Graph ---------------------------------------
+# -- Hierarchical Instance Mapping Proxy -------------------------------------
 # ----------------------------------------------------------------------------
-class _Placeholder(Enum):
-    placeholder = 0
+class _HierarchicalInstanceProxy(Object, Mapping):
+    """Helper class for `AbstractModule.hierarchy` property.
 
-class _MemoptBitwiseConnGraphDict(MutableMapping):
-    __slots__ = ['_d']
-    def __init__(self):
-        self._d = {}
+    Args:
+        module (`AbstractModule`):
+    """
 
-    def __getitem__(self, k):
-        idx, key = k[0], k[1:]
+    __slots__ = ['module']
+    def __init__(self, module):
+        super(_HierarchicalInstanceProxy, self).__init__()
+        self.module = module
+
+    def __getitem__(self, key):
         try:
-            v = self._d[key][idx]
-        except (KeyError, IndexError):
-            raise KeyError(k)
-        if v is _Placeholder.placeholder:
-            raise KeyError(k)
-        else:
-            return v
-
-    def __setitem__(self, k, v):
-        idx, key = k[0], k[1:]
-        try:
-            l = self._d[key]
+            parent, instances = self.module, []
+            for k in reversed(key):
+                instance = parent.instances[k]
+                parent = instance.model
+                instances.append(instance)
+            return HierarchicalInstance(reversed(instances))
         except KeyError:
-            self._d[key] = tuple(_Placeholder.placeholder for i in range(idx)) + (v, )
-            return
-        if len(l) > idx:
-            self._d[key] = tuple(v if i == idx else item for i, item in enumerate(l))
-        else:
-            self._d[key] = tuple(l[i] if i < len(l) else _Placeholder.placeholder for i in range(idx)) + (v, )
-
-    def __delitem__(self, k):
-        idx, key = k[0], k[1:]
-        l = self._d[key]
-        if idx >= len(l):
-            raise KeyError(k)
-        self._d[key] = tuple(_Placeholder.placeholder if i == idx else item for i, item in enumerate(l))
-
-    def __len__(self, k):
-        return sum(1 for _ in iter(self))
-
-    def __iter__(self):
-        for k, l in iteritems(self._d):
-            for idx, v in enumerate(l):
-                if v is not _Placeholder.placeholder:
-                    yield (idx, ) + k
-
-class _LazyDict(MutableMapping):
-    __slots__ = ['_d']
-
-    def __getitem__(self, k):
-        if k in self.__slots__:
-            try:
-                return getattr(self, k)
-            except AttributeError:
-                raise KeyError(k)
-        else:
-            try:
-                return self._d[k]
-            except AttributeError:
-                raise KeyError(k)
-
-    def __setitem__(self, k, v):
-        if k in self.__slots__:
-            setattr(self, k, v)
-        else:
-            try:
-                self._d[k] = v
-            except AttributeError:
-                self._d = {k: v}
-
-    def __delitem__(self, k):
-        if k in self.__slots__:
-            try:
-                delattr(self, k)
-            except AttributeError:
-                raise KeyError(k)
-        else:
-            try:
-                del self._d[k]
-            except AttributeError:
-                raise KeyError(k)
+            raise KeyError(key)
 
     def __len__(self):
-        base = sum(1 for attr in self.__slots__ if hasattr(self, attr))
-        try:
-            return base + len(self._d)
-        except AttributeError:
-            return base
+        raise PRGAInternalError("`{}.hierarchy` property is for key-value access only"
+                .format(type(self.module)))
 
     def __iter__(self):
-        for attr in self.__slots__:
-            if hasattr(self, attr):
-                yield attr
-        try:
-            for k in self._d:
-                yield k
-        except AttributeError:
-            return
-
-class _NodeAttrDict(_LazyDict):
-    __slots__ = ['clock_group', 'clock', 'min_setup', 'max_setup', 'min_hold', 'max_setup', 'min_clk2q', 'max_clk2q']
-
-class _EdgeAttrDict(_LazyDict):
-    __slots__ = ['min_delay', 'max_delay']
-
-class _GraphAttrDict(_LazyDict):
-    __slots__ = ['clock_groups']
-
-class _CoalescedConnGraph(nx.DiGraph):
-    node_attr_dict_factory = _NodeAttrDict
-    edge_attr_dict_factory = _EdgeAttrDict
-    graph_attr_dict_factory = _GraphAttrDict
-
-class _MemoptConnGraph(_CoalescedConnGraph):
-    node_dict_factory = _MemoptBitwiseConnGraphDict
-    adjlist_outer_dict_factory = _MemoptBitwiseConnGraphDict
+        raise PRGAInternalError("`{}.hierarchy` property is for key-value access only"
+                .format(type(self.module)))
 
 # ----------------------------------------------------------------------------
 # -- Module ------------------------------------------------------------------
@@ -164,7 +78,7 @@ class Module(Object, AbstractModule):
     """
 
     __slots__ = ['_name', '_key', '_children', '_ports', '_instances', '_conn_graph',
-            '_allow_multisource', '_coalesce_connections', '__dict__']
+            '_allow_multisource', '_coalesce_connections', '_hierarchy', '__dict__']
 
     # == internal API ========================================================
     def __init__(self, name, *,
@@ -182,6 +96,7 @@ class Module(Object, AbstractModule):
         self._allow_multisource = allow_multisource
         self._coalesce_connections = coalesce_connections
         self._conn_graph = uno(conn_graph, nx.DiGraph())
+        self._hierarchy = _HierarchicalInstanceProxy(self)
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
 
@@ -262,3 +177,7 @@ class Module(Object, AbstractModule):
             return ReadonlyMappingProxy(self._instances)
         except AttributeError:
             return ReadonlyMappingProxy({})
+
+    @property
+    def hierarchy(self):
+        return self._hierarchy

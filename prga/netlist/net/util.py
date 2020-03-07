@@ -79,6 +79,8 @@ class NetUtils(object):
                 raise PRGAInternalError("Cannot create coalesced reference for {}".format(net))
             else:
                 return net.node
+        elif len(net) != 1:
+            raise PRGAInternalError("Cannot create reference for {}: width > 1".format(net))
         else:
             return (0, net.node) if net.bus_type.is_nonref else net.node
 
@@ -95,22 +97,13 @@ class NetUtils(object):
 
         Return:
             net (`Port`, `Pin`, `Slice` or `Const`): 
-            hierarchy (:obj:`tuple` [`AbstractInstance` ]): Hierarchy in bottom-up order. Only available if
-                ``hierarchical`` is set
         """
         # no matter if `coalesced` is set, check if the node refers to a constant net
         if node[0] is NetType.const:
             return Const(*node[1:])
         index, node = (None, node) if coalesced else node
         net_key, hierarchy = node[0], node[1:]
-        instances, parent = [], module
-        for instance_key in reversed(hierarchy):
-            instance = parent.instances[instance_key]
-            instances.append(instance)
-            parent = instance.model
-        bus = parent.ports[net_key]
-        if instances:
-            bus = bus._to_pin(reversed(instances))
+        bus = module.hierarchy[hierarchy].pins[net_key] if hierarchy else module.ports[net_key]
         if index is not None:
             return bus[index]
         else:
@@ -228,21 +221,6 @@ class NetUtils(object):
             module._conn_graph.add_edge( src_node, sink_node, **kwargs )
 
     @classmethod
-    def make_hierarchical_pin(cls, net, hierarchy):
-        """Add ``hierarchy`` to ``net`` to make a hierarchical pin."""
-        if net.bus_type.is_concat:
-            raise PRGAInternalError("Cannot make a hierarchical pin out of a concatenation.")
-        bus, index = (net.bus, net.index) if net.bus_type.is_slice else (net, None)
-        if bus.net_type.is_port:
-            bus = bus._to_pin(hierarchy)
-        elif bus.net_type.is_pin:
-            bus = bus.model._to_pin(bus.hierarchy + hierarchy)
-        if index is None:
-            return bus
-        else:
-            return cls._slice(bus, index)
-
-    @classmethod
     def get_source(cls, sink):
         """Get the source connected to ``sink``. This method is for accessing connections in modules that do not allow
         multi-source connections only."""
@@ -297,60 +275,60 @@ class NetUtils(object):
         except NetworkXError:
             return Unconnected(0)
 
-    @classmethod
-    def get_hierarchical_multisource(cls, sink):
-        """Get the hierarchical sources connected to ``sink``."""
-        if sink.net_type.is_port:
-            if sink.parent._allow_multisource:
-                return cls.get_multisource(sink)
-            else:
-                s = cls.get_source(sink)
-                if s.net_type.is_unconnected:
-                    return Unconnected(0)
-                else:
-                    return s
-        elif sink.net_type.is_pin:
-            flat_sink, hierarchy = None, None
-            if sink.bus_type.is_nonref:
-                if sink.model.direction.is_output:
-                    flat_sink = sink.model
-                    hierarchy = sink.hierarchy
-                else:
-                    flat_sink = sink.model._to_pin(sink.hierarchy[:1])
-                    hierarchy = sink.hierarchy[1:]
-            else:
-                if sink.bus.model.direction.is_output:
-                    flat_sink = sink.bus.model[sink.index]
-                    hierarchy = sink.bus.hierarchy
-                else:
-                    flat_sink = sink.bus.model._to_pin(sink.bus.hierarchy[:1])[sink.index]
-                    hierarchy = sink.bus.hierarchy[1:]
-            flat_sources = None
-            if flat_sink.parent._allow_multisource:
-                flat_sources = cls.get_multisource(flat_sink)
-            else:
-                flat_sources = cls.get_source(flat_sink)
-                if flat_sources.net_type.is_unconnected:
-                    flat_sources = Unconnected(0)
-            if not hierarchy:
-                return cls.concat(flat_sources)
-            else:
-                flat_sources = flat_sources.items if flat_sources.bus_type.is_concat else (flat_sources, )
-                sources = []
-                for source in flat_sources:
-                    if source.bus_type.is_nonref:
-                        if source.net_type.is_port:
-                            sources.append( source._to_pin(hierarchy) )
-                        elif source.net_type.is_pin:
-                            sources.append( source.model._to_pin(source.hierarchy + hierarchy) )
-                        elif source.net_type.is_const:
-                            sources.append( source )
-                    else:
-                        if source.net_type.is_port:
-                            sources.append( source.bus._to_pin(hierarchy)[source.index] )
-                        else:
-                            sources.append( source.bus.model._to_pin(source.bus.hierarchy + hierarchy)[source.index] )
-                return cls.concat(sources)
+    # @classmethod
+    # def get_hierarchical_multisource(cls, sink):
+    #     """Get the hierarchical sources connected to ``sink``."""
+    #     if sink.net_type.is_port:
+    #         if sink.parent._allow_multisource:
+    #             return cls.get_multisource(sink)
+    #         else:
+    #             s = cls.get_source(sink)
+    #             if s.net_type.is_unconnected:
+    #                 return Unconnected(0)
+    #             else:
+    #                 return s
+    #     elif sink.net_type.is_pin:
+    #         flat_sink, hierarchy = None, None
+    #         if sink.bus_type.is_nonref:
+    #             if sink.model.direction.is_output:
+    #                 flat_sink = sink.model
+    #                 hierarchy = sink.hierarchy
+    #             else:
+    #                 flat_sink = sink.model._to_pin(sink.hierarchy[:1])
+    #                 hierarchy = sink.hierarchy[1:]
+    #         else:
+    #             if sink.bus.model.direction.is_output:
+    #                 flat_sink = sink.bus.model[sink.index]
+    #                 hierarchy = sink.bus.hierarchy
+    #             else:
+    #                 flat_sink = sink.bus.model._to_pin(sink.bus.hierarchy[:1])[sink.index]
+    #                 hierarchy = sink.bus.hierarchy[1:]
+    #         flat_sources = None
+    #         if flat_sink.parent._allow_multisource:
+    #             flat_sources = cls.get_multisource(flat_sink)
+    #         else:
+    #             flat_sources = cls.get_source(flat_sink)
+    #             if flat_sources.net_type.is_unconnected:
+    #                 flat_sources = Unconnected(0)
+    #         if not hierarchy:
+    #             return cls.concat(flat_sources)
+    #         else:
+    #             flat_sources = flat_sources.items if flat_sources.bus_type.is_concat else (flat_sources, )
+    #             sources = []
+    #             for source in flat_sources:
+    #                 if source.bus_type.is_nonref:
+    #                     if source.net_type.is_port:
+    #                         sources.append( source._to_pin(hierarchy) )
+    #                     elif source.net_type.is_pin:
+    #                         sources.append( source.model._to_pin(source.hierarchy + hierarchy) )
+    #                     elif source.net_type.is_const:
+    #                         sources.append( source )
+    #                 else:
+    #                     if source.net_type.is_port:
+    #                         sources.append( source.bus._to_pin(hierarchy)[source.index] )
+    #                     else:
+    #                         sources.append( source.bus.model._to_pin(source.bus.hierarchy + hierarchy)[source.index] )
+    #             return cls.concat(sources)
 
     @classmethod
     def get_connection(cls, source, sink):

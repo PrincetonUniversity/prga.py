@@ -7,7 +7,7 @@ from .common import AbstractInstance
 from ...util import Object, uno
 from ...exception import PRGAInternalError
 
-__all__ = ['Instance']
+__all__ = ['Instance', 'HierarchicalInstance']
 
 # ----------------------------------------------------------------------------
 # -- Instance Pins Mapping Proxy ---------------------------------------------
@@ -26,7 +26,7 @@ class _InstancePinsProxy(Object, Mapping):
 
     def __getitem__(self, key):
         try:
-            return self.instance.model.ports[key]._to_pin([self.instance])
+            return self.instance.model.ports[key]._to_pin(self.instance)
         except (KeyError, AttributeError):
             raise KeyError(key)
 
@@ -41,7 +41,7 @@ class _InstancePinsProxy(Object, Mapping):
 # -- Instance ----------------------------------------------------------------
 # ----------------------------------------------------------------------------
 class Instance(Object, AbstractInstance):
-    """Instance of a module.
+    """Immediate instance of a module.
 
     Args:
         parent (`AbstractModule`): Parent module
@@ -70,6 +70,19 @@ class Instance(Object, AbstractInstance):
     def __str__(self):
         return 'Instance({}/{})'.format(self._parent.name, self._name)
 
+    def __getitem__(self, idx):
+        l = (True, )
+        if l[idx]:
+            return self
+        else:
+            return tuple()
+
+    def __iter__(self):
+        yield self
+
+    def __len__(self):
+        return 1
+
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
     @property
@@ -79,6 +92,10 @@ class Instance(Object, AbstractInstance):
     @property
     def key(self):
         return self._key
+
+    @property
+    def node(self):
+        return (self._key, )
 
     @property
     def pins(self):
@@ -91,3 +108,71 @@ class Instance(Object, AbstractInstance):
     @property
     def model(self):
         return self._model
+
+# ----------------------------------------------------------------------------
+# -- Hierarchical Instance ---------------------------------------------------
+# ----------------------------------------------------------------------------
+class HierarchicalInstance(Object, AbstractInstance):
+    """Hierarchical instance of a module.
+
+    Args:
+        hierarchy (:obj:`Sequence` [:obj:`Instance` ]): Hierarchy in bottom-up order
+    """
+
+    __slots__ = ['_hierarchy', '_key', '_pins']
+
+    # == internal API ========================================================
+    def __init__(self, hierarchy):
+        self._hierarchy = tuple(iter(hierarchy))
+        self._key = tuple(i.key for i in self._hierarchy)
+        self._pins = _InstancePinsProxy(self)
+
+    def __str__(self):
+        return 'HierarchicalInstance({}/{})'.format(self._hierarchy[-1].parent.name, self.name)
+
+    def __getitem__(self, idx):
+        items = self._hierarchy[idx]
+        if len(items) == 1:
+            return items[0]
+        elif len(items) > 1:
+            return type(self)(items)
+        else:
+            return tuple()
+
+    def __iter__(self):
+        return iter(self._hierarchy)
+
+    def __len__(self):
+        return len(self._hierarchy)
+
+    def __eq__(self, other):
+        return isinstance(other, type(self)) and self._hierarchy == other._hierarchy
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    # == low-level API =======================================================
+    # -- implementing properties/methods required by superclass --------------
+    @property
+    def name(self):
+        return '/'.join(i.name for i in reversed(self._hierarchy))
+
+    @property
+    def key(self):
+        return self._key
+
+    @property
+    def node(self):
+        return self._key
+
+    @property
+    def pins(self):
+        return self._pins
+
+    @property
+    def parent(self):
+        return self._hierarchy[-1].parent
+
+    @property
+    def model(self):
+        return self._hierarchy[0].model

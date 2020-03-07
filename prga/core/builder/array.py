@@ -10,6 +10,7 @@ from ..common import (ModuleClass, Subtile, Position, Orientation, Dimension, Co
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
 from ...netlist.module.util import ModuleUtils
+from ...netlist.module.instance import HierarchicalInstance
 from ...netlist.module.module import Module
 from ...util import Object, uno
 from ...exception import PRGAInternalError, PRGAAPIError
@@ -257,6 +258,11 @@ class _BaseArrayBuilder(BaseBuilder):
         return cls._no_channel(model, corrected, ori)
 
     @classmethod
+    def _instance_position(cls, instance):
+        return sum(iter(i.key[0] if i.parent.module_class.is_leaf_array else i.key
+                for i in instance), Position(0, 0))
+
+    @classmethod
     def _segment_searchlist(cls, node, position, subtile, width, height, *, forward = False):
         # 1. create a list of all possible position + corner where we may find the source
         searchlist = []
@@ -319,11 +325,14 @@ class _BaseArrayBuilder(BaseBuilder):
         return searchlist
 
     @classmethod
-    def _expose_routable_pin(cls, array, key, pin):
-        """Expose ``pin`` as a port, and connect them."""
-        node, port = None, None
-        if key.node_type.is_segment:
-            node = key.convert(key.segment_type.case(
+    def __expose_routable_pin(cls, pin):
+        """Expose ``pin`` as a port and connect them."""
+        array = pin.parent
+        # which type of pin is this?
+        if isinstance(pin.model.key, BlockPinID):   # BLOCK PIN 
+            raise NotImplementedError
+        else:                                       # SEGMENT
+            node = pin.model.key.convert(pin.model.key.segment_type.case(
                 sboxout = SegmentType.array_output,
                 sboxin_regular = SegmentType.array_input,
                 sboxin_cboxout = SegmentType.array_cboxout,
@@ -334,13 +343,12 @@ class _BaseArrayBuilder(BaseBuilder):
                 array_output = SegmentType.array_output,
                 array_cboxout = SegmentType.array_cboxout,
                 array_cboxout2 = SegmentType.array_cboxout,
-                ))
+                ), cls._instance_position(pin.hierarchy))
             while True:
                 port = array.ports.get(node)
                 if port is None:
                     break
                 elif port.direction is pin.model.direction:
-                    # assert array._coalesce_connections
                     source, sink = (pin, port) if port.direction.is_output else (port, pin)
                     cur_source = NetUtils.get_source(sink)
                     if cur_source.net_type.is_unconnected:
@@ -362,7 +370,7 @@ class _BaseArrayBuilder(BaseBuilder):
                 NetUtils.connect(port, pin)
             else:
                 NetUtils.connect(pin, port)
-        elif array.module_class.is_leaf_array and key.segment_type.is_sboxin_regular:
+        elif array.module_class.is_leaf_array and pin.model.key.segment_type.is_sboxin_regular:
             try:
                 old_box_key = port.boxkey
                 oldcorner = old_box_key[1].to_corner()
@@ -386,6 +394,18 @@ class _BaseArrayBuilder(BaseBuilder):
                     new_box_key = old_box_key
             port.boxkey = new_box_key
         return port
+
+    @classmethod
+    def _expose_routable_pin(cls, pin, *, create_port = False):
+        """Recursively expose a hierarchical ``pin``."""
+        port = pin.model
+        for instance in pin.hierarchy[:-1]:
+            cur = instance.pins[port.key]
+            port = cls.__expose_routable_pin(cur)
+        if create_port:
+            return cls.__expose_routable_pin(pin.hierarchy[-1].pins[port.key])
+        else:
+            return pin.hierarchy[-1].pins[port.key]
 
     @classmethod
     def _get_or_create_global_input(cls, array, global_):
@@ -736,7 +756,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                             self.connect(source, pin)
                         # 3.1.3 if no pin is found, check if we need to expose the pin to the outside world
                         elif not is_top:
-                            self._expose_routable_pin(self._module, key.convert(position_adjustment = pos), pin)
+                            self._expose_routable_pin(pin, create_port = True)
                     elif key.segment_type.is_cboxout:
                         # 3.2 find the segment source so we can find the sbox to be connected
                         node = key.convert(SegmentType.sboxout, pos)
@@ -778,7 +798,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                             self.connect(pin, sbox.pins[bridge.key])
                         # 3.2.3 if no pin is found, check if we need to expose the pin to the outside world
                         elif not is_top:
-                            self._expose_routable_pin(self._module, key.convert(position_adjustment = pos), pin)
+                            self._expose_routable_pin(pin, create_port = True)
                 elif isinstance(key, BlockPinID):       # block pin
                     # find the block and connect it
                     block_pos = pos + key.position - key.prototype.position
@@ -812,8 +832,7 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
 
     # == low-level API =======================================================
     @classmethod
-    def _get_hierarchical_root(cls, array, position, subtile):
-        assert 0 <= position.x < array.width and 0 <= position.y < array.height
+    def __get_hierarchical_root(cls, array, position, subtile):
         if array.module_class.is_leaf_array:
             inst = array._instances.get_root(position, subtile)
             if inst is None:
@@ -824,11 +843,20 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
             inst = array._instances.get_root(position)
             if inst is None:
                 return None
-            hierarchy = cls._get_hierarchical_root(inst.model, position - inst.key, subtile)
+            hierarchy = cls.__get_hierarchical_root(inst.model, position - inst.key, subtile)
             if hierarchy is None:
                 return None
             else:
                 return hierarchy + (inst, )
+
+    @classmethod
+    def _get_hierarchical_root(cls, array, position, subtile):
+        assert 0 <= position.x < array.width and 0 <= position.y < array.height
+        root = cls.__get_hierarchical_root(array, position, subtile)
+        if root is None:
+            return None
+        else:
+            return HierarchicalInstance(root)
 
     # == high-level API ======================================================
     @classmethod
@@ -928,23 +956,24 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
                                     node.orientation, True):
                                 break
                             sbox = self._get_hierarchical_root(self._module, src_sbox_position, src_sbox_subtile)
-                            if sbox is None or not sbox[0].model.module_class.is_switch_box:
+                            if sbox is None or not sbox.model.module_class.is_switch_box:
                                 continue
                             sbox_node = node.convert(position_adjustment = -src_sbox_position)
-                            source = sbox[0].pins.get(sbox_node)
-                            if source is None:
-                                continue
-                            else:
-                                sbox_node = sbox_node.convert(position_adjustment = sbox[0].key[0])
-                                for instance in sbox[1:]:
-                                    source = self._expose_routable_pin(instance.model, sbox_node, source)
-                                    source = instance.pins[source.key]
-                                    sbox_node = sbox_node.convert(position_adjustment = instance.key)
+                            source = sbox.pins.get(sbox_node)
+                            if source is not None:
+                                source = self._expose_routable_pin(source)
                                 break
+                            # else:
+                            #     sbox_node = sbox_node.convert(position_adjustment = sbox[0].key[0])
+                            #     for instance in sbox[1:]:
+                            #         source = self._expose_routable_pin(instance.model, sbox_node, source)
+                            #         source = instance.pins[source.key]
+                            #         sbox_node = sbox_node.convert(position_adjustment = instance.key)
+                            #     break
                         if source is not None:
                             self.connect(source, pin)
                         elif not is_top:
-                            self._expose_routable_pin(self._module, node, pin)
+                            self._expose_routable_pin(pin, create_port = True)
                     elif (key.segment_type in (SegmentType.array_cboxout, SegmentType.array_cboxout2) and
                             pin.model.direction.is_output):     # try to find the segment driven by this
                         box_position, box_subtile = pin.model.boxkey
@@ -955,19 +984,19 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
                                     node.orientation, True):
                                 break
                             sbox = self._get_hierarchical_root(self._module, src_sbox_position, src_sbox_subtile)
-                            if sbox is None or not sbox[0].model.module_class.is_switch_box:
+                            if sbox is None or not sbox.model.module_class.is_switch_box:
                                 continue
                             sbox_node = node.convert(position_adjustment = -src_sbox_position)
-                            source = sbox[0].pins.get(sbox_node)
+                            source = sbox.pins.get(sbox_node)
                             if source is not None:
                                 break
                         if source is not None:
                             # let's see if the bridge is already there in the switch box
                             done = False
                             for segment_type in (SegmentType.sboxin_cboxout, SegmentType.sboxin_cboxout2):
-                                bridge_node = source.model.key.convert(segment_type)
-                                bridge = sbox[0].pins.get(bridge_node)
-                                bridge_node = bridge_node.convert(position_adjustment = sbox[0].key[0])
+                                # bridge_node = source.model.key.convert(segment_type)
+                                bridge = sbox[0].pins.get(source.model.key.convert(segment_type))
+                                # bridge_node = bridge_node.convert(position_adjustment = sbox[0].key[0])
                                 if bridge is not None:
                                     # There's one bridge over there! Trace up and see if it's usable
                                     for inst in sbox[1:]:
@@ -976,35 +1005,35 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
                                             bridge = None
                                             break
                                         elif bridge_source.net_type.is_unconnected: # cool! this one is unused
-                                            bridge = self._expose_routable_pin(inst.model, bridge_node, bridge)
+                                            bridge = self._expose_routable_pin(bridge, create_port = True)
                                             bridge = inst.pins[bridge.key]
                                         else: # we're not sure if this one is usable
                                             assert bridge_source.net_type.is_port
                                             bridge = inst.pins[bridge_source.key]
-                                        bridge_node = bridge_node.convert(position_adjustment = inst.key)
+                                        # bridge_node = bridge_node.convert(position_adjustment = inst.key)
                                 if bridge is not None:  # cool, we found a source that may be usable
                                     bridge_source = NetUtils.get_source(bridge)
                                     if bridge_source.net_type.is_unconnected:
                                         self.connect(pin, bridge)
-                                        done = True
-                                        break
-                                    elif bridge_source == pin:
-                                        done = True
-                                        break
+                                    elif bridge_source != pin:
+                                        continue
+                                    done = True
+                                    break
                             if done:
                                 continue
                             # no bridge already available. create a new one
-                            bridge_node = source.model.key.convert(SegmentType.sboxin_cboxout)
-                            bridge = SwitchBoxBuilder(self._context, sbox[0].model)._add_cboxout(bridge_node)
-                            bridge = sbox[0].pins[bridge.key]
-                            bridge_node = bridge_node.convert(position_adjustment = sbox[0].key[0])
-                            for inst in sbox[1:]:
-                                bridge = self._expose_routable_pin(inst.model, bridge_node, bridge)
-                                bridge_node = bridge_node.convert(position_adjustment = inst.key)
-                                bridge = inst.pins[bridge.key]
-                            self.connect(pin, bridge)
+                            # bridge_node = source.model.key.convert(SegmentType.sboxin_cboxout)
+                            bridge = SwitchBoxBuilder(self._context, sbox.model)._add_cboxout(
+                                    source.model.key.convert(SegmentType.sboxin_cboxout))
+                            # bridge = sbox.pins[bridge.key]
+                            # bridge_node = bridge_node.convert(position_adjustment = sbox[0].key[0])
+                            # for inst in sbox[1:]:
+                            #     bridge = self._expose_routable_pin(inst.model, bridge_node, bridge)
+                            #     bridge_node = bridge_node.convert(position_adjustment = inst.key)
+                            #     bridge = inst.pins[bridge.key]
+                            self.connect(pin, self._expose_routable_pin(sbox.pins[bridge.key]))
                         elif not is_top:
-                            self._expose_routable_pin(self._module, key.convert(position_adjustment = pos), pin)
+                            self._expose_routable_pin(pin, create_port = True)
                 elif isinstance(key, BlockPinID):
                     pass
                 elif hasattr(pin.model, 'global_'):
