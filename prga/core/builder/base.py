@@ -4,6 +4,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from ...netlist.module.common import MemOptNonCoalescedConnGraph, LazyDict
+from ...netlist.module.util import ModuleUtils
 from ...util import Object
 
 from enum import Enum
@@ -15,7 +16,7 @@ __all__ = []
 # -- Memory-Optimized Connection Graph for User Modules ----------------------
 # ----------------------------------------------------------------------------
 class MemOptUserNodeDict(LazyDict):
-    __slots__ = ['logical_cp']
+    __slots__ = ['logical_cp', 'clock_group', 'clock']
 
 class MemOptUserConnGraph(MemOptNonCoalescedConnGraph):
     node_attr_dict_factory = MemOptUserNodeDict
@@ -48,5 +49,5 @@ class BaseBuilder(Object):
 
     def commit(self):
         """Commit the module."""
-        # ModuleUtils.elaborate(self._module)
+        ModuleUtils.elaborate(self._module)
         return self._module

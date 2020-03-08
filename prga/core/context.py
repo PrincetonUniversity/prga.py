@@ -55,7 +55,10 @@ class Context(Object):
         self._globals = OrderedDict()
         self._directs = OrderedDict()
         self._segments = OrderedDict()
-        self._database = database or self._new_database()
+        if database is None:
+            self._database = self._new_database()
+        else:
+            self._database = self._new_database()
         self._top = None
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
@@ -76,6 +79,7 @@ class Context(Object):
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
                     port_class = PrimitivePortClass.lut_out)
             NetUtils.connect(in_, out, fully = True)
+            ModuleUtils.elaborate(lut)
             database[ModuleView.user, lut.key] = lut
 
         # 2. register built-in modules: D-flipflop
@@ -91,6 +95,7 @@ class Context(Object):
                     clock = 'clk', port_class = PrimitivePortClass.D)
             ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
                     clock = 'clk', port_class = PrimitivePortClass.Q)
+            ModuleUtils.elaborate(flipflop)
             database[ModuleView.user, flipflop.key] = flipflop
 
         # 3. register built-in modules: iopads
@@ -104,6 +109,7 @@ class Context(Object):
                 ModuleUtils.create_port(pad, 'inpad', 1, PortDirection.output)
             if class_ in (PrimitiveClass.outpad, PrimitiveClass.iopad):
                 ModuleUtils.create_port(pad, 'outpad', 1, PortDirection.input_)
+            ModuleUtils.elaborate(pad)
             database[ModuleView.user, pad.key] = pad
 
         return database

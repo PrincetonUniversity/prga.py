@@ -84,6 +84,85 @@ class NetUtils(object):
             return bus
 
     @classmethod
+    def _navigate_backwards(cls, module, endpoint, *,
+            path = tuple(),
+            yield_ = lambda node: True,
+            stop = lambda node: False,
+            skip = lambda node: False):
+        """Natigate the connection graph backwards, yielding startpoints and paths from the startpoints to the
+        endpoints.
+        
+        Args:
+            module (`AbstractModule`): Top-level module to perform navigation
+            endpoint (:obj:`Hashable`): Endpoint for the navigation
+
+        Keyword Arguments:
+            path (:obj:`Sequence` [:obj:`Hashable` ]): Path to be appended to any path reported by this method
+            yield_ (:obj:`Function` [:obj:`Hashable` ] -> :obj:`bool`): Lambda function testing if a node should be
+                emitted during navigation
+            stop (:obj:`Function` [:obj:`Hashable` ] -> :obj:`bool`): Lambda function testing if the navigation should
+                stop at the specified node (i.e. force treating it as a startpoint)
+            skip (:obj:`Function` [:obj:`Hashable` ] -> :obj:`bool`): Lambda function testing if a node should be
+                ignored when reporting the path
+
+        Yields:
+            path (:obj:`Sequence` [:obj:`Hashable` ]): a path to endpoint
+        """
+        # 1. disassemble the node
+        idx, net_key = endpoint
+        # 2. check elaboration status and determine in which module to do the navigation
+        model, hierarchy_key = module, tuple()
+        while len(net_key) >= 3 and net_key[2:] not in model._elaborated:
+            done = False
+            for split in range(3, len(net_key) - 1):
+                cur_up, cur_down = net_key[split:], net_key[:split]
+                if cur_up in model._elaborated:
+                    model = model.hierarchy[cur_up].model
+                    hierarchy_key, net_key = cur_up + hierarchy_key, cur_down
+                    done = True
+                    break
+            if not done:
+                model = model.instances[net_key[-1]].model
+                hierarchy_key, net_key = net_key[-1:] + hierarchy_key, net_key[:-1]
+        # 3. move forward
+        if model._coalesce_connections:
+            try:
+                for node in model._conn_graph.predecessors( net_key ):
+                    cur = (idx, node + hierarchy_key)
+                    if yield_( cur ):
+                        yield (cur, ) + path
+                    if stop( cur ) or 'clock' in model._conn_graph.nodes[node]:
+                        continue
+                    if skip( cur ):
+                        for p in cls._navigate_backwards(module, cur,
+                                path = path, yield_ = yield_, stop = stop, skip = skip):
+                            yield p
+                    else:
+                        for p in cls._navigate_backwards(module, cur,
+                                path = (cur, ) + path, yield_ = yield_, stop = stop, skip = skip):
+                            yield p
+            except NetworkXError:
+                return
+        else:
+            try:
+                for node in model._conn_graph.predecessors( (idx, net_key) ):
+                    cur = (node[0], node[1] + hierarchy_key)
+                    if yield_( cur ):
+                        yield (cur, ) + path
+                    if stop( cur ) or 'clock' in model._conn_graph.nodes[node]:
+                        continue
+                    if skip( cur ):
+                        for p in cls._navigate_backwards(module, cur,
+                                path = path, yield_ = yield_, stop = stop, skip = skip):
+                            yield p
+                    else:
+                        for p in cls._navigate_backwards(module, cur,
+                                path = (cur, ) + path, yield_ = yield_, stop = stop, skip = skip):
+                            yield p
+            except NetworkXError:
+                return
+
+    @classmethod
     def concat(cls, items, *, skip_flatten = False):
         """`Slice`, `Concat` or other nets: Concatenate the provided iterable of nets. Set ``skip_flatten`` if
         ``items`` does not contain a `Concat` object."""

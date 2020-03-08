@@ -4,6 +4,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .base import AbstractPass
+from ..netlist.module.common import MemOptNonCoalescedConnGraph
 from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
 from ..netlist.net.common import PortDirection
@@ -80,6 +81,8 @@ class TranslationPass(Object, AbstractPass):
                 }
         if not disable_coalesce and module._coalesce_connections: # and not module.module_class.is_nonleaf_array:
             kwargs['coalesced_connections'] = True
+        else:
+            kwargs['conn_graph'] = MemOptNonCoalescedConnGraph()
         # special case for IO block
         if module.module_class.is_io_block:
             assert not module._coalesce_connections
@@ -219,6 +222,7 @@ class TranslationPass(Object, AbstractPass):
                         logical._conn_graph.add_edge(self._u2l(module, user_source),
                                 NetUtils._reference(switch_input))
                     logical._conn_graph.add_edge(NetUtils._reference(switch.pins['o']), logical_sink)
+        ModuleUtils.elaborate(logical)
         context.database[ModuleView.logical, module.key] = logical
         return logical
 

@@ -152,11 +152,15 @@ class Scanchain(object):
             # configuration ports
             cfg_clk = ModuleUtils.create_port(lut, 'cfg_clk', 1, PortDirection.input_,
                     is_clock = True, net_class = NetClass.cfg)
-            cfg_e = ModuleUtils.create_port(lut, 'cfg_e', 1, PortDirection.input_, net_class = NetClass.cfg)
+            cfg_e = ModuleUtils.create_port(lut, 'cfg_e', 1, PortDirection.input_,
+                    clock = "cfg_clk", net_class = NetClass.cfg)
             cfg_i = ModuleUtils.create_port(lut, 'cfg_i', cfg_width, PortDirection.input_,
-                    net_class = NetClass.cfg)
+                    clock = "cfg_clk", net_class = NetClass.cfg)
             cfg_o = ModuleUtils.create_port(lut, 'cfg_o', cfg_width, PortDirection.output,
-                    net_class = NetClass.cfg)
+                    clock = "cfg_clk", net_class = NetClass.cfg)
+
+            # elaborate
+            ModuleUtils.elaborate(lut)
             context._database[ModuleView.logical, lut.key] = lut
 
         # register flipflops
@@ -172,6 +176,7 @@ class Scanchain(object):
                     clock = 'clk', net_class = NetClass.primitive)
             ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
                     clock = 'clk', net_class = NetClass.primitive)
+            ModuleUtils.elaborate(flipflop)
             context._database[ModuleView.logical, flipflop.key] = flipflop
 
         # register single-bit configuration filler
@@ -185,13 +190,14 @@ class Scanchain(object):
             cfg_clk = ModuleUtils.create_port(cfg_bit, 'cfg_clk', 1, PortDirection.input_,
                     is_clock = True, net_class = NetClass.cfg)
             cfg_e = ModuleUtils.create_port(cfg_bit, 'cfg_e', 1, PortDirection.input_,
-                    net_class = NetClass.cfg)
+                    clock = 'cfg_clk', net_class = NetClass.cfg)
             cfg_i = ModuleUtils.create_port(cfg_bit, 'cfg_i', cfg_width, PortDirection.input_,
-                    net_class = NetClass.cfg)
+                    clock = 'cfg_clk', net_class = NetClass.cfg)
             cfg_o = ModuleUtils.create_port(cfg_bit, 'cfg_o', cfg_width, PortDirection.output,
-                    net_class = NetClass.cfg)
+                    clock = 'cfg_clk', net_class = NetClass.cfg)
             cfg_d = ModuleUtils.create_port(cfg_bit, 'cfg_d', 1, PortDirection.output,
-                    net_class = NetClass.cfg)
+                    clock = 'cfg_clk', net_class = NetClass.cfg)
+            ModuleUtils.elaborate(cfg_bit)
             context._database[ModuleView.logical, cfg_bit.key] = cfg_bit
 
         return context
@@ -240,3 +246,4 @@ class Scanchain(object):
         if cfg_i is not None:
             NetUtils.connect(cfg_i, cfg_o)
         module.cfg_bitcount = cfg_bitoffset
+        ModuleUtils.elaborate(module)

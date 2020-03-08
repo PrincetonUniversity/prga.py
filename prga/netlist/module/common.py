@@ -87,7 +87,12 @@ class AbstractInstance(Abstract, Sequence):
 
     @abstractmethod
     def extend(self, hierarchy):
-        """`AbstractInstance`: Extend the hierarchy."""
+        """`AbstractInstance`: Extend up the hierarchy."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def delve(self, hierarchy):
+        """`AbstractInstance`: Extend down the hierarchy."""
         raise NotImplementedError
 
     @abstractproperty
@@ -143,12 +148,13 @@ class _NodeDict(MutableMapping):
             self._dict[key] = tuple(_Placeholder.placeholder if i == idx else item for i, item in enumerate(l))
 
     def __len__(self):
-        return sum(len(l) for l in itervalues(self._dict))
+        return sum(1 for _ in iter(self))
 
     def __iter__(self):
         for key, l in iteritems(self._dict):
-            for idx in range(len(l)):
-                yield idx, key
+            for idx, item in enumerate(l):
+                if item is not _Placeholder.placeholder:
+                    yield idx, key
 
 class MemOptNonCoalescedConnGraph(nx.DiGraph):
     node_dict_factory = _NodeDict

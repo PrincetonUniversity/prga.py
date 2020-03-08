@@ -83,7 +83,7 @@ class Module(Object, AbstractModule):
     """
 
     __slots__ = ['_name', '_key', '_children', '_ports', '_instances', '_conn_graph',
-            '_allow_multisource', '_coalesce_connections', '_hierarchy', '__dict__']
+            '_allow_multisource', '_coalesce_connections', '_hierarchy', '_elaborated', '__dict__']
 
     # == internal API ========================================================
     def __init__(self, name, *,
@@ -102,6 +102,7 @@ class Module(Object, AbstractModule):
         self._coalesce_connections = coalesce_connections
         self._conn_graph = uno(conn_graph, nx.DiGraph())
         self._hierarchy = _HierarchicalInstanceProxy(self)
+        self._elaborated = set()
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
 

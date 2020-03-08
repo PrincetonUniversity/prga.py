@@ -117,6 +117,13 @@ class Instance(Object, AbstractInstance):
                     .format(self, hierarchy))
         return HierarchicalInstance( (self, ) + hierarchy )
 
+    def delve(self, hierarchy):
+        hierarchy = tuple(iter(hierarchy))
+        if hierarchy[-1].parent is not self.model:
+            raise PRGAInternalError("'{}' is not a sub-hierarchy in '{}'"
+                    .format(hierarchy, self))
+        return HierarchicalInstance( hierarchy + (self, ) )
+
     @property
     def is_hierarchical(self):
         return False
@@ -192,10 +199,18 @@ class HierarchicalInstance(Object, AbstractInstance):
         return self._hierarchy[0].model
 
     def extend(self, hierarchy):
-        if self.parent is not hierarchy.model:
+        hierarchy = tuple(iter(hierarchy))
+        if self.parent is not hierarchy[0].model:
             raise PRGAInternalError("'{}' is not a sub-hierarchy in '{}'"
                     .format(self, hierarchy))
         return type(self)( self._hierarchy + hierarchy )
+
+    def delve(self, hierarchy):
+        hierarchy = tuple(iter(hierarchy))
+        if hierarchy[-1].parent is not self.model:
+            raise PRGAInternalError("'{}' is not a sub-hierarchy in '{}'"
+                    .format(hierarchy, self))
+        return type(self)( hierarchy + self._hierarchy )
 
     @property
     def is_hierarchical(self):
