@@ -37,7 +37,12 @@ class _HierarchicalInstanceProxy(Object, Mapping):
                 instance = parent.instances[k]
                 parent = instance.model
                 instances.append(instance)
-            return HierarchicalInstance(reversed(instances))
+            if len(instances) == 0:
+                return tuple()
+            elif len(instances) == 1:
+                return instances[0]
+            else:
+                return HierarchicalInstance(reversed(instances))
         except KeyError:
             raise KeyError(key)
 

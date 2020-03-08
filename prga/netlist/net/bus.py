@@ -6,8 +6,8 @@ from prga.compatible import *
 from .common import NetType, PortDirection, AbstractPort, AbstractPin
 from .const import Unconnected
 from .util import NetUtils
-from ...util import Object, uno
-from ...exception import PRGATypeError
+from ...util import Object, uno, compose_slice
+from ...exception import PRGATypeError, PRGAInternalError
 
 __all__ = ['Port', 'Pin']
 
@@ -51,7 +51,12 @@ class Port(Object, AbstractPort):
 
     # == internal API ========================================================
     def _to_pin(self, hierarchy):
-        return Pin(self, hierarchy)
+        """`Pin`: Convert to a pin in ``hierarchy``.
+
+        Args:
+            hierarchy (`Abstracinstance`):
+        """
+        return hierarchy.pins[self.key]
 
     # == low-level API =======================================================
     @property
@@ -91,7 +96,7 @@ class Port(Object, AbstractPort):
     def __getitem__(self, index):
         if not isinstance(index, int) and not isinstance(index, slice):
             raise PRGATypeError("index", "int or slice")
-        index = NetUtils._slice_intersect(slice(0, len(self)), index)
+        index = compose_slice(slice(0, len(self)), index)
         if index is None:
             return Unconnected(0)
         else:
@@ -134,6 +139,15 @@ class Pin(Object, AbstractPin):
     def hierarchy(self):
         return self._hierarchy
 
+    def shrink(self, length):
+        if length == 0:
+            return self.model
+        else:
+            return type(self)(self.model, self._hierarchy[:length])
+
+    def extend(self, hierarchy):
+        return type(self)(self.model, self._hierarchy.extend(hierarchy))
+
     # -- implementing properties/methods required by superclass --------------
     @property
     def name(self):
@@ -141,7 +155,7 @@ class Pin(Object, AbstractPin):
 
     @property
     def node(self):
-        return self.model.node + self._hierarchy.node
+        return self.model.node + self._hierarchy.hierarchical_key
 
     def __len__(self):
         return len(self._model)
@@ -149,7 +163,7 @@ class Pin(Object, AbstractPin):
     def __getitem__(self, index):
         if not isinstance(index, int) and not isinstance(index, slice):
             raise PRGATypeError("index", "int or slice")
-        index = NetUtils._slice_intersect(slice(0, len(self._model)), index)
+        index = compose_slice(slice(0, len(self._model)), index)
         if index is None:
             return Unconnected(0)
         else:

@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from .common import BusType, NetType, AbstractGenericBus, AbstractGenericNet
 from .const import Unconnected, Const
-from ...util import Object, uno
+from ...util import Object, uno, compose_slice
 from ...exception import PRGAInternalError, PRGATypeError, PRGAIndexError
 
 from networkx.exception import NetworkXError
@@ -21,32 +21,6 @@ __all__ = ['NetUtils']
 # ----------------------------------------------------------------------------
 class NetUtils(object):
     """A wrapper class for utility functions for nets."""
-
-    @classmethod
-    def _slice_intersect(cls, src, dst):
-        """``None``, :obj:`int` or :obj:`slice`: Apply :obj:`int` or :obj:`slice` ``dst`` on :obj:`int` or :obj:`slice`
-        ``src``.  If any argument is :obj:`slice`, its ``step`` is ignored and treated as ``1``."""
-        if isinstance(src, int):
-            if (dst == 0 if isinstance(dst, int) else dst.start <= 0 < dst.stop):
-                return src
-            else:
-                raise PRGAIndexError("Index out of range")
-        else:
-            low, high = 0, max(0, src.stop - src.start)
-            if isinstance(dst, int):
-                if low <= dst < high:
-                    return src.start + dst
-                else:
-                    raise PRGAIndexError("Index out of range")
-            else:
-                start = max(low, uno(dst.start, low))
-                stop = min(high, uno(dst.stop, high))
-                if stop <= start:
-                    return None
-                elif stop == start + 1:
-                    return src.start + start
-                else:
-                    return slice(src.start + start, src.start + stop)
 
     @classmethod
     def _slice(cls, bus, index):
@@ -422,7 +396,7 @@ class Slice(Object, AbstractGenericNet):
     def __getitem__(self, index):
         if not isinstance(index, int) and not isinstance(index, slice):
             raise PRGATypeError("index", "int or slice")
-        index = NetUtils._slice_intersect(self.index, index)
+        index = compose_slice(self.index, index)
         if index is None:
             return Unconnected(0)
         else:

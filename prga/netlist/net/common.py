@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from ...util import Enum, Abstract
 
-from abc import abstractproperty
+from abc import abstractproperty, abstractmethod
 
 __all__ = ['NetType', 'BusType', 'PortDirection']
 
@@ -144,11 +144,21 @@ class AbstractPin(AbstractGenericNet):
 
     @abstractproperty
     def hierarchy(self):
-        """`HierarchicalInstance`: Hierarchy of instances down to the pin in bottom-up order.
+        """`AbstractInstance`: [Hierarchical] instances down to the pin in bottom-up order.
 
         For example, assume 1\) module 'clb' has an instance 'alm0' of module 'alm', and 2\) module 'alm' has an
         instance 'lutA' of module 'LUT4', and 3\) module 'LUT4' has an input port 'in'. This net can be referred to by
         a pin, whose model is the port, and the hierarchy is [instance 'lutA', instance 'alm0']."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def shrink(self, length):
+        """`AbstractPin`: Shrink hierarchy to ``length``."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def extend(self, hierarchy):
+        """`AbstractPin`: Extend hierarchy up to ``hierarchy``."""
         raise NotImplementedError
 
     # -- implementing properties/methods required by superclass --------------

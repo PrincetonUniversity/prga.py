@@ -4,7 +4,8 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .common import AbstractInstance
-from ...util import Object, uno
+from ..net.bus import Pin
+from ...util import Object, uno, compose_slice
 from ...exception import PRGAInternalError
 
 __all__ = ['Instance', 'HierarchicalInstance']
@@ -26,7 +27,7 @@ class _InstancePinsProxy(Object, Mapping):
 
     def __getitem__(self, key):
         try:
-            return self.instance.model.ports[key]._to_pin(self.instance)
+            return Pin(self.instance.model.ports[key], self.instance)
         except (KeyError, AttributeError):
             raise KeyError(key)
 
@@ -41,7 +42,7 @@ class _InstancePinsProxy(Object, Mapping):
 # -- Instance ----------------------------------------------------------------
 # ----------------------------------------------------------------------------
 class Instance(Object, AbstractInstance):
-    """Immediate instance of a module.
+    """[Hierarchical] instance of a module.
 
     Args:
         parent (`AbstractModule`): Parent module
@@ -71,11 +72,11 @@ class Instance(Object, AbstractInstance):
         return 'Instance({}/{})'.format(self._parent.name, self._name)
 
     def __getitem__(self, idx):
-        l = (True, )
-        if l[idx]:
-            return self
-        else:
+        idx = compose_slice(slice(0, 1), idx)
+        if idx is None:
             return tuple()
+        else:
+            return self
 
     def __iter__(self):
         yield self
@@ -94,7 +95,7 @@ class Instance(Object, AbstractInstance):
         return self._key
 
     @property
-    def node(self):
+    def hierarchical_key(self):
         return (self._key, )
 
     @property
@@ -109,6 +110,17 @@ class Instance(Object, AbstractInstance):
     def model(self):
         return self._model
 
+    def extend(self, hierarchy):
+        hierarchy = tuple(iter(hierarchy))
+        if self.parent is not hierarchy[0].model:
+            raise PRGAInternalError("'{}' is not a sub-hierarchy in '{}'"
+                    .format(self, hierarchy))
+        return HierarchicalInstance( (self, ) + hierarchy )
+
+    @property
+    def is_hierarchical(self):
+        return False
+
 # ----------------------------------------------------------------------------
 # -- Hierarchical Instance ---------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -119,25 +131,27 @@ class HierarchicalInstance(Object, AbstractInstance):
         hierarchy (:obj:`Sequence` [:obj:`Instance` ]): Hierarchy in bottom-up order
     """
 
-    __slots__ = ['_hierarchy', '_key', '_pins']
+    __slots__ = ['_hierarchy', '_hierarchical_key', '_pins']
 
     # == internal API ========================================================
     def __init__(self, hierarchy):
         self._hierarchy = tuple(iter(hierarchy))
-        self._key = tuple(i.key for i in self._hierarchy)
+        if len(self._hierarchy) < 2:
+            raise PRGAInternalError("Cannot create hierarchical instance with less than 2 levels")
+        self._hierarchical_key = tuple(i.key for i in self._hierarchy)
         self._pins = _InstancePinsProxy(self)
 
     def __str__(self):
         return 'HierarchicalInstance({}/{})'.format(self._hierarchy[-1].parent.name, self.name)
 
     def __getitem__(self, idx):
-        items = self._hierarchy[idx]
-        if len(items) == 1:
-            return items[0]
-        elif len(items) > 1:
-            return type(self)(items)
-        else:
+        idx = compose_slice(slice(0, len(self._hierarchy)), idx)
+        if idx is None:
             return tuple()
+        elif isinstance(idx, int):
+            return self._hierarchy[idx]
+        else:
+            return type(self)(self._hierarchy[idx])
 
     def __iter__(self):
         return iter(self._hierarchy)
@@ -159,11 +173,11 @@ class HierarchicalInstance(Object, AbstractInstance):
 
     @property
     def key(self):
-        return self._key
+        raise PRGAInternalError("No key for '{}'".format(self))
 
     @property
-    def node(self):
-        return self._key
+    def hierarchical_key(self):
+        return self._hierarchical_key
 
     @property
     def pins(self):
@@ -176,3 +190,13 @@ class HierarchicalInstance(Object, AbstractInstance):
     @property
     def model(self):
         return self._hierarchy[0].model
+
+    def extend(self, hierarchy):
+        if self.parent is not hierarchy.model:
+            raise PRGAInternalError("'{}' is not a sub-hierarchy in '{}'"
+                    .format(self, hierarchy))
+        return type(self)( self._hierarchy + hierarchy )
+
+    @property
+    def is_hierarchical(self):
+        return True

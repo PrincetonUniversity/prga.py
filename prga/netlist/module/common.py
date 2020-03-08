@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from ...util import Enum, Abstract, Object
 
-from abc import abstractproperty
+from abc import abstractproperty, abstractmethod
 from enum import Enum
 import networkx as nx
 
@@ -62,13 +62,12 @@ class AbstractInstance(Abstract, Sequence):
 
     @abstractproperty
     def key(self):
-        """:obj:`Hashable`: A hashable key used to index this instance in its parent module."""
+        """:obj:`Hashable`: A hashable key used to index this instance in its immediate parent module."""
         raise NotImplementedError
 
     @abstractproperty
-    def node(self):
-        """:obj:`Hashable`: A hashable key used to compose the node ID of pins in the parent module's connection
-        graph."""
+    def hierarchical_key(self):
+        """:obj:`Hashable`: A hashable key used to index this instance in its ancestor parent module."""
         raise NotImplementedError
 
     @abstractproperty
@@ -84,6 +83,16 @@ class AbstractInstance(Abstract, Sequence):
     @abstractproperty
     def model(self):
         """`AbstractModule`: Model of this instance."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def extend(self, hierarchy):
+        """`AbstractInstance`: Extend the hierarchy."""
+        raise NotImplementedError
+
+    @abstractproperty
+    def is_hierarchical(self):
+        """:obj:`bool`: Test if this instance is hierarchical, i.e. not immediate sub-instance of its parent module."""
         raise NotImplementedError
 
 # ----------------------------------------------------------------------------

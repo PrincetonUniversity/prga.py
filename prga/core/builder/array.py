@@ -10,7 +10,6 @@ from ..common import (ModuleClass, Subtile, Position, Orientation, Dimension, Co
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
 from ...netlist.module.util import ModuleUtils
-from ...netlist.module.instance import HierarchicalInstance
 from ...netlist.module.module import Module
 from ...util import Object, uno
 from ...exception import PRGAInternalError, PRGAAPIError
@@ -326,12 +325,14 @@ class _BaseArrayBuilder(BaseBuilder):
 
     @classmethod
     def __expose_routable_pin(cls, pin):
-        """Expose ``pin`` as a port and connect them."""
+        """Expose non-hierarchical ``pin`` as a port and connect them."""
+        assert not pin.hierarchy.is_hierarchical
         array = pin.parent
         # which type of pin is this?
         if isinstance(pin.model.key, BlockPinID):   # BLOCK PIN 
             raise NotImplementedError
         else:                                       # SEGMENT
+            port = None
             node = pin.model.key.convert(pin.model.key.segment_type.case(
                 sboxout = SegmentType.array_output,
                 sboxin_regular = SegmentType.array_input,
@@ -360,48 +361,47 @@ class _BaseArrayBuilder(BaseBuilder):
                     node = node.convert(SegmentType.array_cboxout2)
                     continue
                 raise PRGAInternalError("'{}' already exposed but not correctly connected".format(pin))
-        new_box_key = (pin.hierarchy[-1].key if array.module_class.is_leaf_array else 
-                (pin.hierarchy[-1].key + pin.model.boxkey[0], pin.model.boxkey[1]))
-        if port is None:
-            port = ModuleUtils.create_port(array, cls._node_name(node),
-                    len(pin), pin.model.direction, key = node,
-                    boxkey = new_box_key)
-            if pin.model.direction.is_input:
-                NetUtils.connect(port, pin)
-            else:
-                NetUtils.connect(pin, port)
-        elif array.module_class.is_leaf_array and pin.model.key.segment_type.is_sboxin_regular:
-            try:
-                old_box_key = port.boxkey
-                oldcorner = old_box_key[1].to_corner()
-            except PRGAInternalError:
-                return port
-            if node.orientation.is_north:
-                if (old_box_key[0].y > new_box_key[0].y or (old_box_key[0].y == new_box_key[0].y and 
-                    oldcorner.dotx(Dimension.y).is_inc)):
-                    new_box_key = old_box_key
-            elif node.orientation.is_east:
-                if (old_box_key[0].x > new_box_key[0].x or (old_box_key[0].x == new_box_key[0].x and 
-                    oldcorner.dotx(Dimension.x).is_inc)):
-                    new_box_key = old_box_key
-            elif node.orientation.is_south:
-                if (old_box_key[0].y < new_box_key[0].y or (old_box_key[0].y == new_box_key[0].y and 
-                    oldcorner.dotx(Dimension.y).is_dec)):
-                    new_box_key = old_box_key
-            else:
-                if (old_box_key[0].x < new_box_key[0].x or (old_box_key[0].x == new_box_key[0].x and 
-                    oldcorner.dotx(Dimension.x).is_dec)):
-                    new_box_key = old_box_key
-            port.boxkey = new_box_key
-        return port
+            new_box_key = (pin.hierarchy.key if array.module_class.is_leaf_array else 
+                    (pin.hierarchy.key + pin.model.boxkey[0], pin.model.boxkey[1]))
+            if port is None:
+                port = ModuleUtils.create_port(array, cls._node_name(node),
+                        len(pin), pin.model.direction, key = node,
+                        boxkey = new_box_key)
+                if pin.model.direction.is_input:
+                    NetUtils.connect(port, pin)
+                else:
+                    NetUtils.connect(pin, port)
+            elif array.module_class.is_leaf_array and pin.model.key.segment_type.is_sboxin_regular:
+                try:
+                    old_box_key = port.boxkey
+                    oldcorner = old_box_key[1].to_corner()
+                except PRGAInternalError:
+                    return port
+                if node.orientation.is_north:
+                    if (old_box_key[0].y > new_box_key[0].y or (old_box_key[0].y == new_box_key[0].y and 
+                        oldcorner.dotx(Dimension.y).is_inc)):
+                        new_box_key = old_box_key
+                elif node.orientation.is_east:
+                    if (old_box_key[0].x > new_box_key[0].x or (old_box_key[0].x == new_box_key[0].x and 
+                        oldcorner.dotx(Dimension.x).is_inc)):
+                        new_box_key = old_box_key
+                elif node.orientation.is_south:
+                    if (old_box_key[0].y < new_box_key[0].y or (old_box_key[0].y == new_box_key[0].y and 
+                        oldcorner.dotx(Dimension.y).is_dec)):
+                        new_box_key = old_box_key
+                else:
+                    if (old_box_key[0].x < new_box_key[0].x or (old_box_key[0].x == new_box_key[0].x and 
+                        oldcorner.dotx(Dimension.x).is_dec)):
+                        new_box_key = old_box_key
+                port.boxkey = new_box_key
+            return port
 
     @classmethod
     def _expose_routable_pin(cls, pin, *, create_port = False):
         """Recursively expose a hierarchical ``pin``."""
         port = pin.model
         for instance in pin.hierarchy[:-1]:
-            cur = instance.pins[port.key]
-            port = cls.__expose_routable_pin(cur)
+            port = cls.__expose_routable_pin(instance.pins[port.key])
         if create_port:
             return cls.__expose_routable_pin(pin.hierarchy[-1].pins[port.key])
         else:
@@ -832,31 +832,19 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
 
     # == low-level API =======================================================
     @classmethod
-    def __get_hierarchical_root(cls, array, position, subtile):
+    def _get_hierarchical_root(cls, array, position, subtile):
+        assert 0 <= position.x < array.width and 0 <= position.y < array.height
         if array.module_class.is_leaf_array:
-            inst = array._instances.get_root(position, subtile)
-            if inst is None:
-                return None
-            else:
-                return (inst, )
+            return array._instances.get_root(position, subtile)
         else:
             inst = array._instances.get_root(position)
             if inst is None:
                 return None
-            hierarchy = cls.__get_hierarchical_root(inst.model, position - inst.key, subtile)
-            if hierarchy is None:
+            sub = cls._get_hierarchical_root(inst.model, position - inst.key, subtile)
+            if sub is None:
                 return None
             else:
-                return hierarchy + (inst, )
-
-    @classmethod
-    def _get_hierarchical_root(cls, array, position, subtile):
-        assert 0 <= position.x < array.width and 0 <= position.y < array.height
-        root = cls.__get_hierarchical_root(array, position, subtile)
-        if root is None:
-            return None
-        else:
-            return HierarchicalInstance(root)
+                return sub.extend([inst])
 
     # == high-level API ======================================================
     @classmethod
@@ -999,14 +987,16 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
                                 # bridge_node = bridge_node.convert(position_adjustment = sbox[0].key[0])
                                 if bridge is not None:
                                     # There's one bridge over there! Trace up and see if it's usable
-                                    for inst in sbox[1:]:
+                                    for i, inst in enumerate(sbox[1:]):
                                         bridge_source = NetUtils.get_source(bridge)
                                         if bridge_source.net_type.is_pin: # bad news. it's driven by another pin
                                             bridge = None
                                             break
                                         elif bridge_source.net_type.is_unconnected: # cool! this one is unused
-                                            bridge = self._expose_routable_pin(bridge, create_port = True)
-                                            bridge = inst.pins[bridge.key]
+                                            bridge = self._expose_routable_pin(bridge.extend(sbox[i + 1:]))
+                                            break
+                                            # bridge = self._expose_routable_pin(bridge, create_port = True)
+                                            # bridge = inst.pins[bridge.key]
                                         else: # we're not sure if this one is usable
                                             assert bridge_source.net_type.is_port
                                             bridge = inst.pins[bridge_source.key]

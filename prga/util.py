@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .exception import PRGAInternalError
+from .exception import PRGAInternalError, PRGAIndexError
 
 from abc import ABCMeta
 import enum
@@ -11,7 +11,7 @@ import logging
 import sys
 
 __all__ = ["ReadonlyMappingProxy", "ReadonlySequenceProxy", "uno", "Abstract", "Object", "Enum",
-        'enable_stdout_logging']
+        'compose_slice', 'enable_stdout_logging']
 
 class ReadonlyMappingProxy(Mapping):
     """A read-only proxy of a :obj:`Mapping` implementation object.
@@ -194,3 +194,43 @@ def enable_stdout_logging(name, level=logging.WARNING, verbose=False):
     logger = logging.getLogger(name)
     logger.addHandler(hdl)
     logger.setLevel(level)
+
+def _rotation(i, l):
+    if i >= 0:
+        return i
+    else:
+        return i + l
+
+def compose_slice(src, dst):
+    """``None``, :obj:`int` or :obj:`slice`: Apply :obj:`int` or :obj:`slice` ``dst`` on :obj:`int` or :obj:`slice`
+    ``src``.  If any argument is :obj:`slice`, its ``step`` is ignored and treated as ``1``."""
+    # calculate source length
+    length = 1 if isinstance(src, int) else max(0, src.stop - src.start)
+    # fix up dst
+    if isinstance(dst, int):
+        dst = _rotation(dst, length)
+    else:
+        dst = slice(_rotation(uno(dst.start, 0), length),
+                _rotation(uno(dst.stop, length), length))
+    if isinstance(src, int):
+        if isinstance(dst, int) and dst == 0:
+            return src
+        elif isinstance(dst, slice) and dst.start <= 0 < dst.stop:
+            return src
+        else:
+            raise PRGAIndexError("Index out of range")
+    else:
+        if isinstance(dst, int):
+            if 0 <= dst < length:
+                return src.start + dst
+            else:
+                raise PRGAIndexError("Index out of range")
+        else:
+            start = max(0, dst.start)
+            stop = min(length, dst.stop)
+            if stop <= start:
+                return None
+            elif stop == start + 1:
+                return src.start + start
+            else:
+                return slice(src.start + start, src.start + stop)
