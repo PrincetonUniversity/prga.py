@@ -86,10 +86,10 @@ class NetUtils(object):
     @classmethod
     def _navigate_backwards(cls, module, endpoint, *,
             path = tuple(),
-            yield_ = lambda node: True,
-            stop = lambda node: False,
-            skip = lambda node: False):
-        """Natigate the connection graph backwards, yielding startpoints and paths from the startpoints to the
+            yield_ = lambda module, node: True,
+            stop = lambda module, node: False,
+            skip = lambda module, node: False):
+        """Navigate the connection graph backwards, yielding startpoints and paths from the startpoints to the
         endpoints.
         
         Args:
@@ -98,12 +98,12 @@ class NetUtils(object):
 
         Keyword Arguments:
             path (:obj:`Sequence` [:obj:`Hashable` ]): Path to be appended to any path reported by this method
-            yield_ (:obj:`Function` [:obj:`Hashable` ] -> :obj:`bool`): Lambda function testing if a node should be
-                emitted during navigation
-            stop (:obj:`Function` [:obj:`Hashable` ] -> :obj:`bool`): Lambda function testing if the navigation should
-                stop at the specified node (i.e. force treating it as a startpoint)
-            skip (:obj:`Function` [:obj:`Hashable` ] -> :obj:`bool`): Lambda function testing if a node should be
-                ignored when reporting the path
+            yield_ (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`bool`): Lambda function testing if
+                a node should be emitted during navigation
+            stop (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`bool`): Lambda function testing if
+                the navigation should stop at the specified node (i.e. force treating it as a startpoint)
+            skip (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`bool`): Lambda function testing if
+                a node should be ignored when reporting the path
 
         Yields:
             path (:obj:`Sequence` [:obj:`Hashable` ]): a path to endpoint
@@ -125,42 +125,32 @@ class NetUtils(object):
                 model = model.instances[net_key[-1]].model
                 hierarchy_key, net_key = net_key[-1:] + hierarchy_key, net_key[:-1]
         # 3. move forward
-        if model._coalesce_connections:
-            try:
-                for node in model._conn_graph.predecessors( net_key ):
-                    cur = (idx, node + hierarchy_key)
-                    if yield_( cur ):
-                        yield (cur, ) + path
-                    if stop( cur ) or 'clock' in model._conn_graph.nodes[node]:
+        while True:
+            while True:
+                try:
+                    nodes = tuple(model._conn_graph.predecessors( 
+                        net_key if model._coalesce_connections else (idx, net_key) ))
+                except NetworkXError:
+                    break
+                if not nodes:
+                    break
+                for node in nodes:
+                    cur = ((idx, node + hierarchy_key) if model._coalesce_connections else 
+                            (node[0], node[1] + hierarchy_key))
+                    next_path = path if skip( module, cur ) else ((cur, ) + path)
+                    if yield_( module, cur ):
+                        yield next_path
+                    if stop( module, cur ) or 'clock' in model._conn_graph.nodes[node]:
                         continue
-                    if skip( cur ):
-                        for p in cls._navigate_backwards(module, cur,
-                                path = path, yield_ = yield_, stop = stop, skip = skip):
-                            yield p
-                    else:
-                        for p in cls._navigate_backwards(module, cur,
-                                path = (cur, ) + path, yield_ = yield_, stop = stop, skip = skip):
-                            yield p
-            except NetworkXError:
+                    for p in cls._navigate_backwards(module, cur,
+                            path = next_path, yield_ = yield_, stop = stop, skip = skip):
+                        yield p
                 return
-        else:
-            try:
-                for node in model._conn_graph.predecessors( (idx, net_key) ):
-                    cur = (node[0], node[1] + hierarchy_key)
-                    if yield_( cur ):
-                        yield (cur, ) + path
-                    if stop( cur ) or 'clock' in model._conn_graph.nodes[node]:
-                        continue
-                    if skip( cur ):
-                        for p in cls._navigate_backwards(module, cur,
-                                path = path, yield_ = yield_, stop = stop, skip = skip):
-                            yield p
-                    else:
-                        for p in cls._navigate_backwards(module, cur,
-                                path = (cur, ) + path, yield_ = yield_, stop = stop, skip = skip):
-                            yield p
-            except NetworkXError:
+            # 4. one more chance if this net is on the edge of elaboration
+            if len(net_key) != 2:
                 return
+            model, hierarchy_key = model.instances[net_key[1]].model, net_key[1:] + hierarchy_key
+            net_key = net_key[:1]
 
     @classmethod
     def concat(cls, items, *, skip_flatten = False):

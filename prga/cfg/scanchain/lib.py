@@ -39,9 +39,9 @@ class ScanchainSwitchDatabase(Object, AbstractSwitchDatabase):
         except KeyError:
             pass
         try:
-            cfg_bitcount = width.bit_length()
+            cfg_bitcount = (width - 1).bit_length()
         except AttributeError:
-            cfg_bitcount = len(bin(width).lstrip('-0b'))
+            cfg_bitcount = len(bin(width - 1).lstrip('-0b'))
         switch = Module('sw' + str(width), key = key, ports = OrderedDict(), allow_multisource = True,
                 module_class = ModuleClass.switch, cfg_bitcount = cfg_bitcount,
                 verilog_template = "switch.tmpl.v")
@@ -69,12 +69,15 @@ class ScanchainFASMDelegate(FASMDelegate):
         context (`Context`):
     """
 
-    __slots__ = ['context']
+    __slots__ = ['context', '_elaborated']
     def __init__(self, context):
         self.context = context
+        self._elaborated = set()
 
     def _hierarchical_bitoffset(self, hierarchical_instance):
         cfg_bitoffset = 0
+        if not hierarchical_instance:
+            return cfg_bitoffset
         for inst in reversed(hierarchical_instance):
             inst = self.context.database[ModuleView.logical, inst.parent.key].instances[inst.key]
             inst_bitoffset = getattr(inst, 'cfg_bitoffset', None)
@@ -83,26 +86,76 @@ class ScanchainFASMDelegate(FASMDelegate):
             cfg_bitoffset += inst_bitoffset
         return cfg_bitoffset
 
-    def fasm_prefix_for_tile(self, hierarchical_instance):
-        cfg_bitoffset = self._hierarchical_bitoffset(hierarchical_instance[1:])
+    def _features_for_path(self, source, sink, instance = None):
+        # let's work in the logical domain
+        user_model = instance.model if instance else source.parent
+        logical_model = self.context.database[ModuleView.logical, user_model.key]
+        if user_model.key not in self._elaborated:
+            ModuleUtils.elaborate(logical_model, True, lambda instance: not instance.model.module_class.is_switch)
+            self._elaborated.add(logical_model.key)
+        src_node, sink_node = map(NetUtils._reference, (source, sink))
+        src_node, sink_node = map(lambda x: user_model._conn_graph.nodes[x].get("logical_cp", x),
+                (src_node, sink_node))
+        # find programmable switch paths
+        cfg_bitoffset = self._hierarchical_bitoffset(instance)
+        features = []
+        def stop(m, n):
+            net = NetUtils._dereference(m, n)
+            if not net.net_type.is_pin:
+                return True
+            bus = net.bus if net.bus_type.is_slice else net
+            return not bus.model.net_class.is_switch
+        def skip(m, n):
+            net = NetUtils._dereference(m, n)
+            if not net.net_type.is_pin:
+                return True
+            bus = net.bus if net.bus_type.is_slice else net
+            return not bus.model.net_class.is_switch or bus.model.direction.is_output
+        for i, path in enumerate(NetUtils._navigate_backwards(logical_model, sink_node,
+            yield_ = lambda m, n: n == src_node, stop = stop, skip = skip)):
+            if i > 0:
+                raise PRGAInternalError("Multiple paths found from {} to {}".format(source, sink))
+            for node in path:
+                net = NetUtils._dereference(logical_model, node)
+                # if net.model.direction.is_output:
+                #     continue
+                bus, index = (net.bus, net.index) if net.bus_type.is_slice else (net, 0)
+                assert not bus.hierarchy.is_hierarchical
+                inst_bitoffset = cfg_bitoffset + bus.hierarchy.cfg_bitoffset
+                width = bus.hierarchy.model.cfg_bitcount
+                f = "b{{}}[{}:0]={}'b{{:0>{}b}}".format(width - 1, width, width)
+                features.append( f.format(inst_bitoffset, index) )
+        return features
+
+    def reset(self):
+        self._elaborated = set()
+
+    def fasm_mux_for_intrablock_switch(self, source, sink, instance = None):
+        return self._features_for_path(source, sink, instance)
+
+    def fasm_prefix_for_tile(self, instance):
+        cfg_bitoffset = self._hierarchical_bitoffset(instance[1:])
         if cfg_bitoffset is None:
             return tuple()
         retval = []
-        leaf_array = self.context.database[ModuleView.logical, hierarchical_instance[0].parent.key]
-        for subblock in range(hierarchical_instance[0].model.capacity):
-            blk_inst = leaf_array.instances[hierarchical_instance[0].key[0], subblock]
+        leaf_array = self.context.database[ModuleView.logical, instance[0].parent.key]
+        for subblock in range(instance[0].model.capacity):
+            blk_inst = leaf_array.instances[instance[0].key[0], subblock]
             inst_bitoffset = getattr(blk_inst, 'cfg_bitoffset', None)
             if inst_bitoffset is None:
                 return tuple()
             retval.append( 'b{}'.format(cfg_bitoffset + inst_bitoffset) )
         return retval
 
-    def fasm_lut(self, hierarchical_instance):
-        cfg_bitoffset = self._hierarchical_bitoffset(hierarchical_instance)
+    def fasm_lut(self, instance):
+        cfg_bitoffset = self._hierarchical_bitoffset(instance)
         if cfg_bitoffset is None:
             return ''
-        lut = self.context.database[ModuleView.logical, hierarchical_instance[0].model.key]
+        lut = self.context.database[ModuleView.logical, instance[0].model.key]
         return 'b{}[{}:0]'.format(str(cfg_bitoffset), lut.cfg_bitcount - 1)
+
+    def fasm_features_for_routing_switch(self, source, sink, instance = None):
+        return self._features_for_path(source, sink, instance)
 
 # ----------------------------------------------------------------------------
 # -- Scanchain Configuration Circuitry Main Entry ----------------------------

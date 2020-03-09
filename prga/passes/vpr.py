@@ -7,8 +7,9 @@ from .base import AbstractPass
 from ..core.common import (Position, Subtile, Orientation, ModuleView, Dimension, BlockPinID, SegmentID, SegmentType,
         Direction, Corner)
 from ..core.builder.array import NonLeafArrayBuilder
-from ..netlist.net.bus import Pin
+from ..netlist.net.common import NetType
 from ..netlist.net.util import NetUtils
+from ..netlist.module.util import ModuleUtils
 from ..util import Object, uno
 from ..xml import XMLGenerator
 from ..exception import PRGAInternalError
@@ -25,38 +26,40 @@ __all__ = ['FASMDelegate', 'VPRInputsGeneration']
 class FASMDelegate(Object):
     """FASM delegate supplying FASM metadata."""
 
-    def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy):
+    def reset(self):
+        """Reset the delegate."""
+        pass
+
+    def fasm_mux_for_intrablock_switch(self, source, sink, instance = None):
         """Get the "fasm_mux" string for the connection from ``source`` to ``sink``.
 
         Args:
             source (`AbstractGenericNet`): Source bit
             sink (`AbstractGenericNet`): Sink bit
-            hierarchy (:obj:`Sequence` [`AbstractInstance` ]): Hierarchical instance in bottom-up order in a block
+            instance (`AbstractInstance`): Hierarchical instance in the logic/io block. ``source`` and ``sink`` are
+                both immediate child-nets of this instance if ``instance`` is not None.
         
         Returns:
             :obj:`Sequence` [:obj:`str` ]: "fasm_mux" features
         """
         return tuple()
 
-    def fasm_prefix_for_intrablock_module(self, hierarchical_instance):
-        """Get the "fasm_prefix" string for a hierarchical cluster/primitive instance ``hierarchical_instance``.
+    def fasm_prefix_for_intrablock_module(self, instance):
+        """Get the "fasm_prefix" string for a hierarchical cluster/primitive ``instance``.
 
         Args:
-            hierarchical_instance (:obj:`Sequence` [`AbstractInstance` ]): Hierarchical instance in bottom-up order in
-                a block
+            instance (`AbstractInstance`): Hierarchical instance in the logic/io block
 
         Returns:
             :obj:`str`: "fasm_prefix" for the module
         """
         return ''
 
-    def fasm_features_for_mode(self, hierarchical_instance, mode):
-        """Get the "fasm_features" string for multimode instance ``hierarchical_instance`` when it's configured to
-        ``mode``.
+    def fasm_features_for_mode(self, instance, mode):
+        """Get the "fasm_features" string for hierarchical multimode ``instance`` when it's configured to ``mode``.
 
         Args:
-            hierarchical_instance (:obj:`Sequence` [`AbstractInstance` ]): Hierarchical multimode instance in
-                bottom-up order in a block
+            instance (`AbstractInstance`): Hierarchical multimode instance in the logic/io block
             mode (:obj:`str`):
         
         Returns:
@@ -65,51 +68,48 @@ class FASMDelegate(Object):
         """
         return tuple()
 
-    def fasm_params_for_primitive(self, hierarchical_instance):
-        """Get the "fasm_params" strings for primitive instance ``hierarchical_instance``.
+    def fasm_params_for_primitive(self, instance):
+        """Get the "fasm_params" strings for hierarchical primitive ``instance``.
 
         Args:
-            hierarchical_instance (:obj:`Sequence` [`AbstractInstance` ]): Hierarchical instance in bottom-up order in
-                a block
+            instance (`AbstractInstance`): Hierarchical instance in the logic/io block
 
         Returns:
             :obj:`Mapping` [:obj:`str`, :obj:`str` ]: "fasm_param" feature mapping for the primitive instance
         """
         return {}
 
-    def fasm_lut(self, hierarchical_instance):
-        """Get the "fasm_lut" string for LUT instance ``hierarchical_instance``.
+    def fasm_lut(self, instance):
+        """Get the "fasm_lut" string for hierarchical LUT instance ``instance``.
 
         Args:
-            hierarchical_instance (:obj:`Sequence` [`AbstractInstance` ]): Hierarchical instance in bottom-up order in
-                a block
+            instance (`AbstractInstance`): Hierarchical instance in the logic/io block
 
         Returns:
             :obj:`str`: "fasm_lut" feature for the LUT instance
         """
         return ''
     
-    def fasm_prefix_for_tile(self, hierarchical_instance):
-        """Get the "fasm_prefix" strings for the block instance ``hierarchical_instance``. If the block instance is
-        one of a few IO block instances, the fasm prefix for all its siblings will be produced.
+    def fasm_prefix_for_tile(self, instance):
+        """Get the "fasm_prefix" strings for hierarchical block ``instance``. If the block instance is
+        one of a few IO block instances, the fasm prefixes for all its siblings are returned together.
 
         Args:
-            hierarchical_instance (:obj:`Sequence` [`AbstractInstance` ]): Hierarchical instance in bottom-up order in
-                the top-level array
+            instance (`AbstractInstance`): Hierarchical logic/io block instance in the top-level array
 
         Returns:
             :obj:`Sequence` [:obj:`str` ]: "fasm_prefix" for the block instances
         """
         return tuple()
 
-    def fasm_features_for_routing_switch(self, switch_input):
-        """Get the "fasm_features" strings for selecting ``switch_input``.
+    def fasm_features_for_routing_switch(self, source, sink, instance):
+        """Get the "fasm_features" strings for connecting routing box ports ``source`` and ``sink`` in hierarchical
+        routing box ``instance``.
 
         Args:
-            switch_input (`AbstractGenericNet`): Hierarchical switch input bit
-        
-        Returns:
-            :obj:`Sequence` [:obj:`str` ]: "fasm_features" features
+            source (`AbstractGenericNet`): Source bit
+            sink (`AbstractGenericNet`): Sink bit
+            instance (`AbstractInstance`): Hierarchical routing box instance in the top-level array
         """
         return tuple()
 
@@ -205,7 +205,7 @@ class VPRInputsGeneration(Object, AbstractPass):
             return chanpos, node.orientation.dimension, node.orientation.direction, node.prototype.length - section
         else:                                       # block pin
             ori = None
-            if bus.hierarchy[0].model.module_class.is_io_block:
+            if bus.hierarchy.model.module_class.is_io_block:
                 ori = cls._iob_orientation(bus.hierarchy[0]).opposite
             else:
                 ori = bus.model.orientation
@@ -213,17 +213,25 @@ class VPRInputsGeneration(Object, AbstractPass):
                     ori.case( (0, 0), (0, 0), (0, -1), (-1, 0) ))
             return chanpos, ori.dimension.perpendicular, None, None
 
-    def _arch_layout_array(self, array, hierarchy = tuple()):
+    def _arch_layout_array(self, array, hierarchy = None, elaborated = set()):
         if array.module_class.is_nonleaf_array:
-            for instance in itervalues(array.instances):
-                self._arch_layout_array(instance.model, (instance, ) + hierarchy)
+            if not hierarchy:
+                ModuleUtils.elaborate(array, True, lambda x: x.model.module_class.is_leaf_array)
+                for instance in itervalues(array.instances):
+                    self._arch_layout_array(instance.model, instance, elaborated)
+            else:
+                for instance in itervalues(array.instances):
+                    self._arch_layout_array(instance.model, hierarchy.delve(instance), elaborated)
         else:
-            position = sum(iter(inst.key for inst in hierarchy), Position(0, 0))
+            if array.key not in elaborated:
+                ModuleUtils.elaborate(array, True, lambda x: x.model.module_class.is_block)
+                elaborated.add(array.key)
+            position = NonLeafArrayBuilder._instance_position(hierarchy)
             for x, y in product(range(array.width), range(array.height)):
                 blk_inst = array.instances.get( ((x, y), Subtile.center) )
                 if blk_inst is None:
                     continue
-                fasm_prefix = '\n'.join(self.delegate.fasm_prefix_for_tile( (blk_inst, ) + hierarchy ))
+                fasm_prefix = '\n'.join(self.delegate.fasm_prefix_for_tile( hierarchy.delve(blk_inst) ))
                 attrs = {'priority': 1, 'x': position.x + x, 'y': position.y + y}
                 if blk_inst.model.module_class.is_io_block:
                     # special process needed for IO blocks
@@ -261,7 +269,7 @@ class VPRInputsGeneration(Object, AbstractPass):
                     "block_type_id": id_, "x": x, "y": y,
                     "width_offset": x - rootpos.x, "height_offset": y - rootpos.y})
 
-    def _interconnect(self, sink, hierarchy = tuple(), parent_name = None):
+    def _interconnect(self, sink, hierarchy = None, parent_name = None):
         sources = NetUtils.get_multisource(sink)
         if len(sources) == 0:
             return
@@ -396,7 +404,7 @@ class VPRInputsGeneration(Object, AbstractPass):
                 self.xml.element_leaf("meta", {"name": "fasm_params"},
                     '\n'.join("{} = {}".format(config, param) for param, config in iteritems(fasm_params)))
 
-    def _pb_type(self, module, hierarchy = tuple()):
+    def _pb_type(self, module, hierarchy = None):
         parent_name = hierarchy[0].name if hierarchy else module.name
         attrs = {"name": parent_name}
         if hierarchy:
@@ -413,7 +421,7 @@ class VPRInputsGeneration(Object, AbstractPass):
             # 2. emit cluster/primitive instances
             fasm_luts = {}
             for instance in itervalues(module.instances):
-                hierarchical_instance = (instance, ) + hierarchy
+                hierarchical_instance = hierarchy.delve(instance) if hierarchy else instance
                 if instance.model.module_class.is_cluster:
                     self._pb_type(instance.model, hierarchical_instance)
                 elif instance.model.module_class.is_primitive:
@@ -622,66 +630,98 @@ class VPRInputsGeneration(Object, AbstractPass):
                 node.orientation.direction.case(0, 1))
 
     def _rrg_edges(self, sink, sink_node, sinkpos, sinkdim, sinkdir, sinkspan):
-        stack = [sink]
-        while stack:
-            cur = stack.pop()
-            # find the previous net
-            for prev in NetUtils.get_hierarchical_multisource(cur):
-                assert not prev.net_type.is_unconnected
-                if not prev.net_type.is_pin:
-                    continue
-                prev_bus, prev_index = (prev.bus, prev.index) if prev.bus_type.is_slice else (prev, 0)
-                node = prev_bus.model.key
-                if isinstance(node, SegmentID) and node.segment_type.is_sboxout:
-                    srcpos, srcdim, srcdir, srcspan = self._analyze_routable_pin(prev)
-                    srcori = Orientation.compose(srcdim, srcdir)
-                    diff = sinkpos - srcpos
-                    if sinkdir is None:    # track to block pin
-                        # 1. same dimension
-                        if not (srcdim is sinkdim and srcdim.case(diff.y, diff.x) == 0):
+        sink_conngraph_node = NetUtils._reference(sink)
+        def yield_or_stop(m, n):
+            idx, net_key = n
+            if isinstance(idx, NetType):
+                return False
+            elif isinstance(net_key[0], SegmentID):
+                return net_key[0].segment_type.is_sboxout
+            elif isinstance(net_key[0], BlockPinID):
+                return False
+            else:
+                return True
+        def skip(m, n):
+            idx, net_key = n
+            if isinstance(net_key[0], SegmentID) or isinstance(net_key[0], BlockPinID):
+                return not m.hierarchy[net_key[1:]].model.module_class.is_routing_box
+            return False
+        for path in NetUtils._navigate_backwards(sink.parent, sink_conngraph_node,
+                yield_ = yield_or_stop, stop = yield_or_stop, skip = skip):
+            src = NetUtils._dereference(sink.parent, path[0])
+            srcpos, srcdim, srcdir, srcspan = self._analyze_routable_pin(src)
+            src_bus, src_index = (src.bus, src.index) if src.bus_type.is_slice else (src, 0)
+            src_node = None
+            if isinstance(src_bus.model.key, SegmentID):
+                srcori = Orientation.compose(srcdim, srcdir)
+                diff = sinkpos - srcpos
+                if sinkdir is None:    # track to block pin
+                    # 1. same dimension
+                    if not (srcdim is sinkdim and srcdim.case(diff.y, diff.x) == 0):
+                        continue
+                    # 2. within reach
+                    elif not (0 <= srcori.case(diff.y, diff.x, -diff.y, -diff.x) < srcspan):
+                        continue
+                else:               # track to track
+                    # 1. if in the same dimension
+                    if srcdim is sinkdim:
+                        # 1.1 same direction
+                        if not (srcdir is sinkdir and srcdim.case(diff.y, diff.x) == 0):
                             continue
-                        # 2. within reach
-                        elif not (0 <= srcori.case(diff.y, diff.x, -diff.y, -diff.x) < srcspan):
+                        # 1.2 within reach
+                        elif not (0 < srcori.case(diff.y, diff.x, -diff.y, -diff.x) <= srcspan):
                             continue
-                    else:               # track to track
-                        # 1. if in the same dimension
-                        if srcdim is sinkdim:
-                            # 1.1 same direction
-                            if not (srcdir is sinkdir and srcdim.case(diff.y, diff.x) == 0):
-                                continue
-                            # 1.2 within reach
-                            elif not (0 < srcori.case(diff.y, diff.x, -diff.y, -diff.x) <= srcspan):
-                                continue
-                        # 2. if in perpendicular dimensions
-                        else:
-                            if not srcori.case(
-                                    diff.x == sinkdir.case(1, 0) and 0 <= diff.y < srcspan,
-                                    diff.y == sinkdir.case(1, 0) and 0 <= diff.x < srcspan,
-                                    diff.x == sinkdir.case(1, 0) and 0 < -diff.y <= srcspan,
-                                    diff.y == sinkdir.case(1, 0) and 0 < -diff.x <= srcspan,
-                                    ):
-                                continue
-                    self.xml.element_leaf("edge", {
-                        "src_node": self._calc_track_id(prev),
-                        "sink_node": sink_node,
-                        "switch_id": 1})
-                elif prev_bus.hierarchy[0].model.module_class.is_block:
-                    if sinkdir is not None:        #  track to block pin
-                        srcpos, srcdim, _0, _1 = self._analyze_routable_pin(prev)
-                        sinkori = Orientation.compose(sinkdim, sinkdir)
-                        diff = srcpos - sinkpos
-                        # 1. same dimension
-                        if not (srcdim is sinkdim and srcdim.case(diff.y, diff.x) == 0):
+                    # 2. if in perpendicular dimensions
+                    else:
+                        if not srcori.case(
+                                diff.x == sinkdir.case(1, 0) and 0 <= diff.y < srcspan,
+                                diff.y == sinkdir.case(1, 0) and 0 <= diff.x < srcspan,
+                                diff.x == sinkdir.case(1, 0) and 0 < -diff.y <= srcspan,
+                                diff.y == sinkdir.case(1, 0) and 0 < -diff.x <= srcspan,
+                                ):
                             continue
-                        # 2. within reach
-                        elif not 0 <= sinkori.case(diff.y, diff.x, -diff.y, -diff.x) < sinkspan:
-                            continue
-                    self.xml.element_leaf("edge", {
-                        "src_node": self._calc_blockpin_id(prev),
-                        "sink_node": sink_node,
-                        "switch_id": 1})
+                    # 3. append to path
+                    path = path + (sink_conngraph_node, )
+                src_node = self._calc_track_id(src)
+            else:
+                if sinkdir is not None:     # block pin to track
+                    sinkori = Orientation.compose(sinkdim, sinkdir)
+                    diff = srcpos - sinkpos
+                    # 1. same dimension
+                    if not (srcdim is sinkdim and srcdim.case(diff.y, diff.x) == 0):
+                        continue
+                    # 2. within reach
+                    elif not 0 <= sinkori.case(diff.y, diff.x, -diff.y, -diff.x) < sinkspan:
+                        continue
+                    # 3. append to path
+                    path = path + (sink_conngraph_node, )
+                src_node = self._calc_blockpin_id(src)
+            attrs = { "src_node": src_node, "sink_node": sink_node, "switch_id": 1}
+            # pair nodes
+            assert len(path) % 2 == 1
+            fasm_features = []
+            for i in range(1, len(path), 2):
+                box_input, box_output = map(lambda x: NetUtils._dereference(sink.parent, x),
+                        (path[i], path[i + 1]))
+                hierarchy = None
+                if box_input.bus_type.is_slice:
+                    hierarchy = box_input.bus.hierarchy
+                    box_input = box_input.bus.model[box_input.index]
                 else:
-                    stack.append(prev)
+                    hierarchy = box_input.hierarchy
+                    box_input = box_input.model
+                if box_output.bus_type.is_slice:
+                    box_output = box_output.bus.model[box_output.index]
+                else:
+                    box_output = box_output.model
+                fasm_features.extend(self.delegate.fasm_features_for_routing_switch(
+                    box_input, box_output, hierarchy))
+            if fasm_features:
+                with self.xml.element("edge", attrs), self.xml.element("metadata"):
+                    self.xml.element_leaf("meta", {"name": "fasm_features"},
+                            "\n".join(fasm_features))
+            else:
+                self.xml.element_leaf("edge", attrs)
 
     @property
     def key(self):
@@ -696,6 +736,7 @@ class VPRInputsGeneration(Object, AbstractPass):
         arch_f = os.path.join(os.path.abspath(self.output_dir), "arch.vpr.xml")
         rrg_f = os.path.join(os.path.abspath(self.output_dir), "rrg.vpr.xml")
         self.delegate = context.fasm_delegate
+        self.delegate.reset()
         # runtime-generated data
         self.active_blocks = {}
         self.active_primitives = set()
@@ -717,8 +758,8 @@ class VPRInputsGeneration(Object, AbstractPass):
                             self.block2id[block_key, ori] = len(self.block2id) + 1
                             self._arch_tile(block, ori)
                     else:
-                        self._arch_tile(block)
                         self.block2id[block_key, None] = len(self.block2id) + 1
+                        self._arch_tile(block)
             # complex blocks
             with xml.element("complexblocklist"):
                 for block_key in self.active_blocks:
@@ -902,7 +943,7 @@ class VPRInputsGeneration(Object, AbstractPass):
                     inst = NonLeafArrayBuilder._get_hierarchical_root(context.top, pos, Subtile.center)
                     if inst is not None and pos == self._calc_hierarchical_position(inst):
                         # this is a block instance
-                        block = inst[0].model
+                        block = inst.model
                         pin2ptc = self.blockpin2ptc[block.key]
                         for subblock in range(block.capacity):
                             inst = NonLeafArrayBuilder._get_hierarchical_root(context.top, pos, subblock)
@@ -912,27 +953,27 @@ class VPRInputsGeneration(Object, AbstractPass):
                                 port = block.ports[key]
                                 channel = pos + port.position + port.orientation.case(
                                         (0, 0), (0, 0), (0, -1), (-1, 0))
-                                pin = Pin(port, inst)
+                                pin = port._to_pin( inst )
                                 for bit in pin:
                                     xml.element_leaf('edge', {
                                         'src_node': self._calc_blockpin_id(bit, port.direction.is_output, pos),
                                         'sink_node': self._calc_blockpin_id(bit, port.direction.is_input, pos),
                                         'switch_id': 0,
                                         })
-                                if port.direction.is_input:
+                                if port.direction.is_input and not hasattr(port, 'global_'):
                                     args = self._analyze_routable_pin(pin)
                                     for bit in pin:
                                         self._rrg_edges(bit, self._calc_blockpin_id(bit, False, pos), *args)
                     # segments
                     for corner in Corner:
                         inst = NonLeafArrayBuilder._get_hierarchical_root(context.top, pos, corner.to_subtile())
-                        if inst is None or not inst[0].model.module_class.is_switch_box:
+                        if inst is None or not inst.model.module_class.is_switch_box:
                             continue
-                        for node, port in iteritems(inst[0].model.ports):
+                        for node, port in iteritems(inst.model.ports):
                             if not node.segment_type.is_sboxout:
                                 continue
-                            pin = Pin(port, inst)
+                            pin = port._to_pin( inst )
                             args = self._analyze_routable_pin(pin)
-                            for bit in Pin(port, inst):
+                            for bit in pin:
                                 self._rrg_edges(bit, self._calc_track_id(bit), *args)
             del self.xml
