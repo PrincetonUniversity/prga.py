@@ -133,7 +133,7 @@ class Orientation(Enum):
 # ----------------------------------------------------------------------------
 class OrientationTuple(namedtuple('OrientationTuple', 'north east south west')):
 
-    def __new__(cls, default = False, *, north = None, east = None, south = None, west = None):
+    def __new__(cls, default = False, north = None, east = None, south = None, west = None):
         return super(OrientationTuple, cls).__new__(cls,
                 north = north if north is not None else default,
                 south = south if south is not None else default,

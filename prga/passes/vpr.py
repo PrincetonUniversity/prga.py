@@ -243,7 +243,7 @@ class VPRInputsGeneration(Object, AbstractPass):
                     self.active_blocks[blk_inst.model.key] = True
                     attrs['type'] = blk_inst.model.name
                 if fasm_prefix:
-                    with self.xml.element('single', attrs), self.xml.element("meta"):
+                    with self.xml.element('single', attrs), self.xml.element("metadata"):
                         self.xml.element_leaf("meta", {"name": "fasm_prefix"}, fasm_prefix)
                 else:
                     self.xml.element_leaf("single", attrs)

@@ -12,12 +12,26 @@ module {{ module.name }} (
     );
 
     reg [{{ module.cfg_bitcount - 1 }}:0] cfg_d;
+    reg [{{ width - 1 }}:0] internal_in;
+    
+    always @* begin
+        internal_in = in;
+
+        // synopsys translate_off
+        // in simulation, force unconnected LUT input to be zeros
+        {%- for i in range(width) %}
+        if (in[{{ i }}] === 1'bx) begin
+            internal_in[{{ i }}] = 1'b0;
+        end
+        {%- endfor %}
+        // synopsys translate_on
+    end
 
     always @* begin
         if (cfg_e) begin
             out = 1'b0;
         end else begin
-            case (in)   // synopsys infer_mux
+            case (internal_in)  // synopsys infer_mux
                 {%- for i in range(2 ** width) %}
                 {{ width }}'d{{ i }}: out = cfg_d[{{ i }}];
                 {%- endfor %}

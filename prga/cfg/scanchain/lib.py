@@ -122,9 +122,9 @@ class ScanchainFASMDelegate(FASMDelegate):
                 bus, index = (net.bus, net.index) if net.bus_type.is_slice else (net, 0)
                 assert not bus.hierarchy.is_hierarchical
                 inst_bitoffset = cfg_bitoffset + bus.hierarchy.cfg_bitoffset
-                width = bus.hierarchy.model.cfg_bitcount
-                f = "b{{}}[{}:0]={}'b{{:0>{}b}}".format(width - 1, width, width)
-                features.append( f.format(inst_bitoffset, index) )
+                for i in range(bus.hierarchy.model.cfg_bitcount):
+                    if (index & (1 << i)):
+                        features.append( 'b{}'.format(inst_bitoffset + i) )
         return features
 
     def reset(self):
@@ -203,13 +203,13 @@ class Scanchain(object):
             NetUtils.connect(in_, out, fully = True)
 
             # configuration ports
-            cfg_clk = ModuleUtils.create_port(lut, 'cfg_clk', 1, PortDirection.input_,
+            ModuleUtils.create_port(lut, 'cfg_clk', 1, PortDirection.input_,
                     is_clock = True, net_class = NetClass.cfg)
-            cfg_e = ModuleUtils.create_port(lut, 'cfg_e', 1, PortDirection.input_,
+            ModuleUtils.create_port(lut, 'cfg_e', 1, PortDirection.input_,
                     clock = "cfg_clk", net_class = NetClass.cfg)
-            cfg_i = ModuleUtils.create_port(lut, 'cfg_i', cfg_width, PortDirection.input_,
+            ModuleUtils.create_port(lut, 'cfg_i', cfg_width, PortDirection.input_,
                     clock = "cfg_clk", net_class = NetClass.cfg)
-            cfg_o = ModuleUtils.create_port(lut, 'cfg_o', cfg_width, PortDirection.output,
+            ModuleUtils.create_port(lut, 'cfg_o', cfg_width, PortDirection.output,
                     clock = "cfg_clk", net_class = NetClass.cfg)
 
             # elaborate
@@ -229,6 +229,7 @@ class Scanchain(object):
                     clock = 'clk', net_class = NetClass.primitive)
             ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
                     clock = 'clk', net_class = NetClass.primitive)
+            ModuleUtils.create_port(flipflop, 'cfg_e', 1, PortDirection.input_, net_class = NetClass.cfg)
             ModuleUtils.elaborate(flipflop)
             context._database[ModuleView.logical, flipflop.key] = flipflop
 
@@ -240,15 +241,15 @@ class Scanchain(object):
                     module_class = ModuleClass.cfg,
                     cfg_bitcount = 1,
                     verilog_template = "cfg_bit.tmpl.v")
-            cfg_clk = ModuleUtils.create_port(cfg_bit, 'cfg_clk', 1, PortDirection.input_,
+            ModuleUtils.create_port(cfg_bit, 'cfg_clk', 1, PortDirection.input_,
                     is_clock = True, net_class = NetClass.cfg)
-            cfg_e = ModuleUtils.create_port(cfg_bit, 'cfg_e', 1, PortDirection.input_,
+            ModuleUtils.create_port(cfg_bit, 'cfg_e', 1, PortDirection.input_,
                     clock = 'cfg_clk', net_class = NetClass.cfg)
-            cfg_i = ModuleUtils.create_port(cfg_bit, 'cfg_i', cfg_width, PortDirection.input_,
+            ModuleUtils.create_port(cfg_bit, 'cfg_i', cfg_width, PortDirection.input_,
                     clock = 'cfg_clk', net_class = NetClass.cfg)
-            cfg_o = ModuleUtils.create_port(cfg_bit, 'cfg_o', cfg_width, PortDirection.output,
+            ModuleUtils.create_port(cfg_bit, 'cfg_o', cfg_width, PortDirection.output,
                     clock = 'cfg_clk', net_class = NetClass.cfg)
-            cfg_d = ModuleUtils.create_port(cfg_bit, 'cfg_d', 1, PortDirection.output,
+            ModuleUtils.create_port(cfg_bit, 'cfg_d', 1, PortDirection.output,
                     clock = 'cfg_clk', net_class = NetClass.cfg)
             ModuleUtils.elaborate(cfg_bit)
             context._database[ModuleView.logical, cfg_bit.key] = cfg_bit

@@ -20,8 +20,9 @@ class FileRenderer(Object):
     """File renderer based on Jinja2."""
 
     __slots__ = ['template_search_paths', 'tasks']
-    def __init__(self):
+    def __init__(self, *paths):
         self.template_search_paths = [DEFAULT_TEMPLATE_SEARCH_PATH]
+        self.template_search_paths.extend(paths)
         self.tasks = []
 
     @classmethod
@@ -68,6 +69,16 @@ class FileRenderer(Object):
                 'iteritems': iteritems,
                 }
         parameters.update(kwargs)
+        self.tasks.append( (file_, template, parameters) )
+
+    def add_generic(self, file_, template, **parameters):
+        """Add a generic file rendering task.
+
+        Args:
+            file_ (:obj:`str` of file-like object): The output file
+            template (:obj:`str`): The template to be used
+            **kwargs: Additional key-value parameters to be passed into the template when rendering
+        """
         self.tasks.append( (file_, template, parameters) )
 
     def render(self):

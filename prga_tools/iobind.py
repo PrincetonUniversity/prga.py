@@ -3,10 +3,10 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from prga.arch.net.common import PortDirection
-from prga.algorithm.util.array import get_hierarchical_tile
-from prga.algorithm.util.hierarchy import hierarchical_position
-from prga.flow.context import ArchitectureContext
+from prga.netlist.net.common import PortDirection
+from prga.core.common import ModuleView, IOType
+from prga.core.context import Context
+from prga.core.builder.array import NonLeafArrayBuilder
 from prga.util import enable_stdout_logging, uno
 from prga.exception import PRGAAPIError
 
@@ -44,27 +44,23 @@ def iobind(context, mod_top, fixed = None):
     """Generate IO assignment.
 
     Args:
-        context (`ArchitectureContext`): The architecture context of the custom FPGA
+        context (`Context`): The architecture context of the custom FPGA
         mod_top (`VerilogModule`): Top-level module of target design
         fixed (:obj:`Mapping` [:obj:`str`, :obj:`tuple` [:obj:`int`, :obj:`int`, :obj:`int` ]]): Manually assigned IOs
     """
     # prepare assignment map
-    assignments = [[([], []) for _0 in range(context.top.height)] for _1 in range(context.top.width)]
-    for x, y in product(range(context.top.width), range(context.top.height)):
-        tile = get_hierarchical_tile(context.top, (x, y))
-        if tile is not None and hierarchical_position(tile) == (x, y):
-            tile = tile[-1].model
-            if tile.block.module_class.is_io_block:
-                i, o = map(tile.block.physical_ports.get, ("exti", "exto"))
-                if i is not None:
-                    i = [None] * tile.block.capacity
-                else:
-                    i = []
-                if o is not None:
-                    o = [None] * tile.block.capacity
-                else:
-                    o = []
-                assignments[x][y] = i, o
+    width, height = context.top.width, context.top.height
+    fpga_top = context.database[ModuleView.logical, context.top.key]
+    assignments = tuple(tuple(([], []) for _0 in range(height)) for _1 in range(width))
+    for key in fpga_top.ports:
+        try:
+            iotype, pos, subblock = key
+        except (TypeError, ValueError):
+            continue
+        if iotype in (IOType.ipin, IOType.opin):
+            l = assignments[pos.x][pos.y][iotype] 
+            if len(l) <= subblock:
+                assignments[pos.x][pos.y][iotype].extend( (None, ) * (subblock + 1 - len(l)) )
     # process fixed assignments
     processed = {}
     for name, (x, y, subblock) in iteritems(uno(fixed, {})):
@@ -89,10 +85,11 @@ def iobind(context, mod_top, fixed = None):
             raise PRGAAPIError("Bit index '{}' is not in port '{}'"
                     .format(index, port_name))
         try:
-            if assignments[x][y][0][subblock] is not None or assignments[x][y][1][subblock] is not None:
+            if not (assignments[x][y][IOType.ipin][subblock] is None and
+                    assignments[x][y][IOType.opin][subblock] is None):
                 raise PRGAAPIError("Conflicting assignment at ({}, {}, {})"
                         .format(x, y, subblock))
-            assignments[x][y][port.direction.case(0, 1)][subblock] = name
+            assignments[x][y][port.direction][subblock] = name
             processed[port.direction.case("", "out:") + name] = x, y, subblock
         except (IndexError, TypeError):
             raise PRGAAPIError("Cannot assign port '{}' to ({}, {}, {})"
@@ -143,7 +140,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     enable_stdout_logging(__name__, logging.INFO)
-    context = ArchitectureContext.unpickle(args.context)
+    context = Context.unpickle(args.context)
     _logger.info("Architecture context parsed")
     assignments = iobind(context, find_verilog_top(args.model, args.model_top),
             parse_io_bindings(args.fixed) if args.fixed is not None else {})
