@@ -4,13 +4,11 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from prga.netlist.net.common import PortDirection
-from prga.core.common import ModuleView, IOType
 from prga.core.context import Context
-from prga.core.builder.array import NonLeafArrayBuilder
 from prga.util import enable_stdout_logging, uno
 from prga.exception import PRGAAPIError
 
-from prga_tools.util import find_verilog_top, parse_io_bindings
+from .util import find_verilog_top, parse_io_bindings
 
 from itertools import product
 
@@ -23,47 +21,21 @@ _reprog_bit = re.compile('^(?P<name>.*?)(?:\[(?P<index>\d+)\])?$')
 
 __all__ = ['iobind']
 
-def _find_next_available_io(assignments, current, direction):
-    width, height = len(assignments), len(assignments[0])
-    x, y, subblock = (0, 0, 0) if current is None else current
-    while True:
-        unused, used = assignments[x][y]
-        if direction.is_input:
-            used, unused = unused, used
-        for i in range(subblock, len(used)):
-            if used[i] is None and (i >= len(unused) or unused[i] is None):
-                return x, y, i
-        if y == height - 1:
-            if x == width - 1:
-                return None
-            x, y, subblock = x + 1, 0, 0
-        else:
-            y, subblock = y + 1, 0
-
-def iobind(context, mod_top, fixed = None):
+def iobind(summary, mod_top, fixed = None):
     """Generate IO assignment.
 
     Args:
-        context (`Context`): The architecture context of the custom FPGA
+        summary (`ContextSummary`): The architecture context of the custom FPGA
         mod_top (`VerilogModule`): Top-level module of target design
         fixed (:obj:`Mapping` [:obj:`str`, :obj:`tuple` [:obj:`int`, :obj:`int`, :obj:`int` ]]): Manually assigned IOs
     """
     # prepare assignment map
-    width, height = context.top.width, context.top.height
-    fpga_top = context.database[ModuleView.logical, context.top.key]
-    assignments = tuple(tuple(([], []) for _0 in range(height)) for _1 in range(width))
-    for key in fpga_top.ports:
-        try:
-            iotype, pos, subblock = key
-        except (TypeError, ValueError):
-            continue
-        if iotype in (IOType.ipin, IOType.opin):
-            l = assignments[pos.x][pos.y][iotype] 
-            if len(l) <= subblock:
-                assignments[pos.x][pos.y][iotype].extend( (None, ) * (subblock + 1 - len(l)) )
+    available = {PortDirection.input_: set(), PortDirection.output: set()}
+    for iotype, (x, y), subblock in summary.ios:
+        available[iotype.case(PortDirection.input_, PortDirection.output)].add( (x, y, subblock) )
+    assigned = {}   # port -> io
     # process fixed assignments
-    processed = {}
-    for name, (x, y, subblock) in iteritems(uno(fixed, {})):
+    for name, assignment in iteritems(uno(fixed, {})):
         direction = PortDirection.input_
         if name.startswith('out:'):
             name = name[4:]
@@ -84,51 +56,44 @@ def iobind(context, mod_top, fixed = None):
         elif index is not None and (port.low is None or index < port.low or index >= port.high):
             raise PRGAAPIError("Bit index '{}' is not in port '{}'"
                     .format(index, port_name))
-        try:
-            if not (assignments[x][y][IOType.ipin][subblock] is None and
-                    assignments[x][y][IOType.opin][subblock] is None):
-                raise PRGAAPIError("Conflicting assignment at ({}, {}, {})"
-                        .format(x, y, subblock))
-            assignments[x][y][port.direction][subblock] = name
-            processed[port.direction.case("", "out:") + name] = x, y, subblock
-        except (IndexError, TypeError):
-            raise PRGAAPIError("Cannot assign port '{}' to ({}, {}, {})"
-                    .format(name, x, y, subblock))
+        elif not assignment in available[port.direction]:
+            raise PRGAAPIError("Conflicting or invalid assignment at ({}, {}, {})"
+                    .format(x, y, subblock))
+        available[port.direction].remove( assignment )
+        available[port.direction.opposite].discard( assignment )
+        assigned[port.direction.case("", "out:") + name] = assignment
     # assign IOs
-    next_io = {d: None for d in PortDirection}
     for port_name, port in iteritems(mod_top.ports):
         key = port.direction.case("", "out:") + port_name
         if port.low is None:
-            if key in processed:
+            if key in assigned:
                 continue
-            io = next_io[port.direction] = _find_next_available_io(assignments,
-                    next_io[port.direction], port.direction)
-            if io is None:
+            try:
+                assignment = available[port.direction].pop()
+            except KeyError:
                 raise PRGAAPIError("Ran out of IOs when assigning '{}'".format(port_name))
-            x, y, subblock = io
-            assignments[x][y][port.direction.case(0, 1)][subblock] = key
-            processed[key] = io
+            available[port.direction.opposite].discard( assignment )
+            assigned[key] = assignment
         else:
             for i in range(port.low, port.high):
                 bit_name = '{}[{}]'.format(key, i)
-                if bit_name in processed:
+                if bit_name in assigned:
                     continue
-                io = next_io[port.direction] = _find_next_available_io(assignments,
-                        next_io[port.direction], port.direction)
-                if io is None:
+                try:
+                    assignment = available[port.direction].pop()
+                except KeyError:
                     raise PRGAAPIError("Ran out of IOs when assigning '{}'".format(bit_name))
-                x, y, subblock = io
-                assignments[x][y][port.direction.case(0, 1)][subblock] = bit_name
-                processed[bit_name] = io
-    return processed
+                available[port.direction.opposite].discard( assignment )
+                assigned[bit_name] = assignment
+    return assigned
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(
             description="IO assignment generator")
     
-    parser.add_argument('context', type=argparse.FileType(OpenMode.rb),
-            help="Pickled architecture context object")
+    parser.add_argument('summary', type=argparse.FileType(OpenMode.rb),
+            help="Pickled context or summary object")
     parser.add_argument('-o', '--output', type=str, dest="output",
             help="Generated IO assignments")
     parser.add_argument('-m', '--model', type=str, nargs='+', dest="model",
@@ -140,9 +105,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     enable_stdout_logging(__name__, logging.INFO)
-    context = Context.unpickle(args.context)
-    _logger.info("Architecture context parsed")
-    assignments = iobind(context, find_verilog_top(args.model, args.model_top),
+    summary = Context.unpickle(args.summary)
+    if isinstance(summary, Context):
+        summary = summary.summary
+    _logger.info("Architecture context summary parsed")
+    assignments = iobind(summary, find_verilog_top(args.model, args.model_top),
             parse_io_bindings(args.fixed) if args.fixed is not None else {})
     # print results
     ostream = sys.stdout if args.output is None else open(args.output, 'w')

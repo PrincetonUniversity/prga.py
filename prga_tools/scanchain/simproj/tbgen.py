@@ -11,9 +11,8 @@ from prga.exception import PRGAAPIError
 from prga.renderer.renderer import FileRenderer
 from prga.util import enable_stdout_logging, uno
 
-from prga_tools.util import find_verilog_top, parse_io_bindings, parse_parameters
+from ...util import find_verilog_top, parse_io_bindings, parse_parameters
 
-import jinja2 as jj
 import os
 import re
 import logging
@@ -148,13 +147,15 @@ if __name__ == '__main__':
     args = parser.parse_args()
     enable_stdout_logging(__name__, logging.INFO)
     context = Context.unpickle(args.context)
+    if not isinstance(context, Context):
+        raise RuntimeError("'{}' is not a pickled context object".format(args.context))
     tb_top = find_verilog_top(args.testbench, args.testbench_top)
     tb_top.parameters = parse_parameters(args.testbench_parameters)
     behav_top = find_verilog_top(args.model, args.model_top)
     behav_top.parameters = parse_parameters(args.model_parameters) 
     io_bindings = parse_io_bindings(args.io)
 
-    # get verilog template
+    # create renderer
     r = FileRenderer(os.path.join(os.path.abspath(os.path.dirname(__file__)), 'templates'))
     generate_scanchain_testbench_wrapper(context, r, args.wrapper, tb_top, behav_top, io_bindings)
     r.render()

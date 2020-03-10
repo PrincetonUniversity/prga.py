@@ -153,7 +153,7 @@ class TranslationPass(Object, AbstractPass):
                     if pin is None:
                         continue
                     port = ModuleUtils.create_port(logical,
-                            '{}_x{}y{}_{}'.format(iotype.name, *instance.key[0], instance.key[1]),
+                            '{}_x{}y{}_{:d}'.format(iotype.name, *instance.key[0], instance.key[1]),
                             len(pin), pin.model.direction, key = (iotype, ) + instance.key, net_class = NetClass.io)
                     if port.direction.is_input:
                         global_ = globals_.pop( port.key[1:], None )
@@ -230,4 +230,5 @@ class TranslationPass(Object, AbstractPass):
         top = uno(self.top, context.top)
         if top is None:
             raise PRGAAPIError("Top-level array not set yet.")
+        # recursively process modules
         self._process_module(top, context, is_top = True)

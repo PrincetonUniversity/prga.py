@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from .base import AbstractPass
 from ..core.common import (Position, Subtile, Orientation, ModuleView, Dimension, BlockPinID, SegmentID, SegmentType,
-        Direction, Corner)
+        Direction, Corner, IOType)
 from ..core.builder.array import NonLeafArrayBuilder
 from ..netlist.net.common import NetType
 from ..netlist.net.util import NetUtils
@@ -119,9 +119,9 @@ class FASMDelegate(Object):
 class VPRInputsGeneration(Object, AbstractPass):
     """Generate XML input files for VPR."""
 
-    __slots__ = ['output_dir', 'xml', 'active_blocks', 'active_primitives', 'block2id', 'blockpin2ptc',
-            'sgmt2id', 'sgmt2ptc', 'sgmt2node_id', 'sgmt2node_id_truncated', 'chanx_id', 'chany_id',
-            'srcsink_id', 'blockpin_id', 'delegate']
+    __slots__ = ['output_dir', 'xml', 'active_blocks', 'active_primitives', 'ios', 'lut_sizes',
+            'block2id', 'blockpin2ptc', 'sgmt2id', 'sgmt2ptc', 'sgmt2node_id', 'sgmt2node_id_truncated',
+            'chanx_id', 'chany_id', 'srcsink_id', 'blockpin_id', 'delegate']
     def __init__(self, output_dir = "."):
         self.output_dir = output_dir
 
@@ -238,6 +238,10 @@ class VPRInputsGeneration(Object, AbstractPass):
                     # determine the orientation of this IO block
                     ori = self._iob_orientation(blk_inst)
                     self.active_blocks.setdefault(blk_inst.model.key, set()).add(ori)
+                    for iotype in (IOType.ipin, IOType.opin):
+                        if iotype.case('inpad', 'outpad') in blk_inst.model.instances['io'].pins:
+                            for i in range(blk_inst.model.capacity):
+                                self.ios.append( (iotype, Position(position.x + x, position.y + y), i) )
                     attrs['type'] = blk_inst.model.name + '_' + ori.name[0]
                 else:
                     self.active_blocks[blk_inst.model.key] = True
@@ -347,6 +351,7 @@ class VPRInputsGeneration(Object, AbstractPass):
                 return
         attrs = {'name': instance.name, 'num_pb': '1'}
         if primitive.primitive_class.is_lut:
+            self.lut_sizes.add( len(primitive.ports['in']) )
             attrs.update({"blif_model": ".names", "class": "lut"})
         elif primitive.primitive_class.is_flipflop:
             attrs.update({"blif_model": ".latch", "class": "flipflop"})
@@ -732,14 +737,21 @@ class VPRInputsGeneration(Object, AbstractPass):
         return True
 
     def run(self, context):
-        makedirs(os.path.abspath(self.output_dir))
-        arch_f = os.path.join(os.path.abspath(self.output_dir), "arch.vpr.xml")
-        rrg_f = os.path.join(os.path.abspath(self.output_dir), "rrg.vpr.xml")
+        # update summary
+        context.summary.vpr_dir = os.path.abspath(self.output_dir)
+        context.summary.vpr_array_width = context.top.width
+        context.summary.vpr_array_height = context.top.height
+        self.ios = context.summary.ios = []
+        self.active_blocks = context.summary.active_blocks =  {}
+        self.active_primitives = context.summary.active_primitives = set()
+        self.lut_sizes = context.summary.lut_sizes = set()
+        # prepare output files
+        makedirs(context.summary.vpr_dir)
+        arch_f = os.path.join(context.summary.vpr_dir, "arch.vpr.xml")
+        rrg_f = os.path.join(context.summary.vpr_dir, "rrg.vpr.xml")
         self.delegate = context.fasm_delegate
         self.delegate.reset()
         # runtime-generated data
-        self.active_blocks = {}
-        self.active_primitives = set()
         self.block2id = OrderedDict()
         self.blockpin2ptc = {}
         # architecture XML generation
@@ -825,7 +837,8 @@ class VPRInputsGeneration(Object, AbstractPass):
                 elif y < starty:
                     starty = y
         # total number of nodes
-        channel_width = 2 * sum(sgmt.width * sgmt.length for sgmt in itervalues(context.segments))
+        channel_width = context.summary.vpr_channel_width = 2 * sum(sgmt.width * sgmt.length
+                for sgmt in itervalues(context.segments))
         total_num_nodes = 0
         # VPR nodes: SOURCE & SINK
         self.srcsink_id = [[None for _ in range(context.top.height)] for _ in range(context.top.width)]

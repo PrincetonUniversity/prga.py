@@ -19,11 +19,12 @@ DEFAULT_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__fi
 class FileRenderer(Object):
     """File renderer based on Jinja2."""
 
-    __slots__ = ['template_search_paths', 'tasks']
+    __slots__ = ['template_search_paths', 'tasks', '_yosys_synth_script_task']
     def __init__(self, *paths):
         self.template_search_paths = [DEFAULT_TEMPLATE_SEARCH_PATH]
         self.template_search_paths.extend(paths)
-        self.tasks = []
+        self.tasks = {}
+        self._yosys_synth_script_task = None
 
     @classmethod
     def _net2verilog(cls, net):
@@ -69,7 +70,7 @@ class FileRenderer(Object):
                 'iteritems': iteritems,
                 }
         parameters.update(kwargs)
-        self.tasks.append( (file_, template, parameters) )
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
 
     def add_generic(self, file_, template, **parameters):
         """Add a generic file rendering task.
@@ -79,12 +80,36 @@ class FileRenderer(Object):
             template (:obj:`str`): The template to be used
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        self.tasks.append( (file_, template, parameters) )
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
+
+    def add_yosys_synth_script(self, file_, lut_sizes, template = 'synth.generic.tmpl.ys', **kwargs):
+        """Add a yosys synthesis script rendering task.
+
+        Args:
+            file_ (:obj:`str` of file-like object): The output file
+            lut_sizes (:obj:`Sequence` [:obj:`int` ]): LUT sizes active in the FPGA
+            template (:obj:`str`): The template to be used
+            **kwargs: Additional key-value parameters to be passed into the template when rendering
+        """
+        parameters = {
+                "libraries": [],
+                "memory_techmaps": [],
+                "techmaps": [],
+                "lut_sizes": lut_sizes,
+                }
+        parameters.update(kwargs)
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
+        self._yosys_synth_script_task = file_
 
     def render(self):
         """Render all added files and clear the task queue."""
         env = jj.Environment(loader = jj.FileSystemLoader(self.template_search_paths))
-        for file_, template, parameters in self.tasks:
+        while self.tasks:
+            file_, l = self.tasks.popitem()
             if isinstance(file_, basestring):
+                d = os.path.dirname(file_)
+                if d:
+                    makedirs(d)
                 file_ = open(file_, OpenMode.wb)
-            env.get_template(template).stream(parameters).dump(file_, encoding="ascii")
+            for template, parameters in l:
+                env.get_template(template).stream(parameters).dump(file_, encoding="ascii")

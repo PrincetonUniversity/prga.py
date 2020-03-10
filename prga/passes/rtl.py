@@ -15,7 +15,7 @@ __all__ = ['VerilogCollection']
 # -- Verilog Collection ------------------------------------------------------
 # ----------------------------------------------------------------------------
 class VerilogCollection(Object, AbstractPass):
-    """Collecting Verilog generation tasks."""
+    """Collecting Verilog rendering tasks."""
 
     __slots__ = ['renderer', 'output_dir', 'view', 'visited']
     def __init__(self, renderer, output_dir = ".", view = ModuleView.logical):
@@ -26,9 +26,9 @@ class VerilogCollection(Object, AbstractPass):
     def _process_module(self, module):
         if module.key in self.visited:
             return
-        self.visited.add(module.key)
-        self.renderer.add_verilog(module, os.path.join(os.path.abspath(self.output_dir), module.name + ".v"),
-                getattr(module, "verilog_template", "module.tmpl.v"))
+        f = os.path.join(os.path.abspath(self.output_dir), module.name + ".v")
+        self.visited[module.key] = f
+        self.renderer.add_verilog(module, f, getattr(module, "verilog_template", "module.tmpl.v"))
         for instance in itervalues(module.instances):
             self._process_module(instance.model)
 
@@ -48,7 +48,6 @@ class VerilogCollection(Object, AbstractPass):
         return True
 
     def run(self, context):
-        makedirs(os.path.abspath(self.output_dir))
         top = context.database[self.view, context.top.key]
-        self.visited = set()
+        self.visited = context.summary.rtl_sources = {}
         self._process_module(top)

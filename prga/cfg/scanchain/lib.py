@@ -301,3 +301,5 @@ class Scanchain(object):
             NetUtils.connect(cfg_i, cfg_o)
         module.cfg_bitcount = cfg_bitoffset
         ModuleUtils.elaborate(module)
+        if module.key == context.top.key:
+            context.summary.bitstream_size = cfg_bitoffset
