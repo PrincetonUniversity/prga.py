@@ -14,7 +14,7 @@ from math import ceil
 __all__ = ['Dimension', 'Direction', 'Orientation', 'OrientationTuple', 'Corner', 'Subtile', 'Position',
         'NetClass', 'IOType', 'ModuleClass', 'PrimitiveClass', 'PrimitivePortClass', 'ModuleView',
         'Global', 'Segment', 'SegmentType', 'SegmentID', 'BlockPinID',
-        'BlockPortFCValue', 'BlockFCValue']
+        'BlockPortFCValue', 'BlockFCValue', 'SwitchBoxPattern']
 
 # ----------------------------------------------------------------------------
 # -- Dimension ---------------------------------------------------------------
@@ -671,3 +671,13 @@ class BlockFCValue(namedtuple('BlockFCValue', 'default_in default_out overrides'
         """
         return self.overrides.get(port.name, port.direction.case(self.default_in, self.default_out)).segment_fc(
                 segment, all_sections)
+
+# ----------------------------------------------------------------------------
+# -- Switch Box Pattern ------------------------------------------------------
+# ----------------------------------------------------------------------------
+class SwitchBoxPattern(Enum):
+    """Switch box patterns."""
+
+    wilton          = 0     # standard wilton pattern
+    cycle_free      = 1     # improved cycle-free wilton pattern
+    span_limited    = 2     # the maximum of Hamilton distance reachable from a CLB is limited

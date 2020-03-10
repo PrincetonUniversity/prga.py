@@ -6,7 +6,7 @@ from prga.compatible import *
 from .base import BaseBuilder, MemOptUserConnGraph
 from .block import LogicBlockBuilder
 from ..common import (Orientation, Direction, Dimension, Position, ModuleClass, SegmentID, BlockPinID, SegmentType,
-        BlockFCValue)
+        BlockFCValue, SwitchBoxPattern)
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
 from ...netlist.module.module import Module
@@ -328,73 +328,8 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
         self.connect(port, sink)
         return port
 
-    # == high-level API ======================================================
-    def get_segment_input(self, segment, orientation, section = None, *,
-            dont_create = False, segment_type = SegmentType.sboxin_regular):
-        """Get the segment input to this switch box.
-
-        Args:
-            segment (`Segment`): Prototype of the segment
-            orientation (`Orientation`): Orientation of the segment
-            section (:obj:`int`): Section of the segment
-            dont_create (:obj:`bool`): If set, return ``None`` when the requested segment input is not already created
-                instead of create it
-            segment_type (`SegmentType`): For internal use only
-        """
-        section = uno(section, segment.length)
-        node = SegmentID(self._segment_relative_position(self._module.key.corner, segment, orientation, section),
-                segment, orientation, segment_type)
-        try:
-            return self.ports[node]
-        except KeyError:
-            if dont_create:
-                return None
-            else:
-                return ModuleUtils.create_port(self._module, self._node_name(node),
-                        segment.width, PortDirection.input_, key = node)
-
-    def get_segment_output(self, segment, orientation, section = 0, *, dont_create = False):
-        """Get or create the segment output from this switch box.
-
-        Args:
-            segment (`Segment`): Prototype of the segment
-            orientation (`Orientation`): Orientation of the segment
-            section (:obj:`int`): Section of the segment
-            dont_create (:obj:`bool`): If set, return ``None`` when the requested segment output is not already created
-                instead of create it
-        """
-        node = SegmentID(self._segment_relative_position(self._module.key.corner, segment, orientation, section),
-                segment, orientation, SegmentType.sboxout)
-        try:
-            return self.ports[node]
-        except KeyError:
-            if dont_create:
-                return None
-            else:
-                return ModuleUtils.create_port(self._module, self._node_name(node),
-                        segment.width, PortDirection.output, key = node)
-
-    def fill(self, output_orientation, *, segments = None, drive_at_crosspoints = False,
-            crosspoints_only = False, exclude_input_orientations = tuple(), dont_create = False):
-        """Create switches implementing a cycle-free variation of the Wilton switch box.
-
-        Args:
-            output_orientation (`Orientation`):
-            segments (:obj:`Sequence` [:obj:`Segment` ] or :obj:`Mapping` [:obj:`Hashable`, :obj:`Segment` ]): If not
-                set, segments from the context are used
-            drive_at_crosspoints (:obj:`bool`): If set, outputs are generated driving non-zero sections of long
-                segments
-            crosspoints_only (:obj:`bool`): If set, outputs driving the first section of segments are not generated
-            exclude_input_orientations (:obj:`Container` [`Orientation` ]): Exclude segments in the given orientations
-            dont_create (:obj:`bool`): If set, connections are made only between already created nodes
-        """
-        # sort by length (descending order)
-        if segments is None:
-            segments = tuple(sorted(itervalues(self._context.segments), key = lambda x: x.length, reverse = True))
-        elif isinstance(segments, Mapping):
-            segments = tuple(sorted(itervalues(segments), key = lambda x: x.length, reverse = True))
-        else:
-            segments = tuple(sorted(segments, key = lambda x: x.length, reverse = True))
+    def _fill_cycle_free(self, output_orientation, segments, 
+            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create):
         # tracks
         tracks = []
         for sgmt_idx, sgmt in enumerate(segments):
@@ -443,6 +378,129 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                             continue
                         self.connect(input_[isi], output[osi])
                     olc = (olc + 1) % len(tracks)
+
+    def _fill_span_limited(self, output_orientation, segments,
+            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create, max_span):
+        oori = output_orientation       # short alias
+        # tracks: sgmt, i, section
+        tracks = []
+        for sgmt in segments:
+            for i, section in product(range(sgmt.width), range(sgmt.length)):
+                tracks.append( (sgmt, i, section) )
+        channel_width = len(tracks)
+        # generate connections
+        for iori in iter(Orientation):  # input orientation
+            if iori in (oori.opposite, Orientation.auto):     # no U-turn
+                continue
+            elif iori in exclude_input_orientations:                        # exclude user-chosen input orientations
+                continue
+            for i in range(channel_width - 1):
+                # i = iori.direction.case(i, channel_width - 1 - i)
+                # o = oori.direction.case(i + 1, channel_width - 2 - i)
+                o = i + 1
+                isgmt, idx, isection = tracks[i]
+                osgmt, odx, osection = tracks[o]
+                # make sure we don't hop on a long track that may break our span limitation
+                if i // max_span != (o + osgmt.length - 1 - osection) // max_span:
+                    continue
+                if (osection == 0 and crosspoints_only) or (osection > 0 and not drive_at_crosspoints):
+                    continue
+                input_ = self.get_segment_input(isgmt, iori, isection + 1, dont_create = dont_create)
+                if input_ is None:
+                    continue
+                output = self.get_segment_output(osgmt, oori, osection, dont_create = dont_create)
+                if output is None:
+                    continue
+                self.connect(input_[idx], output[odx])
+
+    # == high-level API ======================================================
+    def get_segment_input(self, segment, orientation, section = None, *,
+            dont_create = False, segment_type = SegmentType.sboxin_regular):
+        """Get the segment input to this switch box.
+
+        Args:
+            segment (`Segment`): Prototype of the segment
+            orientation (`Orientation`): Orientation of the segment
+            section (:obj:`int`): Section of the segment
+            dont_create (:obj:`bool`): If set, return ``None`` when the requested segment input is not already created
+                instead of create it
+            segment_type (`SegmentType`): For internal use only
+        """
+        section = uno(section, segment.length)
+        node = SegmentID(self._segment_relative_position(self._module.key.corner, segment, orientation, section),
+                segment, orientation, segment_type)
+        try:
+            return self.ports[node]
+        except KeyError:
+            if dont_create:
+                return None
+            else:
+                return ModuleUtils.create_port(self._module, self._node_name(node),
+                        segment.width, PortDirection.input_, key = node)
+
+    def get_segment_output(self, segment, orientation, section = 0, *, dont_create = False):
+        """Get or create the segment output from this switch box.
+
+        Args:
+            segment (`Segment`): Prototype of the segment
+            orientation (`Orientation`): Orientation of the segment
+            section (:obj:`int`): Section of the segment
+            dont_create (:obj:`bool`): If set, return ``None`` when the requested segment output is not already created
+                instead of create it
+        """
+        node = SegmentID(self._segment_relative_position(self._module.key.corner, segment, orientation, section),
+                segment, orientation, SegmentType.sboxout)
+        try:
+            return self.ports[node]
+        except KeyError:
+            if dont_create:
+                return None
+            else:
+                return ModuleUtils.create_port(self._module, self._node_name(node),
+                        segment.width, PortDirection.output, key = node)
+
+    def fill(self, output_orientation, *,
+            segments = None, drive_at_crosspoints = False, crosspoints_only = False,
+            exclude_input_orientations = tuple(), dont_create = False,
+            pattern = SwitchBoxPattern.span_limited, max_span = None):
+        """Create switches implementing a cycle-free variation of the Wilton switch box.
+
+        Args:
+            output_orientation (`Orientation`):
+
+        Keyword Arguments:
+            segments (:obj:`Sequence` [:obj:`Segment` ] or :obj:`Mapping` [:obj:`Hashable`, :obj:`Segment` ]): If not
+                set, segments from the context are used
+            drive_at_crosspoints (:obj:`bool`): If set, outputs are generated driving non-zero sections of long
+                segments
+            crosspoints_only (:obj:`bool`): If set, outputs driving the first section of segments are not generated
+            exclude_input_orientations (:obj:`Container` [`Orientation` ]): Exclude segments in the given orientations
+            dont_create (:obj:`bool`): If set, connections are made only between already created nodes
+
+            pattern (`SwitchBoxPattern`): Switch box pattern
+            max_span (:obj:`int`): Maximum span for `SwitchBoxPattern.span_limited`. If not set, channel width is used
+        """
+        # sort by length (descending order)
+        if segments is None:
+            segments = tuple(sorted(itervalues(self._context.segments), key = lambda x: x.length, reverse = True))
+        elif isinstance(segments, Mapping):
+            segments = tuple(sorted(itervalues(segments), key = lambda x: x.length, reverse = True))
+        else:
+            segments = tuple(sorted(segments, key = lambda x: x.length, reverse = True))
+        # apply pattern
+        if pattern.is_cycle_free:
+            self._fill_cycle_free(output_orientation, segments, drive_at_crosspoints, crosspoints_only,
+                    exclude_input_orientations, dont_create)
+        elif pattern.is_span_limited:
+            channel_width = sum(sgmt.width * sgmt.length for sgmt in segments)
+            if max_span is None:
+                max_span = channel_width
+            elif not 0 < max_span <= channel_width:
+                raise PRGAInternalError("Invalid max span: {}".format(max_span))
+            self._fill_span_limited(output_orientation, segments, drive_at_crosspoints, crosspoints_only,
+                    exclude_input_orientations, dont_create, max_span) 
+        else:
+            raise NotImplementedError("Unsupported/Unimplemented switch box pattern: {}".format(pattern))
 
     @classmethod
     def new(cls, corner, identifier = None, name = None):

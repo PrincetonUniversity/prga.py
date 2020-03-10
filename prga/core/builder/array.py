@@ -6,7 +6,7 @@ from prga.compatible import *
 from .base import BaseBuilder, MemOptUserConnGraph
 from .box import SwitchBoxBuilder
 from ..common import (ModuleClass, Subtile, Position, Orientation, Dimension, Corner, OrientationTuple, SegmentID,
-        SegmentType, BlockPinID, BlockFCValue, Direction)
+        SegmentType, BlockPinID, BlockFCValue, Direction, SwitchBoxPattern)
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
 from ...netlist.module.util import ModuleUtils
@@ -616,7 +616,9 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             *,
             fc_override = None,
             closure_on_edge = OrientationTuple(False),
-            identifier = None):
+            identifier = None,
+            sbox_pattern = SwitchBoxPattern.span_limited,
+            **kwargs):
         """Fill routing boxes into the array being built."""
         fc_override = uno(fc_override, {})
         for x, y in product(range(self._module.width), range(self._module.height)):
@@ -713,7 +715,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                 sbox = self._context.get_switch_box(corner, identifier = sbox_identifier)
                 for output, drivex, xo in outputs:
                     sbox.fill(output, drive_at_crosspoints = drivex, crosspoints_only = xo,
-                            exclude_input_orientations = exclude_input_orientations)
+                            exclude_input_orientations = exclude_input_orientations, pattern = sbox_pattern, **kwargs)
                 self.instantiate(sbox.commit(), position)
 
     def auto_connect(self, *, is_top = False):
