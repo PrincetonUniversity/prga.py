@@ -69,29 +69,55 @@ class ScanchainFASMDelegate(FASMDelegate):
         context (`Context`):
     """
 
-    __slots__ = ['context', '_elaborated']
+    __slots__ = ['context', '_elaborated', '_cache']
     def __init__(self, context):
         self.context = context
-        self._elaborated = set()
+        self.reset()
+
+    def __getstate__(self):
+        return self.context
+
+    def __setstate__(self, state):
+        self.context = context
+        self.reset()
+
+    def _get_logical_module(self, user_module):
+        if user_module.module_class.is_mode:
+            return self.context.database[ModuleView.logical, user_module.parent.key].modes[user_module.key]
+        else:
+            return self.context.database[ModuleView.logical, user_module.key]
 
     def _hierarchical_bitoffset(self, hierarchical_instance):
         cfg_bitoffset = 0
         if not hierarchical_instance:
             return cfg_bitoffset
+        parent = self._get_logical_module(hierarchical_instance.parent)
         for inst in reversed(hierarchical_instance):
-            inst = self.context.database[ModuleView.logical, inst.parent.key].instances[inst.key]
+            try:    # when a multi-mode primitive is included in the hierarchy, discontinuity may exist
+                inst = parent.instances[inst.key]
+            except KeyError:
+                if not inst.parent.module_class.is_mode:
+                    raise PRGAInternalError("Broken hierarchy: {}".format(hierarchical_instance))
+                parent = self._get_logical_module(inst.parent)
+                inst = parent.instances[inst.key]
             inst_bitoffset = getattr(inst, 'cfg_bitoffset', None)
             if inst_bitoffset is None:
                 return None
             cfg_bitoffset += inst_bitoffset
+            parent = inst.model
         return cfg_bitoffset
 
     def _features_for_path(self, source, sink, instance = None):
         # let's work in the logical domain
-        user_model = instance.model if instance else source.parent
-        logical_model = self.context.database[ModuleView.logical, user_model.key]
+        if not (instance is None or instance.model is source.parent or
+                (source.parent.module_class.is_mode and source.parent.parent is instance.model)):
+            raise PRGAInternalError("Broken hierarchy: {} in {}".format(source, instance))
+        user_model = source.parent
+        if sink.parent is not user_model:
+            raise PRGAInternalError("{} and {} are not in the same parent module".format(source, sink))
+        logical_model = self._get_logical_module(user_model)
         if user_model.key not in self._elaborated:
-            ModuleUtils.elaborate(logical_model, True, lambda instance: not instance.model.module_class.is_switch)
+            ModuleUtils.elaborate(logical_model, True)
             self._elaborated.add(logical_model.key)
         src_node, sink_node = map(NetUtils._reference, (source, sink))
         src_node, sink_node = map(lambda x: user_model._conn_graph.nodes[x].get("logical_cp", x),
@@ -129,9 +155,26 @@ class ScanchainFASMDelegate(FASMDelegate):
 
     def reset(self):
         self._elaborated = set()
+        self._cache = {}
 
     def fasm_mux_for_intrablock_switch(self, source, sink, instance = None):
         return self._features_for_path(source, sink, instance)
+
+    def fasm_features_for_mode(self, instance, mode):
+        if instance.model.primitive_class.is_iopad:
+            if mode == "inpad":
+                return tuple()
+            cfg_bitoffset = self._hierarchical_bitoffset(instance[1:])
+            if cfg_bitoffset is None:
+                return tuple()
+            parent = self._get_logical_module(instance[0].parent)
+            return ("b{}".format(cfg_bitoffset + parent.instances["_cfg_oe"].cfg_bitoffset), )
+        else:
+            cfg_bitoffset = self._hierarchical_bitoffset(instance)
+            if cfg_bitoffset is None:
+                return tuple()
+            multimode = self._get_logical_module(instance.model)
+            return tuple("b{}".format(cfg_bitoffset + i) for i in multimode.modes[mode].cfg_mode_selection)
 
     def fasm_prefix_for_tile(self, instance):
         cfg_bitoffset = self._hierarchical_bitoffset(instance[1:])
@@ -151,7 +194,7 @@ class ScanchainFASMDelegate(FASMDelegate):
         cfg_bitoffset = self._hierarchical_bitoffset(instance)
         if cfg_bitoffset is None:
             return ''
-        lut = self.context.database[ModuleView.logical, instance[0].model.key]
+        lut = self._get_logical_module(instance[0].model)
         return 'b{}[{}:0]'.format(str(cfg_bitoffset), lut.cfg_bitcount - 1)
 
     def fasm_features_for_routing_switch(self, source, sink, instance = None):
@@ -253,6 +296,73 @@ class Scanchain(object):
                     clock = 'cfg_clk', net_class = NetClass.cfg)
             ModuleUtils.elaborate(cfg_bit)
             context._database[ModuleView.logical, cfg_bit.key] = cfg_bit
+
+        # register fracturable LUT6
+        if True:
+            # user view
+            fraclut6 = context.create_multimode('fraclut6')
+            fraclut6.create_input("in", 6)
+            fraclut6.create_output("o6", 1)
+            fraclut6.create_output("o5", 1)
+
+            if True:
+                mode = fraclut6.create_mode("lut6x1")
+                inst = mode.instantiate(context.primitives["lut6"], "LUT6A")
+                mode.connect(mode.ports["in"], inst.pins["in"])
+                mode.connect(inst.pins["out"], mode.ports["o6"], pack_patterns = ("lut6_dff", ))
+                mode.commit()
+
+            if True:
+                mode = fraclut6.create_mode("lut5x2")
+                inst = mode.instantiate(context.primitives["lut5"], "LUT5A")
+                mode.connect(mode.ports["in"][:5], inst.pins["in"])
+                mode.connect(inst.pins["out"], mode.ports["o6"], pack_patterns = ("lut5A_dff", ))
+                inst = mode.instantiate(context.primitives["lut5"], "LUT5B")
+                mode.connect(mode.ports["in"][:5], inst.pins["in"], pack_patterns = ("lut5B_dff", ))
+                mode.connect(inst.pins["out"], mode.ports["o5"])
+                mode.commit()
+
+            fraclut6 = fraclut6.commit()
+
+        if True:
+            # logical view
+            fraclut6 = context.create_multimode(fraclut6.name, view = ModuleView.logical,
+                    cfg_bitcount = 65, verilog_template = "fraclut6.tmpl.v")
+
+            # user ports
+            in_ = fraclut6.create_input("in", 6)
+            o6 = fraclut6.create_output("o6", 1)
+            o5 = fraclut6.create_output("o5", 1)
+            fraclut6.connect(in_, o6, fully = True)
+            fraclut6.connect(in_[:4], o5, fully = True)
+
+            # configuration ports
+            fraclut6.create_cfg_port('cfg_clk', 1, PortDirection.input_, is_clock = True)
+            fraclut6.create_cfg_port('cfg_e', 1, PortDirection.input_, clock = 'cfg_clk')
+            fraclut6.create_cfg_port('cfg_i', cfg_width, PortDirection.input_, clock = 'cfg_clk')
+            fraclut6.create_cfg_port('cfg_o', cfg_width, PortDirection.output, clock = 'cfg_clk')
+
+            if True:
+                mode = fraclut6.create_mode("lut6x1", cfg_mode_selection = (64, ))
+                inst = mode.instantiate(context._database[ModuleView.logical, 'lut6'], "LUT6A")
+                mode.connect(mode.ports["in"], inst.pins["in"])
+                mode.connect(inst.pins["out"], mode.ports["o6"])
+                inst.cfg_bitoffset = 0
+                mode.commit()
+
+            if True:
+                mode = fraclut6.create_mode("lut5x2", cfg_mode_selection = tuple())
+                inst = mode.instantiate(context._database[ModuleView.logical, 'lut5'], "LUT5A")
+                mode.connect(mode.ports["in"][:5], inst.pins["in"])
+                mode.connect(inst.pins["out"], mode.ports["o6"])
+                inst.cfg_bitoffset = 0
+                inst = mode.instantiate(context._database[ModuleView.logical, 'lut5'], "LUT5B")
+                mode.connect(mode.ports["in"][:5], inst.pins["in"])
+                mode.connect(inst.pins["out"], mode.ports["o5"])
+                inst.cfg_bitoffset = 32
+                mode.commit()
+
+            fraclut6.commit()
 
         return context
 

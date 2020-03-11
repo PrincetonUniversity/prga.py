@@ -69,7 +69,7 @@ class Instance(Object, AbstractInstance):
             setattr(self, k, v)
 
     def __str__(self):
-        return 'Instance({}/{})'.format(self._parent.name, self._name)
+        return 'Instance({}/{}[{}])'.format(self._parent.name, self._name, self._model.name)
 
     def __getitem__(self, idx):
         idx = compose_slice(slice(0, 1), idx)
@@ -110,18 +110,18 @@ class Instance(Object, AbstractInstance):
     def model(self):
         return self._model
 
-    def extend(self, hierarchy):
+    def extend(self, hierarchy, *, no_check = False):
         hierarchy = tuple(iter(hierarchy))
-        if self.parent is not hierarchy[0].model:
+        if not no_check and self.parent is not hierarchy[0].model:
             raise PRGAInternalError("'{}' is not a sub-hierarchy in '{}'"
-                    .format(self, hierarchy))
+                    .format(self, hierarchy[0].model))
         return HierarchicalInstance( (self, ) + hierarchy )
 
-    def delve(self, hierarchy):
+    def delve(self, hierarchy, *, no_check = False):
         hierarchy = tuple(iter(hierarchy))
-        if hierarchy[-1].parent is not self.model:
+        if not no_check and hierarchy[-1].parent is not self.model:
             raise PRGAInternalError("'{}' is not a sub-hierarchy in '{}'"
-                    .format(hierarchy, self))
+                    .format(hierarchy[-1].model, self))
         return HierarchicalInstance( hierarchy + (self, ) )
 
     @property
@@ -149,7 +149,10 @@ class HierarchicalInstance(Object, AbstractInstance):
         self._pins = _InstancePinsProxy(self)
 
     def __str__(self):
-        return 'HierarchicalInstance({}/{})'.format(self._hierarchy[-1].parent.name, self.name)
+        s = '{}/{}'.format(self._hierarchy[-1].parent.name, self._hierarchy[-1].name)
+        for inst in reversed(self._hierarchy[:-1]):
+            s += "[{}]/{}".format(inst.parent.name, inst.name)
+        return 'HierarchicalInstance({})'.format(s)
 
     def __getitem__(self, idx):
         idx = compose_slice(slice(0, len(self._hierarchy)), idx)
@@ -198,18 +201,18 @@ class HierarchicalInstance(Object, AbstractInstance):
     def model(self):
         return self._hierarchy[0].model
 
-    def extend(self, hierarchy):
+    def extend(self, hierarchy, *, no_check = False):
         hierarchy = tuple(iter(hierarchy))
-        if self.parent is not hierarchy[0].model:
+        if not no_check and self.parent is not hierarchy[0].model:
             raise PRGAInternalError("'{}' is not a sub-hierarchy in '{}'"
-                    .format(self, hierarchy))
+                    .format(self, hierarchy[0].model))
         return type(self)( self._hierarchy + hierarchy )
 
-    def delve(self, hierarchy):
+    def delve(self, hierarchy, *, no_check = False):
         hierarchy = tuple(iter(hierarchy))
-        if hierarchy[-1].parent is not self.model:
+        if not no_check and hierarchy[-1].parent is not self.model:
             raise PRGAInternalError("'{}' is not a sub-hierarchy in '{}'"
-                    .format(hierarchy, self))
+                    .format(hierarchy[-1].model, self))
         return type(self)( hierarchy + self._hierarchy )
 
     @property

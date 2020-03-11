@@ -324,8 +324,8 @@ class VPRInputsGeneration(Object, AbstractPass):
                     self.xml.element_leaf("meta", {"name": "fasm_mux"},
                             '\n'.join('{} : {}'.format(src, features) for src, features in iteritems(fasm_muxes)))
 
-    def _leaf_pb_type(self, hierarchical_instance):
-        instance = hierarchical_instance[0]
+    def _leaf_pb_type(self, hierarchy):
+        instance = hierarchy[0]
         primitive = instance.model
         if primitive.primitive_class.is_iopad:
             with self.xml.element("pb_type", {"name": instance.name, "num_pb": 1}):
@@ -340,6 +340,10 @@ class VPRInputsGeneration(Object, AbstractPass):
                         'input': 'inpad.inpad', 'output': '{}.inpad'.format(instance.name)}):
                         self.xml.element_leaf('delay_constant', {'max': '1e-11',
                             'in_port': 'inpad.inpad', 'out_port': '{}.inpad'.format(instance.name)})
+                    fasm_features = '\n'.join(self.delegate.fasm_features_for_mode(hierarchy, "inpad"))
+                    if fasm_features:
+                        with self.xml.element("metadata"):
+                            self.xml.element_leaf('meta', {'name': 'fasm_features'}, fasm_features)
                 # mode: outpad
                 with self.xml.element('mode', {'name': 'outpad'}):
                     with self.xml.element('pb_type', {'name': 'outpad', 'blif_model': '.output', 'num_pb': '1'}):
@@ -348,7 +352,24 @@ class VPRInputsGeneration(Object, AbstractPass):
                         'output': 'outpad.outpad', 'input': '{}.outpad'.format(instance.name)}):
                         self.xml.element_leaf('delay_constant', {'max': '1e-11',
                             'out_port': 'outpad.outpad', 'in_port': '{}.outpad'.format(instance.name)})
-                return
+                    fasm_features = '\n'.join(self.delegate.fasm_features_for_mode(hierarchy, "outpad"))
+                    if fasm_features:
+                        with self.xml.element("metadata"):
+                            self.xml.element_leaf('meta', {'name': 'fasm_features'}, fasm_features)
+            return
+        elif primitive.primitive_class.is_multimode:
+            with self.xml.element("pb_type", {"name": instance.name, "num_pb": 1}):
+                # 1. emit ports:
+                for port in itervalues(primitive.ports):
+                    attrs = {'name': port.name, 'num_pins': len(port)}
+                    self.xml.element_leaf(
+                            'clock' if port.is_clock else port.direction.case('input', 'output'),
+                            attrs)
+                # 2. enumerate modes
+                for mode_name, mode in iteritems(primitive.modes):
+                    with self.xml.element("mode", {"name": mode_name}):
+                        self._pb_type_body(mode, hierarchy)
+            return
         attrs = {'name': instance.name, 'num_pb': '1'}
         if primitive.primitive_class.is_lut:
             self.lut_sizes.add( len(primitive.ports['in']) )
@@ -403,11 +424,58 @@ class VPRInputsGeneration(Object, AbstractPass):
                                 'out_port': self._net2vpr(sink, instance.name),
                                 })
         # FASM parameters
-        fasm_params = self.delegate.fasm_params_for_primitive(hierarchical_instance)
+        fasm_params = self.delegate.fasm_params_for_primitive(hierarchy)
         if fasm_params:
             with self.xml.element('metadata'):
                 self.xml.element_leaf("meta", {"name": "fasm_params"},
                     '\n'.join("{} = {}".format(config, param) for param, config in iteritems(fasm_params)))
+
+    def _pb_type_body(self, module, hierarchy = None):
+        parent_name = hierarchy[0].name if hierarchy else module.name
+        # 1. emit cluster/primitive instances
+        fasm_luts = {}
+        for instance in itervalues(module.instances):
+            hierarchical_instance = (hierarchy.delve(instance, no_check = module.module_class.is_mode)
+                    if hierarchy else instance)
+            if instance.model.module_class.is_cluster:
+                self._pb_type(instance.model, hierarchical_instance)
+            elif instance.model.module_class.is_primitive:
+                self._leaf_pb_type(hierarchical_instance)
+                if instance.model.primitive_class.is_lut:
+                    fasm_lut = self.delegate.fasm_lut(hierarchical_instance)
+                    if fasm_lut:
+                        fasm_luts[instance.name] = fasm_lut
+                    else:
+                        fasm_luts[instance.name] = 'ignored[{}:0]'.format(2 ** len(instance.pins['in']) - 1)
+        # 2. emit interconnect
+        with self.xml.element('interconnect'):
+            for net in chain(itervalues(module.ports),
+                    iter(pin for inst in itervalues(module.instances) for pin in itervalues(inst.pins))):
+                if not net.is_sink:
+                    continue
+                for sink in net:
+                    self._interconnect(sink, hierarchy, parent_name)
+        # 3. FASM metadata
+        fasm_features = ''
+        if module.module_class.is_mode:
+            fasm_features = '\n'.join(self.delegate.fasm_features_for_mode(hierarchy, module.key))
+        fasm_prefix = self.delegate.fasm_prefix_for_intrablock_module(hierarchy)
+        if not (fasm_features or fasm_prefix or fasm_luts):
+            return
+        with self.xml.element("metadata"):
+            if fasm_features:
+                self.xml.element_leaf('meta', {'name': 'fasm_features'}, fasm_features)
+            if fasm_prefix:
+                self.xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefix)
+            if len(fasm_luts) > 1:
+                self.xml.element_leaf('meta', {'name': 'fasm_type'}, 'SPLIT_LUT')
+                self.xml.element_leaf('meta', {'name': 'fasm_lut'},
+                        '\n'.join('{} = {}[0]'.format(lut, name) for name, lut in iteritems(fasm_luts)))
+            elif len(fasm_luts) == 1:
+                name, lut = next(iter(iteritems(fasm_luts)))
+                self.xml.element_leaf('meta', {'name': 'fasm_type'}, 'LUT')
+                self.xml.element_leaf('meta', {'name': 'fasm_lut'},
+                        '{} = {}'.format(lut, name))
 
     def _pb_type(self, module, hierarchy = None):
         parent_name = hierarchy[0].name if hierarchy else module.name
@@ -423,49 +491,8 @@ class VPRInputsGeneration(Object, AbstractPass):
                 self.xml.element_leaf(
                         'clock' if port.is_clock else port.direction.case('input', 'output'),
                         attrs)
-            # 2. emit cluster/primitive instances
-            fasm_luts = {}
-            for instance in itervalues(module.instances):
-                hierarchical_instance = hierarchy.delve(instance) if hierarchy else instance
-                if instance.model.module_class.is_cluster:
-                    self._pb_type(instance.model, hierarchical_instance)
-                elif instance.model.module_class.is_primitive:
-                    self._leaf_pb_type(hierarchical_instance)
-                    if instance.model.primitive_class.is_lut:
-                        fasm_lut = self.delegate.fasm_lut(hierarchical_instance)
-                        if fasm_lut:
-                            fasm_luts[instance.name] = fasm_lut
-                        else:
-                            fasm_luts[instance.name] = 'ignored[{}:0]'.format(2 ** len(instance.pins['in']) - 1)
-            # 3. emit interconnect
-            with self.xml.element('interconnect'):
-                for net in chain(itervalues(module.ports),
-                        iter(pin for inst in itervalues(module.instances) for pin in itervalues(inst.pins))):
-                    if not net.is_sink:
-                        continue
-                    for sink in net:
-                        self._interconnect(sink, hierarchy, parent_name)
-            # 4. FASM metadata
-            fasm_features = ''
-            if module.module_class.is_mode:
-                fasm_features = '\n'.join(self.delegate.fasm_features_for_mode(hierarchy, module.key))
-            fasm_prefix = self.delegate.fasm_prefix_for_intrablock_module(hierarchy)
-            if not (fasm_features or fasm_prefix or fasm_luts):
-                return
-            with self.xml.element("metadata"):
-                if fasm_features:
-                    self.xml.element_leaf('meta', {'name': 'fasm_features'}, fasm_features)
-                if fasm_prefix:
-                    self.xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefix)
-                if len(fasm_luts) > 1:
-                    self.xml.element_leaf('meta', {'name': 'fasm_type'}, 'SPLIT_LUT')
-                    self.xml.element_leaf('meta', {'name': 'fasm_lut'},
-                            '\n'.join('{} = {}[0]'.format(lut, name) for name, lut in iteritems(fasm_luts)))
-                elif len(fasm_luts) == 1:
-                    name, lut = next(iter(iteritems(fasm_luts)))
-                    self.xml.element_leaf('meta', {'name': 'fasm_type'}, 'LUT')
-                    self.xml.element_leaf('meta', {'name': 'fasm_lut'},
-                            '{} = {}'.format(lut, name))
+            # 2. emit pb_type body
+            self._pb_type_body(module, hierarchy)
 
     def _arch_tile(self, block, ori = None):
         tile_name = block.name if ori is None else '{}_{}'.format(block.name, ori.name[0])
