@@ -324,6 +324,37 @@ class VPRInputsGeneration(Object, AbstractPass):
                     self.xml.element_leaf("meta", {"name": "fasm_mux"},
                             '\n'.join('{} : {}'.format(src, features) for src, features in iteritems(fasm_muxes)))
 
+    def _arch_primitive(self, primitive):
+        with self.xml.element("model", {"name": primitive.name}):
+            combinational_sinks_map = {}
+            with self.xml.element("output_ports"):
+                for port in itervalues(primitive.ports):
+                    if port.direction.is_input:
+                        continue
+                    attrs = {"name": port.name}
+                    if port.is_clock:
+                        attrs["is_clock"] = "1"
+                    elif port.clock is not None:
+                        attrs["clock"] = port.clock
+                    self.xml.element_leaf("port", attrs)
+                    for bit in port:
+                        for source in NetUtils.get_multisource(bit):
+                            source = source.bus if source.bus_type.is_slice else source
+                            combinational_sinks_map.setdefault(source.name, set()).add(port.name)
+            with self.xml.element("input_ports"):
+                for port in itervalues(primitive.ports):
+                    if port.direction.is_output:
+                        continue
+                    attrs = {"name": port.name}
+                    if port.is_clock:
+                        attrs["is_clock"] = "1"
+                    elif port.clock is not None:
+                        attrs["clock"] = port.clock
+                    sinks = combinational_sinks_map.get(port.name, None)
+                    if sinks:
+                        attrs["combinational_sink_ports"] = " ".join(sinks)
+                    self.xml.element_leaf("port", attrs)
+
     def _leaf_pb_type(self, hierarchy):
         instance = hierarchy[0]
         primitive = instance.model
@@ -423,12 +454,12 @@ class VPRInputsGeneration(Object, AbstractPass):
                                 'in_port': self._net2vpr(NetUtils.get_multisource(sink), instance.name),
                                 'out_port': self._net2vpr(sink, instance.name),
                                 })
-        # FASM parameters
-        fasm_params = self.delegate.fasm_params_for_primitive(hierarchy)
-        if fasm_params:
-            with self.xml.element('metadata'):
-                self.xml.element_leaf("meta", {"name": "fasm_params"},
-                    '\n'.join("{} = {}".format(config, param) for param, config in iteritems(fasm_params)))
+            # 3. FASM parameters
+            fasm_params = self.delegate.fasm_params_for_primitive(hierarchy)
+            if fasm_params:
+                with self.xml.element('metadata'):
+                    self.xml.element_leaf("meta", {"name": "fasm_params"},
+                        '\n'.join("{} = {}".format(config, param) for param, config in iteritems(fasm_params)))
 
     def _pb_type_body(self, module, hierarchy = None):
         parent_name = hierarchy[0].name if hierarchy else module.name
@@ -806,7 +837,7 @@ class VPRInputsGeneration(Object, AbstractPass):
             # models
             with xml.element("models"):
                 for model_key in self.active_primitives:
-                    pass
+                    self._arch_primitive(context.database[ModuleView.user, model_key])
             # device: fake
             with xml.element('device'):
                 xml.element_leaf('sizing', {'R_minW_nmos': '0.0', 'R_minW_pmos': '0.0'})

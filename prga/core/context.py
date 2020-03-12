@@ -4,6 +4,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .common import Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView, OrientationTuple
+from .builder.primitive import LogicalPrimitiveBuilder, PrimitiveBuilder
 from .builder.multimode import MultimodeBuilder
 from .builder.block import ClusterBuilder, IOBlockBuilder, LogicBlockBuilder
 from .builder.box import ConnectionBoxBuilder, SwitchBoxBuilder
@@ -180,6 +181,28 @@ class Context(Object):
         primitive = self._database[view, name] = MultimodeBuilder.new(name, view = view, **kwargs)
         return MultimodeBuilder(self, primitive, view = view)
 
+    def create_logical_primitive(self, name, *, non_leaf = False, **kwargs):
+        """`LogicalPrimitiveBuilder`: Create a logical primitive builder.
+
+        Args:
+            name (:obj:`str`): Name of the logical primitive
+
+        Keyword Args:
+            non_leaf (:obj:`str`): Marks that this primitive includes sub-instances
+            **kwargs: Additional attributes to be associated with the primitive
+        """
+        if (ModuleView.logical, name) in self._database:
+            raise PRGAAPIError("Module with name '{}' already created".format(name))
+        user_view = self._database.get( (ModuleView.user, name) )
+        if user_view:
+            primitive = self._database[ModuleView.logical, name] = LogicalPrimitiveBuilder.new_from_user_view(
+                    user_view, non_leaf = non_leaf, **kwargs)
+            return LogicalPrimitiveBuilder(self, primitive, user_view)
+        else:
+            primitive = self._database[ModuleView.logical, name] = LogicalPrimitiveBuilder.new(
+                    name, non_leaf = non_leaf, **kwargs)
+            return LogicalPrimitiveBuilder(self, primitive)
+
     # == high-level API ======================================================
     # -- Global Wires --------------------------------------------------------
     @property
@@ -238,6 +261,13 @@ class Context(Object):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to primitives."""
         return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_primitive,
                 lambda k: (ModuleView.user, k), lambda k: k[1])
+
+    def create_primitive(self, name, **kwargs):
+        """PrimitiveBuilder`: Create a primitive builder."""
+        if (ModuleView.user, name) in self._database:
+            raise PRGAAPIError("Module with name '{}' already created".format(name))
+        primitive = self._database[ModuleView.user, name] = PrimitiveBuilder.new(name, **kwargs)
+        return PrimitiveBuilder(self, primitive)
 
     # -- Clusters ------------------------------------------------------------
     @property

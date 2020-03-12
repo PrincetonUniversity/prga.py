@@ -4,7 +4,8 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from ..netlist.net.util import NetUtils
-from ..util import Object
+from ..util import Object, uno
+from ..exception import PRGAInternalError
 
 import os
 import jinja2 as jj
@@ -54,6 +55,16 @@ class FileRenderer(Object):
         else:
             return cls._net2verilog(source)
 
+    def _get_yosys_script_task(self, script_file = None):
+        """Get the specified or most recently added yosys script rending task."""
+        script_task = uno(script_file, self._yosys_synth_script_task)
+        if script_task is None:
+            raise PRGAInternalError("Main synthesis script not specified")
+        script_task = self.tasks[script_task]
+        if len(script_task) > 1:
+            raise PRGAInternalError("Main synthesis script is produced by multiple templates")
+        return script_task
+
     def add_verilog(self, module, file_, template = 'module.tmpl.v', **kwargs):
         """Add a Verilog rendering task.
 
@@ -96,10 +107,71 @@ class FileRenderer(Object):
                 "memory_techmaps": [],
                 "techmaps": [],
                 "lut_sizes": lut_sizes,
+                "iteritems": iteritems,
+                "itervalues": itervalues,
                 }
         parameters.update(kwargs)
         self.tasks.setdefault(file_, []).append( (template, parameters) )
         self._yosys_synth_script_task = file_
+
+    def add_yosys_blackbox(self, file_, module, template = "blackbox.lib.tmpl.v", script_file = None, **kwargs):
+        """Add a yosys library rendering task.
+
+        Args:
+            file_ (:obj:`str` of file-like object): The output file
+            module (:obj:`AbstractModule`): The blackbox module
+
+        Keyword Args:
+            template (:obj:`str`): The template to be used
+            script_file (:obj:`str` of file-like object): The main script file. If not specified, the most recently
+                added yosys script file will be used
+            **kwargs: Additional key-value parameters to be passed into the template when rendering
+        """
+        parameters = {
+                "iteritems": iteritems,
+                "itervalues": itervalues,
+                "module": module,
+                }
+        parameters.update(kwargs)
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
+        script_task = self._get_yosys_script_task(script_file)
+        if not isinstance(file_, basestring):
+            file_ = os.path.abspath(file_.name)
+        else:
+            file_ = os.path.abspath(file_)
+        if file_ not in script_task[0][1]["libraries"]:
+            script_task[0][1]["libraries"].append( file_ )
+
+    def add_yosys_techmap(self, file_, template, script_file = None, premap_commands = tuple(), **kwargs):
+        """Add a yosys techmap rendering task.
+
+        Args:
+            file_ (:obj:`str` of file-like object): The output file
+            template (:obj:`str`): The template to be used
+
+        Keyword Args:
+            script_file (:obj:`str` of file-like object): The main script file. If not specified, the most recently
+                added yosys script file will be used
+            premap_commands (:obj:`Sequence` [:obj:`str` ]): Commands to be run before running the techmap step
+            **kwargs: Additional key-value parameters to be passed into the template when rendering
+        """
+        parameters = {
+                "iteritems": iteritems,
+                "itervalues": itervalues,
+                }
+        parameters.update(kwargs)
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
+        script_task = self._get_yosys_script_task(script_file)
+        if len(script_task) > 1:
+            raise PRGAInternalError("Main synthesis script is produced by multiple templates")
+        if not isinstance(file_, basestring):
+            file_ = os.path.abspath(file_.name)
+        else:
+            file_ = os.path.abspath(file_)
+        script_task[0][1]["techmaps"].append( {
+            "premap_commands": premap_commands,
+            "techmap": file_,
+            } )
 
     def render(self):
         """Render all added files and clear the task queue."""

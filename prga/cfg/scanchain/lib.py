@@ -12,7 +12,7 @@ from ...netlist.module.util import ModuleUtils
 from ...passes.translation import AbstractSwitchDatabase
 from ...passes.vpr import FASMDelegate
 from ...renderer.renderer import FileRenderer
-from ...util import Object
+from ...util import Object, uno
 
 import os
 from collections import OrderedDict
@@ -78,7 +78,7 @@ class ScanchainFASMDelegate(FASMDelegate):
         return self.context
 
     def __setstate__(self, state):
-        self.context = context
+        self.context = state
         self.reset()
 
     def _get_logical_module(self, user_module):
@@ -88,9 +88,14 @@ class ScanchainFASMDelegate(FASMDelegate):
             return self.context.database[ModuleView.logical, user_module.key]
 
     def _hierarchical_bitoffset(self, hierarchical_instance):
-        cfg_bitoffset = 0
         if not hierarchical_instance:
-            return cfg_bitoffset
+            return 0
+        key = tuple(i.key for i in hierarchical_instance)
+        try:
+            return self._cache["hierarchy"][key]
+        except KeyError:
+            pass
+        cfg_bitoffset = 0
         parent = self._get_logical_module(hierarchical_instance.parent)
         for inst in reversed(hierarchical_instance):
             try:    # when a multi-mode primitive is included in the hierarchy, discontinuity may exist
@@ -105,9 +110,20 @@ class ScanchainFASMDelegate(FASMDelegate):
                 return None
             cfg_bitoffset += inst_bitoffset
             parent = inst.model
+        self._cache.setdefault("hierarchy", {}).setdefault(key, cfg_bitoffset)
         return cfg_bitoffset
 
     def _features_for_path(self, source, sink, instance = None):
+        # find hierarchical bitoffset base
+        cfg_bitoffset = self._hierarchical_bitoffset(instance)
+        # check cache
+        src_node, sink_node = map(NetUtils._reference, (source, sink))
+        try:
+            return tuple('b{}'.format(cfg_bitoffset + i)
+                    for i in self._cache["path"][source.parent.key][src_node, sink_node])
+        except KeyError:
+            pass
+        # cache miss. do the job in the right way
         # let's work in the logical domain
         if not (instance is None or instance.model is source.parent or
                 (source.parent.module_class.is_mode and source.parent.parent is instance.model)):
@@ -119,11 +135,9 @@ class ScanchainFASMDelegate(FASMDelegate):
         if user_model.key not in self._elaborated:
             ModuleUtils.elaborate(logical_model, True)
             self._elaborated.add(logical_model.key)
-        src_node, sink_node = map(NetUtils._reference, (source, sink))
-        src_node, sink_node = map(lambda x: user_model._conn_graph.nodes[x].get("logical_cp", x),
+        logical_src, logical_sink = map(lambda x: user_model._conn_graph.nodes[x].get("logical_cp", x),
                 (src_node, sink_node))
         # find programmable switch paths
-        cfg_bitoffset = self._hierarchical_bitoffset(instance)
         features = []
         def stop(m, n):
             net = NetUtils._dereference(m, n)
@@ -137,8 +151,8 @@ class ScanchainFASMDelegate(FASMDelegate):
                 return True
             bus = net.bus if net.bus_type.is_slice else net
             return not bus.model.net_class.is_switch or bus.model.direction.is_output
-        for i, path in enumerate(NetUtils._navigate_backwards(logical_model, sink_node,
-            yield_ = lambda m, n: n == src_node, stop = stop, skip = skip)):
+        for i, path in enumerate(NetUtils._navigate_backwards(logical_model, logical_sink,
+            yield_ = lambda m, n: n == logical_src, stop = stop, skip = skip)):
             if i > 0:
                 raise PRGAInternalError("Multiple paths found from {} to {}".format(source, sink))
             for node in path:
@@ -147,11 +161,12 @@ class ScanchainFASMDelegate(FASMDelegate):
                 #     continue
                 bus, index = (net.bus, net.index) if net.bus_type.is_slice else (net, 0)
                 assert not bus.hierarchy.is_hierarchical
-                inst_bitoffset = cfg_bitoffset + bus.hierarchy.cfg_bitoffset
                 for i in range(bus.hierarchy.model.cfg_bitcount):
                     if (index & (1 << i)):
-                        features.append( 'b{}'.format(inst_bitoffset + i) )
-        return features
+                        features.append( bus.hierarchy.cfg_bitoffset + i )
+        self._cache.setdefault("path", {}).setdefault(user_model.key, {}).setdefault(
+                (src_node, sink_node), features )
+        return tuple("b{}".format(cfg_bitoffset + i) for i in features)
 
     def reset(self):
         self._elaborated = set()
@@ -194,8 +209,22 @@ class ScanchainFASMDelegate(FASMDelegate):
         cfg_bitoffset = self._hierarchical_bitoffset(instance)
         if cfg_bitoffset is None:
             return ''
-        lut = self._get_logical_module(instance[0].model)
+        lut = self._get_logical_module(instance.model)
         return 'b{}[{}:0]'.format(str(cfg_bitoffset), lut.cfg_bitcount - 1)
+
+    def fasm_params_for_primitive(self, instance):
+        cfg_bitoffset = self._hierarchical_bitoffset(instance)
+        if cfg_bitoffset is None:
+            return ''
+        primitive = self._get_logical_module(instance.model)
+        params = getattr(primitive, "parameters", {})
+        fasm_params = {}
+        for key, value in iteritems(params):
+            if isinstance(value, int):
+                fasm_params[key] = "b{}[0:0]".format(cfg_bitoffset + value)
+            else:
+                fasm_params[key] = "b{}[{}:{}]".format(cfg_bitoffset, value.stop - 1, uno(value.start, 0))
+        return fasm_params
 
     def fasm_features_for_routing_switch(self, source, sink, instance = None):
         return self._features_for_path(source, sink, instance)
@@ -363,6 +392,43 @@ class Scanchain(object):
                 mode.commit()
 
             fraclut6.commit()
+
+        # register multi-mode flipflop
+        if True:
+            # user view
+            mdff = context.create_primitive("mdff",
+                    techmap_template = "mdff.techmap.tmpl.v",
+                    premap_commands = (
+                        "simplemap t:$dff t:$dffe t:$dffsr",
+                        "dffsr2dff",
+                        "dff2dffe",
+                        "opt -full",
+                        ),
+                    parameters = {
+                        "ENABLE_CE": "1'b0",
+                        "ENABLE_SR": "1'b0",
+                        "SR_SET": "1'b0",
+                        })
+            mdff.create_clock("clk")
+            mdff.create_input("D", 1, clock = "clk")
+            mdff.create_output("Q", 1, clock = "clk")
+            mdff.create_input("ce", 1, clock = "clk")
+            mdff.create_input("sr", 1, clock = "clk")
+
+            # logical view
+            mdff = mdff.create_logical_counterpart(
+                    cfg_bitcount = 3,
+                    verilog_template = "mdff.tmpl.v",
+                    parameters = {
+                        "ENABLE_CE": 0,
+                        "ENABLE_SR": 1,
+                        "SR_SET": 2,
+                        })
+            mdff.create_cfg_port('cfg_clk', 1, PortDirection.input_, is_clock = True)
+            mdff.create_cfg_port('cfg_e', 1, PortDirection.input_, clock = 'cfg_clk')
+            mdff.create_cfg_port('cfg_i', cfg_width, PortDirection.input_, clock = 'cfg_clk')
+            mdff.create_cfg_port('cfg_o', cfg_width, PortDirection.output, clock = 'cfg_clk')
+            mdff.commit()
 
         return context
 

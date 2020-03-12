@@ -2,11 +2,11 @@
 module {{ module.name }} (
     {%- set comma = joiner(",") %}
     {%- for port in itervalues(module.ports) %}{{ comma() }}
-    {{ port.direction.case('input', 'output') }} wire [{{ port.width - 1}}:0] {{ port.name }}
+    {{ port.direction.case('input', 'output') }} wire [{{ port|length - 1}}:0] {{ port.name }}
     {%- endfor %}
     );
-    {%- for param, info in iteritems(module.parameters|default({})) %}
-    parameter {{ param }} = {{ info.init|default('""') }};
+    {%- for param, default_value in iteritems(module.parameters|default({})) %}
+    parameter {{ param }} = {{ default_value }};
     {%- endfor %}
 endmodule
 
