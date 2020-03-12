@@ -351,19 +351,12 @@ class Scanchain(object):
                 mode.connect(inst.pins["out"], mode.ports["o5"])
                 mode.commit()
 
-            fraclut6 = fraclut6.commit()
-
-        if True:
-            # logical view
-            fraclut6 = context.create_multimode(fraclut6.name, view = ModuleView.logical,
+            fraclut6 = fraclut6.create_logical_counterpart(
                     cfg_bitcount = 65, verilog_template = "fraclut6.tmpl.v")
 
-            # user ports
-            in_ = fraclut6.create_input("in", 6)
-            o6 = fraclut6.create_output("o6", 1)
-            o5 = fraclut6.create_output("o5", 1)
-            fraclut6.connect(in_, o6, fully = True)
-            fraclut6.connect(in_[:4], o5, fully = True)
+            # combinational paths
+            fraclut6.add_combinational_path(fraclut6.ports["in"], fraclut6.ports["o6"])
+            fraclut6.add_combinational_path(fraclut6.ports["in"][:5], fraclut6.ports["o5"])
 
             # configuration ports
             fraclut6.create_cfg_port('cfg_clk', 1, PortDirection.input_, is_clock = True)
@@ -372,7 +365,7 @@ class Scanchain(object):
             fraclut6.create_cfg_port('cfg_o', cfg_width, PortDirection.output, clock = 'cfg_clk')
 
             if True:
-                mode = fraclut6.create_mode("lut6x1", cfg_mode_selection = (64, ))
+                mode = fraclut6.edit_mode("lut6x1", cfg_mode_selection = (64, ))
                 inst = mode.instantiate(context._database[ModuleView.logical, 'lut6'], "LUT6A")
                 mode.connect(mode.ports["in"], inst.pins["in"])
                 mode.connect(inst.pins["out"], mode.ports["o6"])
@@ -380,7 +373,7 @@ class Scanchain(object):
                 mode.commit()
 
             if True:
-                mode = fraclut6.create_mode("lut5x2", cfg_mode_selection = tuple())
+                mode = fraclut6.edit_mode("lut5x2", cfg_mode_selection = tuple())
                 inst = mode.instantiate(context._database[ModuleView.logical, 'lut5'], "LUT5A")
                 mode.connect(mode.ports["in"][:5], inst.pins["in"])
                 mode.connect(inst.pins["out"], mode.ports["o6"])

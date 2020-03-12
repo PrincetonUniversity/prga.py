@@ -4,8 +4,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .common import Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView, OrientationTuple
-from .builder.primitive import LogicalPrimitiveBuilder, PrimitiveBuilder
-from .builder.multimode import MultimodeBuilder
+from .builder.primitive import LogicalPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder
 from .builder.block import ClusterBuilder, IOBlockBuilder, LogicBlockBuilder
 from .builder.box import ConnectionBoxBuilder, SwitchBoxBuilder
 from .builder.array import LeafArrayBuilder, NonLeafArrayBuilder
@@ -166,20 +165,19 @@ class Context(Object):
             raise PRGAInternalError("FASM delegate not set.\n"
                     "Possible cause: the context is not created by a configuration circuitry entry point.")
 
-    def create_multimode(self, name, *, view = ModuleView.user, **kwargs):
+    def create_multimode(self, name, **kwargs):
         """Create a multi-mode primitive builder.
 
         Args:
             name (:obj:`str`): Name of the multi-mode primitive
 
         Keyword Args:
-            view (`ModuleView`): View of the multi-mode primitive
             **kwargs: Additional attributes to be associated with the primitive
         """
-        if (view, name) in self._database:
+        if (ModuleView.user, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        primitive = self._database[view, name] = MultimodeBuilder.new(name, view = view, **kwargs)
-        return MultimodeBuilder(self, primitive, view = view)
+        primitive = self._database[ModuleView.user, name] = MultimodeBuilder.new(name, **kwargs)
+        return MultimodeBuilder(self, primitive)
 
     def create_logical_primitive(self, name, *, non_leaf = False, **kwargs):
         """`LogicalPrimitiveBuilder`: Create a logical primitive builder.
