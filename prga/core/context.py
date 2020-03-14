@@ -267,6 +267,24 @@ class Context(Object):
         primitive = self._database[ModuleView.user, name] = PrimitiveBuilder.new(name, **kwargs)
         return PrimitiveBuilder(self, primitive)
 
+    def create_memory(self, name, addr_width, data_width, *, single_port = False, **kwargs):
+        """Create a memory builder.
+
+        Args:
+            name (:obj:`str`): Name of the memory
+            addr_width (:obj:`int`): Number of bits of the address ports
+            data_width (:obj:`int`): Number of bits of the data ports
+
+        Keyword Args:
+            single_port (:obj:`bool`): Create one read/write port instead of two
+            **kwargs: Additional attributes to be associated with the primitive
+        """
+        if (ModuleView.user, name) in self._database:
+            raise PRGAAPIError("Module with name '{}' already created".format(name))
+        primitive = self._database[ModuleView.user, name] = PrimitiveBuilder.new_memory(name,
+                addr_width, data_width, single_port = single_port, **kwargs)
+        return PrimitiveBuilder(self, primitive)
+
     # -- Clusters ------------------------------------------------------------
     @property
     def clusters(self):

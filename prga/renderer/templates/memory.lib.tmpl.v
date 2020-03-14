@@ -5,13 +5,14 @@
     , input wire [0:0] we{{ portsuffix }}
     , output reg [0:0] out{{ portsuffix }}
 {%- endmacro -%}
+{%- set dualport = "addr1" in module.ports %}
 module {{ module.name }} (
     input wire [0:0] clk
-    {% if module.dualport -%}
-        {{ memport('1', module.addr_width) }}
-        {{ memport('2', module.addr_width) }}
+    {% if dualport -%}
+        {{ memport('1', module.ports.addr1|length) }}
+        {{ memport('2', module.ports.addr2|length) }}
     {%- else -%}
-        {{ memport('', module.addr_width) }}
+        {{ memport('', module.ports.addr|length) }}
     {%- endif %}
     );
 endmodule

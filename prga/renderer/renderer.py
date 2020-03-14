@@ -114,7 +114,7 @@ class FileRenderer(Object):
         self.tasks.setdefault(file_, []).append( (template, parameters) )
         self._yosys_synth_script_task = file_
 
-    def add_yosys_blackbox(self, file_, module, template = "blackbox.lib.tmpl.v", script_file = None, **kwargs):
+    def add_yosys_library(self, file_, module, template = "blackbox.lib.tmpl.v", script_file = None, **kwargs):
         """Add a yosys library rendering task.
 
         Args:
@@ -133,7 +133,7 @@ class FileRenderer(Object):
                 "module": module,
                 }
         parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (template, parameters) )
+        self.tasks.setdefault(file_, []).append( (uno(template, "blackbox.lib.tmpl.v"), parameters) )
         script_task = self._get_yosys_script_task(script_file)
         if not isinstance(file_, basestring):
             file_ = os.path.abspath(file_.name)
@@ -172,6 +172,68 @@ class FileRenderer(Object):
             "premap_commands": premap_commands,
             "techmap": file_,
             } )
+
+    def add_yosys_mem_infer_rule(self, file_, module, template, **kwargs):
+        """Add a yosys BRAM inferring rule rendering task.
+
+        Args:
+            file_ (:obj:`str` of file-like object): The output file
+            module (:obj:`AbstractModule`): The memory module
+            template (:obj:`str`): The template to be used
+
+        Keyword Args:
+            **kwargs: Additional key-value parameters to be passed into the template when rendering
+        """
+        parameters = {
+                "iteritems": iteritems,
+                "itervalues": itervalues,
+                "module": module,
+                }
+        parameters.update(kwargs)
+        l = self.tasks.setdefault(file_, [])
+        if l:
+            l[-1][1].setdefault("not_last", True)
+        l.append( (template, parameters) )
+
+    def add_yosys_memory_techmap(self, file_, module, template = None, script_file = None,
+            premap_commands = tuple(), rule_script = None, **kwargs):
+        """Add a yosys memory techmap rendering task.
+
+        Args:
+            file_ (:obj:`str` or file-like object): The output file
+            module (:obj:`AbstractModule`): The memory module
+
+        Keyword Args:
+            template (:obj:`str`): The template to be used
+            script_file (:obj:`str` of file-like object): The main script file. If not specified, the most recently
+                added yosys script file will be used
+            premap_commands (:obj:`Sequence` [:obj:`str` ]): Commands to be run before running the techmap step
+            rule_script (:obj:`str` or file-like object): The BRAM inferring rule
+            **kwargs: Additional key-value parameters to be passed into the template when rendering
+        """
+        parameters = {
+                "iteritems": iteritems,
+                "itervalues": itervalues,
+                "module": module,
+                }
+        parameters.update(kwargs)
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
+        script_task = self._get_yosys_script_task(script_file)
+        if len(script_task) > 1:
+            raise PRGAInternalError("Main synthesis script is produced by multiple templates")
+        if not isinstance(file_, basestring):
+            file_ = os.path.abspath(file_.name)
+        else:
+            file_ = os.path.abspath(file_)
+        d = {
+                "premap_commands": premap_commands,
+                "techmap": file_,
+                }
+        if isinstance(rule_script, basestring):
+            d["rule"] = os.path.abspath(rule_script)
+        elif rule_script is not None:
+            d["rule"] = os.path.abspath(rule_script.name)
+        script_task[0][1]["memory_techmaps"].append( d )
 
     def render(self):
         """Render all added files and clear the task queue."""

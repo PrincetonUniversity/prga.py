@@ -400,6 +400,10 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                 o = i + 1
                 isgmt, idx, isection = tracks[i]
                 osgmt, odx, osection = tracks[o]
+                # validate that the current track won't break our span limitation
+                if i // max_span != (i + isgmt.length - 1 - isection) // max_span:
+                    raise PRGAInternalError("Unable to limit span because track #{} ({}[{}]) reaches beyond limit"
+                            .format(i, isgmt.name, idx))
                 # make sure we don't hop on a long track that may break our span limitation
                 if i // max_span != (o + osgmt.length - 1 - osection) // max_span:
                     continue
@@ -482,11 +486,13 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
         """
         # sort by length (descending order)
         if segments is None:
-            segments = tuple(sorted(itervalues(self._context.segments), key = lambda x: x.length, reverse = True))
+            segments = tuple(itervalues(self._context.segments))
+            # segments = tuple(sorted(itervalues(self._context.segments), key = lambda x: x.length, reverse = True))
         elif isinstance(segments, Mapping):
-            segments = tuple(sorted(itervalues(segments), key = lambda x: x.length, reverse = True))
-        else:
-            segments = tuple(sorted(segments, key = lambda x: x.length, reverse = True))
+            segments = tuple(itervalues(segments))
+            # segments = tuple(sorted(itervalues(segments), key = lambda x: x.length, reverse = True))
+        # else:
+        #     segments = tuple(sorted(segments, key = lambda x: x.length, reverse = True))
         # apply pattern
         if pattern.is_cycle_free:
             self._fill_cycle_free(output_orientation, segments, drive_at_crosspoints, crosspoints_only,

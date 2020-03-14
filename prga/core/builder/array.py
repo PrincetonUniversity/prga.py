@@ -589,7 +589,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             if model.module_class.is_io_block:
                 name = "iob_x{}y{}".format(position.x, position.y)
             elif model.module_class.is_logic_block:
-                name = "clb_x{}y{}".format(position.x, position.y)
+                name = "lb_x{}y{}".format(position.x, position.y)
             elif model.module_class.is_connection_box:
                 name = "cb_x{}y{}{}".format(position.x, position.y, model.key.orientation.name[0])
             else:
@@ -605,7 +605,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             ModuleUtils.instantiate(self._module, model, name, key = (position, Subtile.center))
             for x, y in product(range(model.width), range(model.height)):
                 for subtile in self._block_subtile_checklist(model, x, y, True):
-                    self._module._instances.grid[position.x][position.y][subtile] = Position(x, y)
+                    self._module._instances.grid[position.x + x][position.y + y][subtile] = Position(x, y)
         elif model.module_class.is_connection_box:
             ModuleUtils.instantiate(self._module, model, name, key = (position, model.key.orientation.to_subtile()))
         elif model.module_class.is_switch_box:
@@ -673,7 +673,9 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                 sbox_identifier = [identifier] if identifier else []
                 # 1. primary output
                 primary_output = Orientation[corner.case("south", "east", "west", "north")]
-                if not on_edge[primary_output] or not self._module.edge[primary_output]:
+                if (not (on_edge[primary_output] and self._module.edge[primary_output]) and
+                        not self._no_channel_for_switchbox(self._module, position, corner.to_subtile(), 
+                            primary_output, True)):
                     if on_edge[primary_output.opposite] and closure_on_edge[primary_output.opposite]:
                         outputs.append( (primary_output, True, False) )
                         sbox_identifier.append( "pc" )
@@ -683,7 +685,9 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                 # 2. secondary output
                 secondary_output = Orientation[corner.case("west", "south", "north", "east")]
                 if (on_edge[primary_output.opposite] and not on_edge[secondary_output] and 
-                        closure_on_edge[primary_output.opposite]):
+                        closure_on_edge[primary_output.opposite] and
+                        not self._no_channel_for_switchbox(self._module, position, corner.to_subtile(),
+                            secondary_output, True)):
                     if on_edge[secondary_output.opposite] and closure_on_edge[secondary_output.opposite]:
                         outputs.append( (secondary_output, True, False) )
                         sbox_identifier.append( "sc" )
@@ -692,7 +696,9 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                         sbox_identifier.append( "s" )
                 # 3. tertiary output
                 tertiary_output = primary_output.opposite
-                if on_edge[tertiary_output.opposite] and self._module.edge[tertiary_output.opposite]:
+                if (on_edge[tertiary_output.opposite] and self._module.edge[tertiary_output.opposite] and
+                        not self._no_channel_for_switchbox(self._module, position, corner.to_subtile(),
+                            tertiary_output, True)):
                     outputs.append( (tertiary_output, True, True) )
                     sbox_identifier.append( "tc" )
                 if not outputs:                             # no outputs

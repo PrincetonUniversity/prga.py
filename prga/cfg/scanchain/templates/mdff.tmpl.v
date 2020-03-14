@@ -39,7 +39,9 @@ module mdff (
     end
 
     always @(posedge clk) begin
-        if (~cfg_d[ENABLE_CE] || internal_ce) begin
+        if (cfg_e) begin
+            Q <= 1'b0;
+        end else if (~cfg_d[ENABLE_CE] || internal_ce) begin
             if (cfg_d[ENABLE_SR] && internal_sr) begin
                 Q <= cfg_d[SR_SET];
             end else begin
@@ -47,5 +49,16 @@ module mdff (
             end
         end
     end
+
+    wire [{{ 2 + cfg_width }}:0] cfg_d_next;
+
+    always @(posedge cfg_clk) begin
+        if (cfg_e) begin
+            cfg_d <= cfg_d_next;
+        end
+    end
+
+    assign cfg_d_next = {{ '{' -}} cfg_d, cfg_i {{- '}' }};
+    assign cfg_o = cfg_d_next[{{ 2 + cfg_width }} -: {{ cfg_width }}];
 
 endmodule

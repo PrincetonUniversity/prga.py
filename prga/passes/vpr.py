@@ -121,9 +121,10 @@ class VPRInputsGeneration(Object, AbstractPass):
 
     __slots__ = ['output_dir', 'xml', 'active_blocks', 'active_primitives', 'ios', 'lut_sizes',
             'block2id', 'blockpin2ptc', 'sgmt2id', 'sgmt2ptc', 'sgmt2node_id', 'sgmt2node_id_truncated',
-            'chanx_id', 'chany_id', 'srcsink_id', 'blockpin_id', 'delegate']
-    def __init__(self, output_dir = "."):
+            'chanx_id', 'chany_id', 'srcsink_id', 'blockpin_id', 'delegate', 'no_fasm']
+    def __init__(self, output_dir = ".", *, no_fasm = False):
         self.output_dir = output_dir
+        self.no_fasm = no_fasm
 
     @classmethod
     def _iob_orientation(cls, blk_inst):
@@ -807,7 +808,10 @@ class VPRInputsGeneration(Object, AbstractPass):
         makedirs(context.summary.vpr_dir)
         arch_f = os.path.join(context.summary.vpr_dir, "arch.vpr.xml")
         rrg_f = os.path.join(context.summary.vpr_dir, "rrg.vpr.xml")
-        self.delegate = context.fasm_delegate
+        if self.no_fasm:
+            self.delegate = FASMDelegate()
+        else:
+            self.delegate = context.fasm_delegate
         self.delegate.reset()
         # runtime-generated data
         self.block2id = OrderedDict()
@@ -965,7 +969,8 @@ class VPRInputsGeneration(Object, AbstractPass):
                                 port = block.ports[key]
                                 for i in range(len(port)):
                                     self._rrg_node(port.direction.case("SINK", "SOURCE"), total_num_nodes,
-                                            ptc_base + ptc + i, x + port.position.x, y + port.position.y)
+                                            ptc_base + ptc + i, x, y,
+                                            xhigh = x + block.width - 1, yhigh = y + block.height - 1)
                                     total_num_nodes += 1
                         self.blockpin_id[x][y] = total_num_nodes
                         for subblock in range(block.capacity):

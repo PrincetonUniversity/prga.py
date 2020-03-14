@@ -4,12 +4,12 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .base import BaseBuilder
-from ..common import ModuleClass, PrimitiveClass, NetClass, ModuleView
+from ..common import ModuleClass, PrimitiveClass, PrimitivePortClass, NetClass, ModuleView
 from ...netlist.module.module import Module
 from ...netlist.module.util import ModuleUtils
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
-from ...exception import PRGAInternalError
+from ...exception import PRGAAPIError, PRGAInternalError
 
 from abc import abstractproperty
 from collections import OrderedDict
@@ -47,6 +47,9 @@ class _BasePrimitiveBuilder(BaseBuilder):
                         "with a specified user counterpart").format(self._module))
             else:
                 kwargs["net_class"] = NetClass.primitive
+        elif self._module.primitive_class.is_memory:
+            raise PRGAAPIError("Ports are pre-defined and fixed for memory primitive '{}'"
+                .format(self._module))
         return ModuleUtils.create_port(self._module, name, 1, PortDirection.input_,
                 is_clock = True, **kwargs)
 
@@ -67,6 +70,9 @@ class _BasePrimitiveBuilder(BaseBuilder):
                         "with a specified user counterpart").format(self._module))
             else:
                 kwargs["net_class"] = NetClass.primitive
+        elif self._module.primitive_class.is_memory:
+            raise PRGAAPIError("Ports are pre-defined and fixed for memory primitive '{}'"
+                .format(self._module))
         return ModuleUtils.create_port(self._module, name, width, PortDirection.input_,
                 clock = clock, **kwargs)
 
@@ -87,6 +93,9 @@ class _BasePrimitiveBuilder(BaseBuilder):
                         "with a specified user counterpart").format(self._module))
             else:
                 kwargs["net_class"] = NetClass.primitive
+        elif self._module.primitive_class.is_memory:
+            raise PRGAAPIError("Ports are pre-defined and fixed for memory primitive '{}'"
+                .format(self._module))
         return ModuleUtils.create_port(self._module, name, width, PortDirection.output,
                 clock = clock, **kwargs)
 
@@ -136,7 +145,6 @@ class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
                 ports = OrderedDict(),
                 allow_multisource = True,
                 module_class = ModuleClass.primitive,
-                primitive_class = PrimitiveClass.custom,
                 **kwargs)
         for key, port in iteritems(user_view.ports):
             assert key == port.name
@@ -188,8 +196,60 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
                 primitive_class = PrimitiveClass.custom,
                 **kwargs)
 
+    @classmethod
+    def new_memory(cls, name, addr_width, data_width, *, single_port = False, **kwargs):
+        """Create a new memory primitive."""
+        kwargs.setdefault("techmap_template", "memory.techmap.tmpl.v")
+        kwargs.setdefault("lib_template", "memory.lib.tmpl.v")
+        kwargs.setdefault("mem_infer_rule_template", "builtin.tmpl.rule")
+        m = Module(name,
+                ports = OrderedDict(),
+                allow_multisource = True,
+                module_class = ModuleClass.primitive,
+                primitive_class = PrimitiveClass.memory,
+                **kwargs)
+        ModuleUtils.create_port(m, "clk", 1, PortDirection.input_,
+                is_clock = True, port_class = PrimitivePortClass.clock)
+        if single_port:
+            ModuleUtils.create_port(m, "we", 1, PortDirection.input_,
+                    clock = "clk", port_class = PrimitivePortClass.write_en)
+            ModuleUtils.create_port(m, "addr", addr_width, PortDirection.input_,
+                    clock = "clk", port_class = PrimitivePortClass.address)
+            ModuleUtils.create_port(m, "data", data_width, PortDirection.input_,
+                    clock = "clk", port_class = PrimitivePortClass.data_in)
+            ModuleUtils.create_port(m, "out", data_width, PortDirection.output,
+                    clock = "clk", port_class = PrimitivePortClass.data_out)
+        else:
+            ModuleUtils.create_port(m, "we1", 1, PortDirection.input_,
+                    clock = "clk", port_class = PrimitivePortClass.write_en1)
+            ModuleUtils.create_port(m, "addr1", addr_width, PortDirection.input_,
+                    clock = "clk", port_class = PrimitivePortClass.address1)
+            ModuleUtils.create_port(m, "data1", data_width, PortDirection.input_,
+                    clock = "clk", port_class = PrimitivePortClass.data_in1)
+            ModuleUtils.create_port(m, "out1", data_width, PortDirection.output,
+                    clock = "clk", port_class = PrimitivePortClass.data_out1)
+            ModuleUtils.create_port(m, "we2", 1, PortDirection.input_,
+                    clock = "clk", port_class = PrimitivePortClass.write_en2)
+            ModuleUtils.create_port(m, "addr2", addr_width, PortDirection.input_,
+                    clock = "clk", port_class = PrimitivePortClass.address2)
+            ModuleUtils.create_port(m, "data2", data_width, PortDirection.input_,
+                    clock = "clk", port_class = PrimitivePortClass.data_in2)
+            ModuleUtils.create_port(m, "out2", data_width, PortDirection.output,
+                    clock = "clk", port_class = PrimitivePortClass.data_out2)
+        return m
+
+    def commit(self, *, dont_create_logical_counterpart = False):
+        m = super(PrimitiveBuilder, self).commit()
+        if self._module.primitive_class.is_memory and not dont_create_logical_counterpart:
+            self._context.create_logical_primitive(self._module.name,
+                    verilog_template = "memory.tmpl.v").commit()
+        return m
+
     def add_combinational_path(self, sources, sinks):
         """Add a combinational path from ``sources`` to ``sinks``."""
+        if self._module.primitive_class.is_memory:
+            raise PRGAAPIError("Timing paths are pre-defined and fixed for memory module '{}'"
+                    .format(self._module))
         NetUtils.connect(sources, sinks, fully = True)
 
     def create_logical_counterpart(self, *, non_leaf = False, **kwargs):
