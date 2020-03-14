@@ -131,7 +131,7 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
             self._set_clock(port)
         return port
     
-    def create_input(self, name, width, orientation = Orientation.auto):
+    def create_input(self, name, width, orientation = Orientation.auto, *, equivalent = False):
         """Create and add a non-global input port to this block.
 
         Args:
@@ -139,8 +139,9 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
             width (:obj:`int`): width of the created port
             orientation (`Orientation`): orientation of this port
         """
+        kwargs = {"equivalent": True} if equivalent else {}
         return ModuleUtils.create_port(self._module, name, width, PortDirection.input_,
-                position = Position(0, 0), orientation = orientation)
+                position = Position(0, 0), orientation = orientation, **kwargs)
     
     def create_output(self, name, width, orientation = Orientation.auto):
         """Create and add a non-global output port to this block.
@@ -229,7 +230,7 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
             self._set_clock(port)
         return port
     
-    def create_input(self, name, width, orientation, position = None):
+    def create_input(self, name, width, orientation, position = None, *, equivalent = False):
         """Create and add a non-global input port to this block.
 
         Args:
@@ -239,8 +240,9 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this port
         """
         orientation, position = self._resolve_orientation_and_position(self._module, orientation, position)
+        kwargs = {"equivalent": True} if equivalent else {}
         return ModuleUtils.create_port(self._module, name, width, PortDirection.input_,
-                orientation = orientation, position = position)
+                orientation = orientation, position = position, **kwargs)
     
     def create_output(self, name, width, orientation, position = None):
         """Create and add a non-global output port to this block.
