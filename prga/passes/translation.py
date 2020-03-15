@@ -4,7 +4,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .base import AbstractPass
-from ..netlist.module.common import MemOptNonCoalescedConnGraph
+from ..netlist.module.common import MemOptNonCoalescedNodeDict, MemOptNonCoalescedConnGraph
 from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
 from ..netlist.net.common import PortDirection
@@ -55,8 +55,23 @@ class TranslationPass(Object, AbstractPass):
         self.top = top
 
     @classmethod
-    def _u2l(cls, module, user_ref):
-        return module._conn_graph.nodes[user_ref].get('logical_cp', user_ref)
+    def _u2l(cls, logical_model, user_ref):
+        # "_logical_cp" mapping is a mapping from user node reference to logical node reference
+        # both input and output reference are coalesced if and only if ``user_model`` coalesces connections
+        d = getattr(logical_model, "_logical_cp", None)
+        if d is None:
+            return user_ref
+        else:
+            return d.get(user_ref, user_ref)
+
+    @classmethod
+    def _register_u2l(cls, logical_model, user_net, logical_net, coalesced = False):
+        try:
+            d = logical_model._logical_cp
+        except AttributeError:
+            d = logical_model._logical_cp = ({} if coalesced else MemOptNonCoalescedNodeDict())
+        d[NetUtils._reference(user_net, coalesced = coalesced)] = NetUtils._reference(logical_net,
+                coalesced = coalesced)
 
     @property
     def key(self):
@@ -89,17 +104,11 @@ class TranslationPass(Object, AbstractPass):
             logical = Module(module.name, **kwargs)
             i, o = map(module.instances['io'].pins.get, ('inpad', 'outpad'))
             if i:
-                logical_net = ModuleUtils.create_port(
-                        logical, '_ipin', 1, PortDirection.input_, net_class = NetClass.io)
-                user_ref = NetUtils._reference(i)
-                logical_ref = NetUtils._reference(logical_net)
-                module._conn_graph.add_node(user_ref, logical_cp = logical_ref)
+                self._register_u2l(logical, i, ModuleUtils.create_port(
+                        logical, '_ipin', 1, PortDirection.input_, net_class = NetClass.io))
             if o:
-                logical_net = ModuleUtils.create_port(
-                        logical, '_opin', 1, PortDirection.output, net_class = NetClass.io)
-                user_ref = NetUtils._reference(o)
-                logical_ref = NetUtils._reference(logical_net)
-                module._conn_graph.add_node(user_ref, logical_cp = logical_ref)
+                self._register_u2l(logical, o, ModuleUtils.create_port(
+                        logical, '_opin', 1, PortDirection.output, net_class = NetClass.io))
             if i and o:
                 ModuleUtils.create_port(logical, '_oe', 1, PortDirection.output, net_class = NetClass.io)
         else:
@@ -158,9 +167,7 @@ class TranslationPass(Object, AbstractPass):
                     if port.direction.is_input:
                         global_ = globals_.pop( port.key[1:], None )
                         if global_ is not None:
-                            module._conn_graph.add_node(
-                                    NetUtils._reference(global_, coalesced = module._coalesce_connections),
-                                    logical_cp = NetUtils._reference(port, coalesced = module._coalesce_connections))
+                            self._register_u2l(logical, global_, port, module._coalesce_connections)
                         NetUtils.connect(port, pin)
                     else:
                         NetUtils.connect(pin, port)
@@ -175,9 +182,7 @@ class TranslationPass(Object, AbstractPass):
                     if port.direction.is_input:
                         global_ = globals_.pop( port.key[1:], None )
                         if global_ is not None:
-                            module._conn_graph.add_node(
-                                    NetUtils._reference(global_, coalesced = module._coalesce_connections),
-                                    logical_cp = NetUtils._reference(port, coalesced = module._coalesce_connections))
+                            self._register_u2l(logical, global_, port, module._coalesce_connections)
                         NetUtils.connect(port, pin)
                     else:
                         NetUtils.connect(pin, port)
@@ -189,10 +194,10 @@ class TranslationPass(Object, AbstractPass):
         if not module._allow_multisource:
             if module._coalesce_connections is logical._coalesce_connections:
                 for u, v in module._conn_graph.edges:
-                    logical._conn_graph.add_edge(self._u2l(module, u), self._u2l(module, v))
+                    logical._conn_graph.add_edge(self._u2l(logical, u), self._u2l(logical, v))
             else:   # module._coalesce_connections and not logical._coalesce_connections
                 for u, v in module._conn_graph.edges:
-                    lu, lv = map(lambda x: NetUtils._dereference(logical, self._u2l(module, x), coalesced = True),
+                    lu, lv = map(lambda x: NetUtils._dereference(logical, self._u2l(logical, x), coalesced = True),
                             (u, v))
                     NetUtils.connect(lu, lv)
         else:       # module._coalesce_connections is False
@@ -208,9 +213,9 @@ class TranslationPass(Object, AbstractPass):
                         user_sources = tuple()
                     if len(user_sources) == 0:
                         continue
-                    logical_sink = self._u2l(module, user_sink)
+                    logical_sink = self._u2l(logical, user_sink)
                     if len(user_sources) == 1:
-                        logical._conn_graph.add_edge(self._u2l(module, user_sources[0]), logical_sink)
+                        logical._conn_graph.add_edge(self._u2l(logical, user_sources[0]), logical_sink)
                         continue
                     bit = NetUtils._dereference(logical, logical_sink)
                     switch_model = context.switch_database.get_switch(len(user_sources), logical)
@@ -219,7 +224,7 @@ class TranslationPass(Object, AbstractPass):
                     switch = ModuleUtils.instantiate(logical, switch_model, switch_name,
                             key = (ModuleClass.switch, ) + logical_sink)
                     for user_source, switch_input in zip(user_sources, switch.pins['i']):
-                        logical._conn_graph.add_edge(self._u2l(module, user_source),
+                        logical._conn_graph.add_edge(self._u2l(logical, user_source),
                                 NetUtils._reference(switch_input))
                     logical._conn_graph.add_edge(NetUtils._reference(switch.pins['o']), logical_sink)
         ModuleUtils.elaborate(logical)

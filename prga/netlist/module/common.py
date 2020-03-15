@@ -106,7 +106,7 @@ class AbstractInstance(Abstract, Sequence):
 class _Placeholder(Enum):
     placeholder = 0
 
-class _NodeDict(MutableMapping):
+class MemOptNonCoalescedNodeDict(MutableMapping):
 
     __slots__ = ['_dict']
     def __init__(self):
@@ -157,8 +157,8 @@ class _NodeDict(MutableMapping):
                     yield idx, key
 
 class MemOptNonCoalescedConnGraph(nx.DiGraph):
-    node_dict_factory = _NodeDict
-    adjlist_outer_dict_factory = _NodeDict
+    node_dict_factory = MemOptNonCoalescedNodeDict
+    adjlist_outer_dict_factory = MemOptNonCoalescedNodeDict
 
 class LazyDict(MutableMapping):
     """Memory-optimized lazy dict."""

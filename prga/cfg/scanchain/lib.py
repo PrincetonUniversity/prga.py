@@ -113,6 +113,13 @@ class ScanchainFASMDelegate(FASMDelegate):
         self._cache.setdefault("hierarchy", {}).setdefault(key, cfg_bitoffset)
         return cfg_bitoffset
 
+    def _u2l(self, logical_model, user_ref):
+        d = getattr(logical_model, "_logical_cp", None)
+        if d:
+            return d.get(user_ref, user_ref)
+        else:
+            return user_ref
+
     def _features_for_path(self, source, sink, instance = None):
         # find hierarchical bitoffset base
         cfg_bitoffset = self._hierarchical_bitoffset(instance)
@@ -135,8 +142,8 @@ class ScanchainFASMDelegate(FASMDelegate):
         if user_model.key not in self._elaborated:
             ModuleUtils.elaborate(logical_model, True)
             self._elaborated.add(logical_model.key)
-        logical_src, logical_sink = map(lambda x: user_model._conn_graph.nodes[x].get("logical_cp", x),
-                (src_node, sink_node))
+        assert not logical_model._coalesce_connections
+        logical_src, logical_sink = map(lambda x: self._u2l(logical_model, x), (src_node, sink_node))
         # find programmable switch paths
         features = []
         def stop(m, n):

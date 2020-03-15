@@ -16,7 +16,7 @@ __all__ = []
 # -- Memory-Optimized Connection Graph for User Modules ----------------------
 # ----------------------------------------------------------------------------
 class MemOptUserNodeDict(LazyDict):
-    __slots__ = ['logical_cp', 'clock_group', 'clock']
+    __slots__ = ['clock_group', 'clock']
 
 class MemOptUserConnGraph(MemOptNonCoalescedConnGraph):
     node_attr_dict_factory = MemOptUserNodeDict
