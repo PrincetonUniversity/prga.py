@@ -219,9 +219,21 @@ class TranslationPass(Object, AbstractPass):
                         continue
                     bit = NetUtils._dereference(logical, logical_sink)
                     switch_model = context.switch_database.get_switch(len(user_sources), logical)
-                    switch_name = ('sw' + ('_' + bit.hierarchy[-1].name if bit.net_type.is_pin else '') + '_' +
-                            (bit.bus.name + '_' + str(bit.index) if bit.bus_type.is_slice else bit.name))
-                    switch = ModuleUtils.instantiate(logical, switch_model, switch_name,
+                    switch_name = ["sw"]
+                    if bit.bus_type.is_slice:
+                        if bit.net_type.is_pin:
+                            switch_name.append( bit.bus.hierarchy[-1].name )
+                            switch_name.append( bit.bus.model.name )
+                        else:
+                            switch_name.append( bit.bus.name )
+                        switch_name.append( str(bit.index) )
+                    else:
+                        if bit.net_type.is_pin:
+                            switch_name.append( bit.hierarchy[-1].name )
+                            switch_name.append( bit.model.name )
+                        else:
+                            switch_name.append( bit.name )
+                    switch = ModuleUtils.instantiate(logical, switch_model, "_".join(switch_name),
                             key = (ModuleClass.switch, ) + logical_sink)
                     for user_source, switch_input in zip(user_sources, switch.pins['i']):
                         logical._conn_graph.add_edge(self._u2l(logical, user_source),

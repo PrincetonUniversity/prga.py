@@ -3,7 +3,8 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .common import Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView, OrientationTuple
+from .common import (Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView, OrientationTuple,
+        DirectTunnel)
 from .builder.primitive import LogicalPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder
 from .builder.block import ClusterBuilder, IOBlockBuilder, LogicBlockBuilder
 from .builder.box import ConnectionBoxBuilder, SwitchBoxBuilder
@@ -68,7 +69,7 @@ class Context(Object):
 
     __slots__ = [
             '_globals',             # global wires
-            '_directs',             # direct inter-block tunnels
+            '_tunnels',             # direct inter-block tunnels
             '_segments',            # wire segments
             '_database',            # module database
             '_top',                 # logical top
@@ -79,7 +80,7 @@ class Context(Object):
 
     def __init__(self, *, database = None, **kwargs):
         self._globals = OrderedDict()
-        self._directs = OrderedDict()
+        self._tunnels = OrderedDict()
         self._segments = OrderedDict()
         if database is None:
             self._database = self._new_database()
@@ -252,6 +253,31 @@ class Context(Object):
         if name in self._segments:
             raise PRGAAPIError("Segment named '{}' is already created".format(name))
         return self._segments.setdefault(name, Segment(name, width, length))
+
+    # -- Direct Inter-Block Tunnels ------------------------------------------
+    @property
+    def tunnels(self):
+        """:obj:`Mapping` [:obj:`str`, `DirectTunnel` ]: A mapping from names to direct inter-block tunnels."""
+        return ReadonlyMappingProxy(self._tunnels)
+
+    def create_tunnel(self, name, source, sink, offset):
+        """Create a direct inter-block tunnel.
+
+        Args:
+            name (:obj:`str`): Name of the tunnel
+            source (`Port`): Source of the tunnel. Must be a logic block output port
+            sink (`Port`): Sink of the tunnel. Must be a logic block input port
+            offset (:obj:`tuple` [:obj:`int`, :obj:`int`] ): Position of the source port relative to the sink port
+                This definition is the opposite of how VPR defines a ``direct`` tag. In addition, ``offset`` is
+                defined based on the position of the ports, not the blocks
+        """
+        if name in self._tunnels:
+            raise PRGAAPIError("Direct tunnel named '{}' is already created".format(name))
+        elif not source.parent.module_class.is_logic_block or not source.direction.is_output:
+            raise PRGAAPIError("Source '{}' is not a logic block output port".format(source))
+        elif not sink.parent.module_class.is_logic_block or not sink.direction.is_input:
+            raise PRGAAPIError("Sink '{}' is not a logic block input port".format(source))
+        return self._tunnels.setdefault(name, DirectTunnel(name, source, sink, offset))
 
     # -- Primitives ----------------------------------------------------------
     @property

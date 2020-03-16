@@ -121,7 +121,7 @@ class VPRInputsGeneration(Object, AbstractPass):
 
     __slots__ = ['output_dir', 'xml', 'active_blocks', 'active_primitives', 'ios', 'lut_sizes',
             'block2id', 'blockpin2ptc', 'sgmt2id', 'sgmt2ptc', 'sgmt2node_id', 'sgmt2node_id_truncated',
-            'chanx_id', 'chany_id', 'srcsink_id', 'blockpin_id', 'delegate', 'no_fasm']
+            'chanx_id', 'chany_id', 'srcsink_id', 'blockpin_id', 'delegate', 'no_fasm', 'directs']
     def __init__(self, output_dir = ".", *, no_fasm = False):
         self.output_dir = output_dir
         self.no_fasm = no_fasm
@@ -280,7 +280,12 @@ class VPRInputsGeneration(Object, AbstractPass):
             return
         type_ = "direct" if len(sources) == 1 else "mux"
         name = [type_]
-        fasm_muxes = {}
+        if sink.bus_type.is_slice:
+            if sink.bus.parent.module_class.is_mode:
+                name.append( sink.bus.parent.key )
+        else:
+            if sink.parent.module_class.is_mode:
+                name.append( sink.parent.key )
         if sink.net_type.is_pin:
             if sink.bus_type.is_slice:
                 name.append( sink.bus.hierarchy[0].name )
@@ -295,6 +300,7 @@ class VPRInputsGeneration(Object, AbstractPass):
                 name.append( str(sink.index) )
             else:
                 name.append( sink.name )
+        fasm_muxes = {}
         with self.xml.element(type_, {
             "name": "_".join(name),
             "input": self._net2vpr(sources, parent_name),
@@ -542,7 +548,20 @@ class VPRInputsGeneration(Object, AbstractPass):
                         'clock' if port.is_clock else port.direction.case('input', 'output'),
                         attrs)
             # 2. FC
-            self.xml.element_leaf("fc", {"in_type": "frac", "in_val": "1.0", "out_type": "frac", "out_val": "1.0"})
+            zero_overrides = set()
+            for d in self.directs:
+                for port in (d.source, d.sink):
+                    if port.parent is block:
+                        zero_overrides.add( port.key )
+            if zero_overrides:
+                with self.xml.element("fc",
+                        {"in_type": "frac", "in_val": "1.0", "out_type": "frac", "out_val": "1.0"}):
+                    for port in zero_overrides:
+                        self.xml.element_leaf("fc_override",
+                                {"fc_type": "frac", "fc_val": 0., "port_name": port})
+            else:
+                self.xml.element_leaf("fc",
+                        {"in_type": "frac", "in_val": "1.0", "out_type": "frac", "out_val": "1.0"})
             # 3. pinlocations
             with self.xml.element("pinlocations", {"pattern": "custom"}):
                 for x, y, orientation in product(
@@ -617,6 +636,17 @@ class VPRInputsGeneration(Object, AbstractPass):
             self.xml.element_leaf('mux', {'name': 'default'})
             self.xml.element_leaf('sb', {'type': 'pattern'}, ' '.join(iter('1' for i in range(segment.length + 1))))
             self.xml.element_leaf('cb', {'type': 'pattern'}, ' '.join(iter('1' for i in range(segment.length))))
+
+    def _arch_direct(self, tunnel):
+        vpr_offset = tunnel.source.position - tunnel.sink.position - tunnel.offset
+        self.xml.element_leaf("direct", {
+            "name": tunnel.name,
+            "from_pin": "{}.{}".format(tunnel.source.parent.name, tunnel.source.name),
+            "to_pin": "{}.{}".format(tunnel.sink.parent.name, tunnel.sink.name),
+            "x_offset": vpr_offset.x,
+            "y_offset": vpr_offset.y,
+            "z_offset": 0,
+            })
 
     def _rrg_segment(self, segment, id_):
         with self.xml.element('segment', {'name': segment.name, 'id': id_}):
@@ -813,6 +843,7 @@ class VPRInputsGeneration(Object, AbstractPass):
         else:
             self.delegate = context.fasm_delegate
         self.delegate.reset()
+        self.directs = tuple(itervalues(context.tunnels))
         # runtime-generated data
         self.block2id = OrderedDict()
         self.blockpin2ptc = {}
@@ -869,6 +900,11 @@ class VPRInputsGeneration(Object, AbstractPass):
             with xml.element("segmentlist"):
                 for segment in itervalues(context.segments):
                     self._arch_segment(segment)
+            # directs:
+            if context.tunnels:
+                with xml.element("directlist"):
+                    for tunnel in itervalues(context.tunnels):
+                        self._arch_direct(tunnel)
             # clean up
             del self.xml
         # runtime-generated data

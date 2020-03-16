@@ -354,8 +354,8 @@ class Scanchain(object):
                 mode.connect(mode.ports["in"][:5], inst.pins["in"])
                 mode.connect(inst.pins["out"], mode.ports["o6"], pack_patterns = ("lut5A_dff", ))
                 inst = mode.instantiate(context.primitives["lut5"], "LUT5B")
-                mode.connect(mode.ports["in"][:5], inst.pins["in"], pack_patterns = ("lut5B_dff", ))
-                mode.connect(inst.pins["out"], mode.ports["o5"])
+                mode.connect(mode.ports["in"][:5], inst.pins["in"])
+                mode.connect(inst.pins["out"], mode.ports["o5"], pack_patterns = ("lut5B_dff", ))
                 mode.commit()
 
             fraclut6 = fraclut6.create_logical_counterpart(
@@ -429,6 +429,38 @@ class Scanchain(object):
             mdff.create_cfg_port('cfg_i', cfg_width, PortDirection.input_, clock = 'cfg_clk')
             mdff.create_cfg_port('cfg_o', cfg_width, PortDirection.output, clock = 'cfg_clk')
             mdff.commit()
+
+        # register adder
+        if True:
+            # user view
+            adder = context.create_primitive("adder",
+                    techmap_template = "adder.techmap.tmpl.v",
+                    parameters = {
+                        "CIN_FABRIC": "1'b0",
+                        })
+            adder.create_input("a", 1)
+            adder.create_input("b", 1)
+            adder.create_input("cin", 1)
+            adder.create_input("cin_fabric", 1)
+            adder.create_output("cout", 1)
+            adder.create_output("s", 1)
+            adder.create_output("cout_fabric", 1)
+            adder.add_combinational_path(
+                    (adder.ports["a"], adder.ports["b"], adder.ports["cin"], adder.ports["cin_fabric"]),
+                    (adder.ports["cout"], adder.ports["s"], adder.ports["cout_fabric"]))
+
+            # logical view
+            adder = adder.create_logical_counterpart(
+                    cfg_bitcount = 1,
+                    verilog_template = "adder.tmpl.v",
+                    parameters = {
+                        "CIN_FABRIC": 0,
+                        })
+            adder.create_cfg_port('cfg_clk', 1, PortDirection.input_, is_clock = True)
+            adder.create_cfg_port('cfg_e', 1, PortDirection.input_, clock = 'cfg_clk')
+            adder.create_cfg_port('cfg_i', cfg_width, PortDirection.input_, clock = 'cfg_clk')
+            adder.create_cfg_port('cfg_o', cfg_width, PortDirection.output, clock = 'cfg_clk')
+            adder.commit()
 
         return context
 

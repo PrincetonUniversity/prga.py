@@ -257,7 +257,8 @@ class NetUtils(object):
                     (src, sink))
             if not (module._allow_multisource or
                     sink_node not in module._conn_graph or 
-                    module._conn_graph.in_degree( sink_node ) == 0):
+                    module._conn_graph.in_degree( sink_node ) == 0 or
+                    next(iter(module._conn_graph.predecessors( sink_node ))) == src_node):
                 raise PRGAInternalError(
                         "'{}' does not support multi-source connections. ('{}' is already connected to '{}')"
                         .format(module, sink, cls.get_source(sink)))

@@ -6,7 +6,7 @@ from prga.compatible import *
 from .base import BaseBuilder, MemOptUserConnGraph
 from .block import LogicBlockBuilder
 from ..common import (Orientation, Direction, Dimension, Position, ModuleClass, SegmentID, BlockPinID, SegmentType,
-        BlockFCValue, SwitchBoxPattern)
+        BlockPortFCValue, BlockFCValue, SwitchBoxPattern)
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
 from ...netlist.module.module import Module
@@ -120,6 +120,21 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
             raise PRGAAPIError("'{}' is not a block".format(block))
         return _ConnectionBoxKey(block, orientation, position, identifier)
 
+    def _add_tunnel_bridge(self, tunnel):
+        """Add a bridge for a direct inter-block tunnel.
+
+        Args:
+            tunnel (`DirectTunnel`):
+        """
+        sink = self.get_blockpin(tunnel.sink.key)
+        src_node = BlockPinID(tunnel.offset, tunnel.source)
+        if src_node in self.ports:
+            raise PRGAInternalError("'{}' already added to {}".format(src_node, self._module))
+        source = ModuleUtils.create_port(self._module, self._node_name(src_node), len(tunnel.source),
+                tunnel.source.direction.opposite, key = src_node)
+        NetUtils.connect(source, sink)
+        return source
+
     # == high-level API ======================================================
     def get_segment_input(self, segment, orientation, section = 0, *, dont_create = False):
         """Get the segment input to this connection box.
@@ -203,12 +218,18 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                 set, segments from the context is used
             dont_create (:obj:`bool`): If set, connections are made only between already created nodes
         """
+        block, orientation, position, _ = self._module.key
+        # FC value
         fc = BlockFCValue._construct(fc)
+        for tunnel in itervalues(self._context.tunnels):
+            for port in (tunnel.source, tunnel.sink):
+                if port.parent is block:
+                    fc.overrides[port.key] = BlockPortFCValue(0)
+        # segments
         if segments is None:
             segments = tuple(itervalues(self._context.segments))
         elif isinstance(segments, Mapping):
             segments = tuple(itervalues(segments))
-        block, orientation, position, _ = self._module.key
         # start generation
         iti = [0 for _ in segments]
         oti = [0 for _ in segments]

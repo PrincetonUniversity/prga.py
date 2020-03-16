@@ -13,7 +13,7 @@ from math import ceil
 
 __all__ = ['Dimension', 'Direction', 'Orientation', 'OrientationTuple', 'Corner', 'Subtile', 'Position',
         'NetClass', 'IOType', 'ModuleClass', 'PrimitiveClass', 'PrimitivePortClass', 'ModuleView',
-        'Global', 'Segment', 'SegmentType', 'SegmentID', 'BlockPinID',
+        'Global', 'Segment', 'DirectTunnel', 'SegmentType', 'SegmentID', 'BlockPinID',
         'BlockPortFCValue', 'BlockFCValue', 'SwitchBoxPattern']
 
 # ----------------------------------------------------------------------------
@@ -441,6 +441,24 @@ class Global(Object):
         """
         self._bound_to_position = Position(*position)
         self._bound_to_subblock = subblock
+
+# ----------------------------------------------------------------------------
+# -- Direct Inter-block Tunnel -----------------------------------------------
+# ----------------------------------------------------------------------------
+class DirectTunnel(namedtuple("DirectTunnel", "name source sink offset")):
+    """Direct inter-block tunnels.
+
+    Args:
+        name (:obj:`str`): Name of the inter-block tunnel
+        source (`Port`): Source of the tunnel. Must be a logic block output port
+        sink (`Port`): Sink of the tunnel. Must be a logic block input port
+        offset (`Position`): Position of the source port relative to the sink port
+            This definition is the opposite of how VPR defines a ``direct`` tag. In addition, ``offset`` is
+            defined based on the position of the ports, not the blocks
+    """
+
+    def __new__(cls, name, source, sink, offset):
+        return super(DirectTunnel, cls).__new__(cls, name, source, sink, Position(*offset))
 
 # ----------------------------------------------------------------------------
 # -- Segment -----------------------------------------------------------------
