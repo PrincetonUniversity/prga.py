@@ -185,7 +185,7 @@ class Enum(enum.IntEnum):
                 except KeyError:
                     raise PRGAInternalError("Value unspecified for case {}".format(self))
 
-def enable_stdout_logging(name, level=logging.WARNING, verbose=False):
+def enable_stdout_logging(name, level=logging.INFO, verbose=False):
     hdl = logging.StreamHandler(sys.stdout)
     if verbose:
         hdl.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s'))

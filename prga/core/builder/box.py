@@ -17,6 +17,9 @@ from ...util import uno
 from collections import namedtuple, OrderedDict
 from itertools import product
 
+import logging
+_logger = logging.getLogger(__name__)
+
 __all__ = ['ConnectionBoxBuilder', 'SwitchBoxBuilder']
 
 # ----------------------------------------------------------------------------
@@ -402,6 +405,8 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
 
     def _fill_span_limited(self, output_orientation, segments,
             drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create, max_span):
+        _logger.info("Filling switch box '{}' with pattern: span_limited. max_span = {}"
+                .format(self._module, max_span))
         oori = output_orientation       # short alias
         # tracks: sgmt, i, section
         tracks = []
@@ -487,7 +492,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
     def fill(self, output_orientation, *,
             segments = None, drive_at_crosspoints = False, crosspoints_only = False,
             exclude_input_orientations = tuple(), dont_create = False,
-            pattern = SwitchBoxPattern.span_limited, max_span = None):
+            pattern = SwitchBoxPattern.span_limited):
         """Create switches implementing a cycle-free variation of the Wilton switch box.
 
         Args:
@@ -501,9 +506,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
             crosspoints_only (:obj:`bool`): If set, outputs driving the first section of segments are not generated
             exclude_input_orientations (:obj:`Container` [`Orientation` ]): Exclude segments in the given orientations
             dont_create (:obj:`bool`): If set, connections are made only between already created nodes
-
             pattern (`SwitchBoxPattern`): Switch box pattern
-            max_span (:obj:`int`): Maximum span for `SwitchBoxPattern.span_limited`. If not set, channel width is used
         """
         # sort by length (descending order)
         if segments is None:
@@ -520,6 +523,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                     exclude_input_orientations, dont_create)
         elif pattern.is_span_limited:
             channel_width = sum(sgmt.width * sgmt.length for sgmt in segments)
+            max_span = pattern.max_span
             if max_span is None:
                 max_span = channel_width
             elif not 0 < max_span <= channel_width:

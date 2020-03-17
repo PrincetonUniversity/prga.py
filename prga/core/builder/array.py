@@ -6,7 +6,7 @@ from prga.compatible import *
 from .base import BaseBuilder, MemOptUserConnGraph
 from .box import ConnectionBoxBuilder, SwitchBoxBuilder
 from ..common import (ModuleClass, Subtile, Position, Orientation, Dimension, Corner, OrientationTuple, SegmentID,
-        SegmentType, BlockPinID, BlockFCValue, Direction, SwitchBoxPattern)
+        SegmentType, BlockPinID, BlockPortFCValue, BlockFCValue, Direction, SwitchBoxPattern)
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
 from ...netlist.module.util import ModuleUtils
@@ -17,6 +17,7 @@ from ...exception import PRGAInternalError, PRGAAPIError
 from collections import OrderedDict
 from itertools import product
 from abc import abstractproperty, abstractmethod
+from copy import deepcopy
 
 __all__ = ['LeafArrayBuilder', 'NonLeafArrayBuilder']
 
@@ -634,10 +635,14 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             fc_override = None,
             closure_on_edge = OrientationTuple(False),
             identifier = None,
-            sbox_pattern = SwitchBoxPattern.span_limited,
-            **kwargs):
+            sbox_pattern = SwitchBoxPattern.span_limited):
         """Fill routing boxes into the array being built."""
         fc_override = uno(fc_override, {})
+        for tunnel in itervalues(self._context.tunnels):
+            for port in (tunnel.source, tunnel.sink):
+                fc = fc_override.setdefault(port.parent.key, BlockFCValue._construct(default_fc))
+                fc.overrides[port.key] = BlockPortFCValue(0)
+        processed_boxes = set()
         for x, y in product(range(self._module.width), range(self._module.height)):
             on_edge = OrientationTuple(
                     north = y == self._module.height - 1,
@@ -662,7 +667,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                 block_instance = self._module._instances.get_root(position, Subtile.center)
                 if block_instance is None:
                     continue
-                fc = BlockFCValue._construct(fc_override.get(block_instance.model.name, default_fc))
+                fc = BlockFCValue._construct(fc_override.get(block_instance.model.key, default_fc))
                 if block_instance.model.module_class.is_logic_block:
                     cbox_needed = False
                     for port in itervalues(block_instance.model.ports):
@@ -677,8 +682,10 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                         continue
                 cbox = self._context.get_connection_box(block_instance.model, ori, position - block_instance.key[0],
                         identifier = identifier)
-                cbox.fill(fc_override.get(block_instance.model.name, default_fc))
-                self.instantiate(cbox.commit(), position)
+                if cbox.module.key not in processed_boxes:
+                    cbox.fill(fc_override.get(block_instance.model.key, default_fc))
+                    processed_boxes.add(cbox.commit().key)
+                self.instantiate(cbox.module, position)
             # switch boxes
             for corner in Corner:
                 if self._module._instances.get_root(position, corner.to_subtile()) is not None:
@@ -736,10 +743,12 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                     sbox_identifier.append( "ex_" + "".join(o.name[0] for o in sorted(exclude_input_orientations)) )
                 sbox_identifier = "_".join(sbox_identifier)
                 sbox = self._context.get_switch_box(corner, identifier = sbox_identifier)
-                for output, drivex, xo in outputs:
-                    sbox.fill(output, drive_at_crosspoints = drivex, crosspoints_only = xo,
-                            exclude_input_orientations = exclude_input_orientations, pattern = sbox_pattern, **kwargs)
-                self.instantiate(sbox.commit(), position)
+                if sbox.module.key not in processed_boxes:
+                    for output, drivex, xo in outputs:
+                        sbox.fill(output, drive_at_crosspoints = drivex, crosspoints_only = xo,
+                                exclude_input_orientations = exclude_input_orientations, pattern = sbox_pattern)
+                    processed_boxes.add(sbox.commit().key)
+                self.instantiate(sbox.module, position)
 
     def auto_connect(self, *, is_top = False):
         is_top = self._module is self._context.top if is_top is None else is_top
