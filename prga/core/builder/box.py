@@ -352,6 +352,80 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
         self.connect(port, sink)
         return port
 
+    def _connect_tracks(self,
+            isgmt, iori, isec, idx,
+            osgmt, oori, osec, odx,
+            dont_create = False):
+        input_ = self.get_segment_input(isgmt, iori, isec, dont_create = dont_create)
+        output = self.get_segment_output(osgmt, oori, osec, dont_create = dont_create)
+        if input_ is not None and output is not None:
+            self.connect(input_[idx], output[odx])
+
+    def _fill_wilton(self, output_orientation, segments,
+            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create):
+        # 1. normal output tracks
+        if not crosspoints_only:
+            # output tracks
+            tracks = [(sgmt, i) for sgmt in segments for i in range(sgmt.width)]
+            o_balanced = 0
+            # generate connections
+            for iori in iter(Orientation):  # input orientation
+                if iori in (output_orientation.opposite, Orientation.auto):     # no U-turn
+                    continue
+                elif iori in exclude_input_orientations:                        # manually excluded orientations
+                    continue
+                elif iori is output_orientation:                                # straight connections
+                    for sgmt in segments:
+                        input_ = self.get_segment_input(sgmt, iori, sgmt.length, dont_create = dont_create)
+                        output = self.get_segment_output(sgmt, output_orientation, 0, dont_create = dont_create)
+                        if input_ is not None and output is not None:
+                            self.connect(input_, output)
+                    continue
+                # input tracks
+                # ending wires: do rotation
+                rotation = 1
+                if (iori, output_orientation) in ((Orientation.west, Orientation.north),
+                        (Orientation.south, Orientation.east)):
+                    rotation = -1
+                # enumerate connections
+                for i, (isgmt, idx) in enumerate(tracks):
+                    osgmt, odx = tracks[(i + rotation + len(tracks)) % len(tracks)]
+                    self._connect_tracks(isgmt, iori, isgmt.length, idx,
+                            osgmt, output_orientation, 0, odx, dont_create)
+                # passing wires: do balance
+                for isgmt in segments:
+                    for isec, idx in product(range(1, isgmt.length), range(isgmt.width)):
+                        osgmt, odx = tracks[o_balanced]
+                        o_balanced = (o_balanced + 1) % len(tracks)
+                        self._connect_tracks(isgmt, iori, isec, idx,
+                                osgmt, output_orientation, 0, odx, dont_create)
+        # 2. crosspoints
+        if drive_at_crosspoints:
+            # output tracks
+            tracks = [(sgmt, section, i) for sgmt in segments for section in range(1, sgmt.length)
+                    for i in range(sgmt.width)]
+            o = 0
+            # generate connections
+            for iori in iter(Orientation):  # input orientation
+                if iori in (output_orientation, output_orientation.opposite, Orientation.auto):
+                    continue
+                elif iori in exclude_input_orientations:
+                    continue
+                # input tracks: ending wires first
+                for isgmt in segments:
+                    for idx in range(isgmt.width):
+                        osgmt, osec, odx = tracks[o]
+                        o = (o + 1) % len(tracks)
+                        self._connect_tracks(isgmt, iori, isgmt.length, idx,
+                                osgmt, output_orientation, osec, odx, dont_create)
+                # passing wires next
+                for isgmt in segments:
+                    for isec, idx in product(range(1, isgmt.length), range(isgmt.width)):
+                        osgmt, osec, odx = tracks[o]
+                        o = (o + 1) % len(tracks)
+                        self._connect_tracks(isgmt, iori, isec, idx,
+                                osgmt, output_orientation, osec, odx, dont_create)
+
     def _fill_cycle_free(self, output_orientation, segments, 
             drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create):
         # tracks
@@ -435,13 +509,8 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                     continue
                 if (osection == 0 and crosspoints_only) or (osection > 0 and not drive_at_crosspoints):
                     continue
-                input_ = self.get_segment_input(isgmt, iori, isection + 1, dont_create = dont_create)
-                if input_ is None:
-                    continue
-                output = self.get_segment_output(osgmt, oori, osection, dont_create = dont_create)
-                if output is None:
-                    continue
-                self.connect(input_[idx], output[odx])
+                self._connect_tracks(isgmt, iori, isection + 1, idx,
+                        osgmt, oori, osection, odx, dont_create)
 
     # == high-level API ======================================================
     def get_segment_input(self, segment, orientation, section = None, *,
@@ -511,14 +580,13 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
         # sort by length (descending order)
         if segments is None:
             segments = tuple(itervalues(self._context.segments))
-            # segments = tuple(sorted(itervalues(self._context.segments), key = lambda x: x.length, reverse = True))
         elif isinstance(segments, Mapping):
             segments = tuple(itervalues(segments))
-            # segments = tuple(sorted(itervalues(segments), key = lambda x: x.length, reverse = True))
-        # else:
-        #     segments = tuple(sorted(segments, key = lambda x: x.length, reverse = True))
-        # apply pattern
-        if pattern.is_cycle_free:
+        # implement switch box pattern
+        if pattern.is_wilton:
+            self._fill_wilton(output_orientation, segments, drive_at_crosspoints, crosspoints_only,
+                    exclude_input_orientations, dont_create)
+        elif pattern.is_cycle_free:
             self._fill_cycle_free(output_orientation, segments, drive_at_crosspoints, crosspoints_only,
                     exclude_input_orientations, dont_create)
         elif pattern.is_span_limited:
