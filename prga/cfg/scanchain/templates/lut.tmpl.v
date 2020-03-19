@@ -14,6 +14,13 @@ module {{ module.name }} (
     reg [{{ module.cfg_bitcount - 1 }}:0] cfg_d;
     reg [{{ width - 1 }}:0] internal_in;
     
+    // synopsys translate_off
+    // in case the sensitivity list is never triggered
+    initial begin
+        internal_in = 6'b0;
+    end
+    // synopsys translate_on
+
     always @* begin
         internal_in = in;
 

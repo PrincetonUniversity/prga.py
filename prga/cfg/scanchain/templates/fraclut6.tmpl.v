@@ -17,6 +17,13 @@ module fraclut6 (
     reg [5:0] internal_in;
     reg lut5A_out;
 
+    // synopsys translate_off
+    // in case the sensitivity list is never triggered
+    initial begin
+        internal_in = 6'b0;
+    end
+    // synopsys translate_on
+
     always @* begin
         internal_in = in;
 

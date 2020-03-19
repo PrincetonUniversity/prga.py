@@ -18,6 +18,9 @@ import os
 from itertools import product, chain
 from collections import OrderedDict
 
+import logging
+_logger = logging.getLogger(__name__)
+
 __all__ = ['FASMDelegate', 'VPRInputsGeneration']
 
 # ----------------------------------------------------------------------------
@@ -695,16 +698,17 @@ class VPRInputsGeneration(Object, AbstractPass):
         elif not node.orientation.is_north and corner.dotx(Dimension.y).is_dec:
             channel_position -= (0, 1)
         pos = channel_position # short alias
-        # 2. section?
+        # 2. channel id base
+        node_id_base, before, after = dim.case(self.chanx_id, self.chany_id)[pos.x][pos.y]
+        if node_id_base is None:
+            _logger.warning("Node ID not assigned for channel {} at {}".format(dim.name, pos))
+            return None
+        # 3. section?
         section = node.orientation.case(
                 north = corner.dotx(Dimension.y).case(1, 0) - node.position.y,
                 east = corner.dotx(Dimension.x).case(1, 0) - node.position.x,
                 south = corner.dotx(Dimension.y).case(0, 1) + node.position.y,
                 west = corner.dotx(Dimension.x).case(0, 1) + node.position.x)
-        # 3. channel id base
-        node_id_base, before, after = dim.case(self.chanx_id, self.chany_id)[pos.x][pos.y]
-        if node_id_base is None:
-            raise PRGAInternalError("Node ID not assigned for channel {} at {}".format(dim.name, pos))
         # 4. segment id base
         segment_node_id_base = (self.sgmt2node_id if dir_.case(before, after)
                 else self.sgmt2node_id_truncated)[node.prototype.name]
@@ -777,6 +781,8 @@ class VPRInputsGeneration(Object, AbstractPass):
                     # 3. append to path
                     path = path + (sink_conngraph_node, )
                 src_node = self._calc_track_id(src)
+                if src_node is None:
+                    continue
             else:
                 if sinkdir is not None:     # block pin to track
                     sinkori = Orientation.compose(sinkdim, sinkdir)
@@ -1087,5 +1093,7 @@ class VPRInputsGeneration(Object, AbstractPass):
                             pin = port._to_pin( inst )
                             args = self._analyze_routable_pin(pin)
                             for bit in pin:
-                                self._rrg_edges(bit, self._calc_track_id(bit), *args)
+                                sink_node = self._calc_track_id(bit)
+                                if sink_node is not None:
+                                    self._rrg_edges(bit, sink_node, *args)
             del self.xml

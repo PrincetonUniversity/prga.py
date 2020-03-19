@@ -209,7 +209,7 @@ class _BaseArrayBuilder(BaseBuilder):
             prefix = node.segment_type.case(
                     array_input = 'ai',
                     array_output = 'ao',
-                    array_cboxout = 'co',
+                    array_cboxout = 'xo',
                     array_cboxout2 = 'co2')
             return '{}_{}_{}{}{}{}{}'.format(
                     prefix, node.prototype.name,
@@ -225,14 +225,16 @@ class _BaseArrayBuilder(BaseBuilder):
                     0 <= x < model.width - 1 and 0 <= y < model.height)
         elif model.module_class.is_array:
             if ori.dimension.is_x:
-                if ((x == 0 and model.edge.west) or
-                        (x == model.width - 1 and model.edge.east) or
-                        (y == model.height - 1 and model.edge.north)):
+                if ((x <= 0 and model.edge.west) or
+                        (x >= model.width - 1 and model.edge.east) or
+                        (y >= model.height - 1 and model.edge.north) or
+                        (y < 0 and model.edge.south)):
                     return True
             else:
-                if ((y == 0 and model.edge.south) or
-                        (y == model.height - 1 and model.edge.north) or
-                        (x == model.width - 1 and model.edge.east)):
+                if ((y <= 0 and model.edge.south) or
+                        (y >= model.height - 1 and model.edge.north) or
+                        (x >= model.width - 1 and model.edge.east) or
+                        (x < 0 and model.edge.west)):
                     return True
             if 0 <= x < model.width and 0 <= y < model.height:
                 instance = model._instances.get_root(position)
@@ -241,7 +243,7 @@ class _BaseArrayBuilder(BaseBuilder):
                         return cls._no_channel(instance.model, position - instance.key[0], ori)
                     else:
                         return cls._no_channel(instance.model, position - instance.key, ori)
-        return False
+            return False
 
     @classmethod
     def _no_channel_for_switchbox(cls, model, position, subtile, ori, output = False):
@@ -633,7 +635,6 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             default_fc,
             *,
             fc_override = None,
-            closure_on_edge = OrientationTuple(False),
             identifier = None,
             sbox_pattern = SwitchBoxPattern.span_limited):
         """Fill routing boxes into the array being built."""
@@ -644,18 +645,13 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                 fc.overrides[port.key] = BlockPortFCValue(0)
         processed_boxes = set()
         for x, y in product(range(self._module.width), range(self._module.height)):
+            position = Position(x, y)
+            # connection boxes
             on_edge = OrientationTuple(
                     north = y == self._module.height - 1,
                     east = x == self._module.width - 1,
                     south = y == 0,
                     west = x == 0)
-            next_to_edge = OrientationTuple(
-                    north = y == self._module.height - 2,
-                    east = x == self._module.width - 2,
-                    south = y == 1,
-                    west = x == 1)
-            position = Position(x, y)
-            # connection boxes
             for ori in Orientation:
                 if ori.is_auto:
                     continue
@@ -687,66 +683,74 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                     processed_boxes.add(cbox.commit().key)
                 self.instantiate(cbox.module, position)
             # switch boxes
-            for corner in Corner:
+            for corner in sbox_pattern.fill_corners:
                 if self._module._instances.get_root(position, corner.to_subtile()) is not None:
                     continue
-                elif any(on_edge[ori] and self._module.edge[ori] for ori in corner.decompose()):
-                    continue
                 # analyze the environment of this switch box (output orientations, excluded inputs, crosspoints, etc.)
-                outputs = []                        # orientation, drive_at_crosspoints, crosspoints_only
-                sbox_identifier = [identifier] if identifier else []
-                # 1. primary output
-                primary_output = Orientation[corner.case("south", "east", "west", "north")]
-                if (not (on_edge[primary_output] and self._module.edge[primary_output]) and
-                        not self._no_channel_for_switchbox(self._module, position, corner.to_subtile(), 
-                            primary_output, True)):
-                    if on_edge[primary_output.opposite] and closure_on_edge[primary_output.opposite]:
-                        outputs.append( (primary_output, True, False) )
-                        sbox_identifier.append( "pc" )
+                outputs = {}    # orientation -> drive_at_crosspoints, crosspoints_only
+                curpos, curcorner = position, corner
+                while True:
+                    # primary output
+                    primary_output = Orientation[curcorner.case("south", "east", "west", "north")]
+                    if not self._no_channel_for_switchbox(self._module, curpos, curcorner.to_subtile(),
+                            primary_output, True):
+                        drivex, _ = outputs.get(primary_output, (False, False))
+                        drivex = drivex or self._no_channel_for_switchbox(self._module, curpos, curcorner.to_subtile(),
+                                primary_output)
+                        outputs[primary_output] = drivex, False
+                    # secondary output: only effective on switch-boxes driving wire segments going out 
+                    secondary_output = primary_output.opposite
+                    if ( secondary_output.case( curpos.y == self._module.height - 1,
+                        curpos.x == self._module.width - 1, curpos.y == 0, curpos.x == 0) and
+                        self._no_channel_for_switchbox(self._module, curpos, curcorner.to_subtile(), secondary_output)
+                        ):
+                        _, xo = outputs.get(secondary_output, (True, True))
+                        outputs[secondary_output] = True, xo
+                    # go to the next corner
+                    if curcorner.is_northeast:
+                        curpos, curcorner = curpos + (0, 1), Corner.southeast
+                    elif curcorner.is_southeast:
+                        curpos, curcorner = curpos + (1, 0), Corner.southwest
+                    elif curcorner.is_southwest:
+                        curpos, curcorner = curpos - (0, 1), Corner.northwest
                     else:
-                        outputs.append( (primary_output, False, False) )
-                        sbox_identifier.append( "p" )
-                # 2. secondary output
-                secondary_output = Orientation[corner.case("west", "south", "north", "east")]
-                if (on_edge[primary_output.opposite] and not on_edge[secondary_output] and 
-                        closure_on_edge[primary_output.opposite] and
-                        not self._no_channel_for_switchbox(self._module, position, corner.to_subtile(),
-                            secondary_output, True)):
-                    if on_edge[secondary_output.opposite] and closure_on_edge[secondary_output.opposite]:
-                        outputs.append( (secondary_output, True, False) )
-                        sbox_identifier.append( "sc" )
-                    else:
-                        outputs.append( (secondary_output, False, False) )
-                        sbox_identifier.append( "s" )
-                # 3. tertiary output
-                tertiary_output = primary_output.opposite
-                if (on_edge[tertiary_output.opposite] and self._module.edge[tertiary_output.opposite] and
-                        not self._no_channel_for_switchbox(self._module, position, corner.to_subtile(),
-                            tertiary_output, True)):
-                    outputs.append( (tertiary_output, True, True) )
-                    sbox_identifier.append( "tc" )
-                if not outputs:                             # no outputs
+                        assert curcorner.is_northwest
+                        curpos, curcorner = curpos - (1, 0), Corner.northeast
+                    # check if we've gone through all corners
+                    if curcorner in sbox_pattern.fill_corners:
+                        break
+                if len(outputs) == 0:
                     continue
-                # 4. exclude inputs
-                exclude_input_orientations = set(ori for ori in Orientation
+                # analyze excluded inputs
+                excluded_inputs = set(ori for ori in Orientation
                         if not ori.is_auto and self._no_channel_for_switchbox(self._module, position,
                             corner.to_subtile(), ori))
-                for ori in corner.decompose():
-                    if next_to_edge[ori] and self._module.edge[ori]:
-                        exclude_input_orientations.add( ori.opposite )
-                    ori = ori.opposite
-                    if on_edge[ori] and self._module.edge[ori]:
-                        exclude_input_orientations.add( ori.opposite )
-                if len(exclude_input_orientations) == 4:    # no inputs
+                if len(excluded_inputs) == 4:
                     continue
-                if exclude_input_orientations:
-                    sbox_identifier.append( "ex_" + "".join(o.name[0] for o in sorted(exclude_input_orientations)) )
+                # construct the identifier
+                sbox_identifier = [identifier] if identifier is not None else []
+                oid = ""
+                for ori in Orientation:
+                    settings = outputs.get(ori)
+                    if settings is None:
+                        continue
+                    if settings[1]:
+                        oid += ori.name[0]
+                    elif settings[0]:
+                        oid += ori.name[0].upper() + ori.name[0]
+                    else:
+                        oid += ori.name[0].upper()
+                sbox_identifier.append(oid)
+                if excluded_inputs:
+                    exid = "".join(ori.name[0] for ori in Orientation if ori in excluded_inputs)
+                    sbox_identifier.extend( ["ex", exid] )
                 sbox_identifier = "_".join(sbox_identifier)
+                # build switch box
                 sbox = self._context.get_switch_box(corner, identifier = sbox_identifier)
                 if sbox.module.key not in processed_boxes:
-                    for output, drivex, xo in outputs:
+                    for output, (drivex, xo) in iteritems(outputs):
                         sbox.fill(output, drive_at_crosspoints = drivex, crosspoints_only = xo,
-                                exclude_input_orientations = exclude_input_orientations, pattern = sbox_pattern)
+                                exclude_input_orientations = excluded_inputs, pattern = sbox_pattern)
                     processed_boxes.add(sbox.commit().key)
                 self.instantiate(sbox.module, position)
 
