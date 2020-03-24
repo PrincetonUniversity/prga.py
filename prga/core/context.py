@@ -35,20 +35,16 @@ class ContextSummary(Object):
     """Summary of the FPGA."""
 
     __slots__ = [
-            # numbers
-            'vpr_channel_width',    # VPR channel width. Updated by `VPRInputsGeneration`
-            'vpr_array_width',      # VPR array width. Updated by `VPRInputsGeneration`
-            'vpr_array_height',     # VPR array height. Updated by `VPRInputsGeneration`
-            'ios',                  # list of IOType, (x, y), subblock. Updated by `VPRInputsGeneration`
-            # architecture status
-            'active_blocks',        # dict of block keys to active orientations. Updated by `VPRInputsGeneration`
-            'active_primitives',    # set of primitive keys. Updated by `VPRInputsGeneration`
-            'lut_sizes',            # set of LUT sizes. Updated by `VPRInputsGeneration` 
-            # output files
-            'vpr_dir',              # path to VPR outputs. Updated by `VPRInputsGeneration`
-            'yosys_script',         # generic yosys synthesis script
-            'rtl_sources',          # dict of module keys to verilog source file names. Updated by `VerilogCollection`
-            # additional attributes
+            # generic summaries: updated by 'SummaryUpdate'
+            'ios',                  # list of IOType, (x, y), subblock
+            'active_blocks',        # dict of block keys to active orientations
+            'active_primitives',    # set of primitive keys
+            'lut_sizes',            # set of LUT sizes
+            # pass-specific summaries: updated by each specific run
+            'vpr',                  # updated by VPR-related passes
+            'yosys',                # updated by Yosys-related passes
+            'rtl',                  # updated by RTL-related passes
+            # additional summaries
             '__dict__',
             ]
 

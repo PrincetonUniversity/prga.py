@@ -35,7 +35,9 @@ class YosysScriptsCollection(AbstractPass):
         return True
 
     def run(self, context):
-        f = context.summary.yosys_script = os.path.join(os.path.abspath(self.output_dir), "synth.ys") 
+        if not hasattr(context.summary, "yosys"):
+            context.summary.yosys = {}
+        f = context.summary.yosys["script"] = os.path.join(os.path.abspath(self.output_dir), "synth.ys") 
         self.renderer.add_yosys_synth_script(f, context.summary.lut_sizes)
         for primitive_key in context.summary.active_primitives:
             primitive = context.database[ModuleView.user, primitive_key]

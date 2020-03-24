@@ -49,5 +49,7 @@ class VerilogCollection(Object, AbstractPass):
 
     def run(self, context):
         top = context.database[self.view, context.top.key]
-        self.visited = context.summary.rtl_sources = {}
+        if not hasattr(context.summary, "rtl"):
+            context.summary.rtl = {}
+        self.visited = context.summary.rtl["sources"] = {}
         self._process_module(top)

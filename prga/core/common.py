@@ -136,9 +136,12 @@ class OrientationTuple(namedtuple('OrientationTuple', 'north east south west')):
     def __new__(cls, default = False, north = None, east = None, south = None, west = None):
         return super(OrientationTuple, cls).__new__(cls,
                 north = north if north is not None else default,
-                south = south if south is not None else default,
                 east = east if east is not None else default,
+                south = south if south is not None else default,
                 west = west if west is not None else default)
+
+    def __getnewargs__(self):
+        return False, self.north, self.east, self.south, self.west
 
 # ----------------------------------------------------------------------------
 # -- Corner ------------------------------------------------------------------
@@ -687,7 +690,7 @@ class BlockFCValue(namedtuple('BlockFCValue', 'default_in default_out overrides'
         Returns:
             :obj:`int`: the calculated FC value
         """
-        return self.overrides.get(port.name, port.direction.case(self.default_in, self.default_out)).segment_fc(
+        return self.overrides.get(port.key, port.direction.case(self.default_in, self.default_out)).segment_fc(
                 segment, all_sections)
 
 # ----------------------------------------------------------------------------

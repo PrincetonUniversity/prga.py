@@ -77,7 +77,7 @@ if __name__ == '__main__':
     summary = Context.unpickle(args.summary)
     if isinstance(summary, Context):
         summary = summary.summary
-    bitstream_size = summary.bitstream_size
+    bitstream_size = summary.scanchain["bitstream_size"]
     _logger.info("Architecture context summary parsed")
     _logger.info("Bitstream size: {}".format(bitstream_size))
     bitgen_scanchain(bitstream_size, args.fasm, args.memh)

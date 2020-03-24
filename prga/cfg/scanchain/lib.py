@@ -510,4 +510,6 @@ class Scanchain(object):
         module.cfg_bitcount = cfg_bitoffset
         ModuleUtils.elaborate(module)
         if module.key == context.top.key:
-            context.summary.bitstream_size = cfg_bitoffset
+            if not hasattr(context.summary, "scanchain"):
+                context.summary.scanchain = {}
+            context.summary.scanchain["bitstream_size"] = cfg_bitoffset

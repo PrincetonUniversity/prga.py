@@ -26,7 +26,7 @@ def generate_yosys_script(summary, renderer, ostream, model, model_sources, temp
         template (:obj:`str`): Custom template
     """
     renderer.add_generic( ostream, template, 
-            model = model, model_sources = model_sources, yosys_script = summary.yosys_script,
+            model = model, model_sources = model_sources, yosys_script = summary.yosys["script"],
             iteritems = iteritems, itervalues = itervalues )
 
 if __name__ == '__main__':
