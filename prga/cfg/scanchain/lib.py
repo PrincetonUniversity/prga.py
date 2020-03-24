@@ -472,7 +472,7 @@ class Scanchain(object):
         return r
 
     @classmethod
-    def complete_scanchain(cls, context, module):
+    def complete_scanchain(cls, context, module, *, iter_instances = lambda m: itervalues(m.instances)):
         """Complete the scanchain."""
         # special process needed for IO blocks (output enable)
         if module.module_class.is_io_block:
@@ -483,10 +483,10 @@ class Scanchain(object):
         # connecting scanchain ports
         cfg_bitoffset = 0
         cfg_clk, cfg_e, cfg_i, cfg_o = (None, ) * 4
-        for instance in itervalues(module.instances):
+        for instance in iter_instances(module):
             if instance.model.module_class not in (ModuleClass.primitive, ModuleClass.switch, ModuleClass.cfg):
                 if not hasattr(instance.model, 'cfg_bitcount'):
-                    cls.complete_scanchain(context, instance.model)
+                    cls.complete_scanchain(context, instance.model, iter_instances = iter_instances)
             # enable pin
             inst_cfg_e = instance.pins.get('cfg_e')
             if inst_cfg_e is None:

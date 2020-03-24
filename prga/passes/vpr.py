@@ -728,6 +728,9 @@ class VPRInputsGeneration(Object, AbstractPass):
                 node.orientation.direction.case(0, 1))
 
     def _rrg_edges(self, sink, sink_node, sinkpos, sinkdim, sinkdir, sinkspan):
+        _logger.debug("Scanning edges leading to node {} ({})"
+                .format(sink_node, sink))
+        num_edges = 0
         sink_conngraph_node = NetUtils._reference(sink)
         def yield_or_stop(m, n):
             idx, net_key = n
@@ -756,18 +759,22 @@ class VPRInputsGeneration(Object, AbstractPass):
                 if sinkdir is None:    # track to block pin
                     # 1. same dimension
                     if not (srcdim is sinkdim and srcdim.case(diff.y, diff.x) == 0):
+                        _logger.debug(" ... [x] Rejected b/c dim mismatch: {}".format(src))
                         continue
                     # 2. within reach
                     elif not (0 <= srcori.case(diff.y, diff.x, -diff.y, -diff.x) < srcspan):
+                        _logger.debug(" ... [x] Rejected b/c out of reach: {}".format(src))
                         continue
                 else:               # track to track
                     # 1. if in the same dimension
                     if srcdim is sinkdim:
                         # 1.1 same direction
                         if not (srcdir is sinkdir and srcdim.case(diff.y, diff.x) == 0):
+                            _logger.debug(" ... [x] Rejected b/c dir mismatch: {}".format(src))
                             continue
                         # 1.2 within reach
                         elif not (0 < srcori.case(diff.y, diff.x, -diff.y, -diff.x) <= srcspan):
+                            _logger.debug(" ... [x] Rejected b/c out of reach: {}".format(src))
                             continue
                     # 2. if in perpendicular dimensions
                     else:
@@ -777,6 +784,7 @@ class VPRInputsGeneration(Object, AbstractPass):
                                 diff.x == sinkdir.case(1, 0) and 0 < -diff.y <= srcspan,
                                 diff.y == sinkdir.case(1, 0) and 0 < -diff.x <= srcspan,
                                 ):
+                            _logger.debug(" ... [x] Rejected b/c out of reach: {}".format(src))
                             continue
                     # 3. append to path
                     path = path + (sink_conngraph_node, )
@@ -789,13 +797,17 @@ class VPRInputsGeneration(Object, AbstractPass):
                     diff = srcpos - sinkpos
                     # 1. same dimension
                     if not (srcdim is sinkdim and srcdim.case(diff.y, diff.x) == 0):
+                        _logger.debug(" ... [x] Rejected b/c dim mismatch: {}".format(src))
                         continue
                     # 2. within reach
                     elif not 0 <= sinkori.case(diff.y, diff.x, -diff.y, -diff.x) < sinkspan:
+                        _logger.debug(" ... [x] Rejected b/c out of reach: {}".format(src))
                         continue
                     # 3. append to path
                     path = path + (sink_conngraph_node, )
                 src_node = self._calc_blockpin_id(src)
+            _logger.debug(" ... [v] Accepted: {}".format(src))
+            num_edges += 1
             attrs = { "src_node": src_node, "sink_node": sink_node, "switch_id": 1}
             # pair nodes
             assert len(path) % 2 == 1
@@ -822,6 +834,10 @@ class VPRInputsGeneration(Object, AbstractPass):
                             "\n".join(fasm_features))
             else:
                 self.xml.element_leaf("edge", attrs)
+        if num_edges:
+            _logger.debug(" === {} edges found connected to node {} ({})".format(num_edges, sink_node, sink))
+        else:
+            _logger.info(" === No edge found connected to node {} ({})".format(sink_node, sink))
 
     @property
     def key(self):

@@ -862,11 +862,11 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             # 2. check if the pin is driven by a connection block
             driver = NetUtils.get_source(sink)
             if driver.net_type.is_pin:
-                assert driver.parent.model.module_class.is_connection_box
-                bridge = driver.parent.model.ports.get(BlockPinID(tunnel.offset, tunnel.source), None)
+                assert driver.hierarchy[0].model.module_class.is_connection_box
+                bridge = driver.hierarchy[0].model.ports.get(BlockPinID(tunnel.offset, tunnel.source), None)
                 if bridge is None:
-                    bridge = ConnectionBoxBuilder(self._context, driver.parent.model)._add_tunnel_bridge(tunnel)
-                sink = driver.parent.pins[bridge.key]
+                    bridge = ConnectionBoxBuilder(self._context, driver.hierarchy[0].model)._add_tunnel_bridge(tunnel)
+                sink = driver.hierarchy[0].pins[bridge.key]
             elif driver.net_type.is_port:
                 assert driver.parent is self._module
                 continue

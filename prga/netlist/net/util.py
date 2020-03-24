@@ -146,10 +146,10 @@ class NetUtils(object):
                             path = next_path, yield_ = yield_, stop = stop, skip = skip):
                         yield p
                 return
-            # 4. one more chance if this net is on the edge of elaboration
-            if len(net_key) != 2:
+            # 4. one more chance if this net is an output pin of a leaf instance (in terms of elaboration)
+            if len(net_key) == 1 or net_key[1:] in model._elaborated:
                 return
-            model, hierarchy_key = model.instances[net_key[1]].model, net_key[1:] + hierarchy_key
+            model, hierarchy_key = model.hierarchy[net_key[1:]].model, net_key[1:] + hierarchy_key
             net_key = net_key[:1]
 
     @classmethod
