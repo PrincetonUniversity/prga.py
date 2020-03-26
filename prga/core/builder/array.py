@@ -754,7 +754,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                     processed_boxes.add(sbox.commit().key)
                 self.instantiate(sbox.module, position)
 
-    def auto_connect(self, *, is_top = False):
+    def auto_connect(self, *, is_top = None):
         is_top = self._module is self._context.top if is_top is None else is_top
         # connect routing nodes
         for x, y, subtile in product(range(self._module.width), range(self._module.height), Subtile):

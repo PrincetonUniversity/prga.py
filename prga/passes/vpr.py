@@ -863,12 +863,13 @@ class VPRArchGeneration(_VPRArchGeneration):
             if array.key not in elaborated:
                 ModuleUtils.elaborate(array, True, lambda x: x.model.module_class.is_block)
                 elaborated.add(array.key)
-            position = NonLeafArrayBuilder._instance_position(hierarchy)
+            position = NonLeafArrayBuilder._instance_position(hierarchy) if hierarchy is not None else Position(0, 0)
             for x, y in product(range(array.width), range(array.height)):
                 blk_inst = array.instances.get( ((x, y), Subtile.center) )
                 if blk_inst is None:
                     continue
-                fasm_prefix = '\n'.join(self.fasm.fasm_prefix_for_tile( hierarchy.delve(blk_inst) ))
+                fasm_prefix = '\n'.join(self.fasm.fasm_prefix_for_tile(
+                    hierarchy.delve(blk_inst) if hierarchy is not None else blk_inst ))
                 attrs = {'priority': 1, 'x': position.x + x, 'y': position.y + y}
                 if blk_inst.model.module_class.is_io_block:
                     # special process needed for IO blocks
@@ -998,10 +999,11 @@ class VPRScalableArchGeneration(_VPRArchGeneration):
     exploring, but then use fixed layout and channel width for your real chip.
     """
 
-    __slots__ = ['delegate']
-    def __init__(self, output_file, delegate, *, timing = None):
+    __slots__ = ['delegate', 'update_summary']
+    def __init__(self, output_file, delegate, *, update_summary = False, timing = None):
         super(VPRScalableArchGeneration, self).__init__(output_file, fasm = FASMDelegate(), timing = timing)
         self.delegate = delegate
+        self.update_summary = update_summary
 
     @property
     def key(self):
@@ -1009,7 +1011,7 @@ class VPRScalableArchGeneration(_VPRArchGeneration):
 
     @property
     def _update_summary(self):
-        return False
+        return self.update_summary
 
     def _update_output_file(self, summary, output_file):
         summary["scalable_arch"] = output_file
@@ -1206,21 +1208,29 @@ class VPR_RRG_Generation(Object, AbstractPass):
                     "width_offset": x - rootpos.x, "height_offset": y - rootpos.y})
 
     def _node(self, type_, id_, ptc, xlow, ylow, *,
-            track_dir = None, port_ori = None, xhigh = None, yhigh = None, segment_id = None):
+            track_dir = None, port_ori = None, xhigh = None, yhigh = None, segment = None):
         node_attr = {"capacity": 1, "id": id_, "type": type_}
         loc_attr = {"xlow": xlow, "ylow": ylow, "ptc": ptc,
                 "xhigh": uno(xhigh, xlow), "yhigh": uno(yhigh, ylow)}
+        timing_attr = {"C": 0., "R": 0.}
         if type_ in ("CHANX", "CHANY"):
-            assert track_dir is not None and segment_id is not None
+            assert track_dir is not None and segment is not None
             node_attr["direction"] = track_dir.case("INC_DIR", "DEC_DIR")
+            #
+            # The following code is not right. VPR adds switch input/output capacitance on top of the track
+            # capacitance. This is a bit too expensive for us to do it here.
+            #
+            #   length = 1 + (abs(yhigh - ylow) if type_ == "CHANY" else abs(xhigh - xlow))
+            #   timing_attr["C"] = length * segment.Cmetal
+            #   timing_attr["R"] = length * segment.Rmetal
         elif type_ in ("IPIN", "OPIN"):
             assert port_ori is not None
             loc_attr["side"] = port_ori.case("TOP", "RIGHT", "BOTTOM", "LEFT")
         with self.xml.element("node", node_attr):
             self.xml.element_leaf("loc", loc_attr)
-            self.xml.element_leaf("timing", {"C": 0.0, "R": 0.0})
+            self.xml.element_leaf("timing", timing_attr)
             if type_ in ("CHANX", "CHANY"):
-                self.xml.element_leaf("segment", {"segment_id": segment_id})
+                self.xml.element_leaf("segment", {"segment_id": self.sgmt2id[segment.name]})
 
     def _calc_blockpin_id(self, pin, srcsink = False, position_hint = None):
         bus, index = (pin.bus, pin.index) if pin.bus_type.is_slice else (pin, 0)
@@ -1553,7 +1563,7 @@ class VPR_RRG_Generation(Object, AbstractPass):
                                         track_dir = dir_,
                                         xhigh = ori.case(x, x + min(after, segment.length - 1 - section), x, x),
                                         yhigh = ori.case(y + min(after, segment.length - 1 - section), y, y, y),
-                                        segment_id = segment_id,
+                                        segment = self.timing.vpr_segment(segment),
                                         )
                                 total_num_nodes += 1
             # edges

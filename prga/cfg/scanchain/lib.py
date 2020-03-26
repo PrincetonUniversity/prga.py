@@ -263,14 +263,29 @@ class Scanchain(object):
                 return cfg_clk, cfg_i, cfg_o
 
     @classmethod
-    def new_context(cls, cfg_width = 1):
+    def _add_cfg_intf(cls, primitive, cfg_width):
+        # configuration ports
+        ModuleUtils.create_port(primitive, 'cfg_clk', 1, PortDirection.input_,
+                is_clock = True, net_class = NetClass.cfg)
+        ModuleUtils.create_port(primitive, 'cfg_e', 1, PortDirection.input_,
+                clock = "cfg_clk", net_class = NetClass.cfg)
+        ModuleUtils.create_port(primitive, 'cfg_i', cfg_width, PortDirection.input_,
+                clock = "cfg_clk", net_class = NetClass.cfg)
+        ModuleUtils.create_port(primitive, 'cfg_o', cfg_width, PortDirection.output,
+                clock = "cfg_clk", net_class = NetClass.cfg)
+
+    @classmethod
+    def new_context(cls, cfg_width = 1, *, dont_add_primitive = tuple()):
         context = Context(cfg_width = cfg_width)
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width)
         context._fasm_delegate = ScanchainFASMDelegate(context)
 
         # register luts
         for i in range(2, 9):
-            lut = Module('lut' + str(i),
+            name = "lut" + str(i)
+            if name in dont_add_primitive:
+                continue
+            lut = Module(name,
                     ports = OrderedDict(),
                     allow_multisource = True,
                     module_class = ModuleClass.primitive,
@@ -282,21 +297,14 @@ class Scanchain(object):
             NetUtils.connect(in_, out, fully = True)
 
             # configuration ports
-            ModuleUtils.create_port(lut, 'cfg_clk', 1, PortDirection.input_,
-                    is_clock = True, net_class = NetClass.cfg)
-            ModuleUtils.create_port(lut, 'cfg_e', 1, PortDirection.input_,
-                    clock = "cfg_clk", net_class = NetClass.cfg)
-            ModuleUtils.create_port(lut, 'cfg_i', cfg_width, PortDirection.input_,
-                    clock = "cfg_clk", net_class = NetClass.cfg)
-            ModuleUtils.create_port(lut, 'cfg_o', cfg_width, PortDirection.output,
-                    clock = "cfg_clk", net_class = NetClass.cfg)
+            cls._add_cfg_intf(lut, cfg_width)
 
             # elaborate
             ModuleUtils.elaborate(lut)
             context._database[ModuleView.logical, lut.key] = lut
 
         # register flipflops
-        if True:
+        if "flipflop" not in dont_add_primitive:
             flipflop = Module('flipflop',
                     ports = OrderedDict(),
                     allow_multisource = True,
@@ -313,28 +321,23 @@ class Scanchain(object):
             context._database[ModuleView.logical, flipflop.key] = flipflop
 
         # register single-bit configuration filler
-        if True:
+        if "cfg_bit" not in dont_add_primitive:
             cfg_bit = Module('cfg_bit',
                     ports = OrderedDict(),
                     allow_multisource = True,
                     module_class = ModuleClass.cfg,
                     cfg_bitcount = 1,
                     verilog_template = "cfg_bit.tmpl.v")
-            ModuleUtils.create_port(cfg_bit, 'cfg_clk', 1, PortDirection.input_,
-                    is_clock = True, net_class = NetClass.cfg)
-            ModuleUtils.create_port(cfg_bit, 'cfg_e', 1, PortDirection.input_,
-                    clock = 'cfg_clk', net_class = NetClass.cfg)
-            ModuleUtils.create_port(cfg_bit, 'cfg_i', cfg_width, PortDirection.input_,
-                    clock = 'cfg_clk', net_class = NetClass.cfg)
-            ModuleUtils.create_port(cfg_bit, 'cfg_o', cfg_width, PortDirection.output,
-                    clock = 'cfg_clk', net_class = NetClass.cfg)
+            cls._add_cfg_intf(cfg_bit, cfg_width)
             ModuleUtils.create_port(cfg_bit, 'cfg_d', 1, PortDirection.output,
                     clock = 'cfg_clk', net_class = NetClass.cfg)
             ModuleUtils.elaborate(cfg_bit)
             context._database[ModuleView.logical, cfg_bit.key] = cfg_bit
 
         # register fracturable LUT6
-        if True:
+        if ("lut5" not in dont_add_primitive and
+                "lut6" not in dont_add_primitive and
+                "fraclut6" not in dont_add_primitive):
             # user view
             fraclut6 = context.create_multimode('fraclut6')
             fraclut6.create_input("in", 6)
@@ -394,7 +397,7 @@ class Scanchain(object):
             fraclut6.commit()
 
         # register multi-mode flipflop
-        if True:
+        if "mdff" not in dont_add_primitive:
             # user view
             mdff = context.create_primitive("mdff",
                     techmap_template = "mdff.techmap.tmpl.v",
@@ -431,7 +434,7 @@ class Scanchain(object):
             mdff.commit()
 
         # register adder
-        if True:
+        if "adder" not in dont_add_primitive:
             # user view
             adder = context.create_primitive("adder",
                     techmap_template = "adder.techmap.tmpl.v",
@@ -461,6 +464,126 @@ class Scanchain(object):
             adder.create_cfg_port('cfg_i', cfg_width, PortDirection.input_, clock = 'cfg_clk')
             adder.create_cfg_port('cfg_o', cfg_width, PortDirection.output, clock = 'cfg_clk')
             adder.commit()
+
+        # register simplified stratix-IV FLE
+        if ("lut5" not in dont_add_primitive and
+                "lut6" not in dont_add_primitive and
+                "adder" not in dont_add_primitive and
+                "flipflop" not in dont_add_primitive and
+                "fle6" not in dont_add_primitive):
+            # user view
+            fle6 = context.create_multimode('fle6')
+            fle6.create_clock("clk")
+            fle6.create_input("in", 6)
+            fle6.create_input("cin", 1)
+            fle6.create_output("out", 2)
+            fle6.create_output("cout", 1)
+
+            if True:
+                mode = fle6.create_mode("lut6x1")
+                lut = mode.instantiate(context.primitives["lut6"], "lut")
+                ff = mode.instantiate(context.primitives["flipflop"], "ff")
+                mode.connect(mode.ports["clk"], ff.pins["clk"])
+                mode.connect(mode.ports["in"], lut.pins["in"])
+                mode.connect(lut.pins["out"], ff.pins["D"], pack_patterns = ["lut6_dff"])
+                mode.connect(lut.pins["out"], mode.ports["out"][0])
+                mode.connect(ff.pins["Q"], mode.ports["out"][0])
+                mode.commit()
+
+            if True:
+                mode = fle6.create_mode("lut5x2")
+                for i, suffix in enumerate(["A", "B"]):
+                    lut = mode.instantiate(context.primitives["lut5"], "lut" + suffix)
+                    ff = mode.instantiate(context.primitives["flipflop"], "ff" + suffix)
+                    mode.connect(mode.ports["clk"], ff.pins["clk"])
+                    mode.connect(mode.ports["in"][0:5], lut.pins["in"])
+                    mode.connect(lut.pins["out"], ff.pins["D"], pack_patterns = ["lut5" + suffix + "_dff"])
+                    mode.connect(lut.pins["out"], mode.ports["out"][i])
+                    mode.connect(ff.pins["Q"], mode.ports["out"][i])
+                mode.commit()
+
+            if True:
+                mode = fle6.create_mode("arithmetic")
+                adder = mode.instantiate(context.primitives["adder"], "fa")
+                for p in ("a", "b"):
+                    lut = mode.instantiate(context.primitives["lut5"], "lut" + p.upper())
+                    mode.connect(mode.ports["in"][0:5], lut.pins["in"])
+                    mode.connect(lut.pins["out"], adder.pins[p], pack_patterns = ["carrychain"])
+                mode.connect(mode.ports["cin"], adder.pins["cin"], pack_patterns = ["carrychain"])
+                mode.connect(mode.ports["in"][5], adder.pins["cin_fabric"])
+                for i, (p, suffix) in enumerate([("s", "A"), ("cout_fabric", "B")]):
+                    ff = mode.instantiate(context.primitives["flipflop"], "ff" + suffix)
+                    mode.connect(mode.ports["clk"], ff.pins["clk"])
+                    mode.connect(adder.pins[p], ff.pins["D"], pack_patterns = ["carrychain"])
+                    mode.connect(adder.pins[p], mode.ports["out"][i])
+                    mode.connect(ff.pins["Q"], mode.ports["out"][i])
+                mode.connect(adder.pins["cout"], mode.ports["cout"], pack_patterns = ["carrychain"])
+                mode.commit()
+
+            fle6 = fle6.create_logical_counterpart(
+                    cfg_bitcount = 69, verilog_template = "fle6.tmpl.v")
+
+            # configuration ports
+            fle6.create_cfg_port('cfg_clk', 1, PortDirection.input_, is_clock = True)
+            fle6.create_cfg_port('cfg_e', 1, PortDirection.input_, clock = 'cfg_clk')
+            fle6.create_cfg_port('cfg_i', cfg_width, PortDirection.input_, clock = 'cfg_clk')
+            fle6.create_cfg_port('cfg_o', cfg_width, PortDirection.output, clock = 'cfg_clk')
+
+            if True:
+                mode = fle6.edit_mode("lut6x1", cfg_mode_selection = tuple())
+                lut = mode.instantiate(context._database[ModuleView.logical, 'lut6'], "lut")
+                ff = mode.instantiate(context._database[ModuleView.logical, 'flipflop'], "ff")
+                sw = mode.instantiate(context.switch_database.get_switch(2, mode), "_sw_out_0")
+                mode.connect(mode.ports["clk"], ff.pins["clk"])
+                mode.connect(mode.ports["in"], lut.pins["in"])
+                mode.connect(lut.pins["out"], ff.pins["D"])
+                mode.connect(lut.pins["out"], sw.pins["i"][0])
+                mode.connect(ff.pins["Q"], sw.pins["i"][1])
+                mode.connect(sw.pins["o"], mode.ports["out"][0])
+                lut.cfg_bitoffset = 0
+                sw.cfg_bitoffset = 64
+                mode.commit()
+
+            if True:
+                mode = fle6.edit_mode("lut5x2", cfg_mode_selection = (66, ))
+                for i, suffix in enumerate(["A", "B"]):
+                    lut = mode.instantiate(context._database[ModuleView.logical, "lut5"], "lut" + suffix)
+                    ff = mode.instantiate(context._database[ModuleView.logical, "flipflop"], "ff" + suffix)
+                    sw = mode.instantiate(context.switch_database.get_switch(2, mode), "_sw_out_" + str(i))
+                    mode.connect(mode.ports["clk"], ff.pins["clk"])
+                    mode.connect(mode.ports["in"][0:5], lut.pins["in"])
+                    mode.connect(lut.pins["out"], ff.pins["D"])
+                    mode.connect(lut.pins["out"], sw.pins["i"][0])
+                    mode.connect(ff.pins["Q"], sw.pins["i"][1])
+                    mode.connect(sw.pins["o"], mode.ports["out"][i])
+                    lut.cfg_bitoffset = 32 * i
+                    sw.cfg_bitoffset = 64 + i
+                mode.commit()
+
+            if True:
+                mode = fle6.edit_mode("arithmetic", cfg_mode_selection = (66, 67))
+                adder = mode.instantiate(context._database[ModuleView.logical, "adder"], "fa")
+                for i, p in enumerate(["a", "b"]):
+                    lut = mode.instantiate(context._database[ModuleView.logical, "lut5"], "lut" + p.upper())
+                    mode.connect(mode.ports["in"][0:5], lut.pins["in"])
+                    mode.connect(lut.pins["out"], adder.pins[p])
+                    lut.cfg_bitoffset = 32 * i
+                mode.connect(mode.ports["cin"], adder.pins["cin"])
+                mode.connect(mode.ports["in"][5], adder.pins["cin_fabric"])
+                for i, (p, suffix) in enumerate([("s", "A"), ("cout_fabric", "B")]):
+                    ff = mode.instantiate(context._database[ModuleView.logical, "flipflop"], "ff" + suffix)
+                    sw = mode.instantiate(context.switch_database.get_switch(2, mode), "_sw_out_" + str(i))
+                    mode.connect(mode.ports["clk"], ff.pins["clk"])
+                    mode.connect(adder.pins[p], ff.pins["D"])
+                    mode.connect(adder.pins[p], sw.pins["i"][0])
+                    mode.connect(ff.pins["Q"], sw.pins["i"][1])
+                    mode.connect(sw.pins["o"], mode.ports["out"][i])
+                    sw.cfg_bitoffset = 64 + i
+                mode.connect(adder.pins["cout"], mode.ports["cout"])
+                adder.cfg_bitoffset = 68
+                mode.commit()
+
+            fle6.commit()
 
         return context
 

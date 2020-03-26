@@ -325,7 +325,8 @@ class Context(Object):
     @property
     def io_blocks(self):
         """:obj:`Mapping` [:obj:`str`, `AbstractModule` ]: A mapping from names to IO blocks."""
-        return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_io_block)
+        return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_io_block,
+                lambda k: (ModuleView.user, k), lambda k: k[1])
 
     def create_io_block(self, name, capacity = 1, *, no_input = False, no_output = False):
         """`IOBlockBuilder`: Create an IO block builder."""

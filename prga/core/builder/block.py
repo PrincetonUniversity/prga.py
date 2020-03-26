@@ -10,7 +10,7 @@ from ...netlist.net.util import NetUtils
 from ...netlist.module.module import Module
 from ...netlist.module.util import ModuleUtils
 from ...util import Object, uno
-from ...exception import PRGAAPIError
+from ...exception import PRGAAPIError, PRGAInternalError
 
 from collections import OrderedDict
 
