@@ -637,10 +637,12 @@ class BlockPortFCValue(namedtuple('BlockPortFCValue', 'default overrides')):
         multiplier = segment.length if all_sections else 1
         fc = self.overrides.get(segment.name, self.default)
         if isinstance(fc, int):
+            return max(0., min(1., fc / ((segment.width * segment.length) if all_sections else segment.width)))
             if fc < 0 or fc >= segment.width:
                 raise PRGAInternalError("Invalid FC value ({}) for segment '{}'".format(fc, segment.name))
             return fc * multiplier
         elif isinstance(fc, float):
+            return max(0., min(1., fc))
             if fc < 0 or fc > 1:
                 raise PRGAInternalError("Invalid FC value ({}) for segment '{}'".format(fc, segment.name))
             return int(ceil(fc * segment.width * multiplier))
@@ -749,6 +751,18 @@ class SwitchBoxPattern(Object):
         def max_span(self):
             return self._max_span
 
+    class _turn_limited(_pattern):
+        __slots__ = ["_max_turn"]
+
+        def __init__(self, fill_corners = Corner, max_turn = None):
+            super(SwitchBoxPattern._turn_limited, self).__init__(fill_corners)
+            self._max_turn = max_turn
+
+        @property
+        def max_turn(self):
+            return self._max_turn
+
 SwitchBoxPattern.wilton = SwitchBoxPattern._wilton()
 SwitchBoxPattern.cycle_free = SwitchBoxPattern._cycle_free()
 SwitchBoxPattern.span_limited = SwitchBoxPattern._span_limited()
+SwitchBoxPattern.turn_limited = SwitchBoxPattern._turn_limited()

@@ -234,44 +234,75 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
         elif isinstance(segments, Mapping):
             segments = tuple(itervalues(segments))
         # start generation
-        iti = [0 for _ in segments]
-        oti = [0 for _ in segments]
-        for port in itervalues(block.ports):
+        energy = 0.
+        for subblock, port in product(range(block.capacity), itervalues(block.ports)):
             if not (port.position == position and port.orientation in (orientation, Orientation.auto)):
                 continue
             elif hasattr(port, 'global_'):
                 continue
-            for sgmt_idx, sgmt in enumerate(segments):
-                nc = fc.port_fc(port, sgmt, port.direction.is_input)  # number of connections
-                if nc == 0:
-                    continue
-                imax = port.direction.case(sgmt.length * sgmt.width, sgmt.width)
-                istep = max(1, imax // nc)                  # index step
-                for _, port_idx, subblock in product(range(nc), range(len(port)), range(block.capacity)):
-                    section = port.direction.case(iti[sgmt_idx] % sgmt.length, 0)
-                    track_idx = port.direction.case(iti[sgmt_idx] // sgmt.length, oti[sgmt_idx])
-                    for sgmt_dir in iter(Direction):
-                        port_bus = self.get_blockpin(port.name, subblock, dont_create = dont_create)
-                        if port_bus is None:
-                            continue
-                        if port.direction.is_input:
-                            sgmt_bus = self.get_segment_input(sgmt,
-                                    Orientation.compose(orientation.dimension.perpendicular, sgmt_dir),
-                                    section, dont_create = dont_create)
-                            if sgmt_bus is None:
-                                continue
-                            self.connect(sgmt_bus[track_idx], port_bus[port_idx])
-                        else:
-                            sgmt_bus = self.get_segment_output(sgmt,
-                                    Orientation.compose(orientation.dimension.perpendicular, sgmt_dir),
-                                    dont_create = dont_create)
-                            if sgmt_bus is None:
-                                continue
-                            self.connect(port_bus[port_idx], sgmt_bus[track_idx])
-                    ni = port.direction.case(iti, oti)[sgmt_idx] + istep    # next index
-                    if istep > 1 and ni >= imax:
-                        ni += 1
-                    port.direction.case(iti, oti)[sgmt_idx] = ni % imax
+            port_bus = self.get_blockpin(port.name, subblock, dont_create = dont_create)
+            for pin, sgmt_dir, sgmt in product(range(len(port)), Direction, segments):
+                cur_fc = fc.port_fc(port, sgmt, port.direction.is_input)
+                if port.direction.is_input:
+                    for section in range(sgmt.length):
+                        sgmt_bus = self.get_segment_input(sgmt,
+                                Orientation.compose(orientation.dimension.perpendicular, sgmt_dir),
+                                section, dont_create = dont_create)
+                        for idx in range(sgmt.width):
+                            energy += cur_fc
+                            if energy >= 1.:
+                                energy -= 1.
+                                if port_bus is not None and sgmt_bus is not None:
+                                    self.connect(sgmt_bus[idx], port_bus[pin])
+                else:
+                    sgmt_bus = self.get_segment_output(sgmt,
+                            Orientation.compose(orientation.dimension.perpendicular, sgmt_dir),
+                            dont_create = dont_create)
+                    for idx in range(sgmt.width):
+                        energy += cur_fc
+                        if energy >= 1.:
+                            energy -= 1.
+                            if port_bus is not None and sgmt_bus is not None:
+                                self.connect(port_bus[pin], sgmt_bus[idx])
+
+        # iti = [0 for _ in segments]
+        # oti = [0 for _ in segments]
+        # for port in itervalues(block.ports):
+        #     if not (port.position == position and port.orientation in (orientation, Orientation.auto)):
+        #         continue
+        #     elif hasattr(port, 'global_'):
+        #         continue
+        #     for sgmt_idx, sgmt in enumerate(segments):
+        #         nc = fc.port_fc(port, sgmt, port.direction.is_input)  # number of connections
+        #         if nc == 0:
+        #             continue
+        #         imax = port.direction.case(sgmt.length * sgmt.width, sgmt.width)
+        #         istep = max(1, imax // nc)                  # index step
+        #         for _, port_idx, subblock in product(range(nc), range(len(port)), range(block.capacity)):
+        #             section = port.direction.case(iti[sgmt_idx] % sgmt.length, 0)
+        #             track_idx = port.direction.case(iti[sgmt_idx] // sgmt.length, oti[sgmt_idx])
+        #             for sgmt_dir in iter(Direction):
+        #                 port_bus = self.get_blockpin(port.name, subblock, dont_create = dont_create)
+        #                 if port_bus is None:
+        #                     continue
+        #                 if port.direction.is_input:
+        #                     sgmt_bus = self.get_segment_input(sgmt,
+        #                             Orientation.compose(orientation.dimension.perpendicular, sgmt_dir),
+        #                             section, dont_create = dont_create)
+        #                     if sgmt_bus is None:
+        #                         continue
+        #                     self.connect(sgmt_bus[track_idx], port_bus[port_idx])
+        #                 else:
+        #                     sgmt_bus = self.get_segment_output(sgmt,
+        #                             Orientation.compose(orientation.dimension.perpendicular, sgmt_dir),
+        #                             dont_create = dont_create)
+        #                     if sgmt_bus is None:
+        #                         continue
+        #                     self.connect(port_bus[port_idx], sgmt_bus[track_idx])
+        #             ni = port.direction.case(iti, oti)[sgmt_idx] + istep    # next index
+        #             if istep > 1 and ni >= imax:
+        #                 ni += 1
+        #             port.direction.case(iti, oti)[sgmt_idx] = ni % imax
  
     @classmethod
     def new(cls, block, orientation, position = None, *, identifier = None, name = None):
@@ -512,6 +543,42 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                 self._connect_tracks(isgmt, iori, isection + 1, idx,
                         osgmt, oori, osection, odx, dont_create)
 
+    def _fill_turn_limited(self, output_orientation, segments,
+            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create, max_turn):
+        _logger.info("Filling switch box '{}' with pattern: turn_limited. max_turn = {}"
+                .format(self._module, max_turn))
+        oori = output_orientation       # short alias
+        # tracks: sgmt, i
+        tracks = [ (sgmt, i) for sgmt in segments for i in range(sgmt.width) ]
+        channel_width = len(tracks)
+        # generate connections
+        for iori in iter(Orientation):  # input orientation
+            if iori in (oori.opposite, Orientation.auto):     # no U-turn
+                continue
+            elif iori in exclude_input_orientations:                        # exclude user-chosen input orientations
+                continue
+            elif iori is output_orientation:                                # straight connections
+                for sgmt in segments:
+                    input_ = self.get_segment_input(sgmt, iori, sgmt.length, dont_create = dont_create)
+                    output = self.get_segment_output(sgmt, output_orientation, 0, dont_create = dont_create)
+                    if input_ is not None and output is not None:
+                        self.connect(input_, output)
+                continue
+            for i in range(channel_width - 1):
+                o = i + 1
+                # determine logical group and order for input
+                igrp, iord = i // max_turn, i % max_turn
+                ogrp, oord = o // max_turn, o % max_turn
+                # validate that this turn won't break our turn limitation
+                if igrp != ogrp:
+                    continue
+                isgmt, idx = tracks[i]
+                osgmt, odx = tracks[o]
+                for isec, osec in product( range(isgmt.length),
+                        range(1 if crosspoints_only else 0, osgmt.length if drive_at_crosspoints else 1) ):
+                    self._connect_tracks(isgmt, iori, isec + 1, idx,
+                            osgmt, oori, osec, odx, dont_create)
+
     # == high-level API ======================================================
     def get_segment_input(self, segment, orientation, section = None, *,
             dont_create = False, segment_type = SegmentType.sboxin_regular):
@@ -595,9 +662,22 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
             if max_span is None:
                 max_span = channel_width
             elif not 0 < max_span <= channel_width:
-                raise PRGAInternalError("Invalid max span: {}".format(max_span))
+                _logger.warning("Overriding invalid max span ({}) with channel width: {}"
+                        .format(max_span, channel_width))
+                max_span = channel_width
             self._fill_span_limited(output_orientation, segments, drive_at_crosspoints, crosspoints_only,
                     exclude_input_orientations, dont_create, max_span) 
+        elif pattern.is_turn_limited:
+            channel_width = sum(sgmt.width * sgmt.length for sgmt in segments)
+            max_turn = pattern.max_turn
+            if max_turn is None:
+                max_turn = channel_width
+            elif not 0 < max_turn <= channel_width:
+                _logger.warning("Overriding invalid max turn ({}) with channel width: {}"
+                        .format(max_turn, channel_width))
+                max_turn = channel_width
+            self._fill_turn_limited(output_orientation, segments, drive_at_crosspoints, crosspoints_only,
+                    exclude_input_orientations, dont_create, max_turn)
         else:
             raise NotImplementedError("Unsupported/Unimplemented switch box pattern: {}".format(pattern))
 

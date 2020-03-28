@@ -793,7 +793,17 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                         if source is not None:
                             self.connect(source, pin)
                         # 3.1.3 if no pin is found, check if we need to expose the pin to the outside world
-                        elif not is_top:
+                        elif (not is_top and
+                                node.orientation.case(
+                                    north = node.position.y <= 0,
+                                    east = node.position.x <= 0,
+                                    south = node.position.y >= self._module.height - 1,
+                                    west = node.position.x >= self._module.width - 1,
+                                    ) and
+                                node.orientation.dimension.case(
+                                    x = -1 <= node.position.y < self._module.height,
+                                    y = -1 <= node.position.x < self._module.width,
+                                    )):
                             self._expose_routable_pin(pin, create_port = True)
                     elif key.segment_type.is_cboxout:
                         # 3.2 find the segment source so we can find the sbox to be connected
@@ -835,7 +845,11 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                             bridge = SwitchBoxBuilder(self._context, sbox.model)._add_cboxout(node)
                             self.connect(pin, sbox.pins[bridge.key])
                         # 3.2.3 if no pin is found, check if we need to expose the pin to the outside world
-                        elif not is_top:
+                        elif (not is_top and
+                                node.orientation.dimension.case(
+                                    x = node.position.y in (-1, self.height - 1) and 0 <= node.position.x < self.width,
+                                    y = node.position.x in (-1, self.width - 1) and 0 <= node.position.y < self.height,
+                                    )):
                             self._expose_routable_pin(pin, create_port = True)
                 elif isinstance(key, BlockPinID):       # block pin
                     # find the block and connect it
@@ -1038,7 +1052,17 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
                                 break
                         if source is not None:
                             self.connect(source, pin)
-                        elif not is_top:
+                        elif (not is_top and
+                                node.orientation.case(
+                                    north = node.position.y <= 0,
+                                    east = node.position.x <= 0,
+                                    south = node.position.y >= self.height - 1,
+                                    west = node.position.x >= self.width - 1,
+                                    ) and
+                                node.orientation.dimension.case(
+                                    x = -1 <= node.position.y < self.height,
+                                    y = -1 <= node.position.x < self.width,
+                                    )):
                             self._expose_routable_pin(pin, create_port = True)
                     elif (key.segment_type in (SegmentType.array_cboxout, SegmentType.array_cboxout2) and
                             pin.model.direction.is_output):     # try to find the segment driven by this
@@ -1088,7 +1112,11 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
                             bridge = SwitchBoxBuilder(self._context, sbox.model)._add_cboxout(
                                     source.model.key.convert(SegmentType.sboxin_cboxout))
                             self.connect(pin, self._expose_routable_pin(sbox.pins[bridge.key]))
-                        elif not is_top:
+                        elif (not is_top and
+                                node.orientation.dimension.case(
+                                    x = node.position.y in (-1, self.height - 1) and 0 <= node.position.x < self.width,
+                                    y = node.position.x in (-1, self.width - 1) and 0 <= node.position.y < self.height,
+                                    )):
                             self._expose_routable_pin(pin, create_port = True)
                 elif isinstance(key, BlockPinID):
                     # process sinks only
