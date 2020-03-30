@@ -441,16 +441,13 @@ class Scanchain(object):
                     parameters = {
                         "CIN_FABRIC": "1'b0",
                         })
-            adder.create_input("a", 1)
-            adder.create_input("b", 1)
-            adder.create_input("cin", 1)
-            adder.create_input("cin_fabric", 1)
+            adder.create_input("a", 1, vpr_combinational_sinks = ("cout", "s", "cout_fabric"))
+            adder.create_input("b", 1, vpr_combinational_sinks = ("cout", "s", "cout_fabric"))
+            adder.create_input("cin", 1, vpr_combinational_sinks = ("cout", "s", "cout_fabric"))
+            adder.create_input("cin_fabric", 1, vpr_combinational_sinks = ("cout", "s", "cout_fabric"))
             adder.create_output("cout", 1)
             adder.create_output("s", 1)
             adder.create_output("cout_fabric", 1)
-            adder.add_combinational_path(
-                    (adder.ports["a"], adder.ports["b"], adder.ports["cin"], adder.ports["cin_fabric"]),
-                    (adder.ports["cout"], adder.ports["s"], adder.ports["cout_fabric"]))
 
             # logical view
             adder = adder.create_logical_counterpart(

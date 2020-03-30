@@ -54,7 +54,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
                 is_clock = True, **kwargs)
 
     def create_input(self, name, width, *, clock = None, **kwargs):
-        """Create an input in the multi-mode primitive.
+        """Create an input in the primitive.
 
         Args:
             name (:obj:`str`): Name of the port
@@ -77,7 +77,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
                 clock = clock, **kwargs)
 
     def create_output(self, name, width, *, clock = None, **kwargs):
-        """Create an output in the multi-mode primitive.
+        """Create an output in the primitive.
 
         Args:
             name (:obj:`str`): Name of the port
@@ -159,9 +159,9 @@ class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
         return ModuleUtils.create_port(self._module, name, width, direction,
                 is_clock = is_clock, clock = clock, **kwargs)
 
-    def connect(self, sources, sinks, *, fully = False):
+    def add_combinational_path(self, sources, sinks):
         """Create combinational connections between ports in the primitive."""
-        NetUtils.connect(sources, sinks, fully = fully)
+        NetUtils.connect(sources, sinks, fully = True)
 
     def instantiate(self, model, name, **kwargs):
         """Add a sub-instance to this primitive."""
@@ -191,7 +191,6 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
         """Create a new custom primitive for building."""
         return Module(name,
                 ports = OrderedDict(),
-                allow_multisource = True,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.custom,
                 **kwargs)
@@ -238,19 +237,40 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
                     clock = "clk", port_class = PrimitivePortClass.data_out2)
         return m
 
+    def create_input(self, name, width, *, clock = None, vpr_combinational_sinks = tuple(), **kwargs):
+        """Create an input in the primitive.
+
+        Args:
+            name (:obj:`str`): Name of the port
+            width (:obj:`int`): Width of the port
+
+        Keyword Args:
+            clock (:obj:`str`): Clock of the port
+            vpr_combinational_sinks (:obj:`Sequence` [:obj:`str` ]): Output ports in this primitive to which combinational
+                paths exist from this port
+            **kwargs: Additional attributes to be associated with the port
+        """
+        if vpr_combinational_sinks:
+            kwargs["vpr_combinational_sinks"] = tuple(set(vpr_combinational_sinks))
+        super(PrimitiveBuilder, self).create_input(name, width, clock = clock, **kwargs)
+
     def commit(self, *, dont_create_logical_counterpart = False):
         m = super(PrimitiveBuilder, self).commit()
+        # additional checks: combinational sinks
+        for p in itervalues(self.ports):
+            if p.direction.is_input and not p.is_clock:
+                for sink_name in getattr(p, "vpr_combinational_sinks", tuple()):
+                    sink = self.ports.get(sink_name)
+                    if sink is None:
+                        raise PRGAAPIError("Combinational sink '{}' of input port '{}' not found in primitive '{}'"
+                                .format(sink_name, p, self._module))
+                    elif not sink.direction.is_output:
+                        raise PRGAAPIError("Combinational sink '{}' of input port '{}' is not an output"
+                                .format(sink_name, p))
         if self._module.primitive_class.is_memory and not dont_create_logical_counterpart:
             self._context.create_logical_primitive(self._module.name,
                     verilog_template = "memory.tmpl.v").commit()
         return m
-
-    def add_combinational_path(self, sources, sinks):
-        """Add a combinational path from ``sources`` to ``sinks``."""
-        if self._module.primitive_class.is_memory:
-            raise PRGAAPIError("Timing paths are pre-defined and fixed for memory module '{}'"
-                    .format(self._module))
-        NetUtils.connect(sources, sinks, fully = True)
 
     def create_logical_counterpart(self, *, non_leaf = False, **kwargs):
         """`LogicalPrimitiveBuilder`: Create a builder for the logical counterpart of this module."""

@@ -636,7 +636,8 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             *,
             fc_override = None,
             identifier = None,
-            sbox_pattern = SwitchBoxPattern.span_limited):
+            sbox_pattern = SwitchBoxPattern.span_limited,
+            **kwargs):
         """Fill routing boxes into the array being built."""
         fc_override = uno(fc_override, {})
         for tunnel in itervalues(self._context.tunnels):
@@ -750,7 +751,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                 if sbox.module.key not in processed_boxes:
                     for output, (drivex, xo) in iteritems(outputs):
                         sbox.fill(output, drive_at_crosspoints = drivex, crosspoints_only = xo,
-                                exclude_input_orientations = excluded_inputs, pattern = sbox_pattern)
+                                exclude_input_orientations = excluded_inputs, pattern = sbox_pattern, **kwargs)
                     processed_boxes.add(sbox.commit().key)
                 self.instantiate(sbox.module, position)
 

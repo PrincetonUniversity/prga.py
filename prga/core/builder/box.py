@@ -544,12 +544,14 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                         osgmt, oori, osection, odx, dont_create)
 
     def _fill_turn_limited(self, output_orientation, segments,
-            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create, max_turn):
+            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create, max_turn, 
+            tracks = None):
         _logger.info("Filling switch box '{}' with pattern: turn_limited. max_turn = {}"
                 .format(self._module, max_turn))
         oori = output_orientation       # short alias
         # tracks: sgmt, i
-        tracks = [ (sgmt, i) for sgmt in segments for i in range(sgmt.width) ]
+        if tracks is None:
+            tracks = [ (sgmt, i) for sgmt in segments for i in range(sgmt.width) ]
         channel_width = len(tracks)
         # generate connections
         for iori in iter(Orientation):  # input orientation
@@ -565,19 +567,19 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                         self.connect(input_, output)
                 continue
             for i in range(channel_width - 1):
-                o = i + 1
                 # determine logical group and order for input
                 igrp, iord = i // max_turn, i % max_turn
-                ogrp, oord = o // max_turn, o % max_turn
-                # validate that this turn won't break our turn limitation
-                if igrp != ogrp:
-                    continue
                 isgmt, idx = tracks[i]
-                osgmt, odx = tracks[o]
-                for isec, osec in product( range(isgmt.length),
-                        range(1 if crosspoints_only else 0, osgmt.length if drive_at_crosspoints else 1) ):
-                    self._connect_tracks(isgmt, iori, isec + 1, idx,
-                            osgmt, oori, osec, odx, dont_create)
+                for isec in range(isgmt.length):
+                    o = i + isec + 1
+                    ogrp, oord = o // max_turn, o % max_turn
+                    # validate that this turn won't break our turn limitation
+                    if igrp != ogrp:
+                        continue
+                    osgmt, odx = tracks[o]
+                    for osec in range(1 if crosspoints_only else 0, osgmt.length if drive_at_crosspoints else 1):
+                        self._connect_tracks(isgmt, iori, isec + 1, idx,
+                                osgmt, oori, osec, odx, dont_create)
 
     # == high-level API ======================================================
     def get_segment_input(self, segment, orientation, section = None, *,
@@ -628,7 +630,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
     def fill(self, output_orientation, *,
             segments = None, drive_at_crosspoints = False, crosspoints_only = False,
             exclude_input_orientations = tuple(), dont_create = False,
-            pattern = SwitchBoxPattern.span_limited):
+            pattern = SwitchBoxPattern.span_limited, **kwargs):
         """Create switches implementing a cycle-free variation of the Wilton switch box.
 
         Args:
@@ -677,7 +679,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                         .format(max_turn, channel_width))
                 max_turn = channel_width
             self._fill_turn_limited(output_orientation, segments, drive_at_crosspoints, crosspoints_only,
-                    exclude_input_orientations, dont_create, max_turn)
+                    exclude_input_orientations, dont_create, max_turn, **kwargs)
         else:
             raise NotImplementedError("Unsupported/Unimplemented switch box pattern: {}".format(pattern))
 

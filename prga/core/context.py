@@ -95,14 +95,12 @@ class Context(Object):
         for i in range(2, 9):
             lut = Module('lut' + str(i),
                     ports = OrderedDict(),
-                    allow_multisource = True,
                     module_class = ModuleClass.primitive,
                     primitive_class = PrimitiveClass.lut)
             in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_,
-                    port_class = PrimitivePortClass.lut_in)
+                    port_class = PrimitivePortClass.lut_in, vpr_combinational_sinks = ("out", ))
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
                     port_class = PrimitivePortClass.lut_out)
-            NetUtils.connect(in_, out, fully = True)
             ModuleUtils.elaborate(lut)
             database[ModuleView.user, lut.key] = lut
 
@@ -110,7 +108,6 @@ class Context(Object):
         if True:
             flipflop = Module('flipflop',
                     ports = OrderedDict(),
-                    allow_multisource = True,
                     module_class = ModuleClass.primitive,
                     primitive_class = PrimitiveClass.flipflop)
             ModuleUtils.create_port(flipflop, 'clk', 1, PortDirection.input_,
@@ -126,7 +123,6 @@ class Context(Object):
         for class_ in (PrimitiveClass.inpad, PrimitiveClass.outpad, PrimitiveClass.iopad):
             pad = Module(class_.name,
                     ports = OrderedDict(),
-                    allow_multisource = True,
                     module_class = ModuleClass.primitive,
                     primitive_class = class_)
             if class_ in (PrimitiveClass.inpad, PrimitiveClass.iopad):

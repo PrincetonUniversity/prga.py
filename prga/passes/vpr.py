@@ -448,6 +448,7 @@ class _VPRArchGeneration(Object, AbstractPass):
             attrs.update({"blif_model": ".subckt " + primitive.name, "class": "memory"})
         elif primitive.primitive_class.is_custom:
             self.active_primitives.add( primitive.key )
+            bitwise_timing = getattr(primitive, "vpr_bitwise_timing", True)
             attrs.update({"blif_model": ".subckt " + primitive.name})
         with self.xml.element('pb_type', attrs):
             # 1. emit ports
@@ -463,114 +464,95 @@ class _VPRArchGeneration(Object, AbstractPass):
             for port in itervalues(primitive.ports):
                 if port.is_clock:
                     continue
-                if port.direction.is_output:
-                    clock = None
-                    if port.clock is not None:
-                        clock = primitive.ports[port.clock]
-                    delay, bus_setup, clk2q_max, clk2q_min = {}, None, None, None
-                    for sink in port:
-                        has_source = False
-                        for source in NetUtils.get_multisource(sink):
-                            max_, min_ = self.timing.vpr_delay_of_primitive_path(source, sink, hierarchy)
-                            if max_ is None:
-                                raise PRGAInternalError("Max delay required for comb. path from '{}' to '{}' in '{}'"
-                                        .format(source, sink, hierarchy))
-                            if bitwise_timing:
-                                attrs = {"max": max_,
-                                        'in_port': self._net2vpr(source, instance.name),
-                                        'out_port': self._net2vpr(sink, instance.name),
-                                        }
-                                if min_ is not None:
-                                    attrs["min"] = min_
-                                self.xml.element_leaf('delay_constant', attrs)
-                            else:
-                                src_bus = source.bus if source.bus_type.is_slice else source
-                                oldmax, oldmin = delay.get( src_bus, (None, None) )
-                                if oldmax is None:
-                                    delay[src_bus] = max_, min_
-                                else:
-                                    if max_ < oldmax:
-                                        max_ = oldmax
-                                    if oldmin is not None and (min_ is None or min_ > oldmin):
-                                        min_ = oldmin
-                                    delay[src_bus] = max_, min_
-                            has_source = True
-                        if clock is not None:
-                            if has_source:
-                                setup = self.timing.vpr_setup_time_of_primitive_port(sink, hierarchy)
-                                if setup is None:
-                                    raise PRGAInternalError("Setup time required for seq. endpoint '{}' in '{}'"
-                                            .format(sink, hierarchy))
-                                if bitwise_timing:
-                                    self.xml.element_leaf('T_setup', {
-                                            'port': self._net2vpr(sink, instance.name),
-                                            'value': setup,
-                                            'clock': clock.name,
-                                        })
-                                elif bus_setup is None or bus_setup < setup:
-                                    bus_setup = setup
-                            max_, min_ = self.timing.vpr_clk2q_time_of_primitive_port(sink, hierarchy)
-                            if max_ is None:
-                                raise PRGAInternalError("Max clock-to-Q time required for seq. startpoint '{}' in '{}'"
-                                        .format(sink, hierarchy))
-                            if bitwise_timing:
-                                attrs = {"max": max_,
-                                        'port': self._net2vpr(sink, instance.name),
-                                        'clock': clock.name,
-                                        }
-                                if min_ is not None:
-                                    attrs["min"] = min_
-                                self.xml.element_leaf('T_clock_to_Q', attrs)
-                            else:
-                                if clk2q_max is None or max_ > clk2q_max:
-                                    clk2q_max = max_
-                                if clk2q_min is None or (min_ is not None and min_ < clk2q_min):
-                                    clk2q_min = min_
-                    if not bitwise_timing:
-                        for source, (max_, min_) in iteritems(delay):
-                            attrs = {"max": max_,
-                                    "in_port": self._net2vpr(source, instance.name),
-                                    "out_port": self._net2vpr(port, instance.name),
-                                    }
-                            if min_ is not None:
-                                attrs["min"] = min_
-                            self.xml.element_leaf("delay_constant", attrs)
-                        if bus_setup is not None:
-                            self.xml.element_leaf("T_setup", {
-                                'port': self._net2vpr(port, instance.name),
-                                "value": bus_setup,
-                                "clock": clock.name,
-                                })
-                        if clk2q_max is not None:
-                            attrs = {"max": clk2q_max,
-                                    'port': self._net2vpr(port, instance.name),
-                                    "clock": clock.name,
-                                    }
-                            if clk2q_min is not None:
-                                attrs["min"] = clk2q_min
-                            self.xml.element_leaf("T_clock_to_Q", attrs)
-                elif port.clock is not None:
-                    clock = primitive.ports[port.clock]
-                    bus_setup = None
-                    for source in port:
-                        setup = self.timing.vpr_setup_time_of_primitive_port(source, hierarchy)
-                        if setup is None:
-                            raise PRGAInternalError("Setup time required for seq. endpoint '{}' in '{}'"
-                                    .format(source, hierarchy))
+                outputs_with_comb_path = set()
+                if port.direction.is_input:
+                    # combinational sinks
+                    for sink_name in getattr(port, "vpr_combinational_sinks", tuple()):
+                        sink = primitive.ports[sink_name]
+                        outputs_with_comb_path.add(sink)
+                        delay, max_of_max, min_of_min = {}, None, None
+                        for srcbit, sinkbit in product(port, sink):
+                            max_, min_ = self.timing.vpr_delay_of_primitive_path(srcbit, sinkbit, hierarchy)
+                            delay[NetUtils._reference(srcbit), NetUtils._reference(sinkbit)] = max_, min_
+                            if max_ is not None and (max_of_max is None or max_ > max_of_max):
+                                max_of_max = max_
+                            if min_ is not None and (min_of_min is None or min_ < min_of_min):
+                                min_of_min = min_
+                        if max_of_max is None:
+                            raise PRGAInternalError("Max delay required for comb. path from '{}' to '{}' in '{}'"
+                                    .format(port, sink, hierarchy))
                         if bitwise_timing:
-                            self.xml.element_leaf('T_setup', {
-                                'port': self._net2vpr(source, instance.name),
-                                'value': setup,
-                                'clock': clock.name,
-                                })
-                        elif bus_setup is None or setup > bus_setup:
-                            bus_setup = setup
-                    if not bitwise_timing:
-                        self.xml.element_leaf("T_setup", {
-                            "port": self._net2vpr(port, instance.name),
-                            "value": bus_setup,
-                            "clock": clock.name,
-                            })
+                            for srcbit, sinkbit in product(port, sink):
+                                max_, min_ = delay[NetUtils._reference(srcbit), NetUtils._reference(sinkbit)]
+                                min_ = uno(min_, min_of_min)
+                                attrs = {"max": uno(max_, max_of_max),
+                                        "in_port": self._net2vpr(srcbit, instance.name),
+                                        "out_port": self._net2vpr(sinkbit, instance.name), }
+                                if min_ is not None:
+                                    attrs["min"] = min_
+                                self.xml.element_leaf("delay_constant", attrs)
+                        else:
+                            attrs = {"max": max_of_max,
+                                    "in_port": self._net2vpr(port, instance.name),
+                                    "out_port": self._net2vpr(sink, instance.name), }
+                            if min_of_min is not None:
+                                attrs["min"] = min_of_min
+                            self.xml.element_leaf("delay_constant", attrs)
+                # clocked?
+                if port.clock is not None:
+                    clock = primitive.ports[port.clock]
+                    # setup & hold
+                    if port.direction.is_input or port in outputs_with_comb_path:
+                        setup, max_setup = [], None
+                        for i, bit in enumerate(port):
+                            this_setup = self.timing.vpr_setup_time_of_primitive_port(bit, hierarchy)
+                            setup.append(this_setup)
+                            if this_setup is not None and (max_setup is None or this_setup > max_setup):
+                                max_setup = this_setup
+                        if max_setup is None:
+                            raise PRGAInternalError("Setup time required for seq. endpoint '{}' in '{}'"
+                                    .format(port, hierarchy))
+                        if bitwise_timing:
+                            for i, bit in enumerate(port):
+                                self.xml.element_leaf("T_setup", {
+                                    "port": self._net2vpr(bit, instance.name),
+                                    "value": uno(setup[i], max_setup),
+                                    "clock": clock.name, })
+                        else:
+                            self.xml.element_leaf("T_setup", {
+                                "port": self._net2vpr(port, instance.name),
+                                "value": max_setup,
+                                "clock": clock.name, })
+                    # clk2q
+                    if port.direction.is_output or getattr(port, "vpr_combinational_sinks", False):
+                        clk2q, max_of_max, min_of_min = [], None, None
+                        for i, bit in enumerate(port):
+                            max_, min_ = self.timing.vpr_clk2q_time_of_primitive_port(port, hierarchy)
+                            clk2q.append( (max_, min_) )
+                            if max_ is not None and (max_of_max is None or max_ > max_of_max):
+                                max_of_max = max_
+                            if min_ is not None and (min_of_min is None or min_ < min_of_min):
+                                min_of_min = min_
+                        if max_of_max is None:
+                            raise PRGAInternalError("Max clk-to-Q time required for seq. startpoint '{}' in '{}'"
+                                    .format(port, hierarchy))
+                        if bitwise_timing:
+                            for i, bit in enumerate(port):
+                                max_, min_ = clk2q[i]
+                                min_ = uno(min_, min_of_min)
+                                attrs = {"max": uno(max_, max_of_max),
+                                        "port": self._net2vpr(bit, instance.name),
+                                        "clock": clock.name, }
+                                if min_ is not None:
+                                    attrs["min"] = min_
+                                self.xml.element_leaf("T_clock_to_Q", attrs)
+                        else:
+                            attrs = {"max": max_of_max,
+                                    "port": self._net2vpr(port, instance.name),
+                                    "clock": clock.name, }
+                            if min_of_min is not None:
+                                attrs["min"] = min_of_min
+                            self.xml.element_leaf("T_clock_to_Q", attrs)
             # 3. FASM parameters
             fasm_params = self.fasm.fasm_params_for_primitive(hierarchy)
             if fasm_params:
@@ -644,9 +626,8 @@ class _VPRArchGeneration(Object, AbstractPass):
             # 2. emit pb_type body
             self._pb_type_body(module, hierarchy)
 
-    def _model(self, primitive):
-        with self.xml.element("model", {"name": primitive.name}):
-            combinational_sinks_map = {}
+    def _model(self, primitive, vpr_name):
+        with self.xml.element("model", {"name": vpr_name}):
             with self.xml.element("output_ports"):
                 for port in itervalues(primitive.ports):
                     if port.direction.is_input:
@@ -657,10 +638,6 @@ class _VPRArchGeneration(Object, AbstractPass):
                     elif port.clock is not None:
                         attrs["clock"] = port.clock
                     self.xml.element_leaf("port", attrs)
-                    for bit in port:
-                        for source in NetUtils.get_multisource(bit):
-                            source = source.bus if source.bus_type.is_slice else source
-                            combinational_sinks_map.setdefault(source.name, set()).add(port.name)
             with self.xml.element("input_ports"):
                 for port in itervalues(primitive.ports):
                     if port.direction.is_output:
@@ -668,11 +645,11 @@ class _VPRArchGeneration(Object, AbstractPass):
                     attrs = {"name": port.name}
                     if port.is_clock:
                         attrs["is_clock"] = "1"
-                    elif port.clock is not None:
-                        attrs["clock"] = port.clock
-                    sinks = combinational_sinks_map.get(port.name, None)
-                    if sinks:
-                        attrs["combinational_sink_ports"] = " ".join(sinks)
+                    else:
+                        if port.clock is not None:
+                            attrs["clock"] = port.clock
+                        if getattr(port, "vpr_combinational_sinks", False):
+                            attrs["combinational_sink_ports"] = " ".join(port.vpr_combinational_sinks)
                     self.xml.element_leaf("port", attrs)
 
     def _direct(self, tunnel):
@@ -747,8 +724,15 @@ class _VPRArchGeneration(Object, AbstractPass):
                     self._pb_type(context.database[ModuleView.user, block_key])
             # models
             with xml.element("models"):
+                generated = set()
                 for model_key in self.active_primitives:
-                    self._model(context.database[ModuleView.user, model_key])
+                    model = context.database[ModuleView.user, model_key]
+                    vpr_model = getattr(model, "vpr_model", model.name)
+                    if vpr_model in generated:
+                        continue
+                    else:
+                        generated.add(vpr_model)
+                        self._model(model, vpr_model)
             # device: done per subclass
             with xml.element("device"):
                 self._device(context)
