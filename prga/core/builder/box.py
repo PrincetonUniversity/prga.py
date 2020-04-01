@@ -509,15 +509,14 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                     olc = (olc + 1) % len(tracks)
 
     def _fill_span_limited(self, output_orientation, segments,
-            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create, max_span):
+            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create, max_span,
+            tracks = None):
         _logger.info("Filling switch box '{}' with pattern: span_limited. max_span = {}"
                 .format(self._module, max_span))
         oori = output_orientation       # short alias
         # tracks: sgmt, i, section
-        tracks = []
-        for sgmt in segments:
-            for i, section in product(range(sgmt.width), range(sgmt.length)):
-                tracks.append( (sgmt, i, section) )
+        if tracks is None:
+            tracks = [(sgmt, i, section) for sgmt in segments for i, section in product(sgmt.width, sgmt.length)]
         channel_width = len(tracks)
         # generate connections
         for iori in iter(Orientation):  # input orientation
@@ -572,6 +571,8 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                 isgmt, idx = tracks[i]
                 for isec in range(isgmt.length):
                     o = i + isec + 1
+                    if o >= len(tracks):
+                        continue
                     ogrp, oord = o // max_turn, o % max_turn
                     # validate that this turn won't break our turn limitation
                     if igrp != ogrp:
@@ -668,7 +669,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                         .format(max_span, channel_width))
                 max_span = channel_width
             self._fill_span_limited(output_orientation, segments, drive_at_crosspoints, crosspoints_only,
-                    exclude_input_orientations, dont_create, max_span) 
+                    exclude_input_orientations, dont_create, max_span, **kwargs) 
         elif pattern.is_turn_limited:
             channel_width = sum(sgmt.width * sgmt.length for sgmt in segments)
             max_turn = pattern.max_turn

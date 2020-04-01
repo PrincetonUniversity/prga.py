@@ -445,11 +445,13 @@ class _VPRArchGeneration(Object, AbstractPass):
         elif primitive.primitive_class.is_memory:
             self.active_primitives.add( primitive.key )
             bitwise_timing = False
-            attrs.update({"blif_model": ".subckt " + primitive.name, "class": "memory"})
+            attrs.update({"class": "memory",
+                "blif_model": ".subckt " + getattr(primitive, "vpr_model", primitive.name), })
         elif primitive.primitive_class.is_custom:
             self.active_primitives.add( primitive.key )
             bitwise_timing = getattr(primitive, "vpr_bitwise_timing", True)
-            attrs.update({"blif_model": ".subckt " + primitive.name})
+            attrs.update({
+                "blif_model": ".subckt " + getattr(primitive, "vpr_model", primitive.name), })
         with self.xml.element('pb_type', attrs):
             # 1. emit ports
             for port in itervalues(primitive.ports):

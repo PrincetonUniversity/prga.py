@@ -17,6 +17,7 @@ module {{ module.name }} (
         if (cfg_e) begin
             o = 1'b0;
         end else begin
+            o = 1'b0;
             case (cfg_d)
                 {%- for i in range(width) %}
                 {{ module.cfg_bitcount }}'d{{ i }}: o = i[{{ i }}];
