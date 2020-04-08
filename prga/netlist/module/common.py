@@ -44,35 +44,19 @@ class AbstractModule(Abstract):
         raise NotImplementedError
 
     @abstractproperty
-    def hierarchy(self):
-        """:obj:`Mapping` [:obj:`Hashable`, `AbstractInstance` ]: A mapping from hierarchical instance keys to
-        hierarchical instances."""
+    def is_cell(self):
+        """:obj:`bool`: Test if this module is a leaf cell."""
         raise NotImplementedError
 
 # ----------------------------------------------------------------------------
 # -- Abstract Instance -------------------------------------------------------
 # ----------------------------------------------------------------------------
-class AbstractInstance(Abstract, Sequence):
+class AbstractInstance(Abstract):
     """Abstract class for instances."""
 
     @abstractproperty
-    def name(self):
-        """:obj:`str`: Name of this instance."""
-        raise NotImplementedError
-
-    @abstractproperty
-    def key(self):
-        """:obj:`Hashable`: A hashable key used to index this instance in its immediate parent module."""
-        raise NotImplementedError
-
-    @abstractproperty
-    def hierarchical_key(self):
-        """:obj:`Hashable`: A hashable key used to index this instance in its ancestor parent module."""
-        raise NotImplementedError
-
-    @abstractproperty
-    def pins(self):
-        """:obj:`Mapping` [:obj:`Hashable`, `Pin` ]: A mapping from port keys to pins."""
+    def is_hierarchical(self):
+        """:obj:`bool`: Test if this is a hierarchical instance."""
         raise NotImplementedError
 
     @abstractproperty
@@ -85,20 +69,35 @@ class AbstractInstance(Abstract, Sequence):
         """`AbstractModule`: Model of this instance."""
         raise NotImplementedError
 
-    @abstractmethod
-    def extend(self, hierarchy):
-        """`AbstractInstance`: Extend up the hierarchy."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def delve(self, hierarchy):
-        """`AbstractInstance`: Extend down the hierarchy."""
+    @abstractproperty
+    def pins(self):
+        """:obj:`Mapping` [:obj:`Hashable`, `Pin` ]: A mapping from port keys to pins."""
         raise NotImplementedError
 
     @abstractproperty
-    def is_hierarchical(self):
-        """:obj:`bool`: Test if this instance is hierarchical, i.e. not immediate sub-instance of its parent module."""
+    def hierarchy(self):
+        """:obj:`Sequence` [`Instance` ]: Hierarchy in bottom-up order."""
         raise NotImplementedError
+
+    @abstractmethod
+    def extend_hierarchy(self, *, above = None, below = None):
+        """`AbstractInstance`: Build a hierarchical instance with additional hierarchy below
+        and/or above the current instance."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def shrink_hierarchy(self, index):
+        """`AbstractInstance`: Shrink the current hierarchy.
+
+        Args:
+            index (:obj:`int` or :obj:`slice`):
+        """
+        raise NotImplementedError
+
+    @property
+    def node(self):
+        """:obj:`Hashable`: Key of this instance in a module's connection graph."""
+        return tuple(inst.key for inst in self.hierarchy)
 
 # ----------------------------------------------------------------------------
 # -- Memory-Optimized DiGraph for Non-Coalesced Connection Graph -------------

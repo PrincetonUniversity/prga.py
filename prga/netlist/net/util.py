@@ -3,9 +3,8 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .common import BusType, NetType, AbstractGenericBus, AbstractGenericNet
-from .const import Unconnected, Const
-from ...util import Object, uno, compose_slice
+from .common import BusType, NetType, AbstractGenericBus, AbstractGenericNet, Const, Slice, Concat
+from ...util import Object, uno
 from ...exception import PRGAInternalError, PRGATypeError, PRGAIndexError
 
 from networkx.exception import NetworkXError
@@ -29,10 +28,9 @@ class NetUtils(object):
         ``index`` will not be validated.
         """
         if isinstance(index, int):
-            if len(bus) == 1:
-                return bus
-            else:
-                return Slice(bus, index)
+            index = slice(index, index + 1)
+        if index.stop <= index.start:
+            return Const()
         elif index.stop - index.start == len(bus):
             return bus
         else:
@@ -77,7 +75,13 @@ class NetUtils(object):
             return Const(*node[1:])
         index, node = (None, node) if coalesced else node
         net_key, hierarchy = node[0], node[1:]
-        bus = module.hierarchy[hierarchy].pins[net_key] if hierarchy else module.ports[net_key]
+        instance = None
+        for inst_key in reversed(hierarchy):
+            if instance is None:
+                instance = module.instances[inst_key]
+            else:
+                instance = instance.build_hierarchy(below = instance.model.instances[inst_key])
+        bus = instance.pins[net_key] if instance else module.ports[net_key]
         if index is not None:
             return bus[index]
         else:
@@ -171,35 +175,24 @@ class NetUtils(object):
         # concatenating
         concat = []
         for i in flatten:
-            if len(concat) == 0 or i.bus_type is not concat[-1].bus_type:
+            if len(i) == 0:
+                continue
+            elif len(concat) == 0 or i.net_type is not concat[-1].net_type:
                 concat.append( i )
-            elif i.bus_type.is_slice:
-                if i.bus != concat[-1].bus:
-                    concat.append( i )
-                elif isinstance(i.index, int):
-                    if isinstance(concat[-1].index, int) and i.index == concat[-1].index + 1:
-                        concat[-1] = cls._slice(i.bus, slice(concat[-1].index, i.index + 1))
-                    elif isinstance(concat[-1].index, slice) and i.index == concat[-1].index.stop:
-                        concat[-1] = cls._slice(i.bus, slice(concat[-1].index.start, i.index + 1))
-                    else:
-                        concat.append( i )
-                else:
-                    if isinstance(concat[-1].index, int) and i.index.start == concat[-1].index + 1:
-                        concat[-1] = cls._slice(i.bus, slice(concat[-1].index, i.index.stop))
-                    elif isinstance(concat[-1].index, slice) and i.index.start == concat[-1].index.stop:
-                        concat[-1] = cls._slice(i.bus, slice(concat[-1].index.start, i.index.stop))
-                    else:
-                        concat.append( i )
-            else:   # nonref
-                if i.net_type.is_unconnected and concat[-1].net_type.is_unconnected:
-                    concat[-1] = Unconnected(len(i) + len(concat[-1]))
-                elif i.net_type.is_const and concat[-1].net_type.is_const:
+            elif i.net_type.is_const:
+                if i.value is None and concat[-1].value is None:
+                    concat[-1] = Const(width = len(concat[-1]) + len(i))
+                elif i.value is not None and concat[-1].value is not None:
                     concat[-1] = Const((i.value << len(concat[-1])) + concat[-1].value, len(concat[-1]) + len(i))
                 else:
                     concat.append( i )
+            elif i.bus == concat[-1].bus and i.index.start == concat[-1].index.stop:
+                concat[-1] = cls._slice(i.bus, slice(concat[-1].index.start, i.index.stop))
+            else:
+                concat.append( i )
         # emitting final result
         if len(concat) == 0:
-            return Unconnected(0)
+            return Const()
         elif len(concat) == 1:
             return concat[0]
         else:
@@ -220,7 +213,7 @@ class NetUtils(object):
         # 1. concat the sources & sinks
         sources, sinks = map(cls.concat, (sources, sinks))
         # 2. get the parent module
-        module = sources.items[0].parent if sources.bus_type.is_concat else sources.parent
+        module = sinks.items[0].parent if sinks.bus_type.is_concat else sinks.parent
         # 3. if module does not support bitwise connection, recreate the source list and sink list
         if module._coalesce_connections:
             if fully:
@@ -249,9 +242,15 @@ class NetUtils(object):
         for src, sink in pairs:
             if not src.is_source:
                 raise PRGAInternalError("'{}' is not a valid source".format(src))
-            elif not sink.is_sink:
+            elif not src.net_type.is_const and src.parent is not module:
+                raise PRGAInternalError("Cannot connect {}: different parent module".format(src))
+            elif not sink.is_sink and not (module.is_cell and src.is_clock and not sink.is_clock):
                 raise PRGAInternalError("'{}' is not a valid sink".format(sink))
-            elif src.net_type.is_unconnected:
+            elif sink.parent is not module:
+                raise PRGAInternalError("Cannot connect {}: different parent module".format(sink))
+            elif sink.is_clock and not src.is_clock:
+                raise PRGAInternalError("{} is a clock but {} is not".format(sink, src))
+            elif src.net_type.is_const and src.value is None:
                 continue
             src_node, sink_node = map(lambda x: cls._reference(x, coalesced = module._coalesce_connections),
                     (src, sink))
@@ -265,43 +264,35 @@ class NetUtils(object):
             module._conn_graph.add_edge( src_node, sink_node, **kwargs )
 
     @classmethod
-    def get_source(cls, sink):
+    def get_source(cls, sink, *, return_none_if_unconnected = False):
         """Get the source connected to ``sink``. This method is for accessing connections in modules that do not allow
         multi-source connections only."""
+        ret = None
         if not sink.is_sink:
             raise PRGAInternalError("{} is not a valid sink".format(sink))
-        if sink.parent._allow_multisource:
+        elif sink.parent._allow_multisource:
             raise PRGAInternalError(
                     "Module {} allows multi-source connections. Use `NetUtils.get_multisource` instead"
                     .format(sink.parent))
-        if sink.parent._coalesce_connections:
-            sinks = sink.items if sink.bus_type.is_concat else (sink, )
-            sources = []
-            for sink_ in sinks:
-                bus, index = (sink_.bus, sink.index) if sink_.bus_type.is_slice else (sink_, None)
-
-                try:
-                    node = next(sink.parent._conn_graph.predecessors( cls._reference(bus, coalesced = True) ))
-                except (StopIteration, NetworkXError):
-                    sources.append( Unconnected( len(sink_) ))
-                    continue
-
-                if index is not None:
-                    sources.append( cls._dereference(bus.parent, node, coalesced = True)[index] )
-                else:
-                    sources.append( cls._dereference(bus.parent, node, coalesced = True) )
-            return cls.concat(sources)
+        elif sink.parent._coalesce_connections:
+            try:
+                node = next(sink.parent._conn_graph.predecessors( cls._reference(sink.bus, coalesced = True) ))
+                ret = cls._dereference(sink.parent, node, coalesced = True)[sink.index]
+            except (StopIteration, NetworkXError):
+                ret = Const( width = len(sink) )
         else:
             sources = []
             for bit in sink:
                 try:
                     node = next(sink.parent._conn_graph.predecessors( cls._reference(bit) ))
+                    sources.append( cls._dereference(sink.parent, node) )
                 except (StopIteration, NetworkXError):
-                    sources.append( Unconnected(1) )
-                    continue
-
-                sources.append( cls._dereference(sink.parent, node) )
-            return cls.concat(sources)
+                    sources.append( Const(width = 1) )
+            ret = cls.concat(sources)
+        if return_none_if_unconnected and ret.bus_type.is_nonref and ret.net_type.is_const and ret.value is None:
+            return None
+        else:
+            return ret
 
     @classmethod
     def get_multisource(cls, sink):
@@ -317,7 +308,7 @@ class NetUtils(object):
             return cls.concat( iter(cls._dereference(sink.parent, node) for node in
                     sink.parent._conn_graph.predecessors( cls._reference(sink) )) )
         except NetworkXError:
-            return Unconnected(0)
+            return Const()
 
     # @classmethod
     # def get_hierarchical_multisource(cls, sink):
@@ -398,155 +389,3 @@ class NetUtils(object):
                     cls._reference(sink, coalesced = source.parent._coalesce_connections)]
         except KeyError:
             return None
-
-# ----------------------------------------------------------------------------
-# -- Slice Reference of a Bus ------------------------------------------------
-# ----------------------------------------------------------------------------
-class Slice(Object, AbstractGenericNet):
-    """Reference to a consecutive subset of a port/pin/logic bus.
-
-    Args:
-        bus (`AbstractGenericBus`): The referred bus
-        index (:obj:`int` or :obj:`slice`): Index of the bit(s) in the bus.
-
-    Direct instantiation of this class is not recommended.
-    """
-
-    __slots__ = ['bus', 'index']
-
-    # == internal API ========================================================
-    def __init__(self, bus, index):
-        self.bus = bus
-        self.index = index
-
-    def __str__(self):
-        if isinstance(self.index, int):
-            return 'Bit({}[{}])'.format(self.bus, self.index)
-        else:
-            return 'Slice({}[{}:{}])'.format(self.bus, self.index.start, self.index.stop)
-
-    # == low-level API =======================================================
-    @property
-    def bus_type(self):
-        return BusType.slice_
-
-    @property
-    def net_type(self):
-        return self.bus.net_type
-
-    @property
-    def name(self):
-        if isinstance(self.index, int):
-            return '{}[{}]'.format(self.bus.name, self.index)
-        else:
-            return '{}[{}:{}]'.format(self.bus.name, self.index.stop - 1, self.index.start)
-
-    @property
-    def is_source(self):
-        return self.bus.is_source
-
-    @property
-    def is_sink(self):
-        return self.bus.is_sink
-
-    @property
-    def node(self):
-        return self.index, self.bus.node
-
-    @property
-    def parent(self):
-        return self.bus.parent
-
-    def __len__(self):
-        if isinstance(self.index, int):
-            return 1
-        else:
-            return self.index.stop - self.index.start
-
-    def __getitem__(self, index):
-        if not isinstance(index, int) and not isinstance(index, slice):
-            raise PRGATypeError("index", "int or slice")
-        index = compose_slice(self.index, index)
-        if index is None:
-            return Unconnected(0)
-        else:
-            return type(self)(self.bus, index)
-
-# ----------------------------------------------------------------------------
-# -- A Concatenation of Slices and/or buses ----------------------------------
-# ----------------------------------------------------------------------------
-class Concat(Object, AbstractGenericBus):
-    """A concatenation of slices and/or buses.
-
-    Args:
-        items (:obj:`Sequence` [`AbstractGenericNet` ]): Items to be contenated together
-
-    Direct instantiation of this class is not recommended. Use `NetUtils.concat` instead.
-    """
-
-    __slots__ = ['items']
-
-    # == internal API ========================================================
-    def __init__(self, items):
-        self.items = items
-
-    def __str__(self):
-        return 'Concat({})'.format(", ".join(str(i) for i in self.items))
-
-    # == low-level API =======================================================
-    @property
-    def bus_type(self):
-        return BusType.concat
-
-    @property
-    def name(self):
-        return '{{{}}}'.format(", ".join(i.name for i in reversed(self.items)))
-
-    @property
-    def is_source(self):
-        return all(i.is_source for i in self.items)
-
-    @property
-    def is_sink(self):
-        return all(i.is_sink for i in self.items)
-
-    def __len__(self):
-        return sum(len(i) for i in self.items)
-
-    def __getitem__(self, index):
-        start, range_ = None, None
-        if isinstance(index, int):
-            start = index
-            range_ = 1
-        elif isinstance(index, slice):
-            if index.step not in (None, 1):
-                raise PRGAIndexError("'step' must be 1 when indexing a concat with a slice")
-            start = max(0, uno(index.start, 0))
-            if index.stop is not None:
-                if index.stop <= start:
-                    return Unconnected(0)
-                else:
-                    range_ = index.stop - start
-        # count down
-        items = []
-        for i in self.items:
-            l = len(i)
-            # update start
-            if start >= l:
-                start -= l
-                continue
-            # start concatenating
-            if range_ is None:
-                items.append(i[start:])
-                start = 0
-            else:
-                ll = min(l - start, range_)
-                items.append(i[start:start + ll])
-                start = 0
-                range_ -= ll
-                if range_ == 0:
-                    break
-        if not items and isinstance(index, int):
-            raise IndexError(index)
-        # convert concatenation to a valid form
-        return NetUtils.concat(items, skip_flatten = True)

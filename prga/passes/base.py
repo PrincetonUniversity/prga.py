@@ -27,7 +27,7 @@ class AbstractPass(Abstract):
         Args:
             context (`Context`): The context which manages all architecture data
         """
-        pass
+        raise NotImplementedError
 
     @property
     def is_readonly_pass(self):

@@ -30,21 +30,23 @@ class FileRenderer(Object):
     @classmethod
     def _net2verilog(cls, net):
         """:obj:`str`: Render in verilog syntax a slice or a bus ``net``."""
-        if net.net_type.is_unconnected or net.net_type.is_const:
-            return net.name
-        elif net.net_type.is_port:
-            if net.bus_type.is_nonref:
-                return net.name
-            elif isinstance(net.index, int):
-                return '{}[{}]'.format(net.bus.name, net.index)
+        if net.net_type.is_const:
+            if net.value is None:
+                return "{}'bx".format(len(net))
             else:
-                return '{}[{}:{}]'.format(net.bus.name, net.index.stop - 1, net.index.start)
-        elif net.bus_type.is_nonref:
-            return '_{}__{}'.format(net.hierarchy[-1].name, net.model.name)
-        elif isinstance(net.index, int):
-            return '_{}__{}[{}]'.format(net.bus.hierarchy[-1].name, net.bus.model.name, net.index)
+                return "{}'h{:x}".format(len(net), net.value)
         else:
-            return '_{}__{}[{}:{}]'.format(net.bus.hierarchy[-1].name, net.bus.model.name, net.index.stop - 1, net.index.start)
+            bus, suffix = net, ""
+            if net.bus_type.is_slice:
+                bus = net.bus
+                if len(net) == 1:
+                    suffix = '[{}]'.format(net.index.start)
+                else:
+                    suffix = '[{}:{}]'.format(net.index.stop - 1, net.index.start)
+            if bus.net_type.is_port:
+                return bus.name + suffix
+            else:
+                return "_{}__{}".format(bus.instance.name, bus.model.name) + suffix
 
     @classmethod
     def _source2verilog(cls, net):

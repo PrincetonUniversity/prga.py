@@ -6,7 +6,7 @@ from prga.compatible import *
 from .base import BaseBuilder, MemOptUserConnGraph
 from .box import ConnectionBoxBuilder, SwitchBoxBuilder
 from ..common import (ModuleClass, Subtile, Position, Orientation, Dimension, Corner, OrientationTuple, SegmentID,
-        SegmentType, BlockPinID, BlockPortFCValue, BlockFCValue, Direction, SwitchBoxPattern)
+        SegmentType, BlockPinID, BlockPortFCValue, BlockFCValue, Direction, SwitchBoxPattern, ModuleView)
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
 from ...netlist.module.util import ModuleUtils
@@ -262,7 +262,7 @@ class _BaseArrayBuilder(BaseBuilder):
     @classmethod
     def _instance_position(cls, instance):
         return sum(iter(i.key[0] if i.parent.module_class.is_leaf_array else i.key
-                for i in instance), Position(0, 0))
+                for i in instance.hierarchy), Position(0, 0))
 
     @classmethod
     def _segment_searchlist(cls, node, position, subtile, width, height, *, forward = False):
@@ -329,7 +329,7 @@ class _BaseArrayBuilder(BaseBuilder):
     @classmethod
     def __expose_routable_pin(cls, pin):
         """Expose non-hierarchical ``pin`` as a port and connect them."""
-        assert not pin.hierarchy.is_hierarchical
+        assert not pin.instance.is_hierarchical
         array = pin.parent
         # which type of pin is this?
         if isinstance(pin.model.key, SegmentID):  # SEGMENT
@@ -345,15 +345,15 @@ class _BaseArrayBuilder(BaseBuilder):
                 array_output = SegmentType.array_output,
                 array_cboxout = SegmentType.array_cboxout,
                 array_cboxout2 = SegmentType.array_cboxout,
-                ), cls._instance_position(pin.hierarchy))
+                ), cls._instance_position(pin.instance))
             while True:
                 port = array.ports.get(node)
                 if port is None:
                     break
                 elif port.direction is pin.model.direction:
                     source, sink = (pin, port) if port.direction.is_output else (port, pin)
-                    cur_source = NetUtils.get_source(sink)
-                    if cur_source.net_type.is_unconnected:
+                    cur_source = NetUtils.get_source(sink, return_none_if_unconnected = True)
+                    if cur_source is None:
                         NetUtils.connect(source, sink)
                         break
                     elif cur_source == source:
@@ -362,8 +362,8 @@ class _BaseArrayBuilder(BaseBuilder):
                     node = node.convert(SegmentType.array_cboxout2)
                     continue
                 raise PRGAInternalError("'{}' already exposed but not correctly connected".format(pin))
-            new_box_key = (pin.hierarchy.key if array.module_class.is_leaf_array else 
-                    (pin.hierarchy.key + pin.model.boxkey[0], pin.model.boxkey[1]))
+            new_box_key = (pin.instance.key if array.module_class.is_leaf_array else 
+                    (pin.instance.key + pin.model.boxkey[0], pin.model.boxkey[1]))
             if port is None:
                 port = ModuleUtils.create_port(array, cls._node_name(node),
                         len(pin), pin.model.direction, key = node,
@@ -399,16 +399,16 @@ class _BaseArrayBuilder(BaseBuilder):
         elif isinstance(pin.model.key, BlockPinID) or pin.model.parent.module_class.is_logic_block:    # BLOCK PIN 
             node = None
             if isinstance(pin.model.key, BlockPinID):
-                node = pin.model.key.move(cls._instance_position(pin.hierarchy))
+                node = pin.model.key.move(cls._instance_position(pin.instance))
             else:
-                node = BlockPinID(cls._instance_position(pin.hierarchy) + pin.model.position, pin.model)
+                node = BlockPinID(cls._instance_position(pin.instance) + pin.model.position, pin.model)
             port = array.ports.get(node, None)
             if port is None:
                 port = ModuleUtils.create_port(array, cls._node_name(node), len(pin),
                         pin.model.direction, key = node)
             source, sink = (pin, port) if port.direction.is_output else (port, pin)
-            cur_source = NetUtils.get_source(sink)
-            if cur_source.net_type.is_unconnected:
+            cur_source = NetUtils.get_source(sink, return_none_if_unconnected = True)
+            if cur_source is None:
                 NetUtils.connect(source, sink)
             elif cur_source != source:
                 raise PRGAInternalError("'{}' already exposed but not correctly connected".format(pin))
@@ -420,12 +420,12 @@ class _BaseArrayBuilder(BaseBuilder):
     def _expose_routable_pin(cls, pin, *, create_port = False):
         """Recursively expose a hierarchical ``pin``."""
         port = pin.model
-        for instance in pin.hierarchy[:-1]:
+        for instance in pin.instance.hierarchy[:-1]:
             port = cls.__expose_routable_pin(instance.pins[port.key])
         if create_port:
-            return cls.__expose_routable_pin(pin.hierarchy[-1].pins[port.key])
+            return cls.__expose_routable_pin(pin.instance.hierarchy[-1].pins[port.key])
         else:
-            return pin.hierarchy[-1].pins[port.key]
+            return pin.instance.hierarchy[-1].pins[port.key]
 
     @classmethod
     def _get_or_create_global_input(cls, array, global_):
@@ -511,9 +511,9 @@ class LeafArrayBuilder(_BaseArrayBuilder):
     def new(cls, name, width, height, *, edge = OrientationTuple(False)):
         """Create a new module for building."""
         return Module(name,
-                ports = OrderedDict(),
+                view = ModuleView.user,
                 instances = _LeafArrayInstanceMapping(width, height),
-                conn_graph = MemOptUserConnGraph(),
+                coalesce_connections = True,
                 module_class = ModuleClass.leaf_array,
                 width = width,
                 height = height,
@@ -654,12 +654,10 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                     south = y == 0,
                     west = x == 0)
             for ori in Orientation:
-                if ori.is_auto:
-                    continue
-                elif self._module._instances.get_root(position, ori.to_subtile()) is not None:
+                if self._module._instances.get_root(position, ori.to_subtile()) is not None:
                     continue
                 elif any(on_edge[ori2] and self._module.edge[ori2] for ori2 in Orientation
-                        if ori2 not in (Orientation.auto, ori.opposite)):
+                        if ori2 is not ori.opposite):
                     continue
                 block_instance = self._module._instances.get_root(position, Subtile.center)
                 if block_instance is None:
@@ -724,7 +722,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                     continue
                 # analyze excluded inputs
                 excluded_inputs = set(ori for ori in Orientation
-                        if not ori.is_auto and self._no_channel_for_switchbox(self._module, position,
+                        if self._no_channel_for_switchbox(self._module, position,
                             corner.to_subtile(), ori))
                 if len(excluded_inputs) == 4:
                     continue
@@ -827,8 +825,8 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                             node = node.convert(SegmentType.sboxin_cboxout2, -sbox.key[0])
                             bridge = sbox.pins.get(node)
                             if bridge is not None:
-                                source = NetUtils.get_source(bridge)
-                                if source.net_type.is_unconnected:
+                                source = NetUtils.get_source(bridge, return_none_if_unconnected = True)
+                                if source is None:
                                     self.connect(pin, bridge)
                                     continue
                                 elif source == pin:
@@ -837,8 +835,8 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                             node = node.convert(SegmentType.sboxin_cboxout)
                             bridge = sbox.pins.get(node)
                             if bridge is not None:
-                                source = NetUtils.get_source(bridge)
-                                if source.net_type.is_unconnected:
+                                source = NetUtils.get_source(bridge, return_none_if_unconnected = True)
+                                if source is None:
                                     self.connect(pin, bridge)
                                     continue
                                 elif source == pin:
@@ -875,8 +873,10 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             # 1. find the sink pin
             sink = instance.pins[tunnel.sink.key]
             # 2. check if the pin is driven by a connection block
-            driver = NetUtils.get_source(sink)
-            if driver.net_type.is_pin:
+            driver = NetUtils.get_source(sink, return_none_if_unconnected = True)
+            if driver is None:
+                pass
+            elif driver.net_type.is_pin:
                 assert driver.hierarchy[0].model.module_class.is_connection_box
                 bridge = driver.hierarchy[0].model.ports.get(BlockPinID(tunnel.offset, tunnel.source), None)
                 if bridge is None:
@@ -885,8 +885,6 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             elif driver.net_type.is_port:
                 assert driver.parent is self._module
                 continue
-            else:
-                assert driver.net_type.is_unconnected
             # 3. find the source pin
             block_pos = pos + tunnel.sink.position + tunnel.offset - tunnel.source.position
             if not (0 <= block_pos.x < self._module.width and 0 <= block_pos.y < self._module.height):
@@ -944,14 +942,14 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
             if sub is None:
                 return None
             else:
-                return sub.extend([inst])
+                return inst.extend_hierarchy(below = sub)
 
     # == high-level API ======================================================
     @classmethod
     def new(cls, name, width, height, *, edge = OrientationTuple(False)):
         """Create a new module for building."""
         return Module(name,
-                ports = OrderedDict(),
+                view = ModuleView.user,
                 instances = NonLeafArrayInstanceMapping(width, height),
                 coalesce_connections = True,
                 module_class = ModuleClass.nonleaf_array,
@@ -987,8 +985,6 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
                     south = pos.y == 0 and self._module.edge.south,
                     west = pos.x == 0 and self._module.edge.west)
             for ori in Orientation:
-                if ori.is_auto:
-                    continue
                 if sub_on_edge[ori] and not self_on_edge[ori]:
                     raise PRGAAPIError("Subarray '{}' must be placed on the {} edge of the FPGA"
                             .format(model, ori.name))
@@ -1085,23 +1081,27 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
                             # let's see if the bridge is already there in the switch box
                             done = False
                             for segment_type in (SegmentType.sboxin_cboxout, SegmentType.sboxin_cboxout2):
-                                bridge = sbox[0].pins.get(source.model.key.convert(segment_type))
+                                bridge = sbox.hierarchy[0].pins.get(source.model.key.convert(segment_type))
                                 if bridge is not None:
                                     # There's one bridge over there! Trace up and see if it's usable
-                                    for i, inst in enumerate(sbox[1:]):
-                                        bridge_source = NetUtils.get_source(bridge)
-                                        if bridge_source.net_type.is_pin: # bad news. it's driven by another pin
-                                            bridge = None
+                                    for i, inst in enumerate(sbox.hierarchy[1:]):
+                                        bridge_source = NetUtils.get_source(bridge, return_none_if_unconnected = True)
+                                        if bridge_source is None:
+                                            # cool! this one is unused
+                                            bridge = bridge.instance.extend_hierarchy(
+                                                    above = sbox.hierarchy[i + 1:]).pins[bridge.model.key]
+                                            bridge = self._expose_routable_pin(bridge)
                                             break
-                                        elif bridge_source.net_type.is_unconnected: # cool! this one is unused
-                                            bridge = self._expose_routable_pin(bridge.extend(sbox[i + 1:]))
+                                        elif bridge_source.net_type.is_pin:
+                                            # bad news. it's driven by another pin
+                                            bridge = None
                                             break
                                         else: # we're not sure if this one is usable
                                             assert bridge_source.net_type.is_port
                                             bridge = inst.pins[bridge_source.key]
                                 if bridge is not None:  # cool, we found a source that may be usable
-                                    bridge_source = NetUtils.get_source(bridge)
-                                    if bridge_source.net_type.is_unconnected:
+                                    bridge_source = NetUtils.get_source(bridge, return_none_if_unconnected = True)
+                                    if bridge_source is None:
                                         self.connect(pin, bridge)
                                     elif bridge_source != pin:
                                         continue

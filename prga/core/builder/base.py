@@ -49,5 +49,4 @@ class BaseBuilder(Object):
 
     def commit(self):
         """Commit the module."""
-        ModuleUtils.elaborate(self._module)
         return self._module

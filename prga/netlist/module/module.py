@@ -4,8 +4,6 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .common import AbstractModule
-from .instance import HierarchicalInstance
-from ..net.common import NetType
 from ...util import Object, ReadonlyMappingProxy, uno
 from ...exception import PRGAInternalError
 
@@ -14,45 +12,6 @@ from enum import Enum
 import networkx as nx
 
 __all__ = ['Module']
-
-# ----------------------------------------------------------------------------
-# -- Hierarchical Instance Mapping Proxy -------------------------------------
-# ----------------------------------------------------------------------------
-class _HierarchicalInstanceProxy(Object, Mapping):
-    """Helper class for `AbstractModule.hierarchy` property.
-
-    Args:
-        module (`AbstractModule`):
-    """
-
-    __slots__ = ['module']
-    def __init__(self, module):
-        super(_HierarchicalInstanceProxy, self).__init__()
-        self.module = module
-
-    def __getitem__(self, key):
-        try:
-            parent, instances = self.module, []
-            for k in reversed(key):
-                instance = parent.instances[k]
-                parent = instance.model
-                instances.append(instance)
-            if len(instances) == 0:
-                return tuple()
-            elif len(instances) == 1:
-                return instances[0]
-            else:
-                return HierarchicalInstance(reversed(instances))
-        except KeyError:
-            raise KeyError(key)
-
-    def __len__(self):
-        raise PRGAInternalError("`{}.hierarchy` property is for key-value access only"
-                .format(type(self.module)))
-
-    def __iter__(self):
-        raise PRGAInternalError("`{}.hierarchy` property is for key-value access only"
-                .format(type(self.module)))
 
 # ----------------------------------------------------------------------------
 # -- Module ------------------------------------------------------------------
@@ -66,10 +25,12 @@ class Module(Object, AbstractModule):
     Keyword Args:
         key (:obj:`Hashable`): A hashable key used to index this module in the database. If not given \(default
             argument: ``None``\), ``name`` is used by default
-        ports (:obj:`Mapping`): A mapping object used to index ports by keys. ``None`` by default, which disallows
-            ports to be added into this module
-        instances (:obj:`Mapping`): A mapping object used to index instances by keys. ``None`` by default, which
-            disallows instances to be added into this module
+        is_cell (:obj:`bool`): A quick argument for ``instances`` and ``allow_multisource`` and
+            ``coalesce_connections``. If set, ``instances`` will be set to ``False``, ``allow_multisource`` will be
+            set to ``True`` and ``coalesce_connections`` will be set to False. Takes precedence over corresponding
+            arguments
+        instances (:obj:`MutableMapping`): If ``None`` is given, no instance mapping is created, marking this module
+            as a leaf cell; By default, an ``OrderedDict`` object will be used
         conn_graph (`networkx.DiGraph`_): Connection & Timing Graph. It's strongly recommended to subclass
             `networkx.DiGraph`_ to optimize memory usage
         allow_multisource (:obj:`bool`): If set, a sink net may be driven by multiple source nets. Incompatible with
@@ -83,30 +44,33 @@ class Module(Object, AbstractModule):
     """
 
     __slots__ = ['_name', '_key', '_children', '_ports', '_instances', '_conn_graph',
-            '_allow_multisource', '_coalesce_connections', '_hierarchy', '_elaborated', '__dict__']
+            '_allow_multisource', '_coalesce_connections', '__dict__']
 
     # == internal API ========================================================
     def __init__(self, name, *,
-            key = None, ports = None, instances = None, conn_graph = None,
+            key = None, is_cell = False, instances = True, conn_graph = None,
             allow_multisource = False, coalesce_connections = False, **kwargs):
-        if allow_multisource and coalesce_connections:
+        if not is_cell and allow_multisource and coalesce_connections:
             raise PRGAInternalError("`allow_multisource` and `coalesce_connections` are incompatible")
         self._name = name
         self._key = uno(key, name)
         self._children = OrderedDict()  # Mapping from names to children (ports and instances)
-        if ports is not None:
-            self._ports = ports
-        if instances is not None:
-            self._instances = instances
-        self._allow_multisource = allow_multisource
-        self._coalesce_connections = coalesce_connections
+        self._ports = OrderedDict()
+        if is_cell:
+            self._allow_multisource = True
+            self._coalesce_connections = False
+        else:
+            if isinstance(instances, MutableMapping):
+                self._instances = instances
+            elif instances:
+                self._instances = OrderedDict()
+            self._allow_multisource = allow_multisource
+            self._coalesce_connections = coalesce_connections
         self._conn_graph = uno(conn_graph, nx.DiGraph())
-        self._hierarchy = _HierarchicalInstanceProxy(self)
-        self._elaborated = set()
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
 
-    def __str__(self):
+    def __repr__(self):
         return 'Module({})'.format(self.name)
 
     # == low-level API =======================================================
@@ -172,10 +136,7 @@ class Module(Object, AbstractModule):
 
     @property
     def ports(self):
-        try:
-            return ReadonlyMappingProxy(self._ports)
-        except AttributeError:
-            return ReadonlyMappingProxy({})
+        return ReadonlyMappingProxy(self._ports)
 
     @property
     def instances(self):
@@ -185,5 +146,5 @@ class Module(Object, AbstractModule):
             return ReadonlyMappingProxy({})
 
     @property
-    def hierarchy(self):
-        return self._hierarchy
+    def is_cell(self):
+        return not hasattr(self, "_instances")

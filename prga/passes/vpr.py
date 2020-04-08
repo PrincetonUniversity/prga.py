@@ -283,6 +283,8 @@ class _VPRArchGeneration(Object, AbstractPass):
                 attrs = {'name': port.name, 'num_pins': len(port)}
                 if not port.is_clock and hasattr(port, 'global_'):
                     attrs['is_non_clock_global'] = "true"
+                if getattr(port, "vpr_equivalent_pins", False):
+                    attrs["equivalent"] = "full"
                 self.xml.element_leaf(
                         'clock' if port.is_clock else port.direction.case('input', 'output'),
                         attrs)
@@ -622,6 +624,8 @@ class _VPRArchGeneration(Object, AbstractPass):
                 attrs = {'name': port.name, 'num_pins': len(port)}
                 if not port.is_clock and hasattr(port, 'global_'):
                     attrs['is_non_clock_global'] = "true"
+                if module.module_class.is_block and getattr(port, "vpr_equivalent_pins", False):
+                    attrs["equivalent"] = "full"
                 self.xml.element_leaf(
                         'clock' if port.is_clock else port.direction.case('input', 'output'),
                         attrs)
@@ -1134,43 +1138,50 @@ class VPR_RRG_Generation(Object, AbstractPass):
                     ori.case( (0, 0), (0, 0), (0, -1), (-1, 0) ))
             return chanpos, ori.dimension.perpendicular, None, None
 
+    def _tile_pinlist(self, port, subblock_name, srcsink_ptc, iopin_ptc):
+        equivalent = getattr(port, "vpr_equivalent_pins", False)
+        if equivalent:
+            with self.xml.element("pin_class", {"type": port.direction.case("INPUT", "OUTPUT")}):
+                for i in range(len(port)):
+                    self.xml.element_leaf("pin", {"ptc": iopin_ptc},
+                            '{}.{}[{}]'.format(subblock_name, port.name, i))
+                    iopin_ptc += 1
+                srcsink_ptc += 1
+        else:
+            for i in range(len(port)):
+                with self.xml.element("pin_class", {"type": port.direction.case("INPUT", "OUTPUT")}):
+                    self.xml.element_leaf("pin", {"ptc": iopin_ptc},
+                            '{}.{}[{}]'.format(subblock_name, port.name, i))
+                iopin_ptc += 1
+                srcsink_ptc += 1
+        return srcsink_ptc, iopin_ptc
+
     def _tile(self, block, ori = None):
         blockpin2ptc = self.blockpin2ptc.setdefault( block.key, OrderedDict() )
         block_name = block.name if ori is None else '{}_{}'.format(block.name, ori.name[0])
         with self.xml.element("block_type", {
             "name": block_name, "width": block.width, "height": block.height, "id": self.block2id[block.key, ori]}):
-            ptc = 0
+            srcsink_ptc, iopin_ptc = 0, 0
             for subblock in range(block.capacity):
                 subblock_name = '{}[{}]'.format(block_name, subblock) if block.capacity > 1 else block_name
                 for port in itervalues(block.ports):
+                    equivalent = getattr(port, "vpr_equivalent_pins", False)
                     if port.direction.is_input and not port.is_clock:
                         if subblock == 0:
-                            blockpin2ptc[port.key] = ptc
-                        for i in range(len(port)):
-                            with self.xml.element("pin_class", {"type": "INPUT"}):
-                                self.xml.element_leaf("pin", {"ptc": ptc},
-                                        '{}.{}[{}]'.format(subblock_name, port.name, i))
-                            ptc += 1
+                            blockpin2ptc[port.key] = srcsink_ptc, equivalent, iopin_ptc
+                        srcsink_ptc, iopin_ptc = self._tile_pinlist(port, subblock_name, srcsink_ptc, iopin_ptc)
                 for port in itervalues(block.ports):
                     if port.direction.is_output:
                         if subblock == 0:
-                            blockpin2ptc[port.key] = ptc
-                        for i in range(len(port)):
-                            with self.xml.element("pin_class", {"type": "OUTPUT"}):
-                                self.xml.element_leaf("pin", {"ptc": ptc},
-                                        '{}.{}[{}]'.format(subblock_name, port.name, i))
-                            ptc += 1
+                            blockpin2ptc[port.key] = srcsink_ptc, equivalent, iopin_ptc
+                        srcsink_ptc, iopin_ptc = self._tile_pinlist(port, subblock_name, srcsink_ptc, iopin_ptc)
                 for port in itervalues(block.ports):
                     if port.is_clock:
                         if subblock == 0:
-                            blockpin2ptc[port.key] = ptc
-                        for i in range(len(port)):
-                            with self.xml.element("pin_class", {"type": "INPUT"}):
-                                self.xml.element_leaf("pin", {"ptc": ptc},
-                                        '{}.{}[{}]'.format(subblock_name, port.name, i))
-                            ptc += 1
+                            blockpin2ptc[port.key] = srcsink_ptc, equivalent, iopin_ptc
+                        srcsink_ptc, iopin_ptc = self._tile_pinlist(port, subblock_name, srcsink_ptc, iopin_ptc)
                 if subblock == 0:
-                    blockpin2ptc["#"] = ptc
+                    blockpin2ptc["#"] = srcsink_ptc, None, iopin_ptc
 
     def _grid(self, array):
         for x, y in product(range(array.width), range(array.height)):
@@ -1194,8 +1205,8 @@ class VPR_RRG_Generation(Object, AbstractPass):
                     "width_offset": x - rootpos.x, "height_offset": y - rootpos.y})
 
     def _node(self, type_, id_, ptc, xlow, ylow, *,
-            track_dir = None, port_ori = None, xhigh = None, yhigh = None, segment = None):
-        node_attr = {"capacity": 1, "id": id_, "type": type_}
+            track_dir = None, port_ori = None, xhigh = None, yhigh = None, segment = None, capacity = 1):
+        node_attr = {"capacity": capacity, "id": id_, "type": type_}
         loc_attr = {"xlow": xlow, "ylow": ylow, "ptc": ptc,
                 "xhigh": uno(xhigh, xlow), "yhigh": uno(yhigh, ylow)}
         timing_attr = {"C": 0., "R": 0.}
@@ -1225,7 +1236,11 @@ class VPR_RRG_Generation(Object, AbstractPass):
             position_hint = self._calc_hierarchical_position(bus.hierarchy)
         id_base = id_base[position_hint.x][position_hint.y]
         pin2ptc = self.blockpin2ptc[bus.model.parent.key]
-        return id_base + pin2ptc["#"] * bus.hierarchy[0].key[1] + pin2ptc[bus.model.key] + index
+        srcsink_ptc, equivalent, iopin_ptc = pin2ptc[bus.model.key]
+        total_srcsink, _, total_iopin = pin2ptc["#"]
+        blockptc, pinptc = ((total_srcsink, srcsink_ptc + (0 if equivalent else index)) if srcsink
+                else (total_iopin, iopin_ptc + index))
+        return id_base + blockptc * bus.hierarchy[0].key[1] + pinptc
 
     def _calc_track_id(self, pin):
         bus, index = (pin.bus, pin.index) if pin.bus_type.is_slice else (pin, 0)
@@ -1501,22 +1516,29 @@ class VPR_RRG_Generation(Object, AbstractPass):
                     block, ori = self._get_hierarchical_block(context.top, pos)
                     if block is not None:
                         pin2ptc = self.blockpin2ptc[block.key]
+                        total_srcsink, _, total_iopin = pin2ptc["#"]
                         self.srcsink_id[x][y] = total_num_nodes
                         for subblock in range(block.capacity):
-                            ptc_base = subblock * pin2ptc["#"]
-                            for key, ptc in iteritems(pin2ptc):
+                            ptc_base = subblock * total_srcsink
+                            for key, (ptc, equivalent, _) in iteritems(pin2ptc):
                                 if key == "#":
                                     continue
                                 port = block.ports[key]
-                                for i in range(len(port)):
+                                if equivalent:
                                     self._node(port.direction.case("SINK", "SOURCE"), total_num_nodes,
-                                            ptc_base + ptc + i, x, y,
+                                            ptc_base + ptc, x, y, capacity = len(port),
                                             xhigh = x + block.width - 1, yhigh = y + block.height - 1)
                                     total_num_nodes += 1
+                                else:
+                                    for i in range(len(port)):
+                                        self._node(port.direction.case("SINK", "SOURCE"), total_num_nodes,
+                                                ptc_base + ptc + i, x, y,
+                                                xhigh = x + block.width - 1, yhigh = y + block.height - 1)
+                                        total_num_nodes += 1
                         self.blockpin_id[x][y] = total_num_nodes
                         for subblock in range(block.capacity):
-                            ptc_base = subblock * pin2ptc["#"]
-                            for key, ptc in iteritems(pin2ptc):
+                            ptc_base = subblock * total_iopin
+                            for key, (_0, _1, ptc) in iteritems(pin2ptc):
                                 if key == "#":
                                     continue
                                 port = block.ports[key]

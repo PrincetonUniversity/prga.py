@@ -6,7 +6,7 @@ from prga.compatible import *
 from .base import BaseBuilder, MemOptUserConnGraph
 from .block import LogicBlockBuilder
 from ..common import (Orientation, Direction, Dimension, Position, ModuleClass, SegmentID, BlockPinID, SegmentType,
-        BlockPortFCValue, BlockFCValue, SwitchBoxPattern)
+        BlockPortFCValue, BlockFCValue, SwitchBoxPattern, ModuleView)
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
 from ...netlist.module.module import Module
@@ -194,7 +194,7 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
             port = block.ports[port]
         except KeyError:
             raise PRGAAPIError("No port '{}' found in block '{}'".format(port, block))
-        if port.orientation not in (Orientation.auto, orientation):
+        if port.orientation not in (None, orientation):
             raise PRGAAPIError("'{}' faces {} but connection box '{}' is on the {} side of '{}'"
                     .format(port, port.orientation.name, self._module, orientation.name, block))
         elif port.position != position:
@@ -236,7 +236,7 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
         # start generation
         energy = 0.
         for subblock, port in product(range(block.capacity), itervalues(block.ports)):
-            if not (port.position == position and port.orientation in (orientation, Orientation.auto)):
+            if not (port.position == position and port.orientation in (orientation, None)):
                 continue
             elif hasattr(port, 'global_'):
                 continue
@@ -264,45 +264,6 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                             energy -= 1.
                             if port_bus is not None and sgmt_bus is not None:
                                 self.connect(port_bus[pin], sgmt_bus[idx])
-
-        # iti = [0 for _ in segments]
-        # oti = [0 for _ in segments]
-        # for port in itervalues(block.ports):
-        #     if not (port.position == position and port.orientation in (orientation, Orientation.auto)):
-        #         continue
-        #     elif hasattr(port, 'global_'):
-        #         continue
-        #     for sgmt_idx, sgmt in enumerate(segments):
-        #         nc = fc.port_fc(port, sgmt, port.direction.is_input)  # number of connections
-        #         if nc == 0:
-        #             continue
-        #         imax = port.direction.case(sgmt.length * sgmt.width, sgmt.width)
-        #         istep = max(1, imax // nc)                  # index step
-        #         for _, port_idx, subblock in product(range(nc), range(len(port)), range(block.capacity)):
-        #             section = port.direction.case(iti[sgmt_idx] % sgmt.length, 0)
-        #             track_idx = port.direction.case(iti[sgmt_idx] // sgmt.length, oti[sgmt_idx])
-        #             for sgmt_dir in iter(Direction):
-        #                 port_bus = self.get_blockpin(port.name, subblock, dont_create = dont_create)
-        #                 if port_bus is None:
-        #                     continue
-        #                 if port.direction.is_input:
-        #                     sgmt_bus = self.get_segment_input(sgmt,
-        #                             Orientation.compose(orientation.dimension.perpendicular, sgmt_dir),
-        #                             section, dont_create = dont_create)
-        #                     if sgmt_bus is None:
-        #                         continue
-        #                     self.connect(sgmt_bus[track_idx], port_bus[port_idx])
-        #                 else:
-        #                     sgmt_bus = self.get_segment_output(sgmt,
-        #                             Orientation.compose(orientation.dimension.perpendicular, sgmt_dir),
-        #                             dont_create = dont_create)
-        #                     if sgmt_bus is None:
-        #                         continue
-        #                     self.connect(port_bus[port_idx], sgmt_bus[track_idx])
-        #             ni = port.direction.case(iti, oti)[sgmt_idx] + istep    # next index
-        #             if istep > 1 and ni >= imax:
-        #                 ni += 1
-        #             port.direction.case(iti, oti)[sgmt_idx] = ni % imax
  
     @classmethod
     def new(cls, block, orientation, position = None, *, identifier = None, name = None):
@@ -312,9 +273,9 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
         name = name or 'cbox_{}_x{}y{}{}{}'.format(block.name, position.x, position.y, orientation.name[0],
                 ('_' + identifier) if identifier is not None else '')
         return Module(name,
-                ports = OrderedDict(),
+                view = ModuleView.user,
+                is_cell = True,
                 conn_graph = MemOptUserConnGraph(),
-                allow_multisource = True,
                 module_class = ModuleClass.connection_box,
                 key = key)
 
@@ -401,7 +362,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
             o_balanced = 0
             # generate connections
             for iori in iter(Orientation):  # input orientation
-                if iori in (output_orientation.opposite, Orientation.auto):     # no U-turn
+                if iori is output_orientation.opposite:                         # no U-turn
                     continue
                 elif iori in exclude_input_orientations:                        # manually excluded orientations
                     continue
@@ -438,7 +399,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
             o = 0
             # generate connections
             for iori in iter(Orientation):  # input orientation
-                if iori in (output_orientation, output_orientation.opposite, Orientation.auto):
+                if iori in (output_orientation, output_orientation.opposite):
                     continue
                 elif iori in exclude_input_orientations:
                     continue
@@ -472,7 +433,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                 }
         # generate connections
         for iori in iter(Orientation):  # input orientation
-            if iori in (output_orientation.opposite, Orientation.auto):     # no U-turn
+            if iori is output_orientation.opposite:                         # no U-turn
                 continue
             elif iori in exclude_input_orientations:                        # exclude some orientations manually
                 continue
@@ -516,11 +477,12 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
         oori = output_orientation       # short alias
         # tracks: sgmt, i, section
         if tracks is None:
-            tracks = [(sgmt, i, section) for sgmt in segments for i, section in product(sgmt.width, sgmt.length)]
+            tracks = [(sgmt, i, section) for sgmt in segments
+                    for i, section in product(range(sgmt.width), range(sgmt.length))]
         channel_width = len(tracks)
         # generate connections
         for iori in iter(Orientation):  # input orientation
-            if iori in (oori.opposite, Orientation.auto):     # no U-turn
+            if iori is oori.opposite:                                       # no U-turn
                 continue
             elif iori in exclude_input_orientations:                        # exclude user-chosen input orientations
                 continue
@@ -554,7 +516,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
         channel_width = len(tracks)
         # generate connections
         for iori in iter(Orientation):  # input orientation
-            if iori in (oori.opposite, Orientation.auto):     # no U-turn
+            if iori is oori.opposite:                                       # no U-turn
                 continue
             elif iori in exclude_input_orientations:                        # exclude user-chosen input orientations
                 continue
@@ -691,8 +653,8 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
         name = name or 'sbox_{}{}'.format(corner.case("ne", "nw", "se", "sw"),
                 ('_' + identifier) if identifier is not None else '')
         return Module(name,
-                ports = OrderedDict(),
+                view = ModuleView.user,
+                is_cell = True,
                 conn_graph = MemOptUserConnGraph(),
-                allow_multisource = True,
                 module_class = ModuleClass.switch_box,
                 key = key)

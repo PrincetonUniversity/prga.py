@@ -79,7 +79,7 @@ class TranslationPass(Object, AbstractPass):
 
     def _process_module(self, module, context, *, disable_coalesce = False, is_top = False):
         # shortcut if the module is already processed
-        logical = context.database.get((ModuleView.logical, module.key))
+        logical = context._database.get((ModuleView.logical, module.key))
         if logical is not None:
             return logical
         # make sure the user module is tranlatible
@@ -89,13 +89,12 @@ class TranslationPass(Object, AbstractPass):
                     .format(module, module.module_class.name))
         # prepare the arguments for creating a new module
         kwargs = {
-                'ports': OrderedDict(),
-                'instances': OrderedDict(),
+                'view': ModuleView.logical,
                 'module_class': module.module_class,
                 'key': module.key,
                 }
-        if not disable_coalesce and module._coalesce_connections: # and not module.module_class.is_nonleaf_array:
-            kwargs['coalesced_connections'] = True
+        if not disable_coalesce and module._coalesce_connections:
+            kwargs['coalesce_connections'] = True
         else:
             kwargs['conn_graph'] = MemOptNonCoalescedConnGraph()
         # special case for IO block
@@ -105,12 +104,13 @@ class TranslationPass(Object, AbstractPass):
             i, o = map(module.instances['io'].pins.get, ('inpad', 'outpad'))
             if i:
                 self._register_u2l(logical, i, ModuleUtils.create_port(
-                        logical, '_ipin', 1, PortDirection.input_, net_class = NetClass.io))
+                        logical, '_ipin', 1, PortDirection.input_, net_class = NetClass.io, key = IOType.ipin))
             if o:
                 self._register_u2l(logical, o, ModuleUtils.create_port(
-                        logical, '_opin', 1, PortDirection.output, net_class = NetClass.io))
+                        logical, '_opin', 1, PortDirection.output, net_class = NetClass.io, key = IOType.opin))
             if i and o:
-                ModuleUtils.create_port(logical, '_oe', 1, PortDirection.output, net_class = NetClass.io)
+                ModuleUtils.create_port(logical, '_oe', 1, PortDirection.output, net_class = NetClass.io,
+                        key = IOType.oe)
         else:
             logical = Module(module.name, **kwargs)
         # translate ports
@@ -158,7 +158,7 @@ class TranslationPass(Object, AbstractPass):
             # special processing for IO blocks in arrays
             if logical_model.module_class.is_io_block:
                 for iotype in IOType:
-                    pin = logical_instance.pins.get('_' + iotype.name)
+                    pin = logical_instance.pins.get(iotype)
                     if pin is None:
                         continue
                     port = ModuleUtils.create_port(logical,
@@ -222,14 +222,14 @@ class TranslationPass(Object, AbstractPass):
                     switch_name = ["sw"]
                     if bit.bus_type.is_slice:
                         if bit.net_type.is_pin:
-                            switch_name.append( bit.bus.hierarchy[-1].name )
+                            switch_name.append( bit.bus.instance.name )
                             switch_name.append( bit.bus.model.name )
                         else:
                             switch_name.append( bit.bus.name )
-                        switch_name.append( str(bit.index) )
+                        switch_name.append( str(bit.index.start) )
                     else:
                         if bit.net_type.is_pin:
-                            switch_name.append( bit.hierarchy[-1].name )
+                            switch_name.append( bit.instance.name )
                             switch_name.append( bit.model.name )
                         else:
                             switch_name.append( bit.name )
@@ -239,8 +239,7 @@ class TranslationPass(Object, AbstractPass):
                         logical._conn_graph.add_edge(self._u2l(logical, user_source),
                                 NetUtils._reference(switch_input))
                     logical._conn_graph.add_edge(NetUtils._reference(switch.pins['o']), logical_sink)
-        ModuleUtils.elaborate(logical)
-        context.database[ModuleView.logical, module.key] = logical
+        context._database[ModuleView.logical, module.key] = logical
         return logical
 
     def run(self, context):

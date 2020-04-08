@@ -57,6 +57,9 @@ class Context(Object):
     Architecture context manages all resources created/added to the FPGA, including all modules, the
     routing graph, configration circuitry and more.
 
+    Args:
+        cfg_type (:obj:`str`): Configuration type
+
     Keyword Args:
         database (:obj:`MutableMapping` [:obj:`Hashable`, `AbstractModule` ]): The module database. If not set, a new
             database is created
@@ -64,6 +67,7 @@ class Context(Object):
     """
 
     __slots__ = [
+            "_cfg_type",            # configuration type
             '_globals',             # global wires
             '_tunnels',             # direct inter-block tunnels
             '_segments',            # wire segments
@@ -74,14 +78,15 @@ class Context(Object):
             'summary',              # FPGA summary
             '__dict__']
 
-    def __init__(self, *, database = None, **kwargs):
+    def __init__(self, cfg_type, *, database = None, **kwargs):
+        self._cfg_type = cfg_type
         self._globals = OrderedDict()
         self._tunnels = OrderedDict()
         self._segments = OrderedDict()
         if database is None:
             self._database = self._new_database()
         else:
-            self._database = self._new_database()
+            self._database = database
         self._top = None
         self.summary = ContextSummary()
         for k, v in iteritems(kwargs):
@@ -89,47 +94,49 @@ class Context(Object):
 
     @classmethod
     def _new_database(cls):
-        database = {}
+        database = OrderedDict()
 
         # 1. register built-in modules: LUTs
         for i in range(2, 9):
             lut = Module('lut' + str(i),
-                    ports = OrderedDict(),
+                    view = ModuleView.user,
+                    is_cell = True,
                     module_class = ModuleClass.primitive,
                     primitive_class = PrimitiveClass.lut)
             in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_,
-                    port_class = PrimitivePortClass.lut_in, vpr_combinational_sinks = ("out", ))
+                    port_class = PrimitivePortClass.lut_in)
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
                     port_class = PrimitivePortClass.lut_out)
-            ModuleUtils.elaborate(lut)
+            NetUtils.connect(in_, out, fully = True)
             database[ModuleView.user, lut.key] = lut
 
         # 2. register built-in modules: D-flipflop
         if True:
             flipflop = Module('flipflop',
-                    ports = OrderedDict(),
+                    view = ModuleView.user,
+                    is_cell = True,
                     module_class = ModuleClass.primitive,
                     primitive_class = PrimitiveClass.flipflop)
-            ModuleUtils.create_port(flipflop, 'clk', 1, PortDirection.input_,
+            clk = ModuleUtils.create_port(flipflop, 'clk', 1, PortDirection.input_,
                     is_clock = True, port_class = PrimitivePortClass.clock)
-            ModuleUtils.create_port(flipflop, 'D', 1, PortDirection.input_,
-                    clock = 'clk', port_class = PrimitivePortClass.D)
-            ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
-                    clock = 'clk', port_class = PrimitivePortClass.Q)
-            ModuleUtils.elaborate(flipflop)
+            D = ModuleUtils.create_port(flipflop, 'D', 1, PortDirection.input_,
+                    port_class = PrimitivePortClass.D)
+            Q = ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
+                    port_class = PrimitivePortClass.Q)
+            NetUtils.connect(clk, [D, Q], fully = True)
             database[ModuleView.user, flipflop.key] = flipflop
 
         # 3. register built-in modules: iopads
         for class_ in (PrimitiveClass.inpad, PrimitiveClass.outpad, PrimitiveClass.iopad):
             pad = Module(class_.name,
-                    ports = OrderedDict(),
+                    view = ModuleView.user,
+                    is_cell = True,
                     module_class = ModuleClass.primitive,
                     primitive_class = class_)
             if class_ in (PrimitiveClass.inpad, PrimitiveClass.iopad):
                 ModuleUtils.create_port(pad, 'inpad', 1, PortDirection.output)
             if class_ in (PrimitiveClass.outpad, PrimitiveClass.iopad):
                 ModuleUtils.create_port(pad, 'outpad', 1, PortDirection.input_)
-            ModuleUtils.elaborate(pad)
             database[ModuleView.user, pad.key] = pad
 
         return database
@@ -138,7 +145,7 @@ class Context(Object):
     @property
     def database(self):
         """:obj:`Mapping` [:obj:`tuple` [`ModuleView`, :obj:`Hashable` ], `AbstractModule` ]: Module database."""
-        return self._database
+        return ReadonlyMappingProxy(self._database)
 
     @property
     def switch_database(self):
@@ -172,14 +179,14 @@ class Context(Object):
         primitive = self._database[ModuleView.user, name] = MultimodeBuilder.new(name, **kwargs)
         return MultimodeBuilder(self, primitive)
 
-    def create_logical_primitive(self, name, *, non_leaf = False, **kwargs):
+    def create_logical_primitive(self, name, *, is_cell = True, **kwargs):
         """`LogicalPrimitiveBuilder`: Create a logical primitive builder.
 
         Args:
             name (:obj:`str`): Name of the logical primitive
 
         Keyword Args:
-            non_leaf (:obj:`str`): Marks that this primitive includes sub-instances
+            cell (:obj:`str`): If unset, the logical module is not a leaf cell
             **kwargs: Additional attributes to be associated with the primitive
         """
         if (ModuleView.logical, name) in self._database:
@@ -187,11 +194,11 @@ class Context(Object):
         user_view = self._database.get( (ModuleView.user, name) )
         if user_view:
             primitive = self._database[ModuleView.logical, name] = LogicalPrimitiveBuilder.new_from_user_view(
-                    user_view, non_leaf = non_leaf, **kwargs)
+                    user_view, is_cell = is_cell, **kwargs)
             return LogicalPrimitiveBuilder(self, primitive, user_view)
         else:
             primitive = self._database[ModuleView.logical, name] = LogicalPrimitiveBuilder.new(
-                    name, non_leaf = non_leaf, **kwargs)
+                    name, is_cell = is_cell, **kwargs)
             return LogicalPrimitiveBuilder(self, primitive)
 
     # == high-level API ======================================================

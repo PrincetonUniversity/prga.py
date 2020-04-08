@@ -23,11 +23,6 @@ class _BasePrimitiveBuilder(BaseBuilder):
     """Base class for user-/logical- [multi-mode] primitive builder."""
 
     @abstractproperty
-    def view(self):
-        """`ModuleView`: View of the primitive being built."""
-        raise NotImplementedError
-
-    @abstractproperty
     def counterpart(self):
         """`AbstractModule`: The user counterpart of the primitive being built if we're building logical view."""
         raise NotImplementedError
@@ -41,7 +36,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
         Keyword Args:
             **kwargs: Additional attributes to be associated with the port
         """
-        if self.view.is_logical:
+        if self._module.view.is_logical:
             if self.counterpart is not None:
                 raise PRGAInternalError(("Cannot create user-available ports in logical module {} "
                         "with a specified user counterpart").format(self._module))
@@ -53,7 +48,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
         return ModuleUtils.create_port(self._module, name, 1, PortDirection.input_,
                 is_clock = True, **kwargs)
 
-    def create_input(self, name, width, *, clock = None, **kwargs):
+    def create_input(self, name, width, **kwargs):
         """Create an input in the primitive.
 
         Args:
@@ -61,10 +56,9 @@ class _BasePrimitiveBuilder(BaseBuilder):
             width (:obj:`int`): Width of the port
 
         Keyword Args:
-            clock (:obj:`str`): Clock of the port
             **kwargs: Additional attributes to be associated with the port
         """
-        if self.view.is_logical:
+        if self._module.view.is_logical:
             if self.counterpart is not None:
                 raise PRGAInternalError(("Cannot create user-available ports in logical module {} "
                         "with a specified user counterpart").format(self._module))
@@ -73,10 +67,9 @@ class _BasePrimitiveBuilder(BaseBuilder):
         elif self._module.primitive_class.is_memory:
             raise PRGAAPIError("Ports are pre-defined and fixed for memory primitive '{}'"
                 .format(self._module))
-        return ModuleUtils.create_port(self._module, name, width, PortDirection.input_,
-                clock = clock, **kwargs)
+        return ModuleUtils.create_port(self._module, name, width, PortDirection.input_, **kwargs)
 
-    def create_output(self, name, width, *, clock = None, **kwargs):
+    def create_output(self, name, width, **kwargs):
         """Create an output in the primitive.
 
         Args:
@@ -84,10 +77,9 @@ class _BasePrimitiveBuilder(BaseBuilder):
             width (:obj:`int`): Width of the port
 
         Keyword Args:
-            clock (:obj:`str`): Clock of the port
             **kwargs: Additional attributes to be associated with the port
         """
-        if self.view.is_logical:
+        if self._module.view.is_logical:
             if self.counterpart is not None:
                 raise PRGAInternalError(("Cannot create user-available ports in logical module {} "
                         "with a specified user counterpart").format(self._module))
@@ -96,8 +88,13 @@ class _BasePrimitiveBuilder(BaseBuilder):
         elif self._module.primitive_class.is_memory:
             raise PRGAAPIError("Ports are pre-defined and fixed for memory primitive '{}'"
                 .format(self._module))
-        return ModuleUtils.create_port(self._module, name, width, PortDirection.output,
-                clock = clock, **kwargs)
+        return ModuleUtils.create_port(self._module, name, width, PortDirection.output, **kwargs)
+
+    def add_timing_arc(self, sources, sinks, **kwargs):
+        """Create a timing arc from ``src`` to ``sink``."""
+        if not self._module.is_cell:
+            raise PRGAInternalError("Cannot add timing arc to {}".format(self._module))
+        NetUtils.connect(sources, sinks, fully = True, **kwargs)
 
 # ----------------------------------------------------------------------------
 # -- Builder for Logical Views of Single-Mode Primitives ---------------------
@@ -117,55 +114,49 @@ class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
         self._counterpart = counterpart
 
     @property
-    def view(self):
-        return ModuleView.logical
-
-    @property
     def counterpart(self):
         return self._counterpart
 
     @classmethod
-    def new(cls, name, *, non_leaf = False, **kwargs):
+    def new(cls, name, *, is_cell = True, **kwargs):
         """Create a new custom primitive for building."""
-        if non_leaf:
-            kwargs["instances"] = OrderedDict()
         return Module(name,
-                ports = OrderedDict(),
-                allow_multisource = True,
+                view = ModuleView.logical,
+                is_cell = is_cell,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.custom,
                 **kwargs)
 
     @classmethod
-    def new_from_user_view(cls, user_view, *, non_leaf = False, **kwargs):
+    def new_from_user_view(cls, user_view, *, is_cell = True, **kwargs):
         """Create a new logical view from the user view of a primitive."""
-        if non_leaf:
-            kwargs["instances"] = OrderedDict()
         m = Module(user_view.name,
-                ports = OrderedDict(),
-                allow_multisource = True,
+                view = ModuleView.logical,
+                is_cell = is_cell,
                 module_class = ModuleClass.primitive,
                 **kwargs)
         for key, port in iteritems(user_view.ports):
             assert key == port.name
             ModuleUtils.create_port(m, key, len(port), port.direction,
-                    is_clock = port.is_clock, clock = port.clock, net_class = NetClass.primitive)
+                    is_clock = port.is_clock, net_class = NetClass.primitive)
         return m
 
-    def create_cfg_port(self, name, width, direction, *,
-            is_clock = False, clock = None, **kwargs):
+    def create_cfg_port(self, name, width, direction, *, is_clock = False, **kwargs):
         """Create a configuration port."""
         kwargs["net_class"] = NetClass.cfg
-        return ModuleUtils.create_port(self._module, name, width, direction,
-                is_clock = is_clock, clock = clock, **kwargs)
-
-    def add_combinational_path(self, sources, sinks):
-        """Create combinational connections between ports in the primitive."""
-        NetUtils.connect(sources, sinks, fully = True)
+        return ModuleUtils.create_port(self._module, name, width, direction, is_clock = is_clock, **kwargs)
 
     def instantiate(self, model, name, **kwargs):
         """Add a sub-instance to this primitive."""
+        if self._module.is_cell:
+            raise PRGAInternalError("Cannot instantiate {} in {}".format(model, self._module))
         return ModuleUtils.instantiate(self._module, model, name, **kwargs)
+
+    def connect(self, sources, sinks, *, fully = False, **kwargs):
+        """Connect ``sources`` and ``sinks``."""
+        if self._module.is_cell:
+            raise PRGAInternalError("Cannot connect {} and {} in {}".format(sources, sinks, self._module))
+        NetUtils.connect(sources, sinks, fully = fully, **kwargs)
 
 # ----------------------------------------------------------------------------
 # -- Builder for User Views of Single-Mode Primitives ------------------------
@@ -179,10 +170,6 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
     """
 
     @property
-    def view(self):
-        return ModuleView.user
-
-    @property
     def counterpart(self):
         return None
 
@@ -190,7 +177,8 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
     def new(cls, name, **kwargs):
         """Create a new custom primitive for building."""
         return Module(name,
-                ports = OrderedDict(),
+                view = ModuleView.user,
+                is_cell = True,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.custom,
                 **kwargs)
@@ -202,39 +190,30 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
         kwargs.setdefault("lib_template", "memory.lib.tmpl.v")
         kwargs.setdefault("mem_infer_rule_template", "builtin.tmpl.rule")
         m = Module(name,
-                ports = OrderedDict(),
-                allow_multisource = True,
+                view = ModuleView.user,
+                is_cell = True,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.memory,
                 **kwargs)
-        ModuleUtils.create_port(m, "clk", 1, PortDirection.input_,
+        clk = ModuleUtils.create_port(m, "clk", 1, PortDirection.input_,
                 is_clock = True, port_class = PrimitivePortClass.clock)
+        i, o = PortDirection.input_, PortDirection.output
+        p = []
         if single_port:
-            ModuleUtils.create_port(m, "we", 1, PortDirection.input_,
-                    clock = "clk", port_class = PrimitivePortClass.write_en)
-            ModuleUtils.create_port(m, "addr", addr_width, PortDirection.input_,
-                    clock = "clk", port_class = PrimitivePortClass.address)
-            ModuleUtils.create_port(m, "data", data_width, PortDirection.input_,
-                    clock = "clk", port_class = PrimitivePortClass.data_in)
-            ModuleUtils.create_port(m, "out", data_width, PortDirection.output,
-                    clock = "clk", port_class = PrimitivePortClass.data_out)
+            p.append(ModuleUtils.create_port(m, "we", 1, i, port_class = PrimitivePortClass.write_en))
+            p.append(ModuleUtils.create_port(m, "addr", addr_width, i, port_class = PrimitivePortClass.address))
+            p.append(ModuleUtils.create_port(m, "data", data_width, i, port_class = PrimitivePortClass.data_in))
+            p.append(ModuleUtils.create_port(m, "out", data_width, o, port_class = PrimitivePortClass.data_out))
         else:
-            ModuleUtils.create_port(m, "we1", 1, PortDirection.input_,
-                    clock = "clk", port_class = PrimitivePortClass.write_en1)
-            ModuleUtils.create_port(m, "addr1", addr_width, PortDirection.input_,
-                    clock = "clk", port_class = PrimitivePortClass.address1)
-            ModuleUtils.create_port(m, "data1", data_width, PortDirection.input_,
-                    clock = "clk", port_class = PrimitivePortClass.data_in1)
-            ModuleUtils.create_port(m, "out1", data_width, PortDirection.output,
-                    clock = "clk", port_class = PrimitivePortClass.data_out1)
-            ModuleUtils.create_port(m, "we2", 1, PortDirection.input_,
-                    clock = "clk", port_class = PrimitivePortClass.write_en2)
-            ModuleUtils.create_port(m, "addr2", addr_width, PortDirection.input_,
-                    clock = "clk", port_class = PrimitivePortClass.address2)
-            ModuleUtils.create_port(m, "data2", data_width, PortDirection.input_,
-                    clock = "clk", port_class = PrimitivePortClass.data_in2)
-            ModuleUtils.create_port(m, "out2", data_width, PortDirection.output,
-                    clock = "clk", port_class = PrimitivePortClass.data_out2)
+            p.append(ModuleUtils.create_port(m, "we1", 1, i, port_class = PrimitivePortClass.write_en1))
+            p.append(ModuleUtils.create_port(m, "addr1", addr_width, i, port_class = PrimitivePortClass.address1))
+            p.append(ModuleUtils.create_port(m, "data1", data_width, iport_class = PrimitivePortClass.data_in1))
+            p.append(ModuleUtils.create_port(m, "out1", data_width, o, port_class = PrimitivePortClass.data_out1))
+            p.append(ModuleUtils.create_port(m, "we2", 1, i, port_class = PrimitivePortClass.write_en2))
+            p.append(ModuleUtils.create_port(m, "addr2", addr_width, i, port_class = PrimitivePortClass.address2))
+            p.append(ModuleUtils.create_port(m, "data2", data_width, i, port_class = PrimitivePortClass.data_in2))
+            p.append(ModuleUtils.create_port(m, "out2", data_width, o, port_class = PrimitivePortClass.data_out2))
+        NetUtils.connect(clk, p, fully = True)
         return m
 
     def create_input(self, name, width, *, clock = None, vpr_combinational_sinks = tuple(), **kwargs):
@@ -250,32 +229,60 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
                 paths exist from this port
             **kwargs: Additional attributes to be associated with the port
         """
+        vpr_combinational_sinks = tuple(set(vpr_combinational_sinks))
+        try:
+            clk = None if clock is None else self._module.ports[clock]
+            sinks = tuple(self._module.ports[s] for s in vpr_combinational_sinks)
+        except KeyError as e:
+            raise PRGAInternalError("Port '{}' not found in {}".format(e.args[0], self._module))
+        if clock:
+            if not clk.is_clock:
+                raise PRGAInternalError("{} is not a clock".format(clk))
+            kwargs["clock"] = clock
         if vpr_combinational_sinks:
-            kwargs["vpr_combinational_sinks"] = tuple(set(vpr_combinational_sinks))
-        super(PrimitiveBuilder, self).create_input(name, width, clock = clock, **kwargs)
+            kwargs["vpr_combinational_sinks"] = vpr_combinational_sinks
+        port = super(PrimitiveBuilder, self).create_input(name, width, **kwargs)
+        if clk is not None:
+            self.add_timing_arc(clk, port)
+        for sink in sinks:
+            self.add_timing_arc(port, sink)
+        return port
+
+    def create_output(self, name, width, *, clock = None, **kwargs):
+        """Create an output in the primitive.
+
+        Args:
+            name (:obj:`str`): Name of the port
+            width (:obj:`int`): Width of the port
+
+        Keyword Args:
+            clock (:obj:`str`): Clock of the port
+            **kwargs: Additional attributes to be associated with the port
+        """
+        try:
+            clk = None if clock is None else self._module.ports[clock]
+        except KeyError as e:
+            raise PRGAInternalError("Port '{}' not found in {}".format(e.args[0], self._module))
+        if clock:
+            if not clk.is_clock:
+                raise PRGAInternalError("{} is not a clock".format(clk))
+            kwargs["clock"] = clock
+        port = super(PrimitiveBuilder, self).create_output(name, width, **kwargs)
+        if clk is not None:
+            self.add_timing_arc(clk, port)
+        return port
 
     def commit(self, *, dont_create_logical_counterpart = False):
         m = super(PrimitiveBuilder, self).commit()
-        # additional checks: combinational sinks
-        for p in itervalues(self.ports):
-            if p.direction.is_input and not p.is_clock:
-                for sink_name in getattr(p, "vpr_combinational_sinks", tuple()):
-                    sink = self.ports.get(sink_name)
-                    if sink is None:
-                        raise PRGAAPIError("Combinational sink '{}' of input port '{}' not found in primitive '{}'"
-                                .format(sink_name, p, self._module))
-                    elif not sink.direction.is_output:
-                        raise PRGAAPIError("Combinational sink '{}' of input port '{}' is not an output"
-                                .format(sink_name, p))
         if self._module.primitive_class.is_memory and not dont_create_logical_counterpart:
             self._context.create_logical_primitive(self._module.name,
                     verilog_template = "memory.tmpl.v").commit()
         return m
 
-    def create_logical_counterpart(self, *, non_leaf = False, **kwargs):
+    def create_logical_counterpart(self, *, is_cell = True, **kwargs):
         """`LogicalPrimitiveBuilder`: Create a builder for the logical counterpart of this module."""
         self.commit()
-        return self._context.create_logical_primitive(self._module.name, non_leaf = non_leaf, **kwargs)
+        return self._context.create_logical_primitive(self._module.name, is_cell = is_cell, **kwargs)
 
 # ----------------------------------------------------------------------------
 # -- Builder for One Mode in a Multi-mode Primitive --------------------------
@@ -289,13 +296,10 @@ class _ModeBuilder(BaseBuilder):
     """
 
     @classmethod
-    def new(cls, parent, name, view, **kwargs):
+    def new(cls, parent, name, **kwargs):
         """Create a new mode for building."""
-        if view.is_user:
-            kwargs["allow_multisource"] = True
         m = Module(parent.name + "." + name,
-                ports = OrderedDict(), 
-                instances = OrderedDict(),
+                allow_multisource = True,
                 module_class = ModuleClass.mode,
                 parent = parent,
                 key = name,
@@ -305,99 +309,19 @@ class _ModeBuilder(BaseBuilder):
                     key = key, is_clock = port.is_clock)
         return m
 
-    def instantiate(self, model, name, **kwargs):
-        return ModuleUtils.instantiate(self._module, model, name, **kwargs)
+    def instantiate(self, model, name, *, vpr_num_pb = 1, **kwargs):
+        if vpr_num_pb == 1:
+            return ModuleUtils.instantiate(self._module, model, name, **kwargs)
+        else:
+            return tuple(ModuleUtils.instantiate(self._module, model, '{}_i{}'.format(name, i),
+                key = (name, i), vpr_num_pb = vpr_num_pb, **kwargs) for i in range(vpr_num_pb))
 
-    def connect(self, sources, sinks, *, fully = False, pack_patterns = tuple()):
+    def connect(self, sources, sinks, *, fully = False, pack_patterns = tuple(), **kwargs):
         """Connect ``sources`` to ``sinks``."""
         if not pack_patterns:
-            NetUtils.connect(sources, sinks, fully = fully)
+            NetUtils.connect(sources, sinks, fully = fully, **kwargs)
         else:
-            NetUtils.connect(sources, sinks, fully = fully, pack_patterns = pack_patterns)
-
-    def commit(self):
-        return self._module
-
-# ----------------------------------------------------------------------------
-# -- Builder for Logical Views of Multi-Mode Primitives ----------------------
-# ----------------------------------------------------------------------------
-class _LogicalMultimodeBuilder(BaseBuilder):
-    """Logical multi-mode module builder.
-
-    Args:
-        context (`Context`): The context of the builder
-        module (`AbstractModule`): The module to be built
-        counterpart (`AbstractModule`): The user-view of the same primitive
-
-    Keyword Args:
-        non_leaf (:obj:`bool`): If the module is not a leaf module
-    """
-
-    __slots__ = ["_counterpart", '_non_leaf']
-    def __init__(self, context, module, counterpart = None, *, non_leaf = False):
-        super(_LogicalMultimodeBuilder, self).__init__(context, module)
-        self._counterpart = counterpart
-        self._non_leaf = non_leaf
-
-    @property
-    def view(self):
-        return ModuleView.logical
-
-    @property
-    def counterpart(self):
-        return None
-
-    @property
-    def instances(self):
-        """:obj:`Mapping` [:obj:`Hashable`, `AbstractInstance` ]: Proxy to the module instances."""
-        return self._module.instances
-
-    @classmethod
-    def new(cls, user_view, *, non_leaf = False, **kwargs):
-        """Create a new logical view from the user view of a primitive."""
-        if not non_leaf:
-            kwargs["instances"] = OrderedDict()
-        m = Module(user_view.name,
-                ports = OrderedDict(), 
-                module_class = ModuleClass.primitive,
-                allow_multisource = True,
-                modes = OrderedDict(),
-                **kwargs)
-        for key, port in iteritems(user_view.ports):
-            assert key == port.name
-            ModuleUtils.create_port(m, port.name, len(port), port.direction,
-                    key = key, is_clock = port.is_clock, net_class = NetClass.primitive)
-        for mode_name, mode in iteritems(user_view.modes):
-            assert mode_name == mode.key
-            m.modes[mode_name] = _ModeBuilder.new(m, mode_name, ModuleView.logical)
-        return m
-
-    def create_cfg_port(self, name, width, direction, *,
-            is_clock = False, clock = None, **kwargs):
-        """Create a configuration port."""
-        kwargs["net_class"] = NetClass.cfg
-        return ModuleUtils.create_port(self._module, name, width, direction,
-                is_clock = is_clock, clock = clock, **kwargs)
-
-    def instantiate(self, model, name, **kwargs):
-        if self._non_leaf:
-            raise PRGAInternalError("Cannot instantiate sub-modules in leaf module '{}'"
-                    .format(self._module))
-        return ModuleUtils.instantiate(self._module, model, name, **kwargs)
-
-    def add_combinational_path(self, sources, sinks):
-        """Add a combinational path from ``sources`` to ``sinks``."""
-        NetUtils.connect(sources, sinks, fully = True)
-
-    def edit_mode(self, mode, **kwargs):
-        """`_ModeBuilder`: Edit the specified mode."""
-        try:
-            mode = self._module.modes[mode]
-        except KeyError:
-            raise PRGAInternalError("'{}' does not have mode '{}'".format(mode))
-        for k, v in iteritems(kwargs):
-            setattr(mode, k, v)
-        return _ModeBuilder(self._context, mode)
+            NetUtils.connect(sources, sinks, fully = fully, pack_patterns = pack_patterns, **kwargs)
 
 # ----------------------------------------------------------------------------
 # -- Builder for User Views of Multi-Mode Primitives -------------------------
@@ -411,10 +335,6 @@ class MultimodeBuilder(_BasePrimitiveBuilder):
     """
 
     @property
-    def view(self):
-        return ModuleView.user
-
-    @property
     def counterpart(self):
         return None
 
@@ -422,7 +342,8 @@ class MultimodeBuilder(_BasePrimitiveBuilder):
     def new(cls, name, **kwargs):
         """Create a new multi-mode primitive for building."""
         return Module(name,
-                ports = OrderedDict(),
+                view = ModuleView.user,
+                is_cell = True,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.multimode,
                 modes = OrderedDict(),
@@ -432,14 +353,10 @@ class MultimodeBuilder(_BasePrimitiveBuilder):
         """Create a new mode for this multi-mode primitive."""
         if name in self._module.modes:
             raise PRGAInternalError("Conflicting mode name: {}".format(name))
-        mode = self._module.modes[name] = _ModeBuilder.new(self._module, name, self.view, **kwargs)
+        mode = self._module.modes[name] = _ModeBuilder.new(self._module, name, **kwargs)
         return _ModeBuilder(self._context, mode)
 
-    def create_logical_counterpart(self, *, non_leaf = False, **kwargs):
+    def create_logical_counterpart(self, *, is_cell = True, **kwargs):
         """`LogicalPrimitiveBuilder`: Create a builder for the logical counterpart of this module."""
         self.commit()
-        m = self._context._database.get( (ModuleView.logical, self._module.name) )
-        if m is None:
-            m = self._context._database[ModuleView.logical, self._module.name] = _LogicalMultimodeBuilder.new(
-                    self._module, non_leaf = non_leaf, **kwargs)
-        return _LogicalMultimodeBuilder(self._context, m)
+        return self._context.create_logical_primitive(self._module.name, is_cell = is_cell, **kwargs)
