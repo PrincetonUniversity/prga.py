@@ -9,13 +9,15 @@ from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
 from ...netlist.module.module import Module
 from ...netlist.module.util import ModuleUtils
-from ...passes.translation import AbstractSwitchDatabase
+from ...passes.translation import AbstractSwitchDatabase, TranslationPass
 from ...passes.vpr import FASMDelegate
 from ...renderer.renderer import FileRenderer
 from ...util import Object, uno
+from ...exception import PRGAInternalError
 
 import os
 from collections import OrderedDict
+from itertools import chain
 
 __all__ = ['Scanchain']
 
@@ -268,6 +270,13 @@ class Scanchain(object):
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width)
         context._fasm_delegate = ScanchainFASMDelegate(context)
 
+        # modify dual-mode I/O
+        if True:
+            iopad = context.primitives["iopad"]
+            iopad.cfg_bitcount = 1
+            iopad.modes["inpad"].cfg_mode_selection = tuple()
+            iopad.modes["outpad"].cfg_mode_selection = (0, )
+
         # register luts
         for i in range(2, 9):
             name = "lut" + str(i)
@@ -287,6 +296,9 @@ class Scanchain(object):
             # configuration ports
             cls._get_or_create_cfg_ports(lut, cfg_width)
             context._database[ModuleView.logical, lut.key] = lut
+
+            # modify built-in LUT
+            context._database[ModuleView.user, lut.key].cfg_bitcount = 2 ** i
 
         # register flipflops
         if "flipflop" not in dont_add_primitive:
@@ -326,7 +338,7 @@ class Scanchain(object):
                 "lut6" not in dont_add_primitive and
                 "fraclut6" not in dont_add_primitive):
             # user view
-            fraclut6 = context.create_multimode('fraclut6')
+            fraclut6 = context.create_multimode('fraclut6', cfg_bitcount = 65)
             fraclut6.create_input("in", 6)
             fraclut6.create_output("o6", 1)
             fraclut6.create_output("o5", 1)
@@ -376,7 +388,8 @@ class Scanchain(object):
                         "ENABLE_CE": {"init": "1'b0", "cfg_bitoffset": 0},
                         "ENABLE_SR": {"init": "1'b0", "cfg_bitoffset": 1},
                         "SR_SET": {"init": "1'b0", "cfg_bitoffset": 2},
-                        })
+                        },
+                    cfg_bitcount = 3)
             clk = mdff.create_clock("clk")
             p = []
             p.append(mdff.create_input("D", 1, clock = "clk"))
@@ -399,7 +412,8 @@ class Scanchain(object):
                     techmap_template = "adder.techmap.tmpl.v",
                     parameters = {
                         "CIN_FABRIC": {"init": "1'b0", "cfg_bitoffset": 0},
-                        })
+                        },
+                    cfg_bitcount = 1)
             i, o = [], []
             o.append(adder.create_output("cout", 1))
             o.append(adder.create_output("s", 1))
@@ -547,8 +561,9 @@ class Scanchain(object):
         return r
 
     @classmethod
-    def complete_scanchain(cls, context, module, *, iter_instances = lambda m: itervalues(m.instances)):
+    def complete_scanchain(cls, context, logical_module, *, iter_instances = lambda m: itervalues(m.instances)):
         """Complete the scanchain."""
+        module = logical_module
         # special process needed for IO blocks (output enable)
         if module.module_class.is_io_block:
             oe = module.ports.get(IOType.oe)
@@ -587,3 +602,81 @@ class Scanchain(object):
             if not hasattr(context.summary, "scanchain"):
                 context.summary.scanchain = {}
             context.summary.scanchain["bitstream_size"] = cfg_bitoffset
+
+    @classmethod
+    def annotate_user_view(cls, context, user_module = None, *, _annotated = None):
+        """Annotate configuration data to the user view."""
+        module = uno(user_module, context.top)
+        logical = context.database[ModuleView.logical, module.key]
+        _annotated = uno(_annotated, set())
+        # 1. annotate user instances
+        for instance in itervalues(module.instances):
+            # 1.1 special process needed for IO blocks (output enable)
+            if module.module_class.is_io_block and instance.key == "io":
+                if instance.model.primitive_class.is_multimode:
+                    instance.cfg_bitoffset = logical.instances["_cfg_oe"].cfg_bitoffset
+                continue
+            # 1.2 for all other instances, look for the corresponding logical instance and annotate cfg_bitoffset
+            logical_instance = logical.instances[instance.key]
+            if hasattr(logical_instance, "cfg_bitoffset"):
+                instance.cfg_bitoffset = logical_instance.cfg_bitoffset
+                if not (instance.model.module_class.is_primitive or instance.model.key in _annotated):
+                    _annotated.add(instance.model.key)
+                    cls.annotate_user_view(context, instance.model, _annotated = _annotated)
+        # 2. annotate multi-source connections
+        if not module._allow_multisource:
+            return
+        assert not module._coalesce_connections and not logical._coalesce_connections
+        assert not logical._allow_multisource
+        nets = None
+        if module.module_class.is_io_block:
+            nets = chain(
+                    iter(port for port in itervalues(logical.ports)
+                        if not (port.net_class.is_cfg or port.key is IOType.oe)),
+                    iter(pin for inst_key in module.instances if inst_key != "io"
+                        for pin in itervalues(logical.instances[inst_key].pins)))
+        else:
+            nets = chain(
+                    iter(port for port in itervalues(logical.ports) if not port.net_class.is_cfg),
+                    iter(pin for inst_key in module.instances
+                        for pin in itervalues(logical.instances[inst_key].pins)))
+        for logical_bus in nets:
+            if not logical_bus.is_sink:
+                continue
+            for logical_sink in logical_bus:
+                user_tail = TranslationPass._l2u(logical, NetUtils._reference(logical_sink))
+                if user_tail not in module._conn_graph:
+                    continue
+                    # raise PRGAInternalError("No user-counterpart found for logical net {}".format(logical_sink))
+                stack = [(logical_sink, tuple())]
+                while stack:
+                    head, cfg_bits = stack.pop()
+                    predecessors = tuple(logical._conn_graph.predecessors(NetUtils._reference(head)))
+                    if len(predecessors) == 0:
+                        continue
+                    elif len(predecessors) > 1:
+                        raise PRGAInternalError("Multiple sources found for logical net{}".format(head))
+                    user_head = TranslationPass._l2u(logical, predecessors[0])
+                    if user_head in module._conn_graph:
+                        edge = module._conn_graph.edges.get( (user_head, user_tail) )
+                        if edge is None:
+                            raise PRGAInternalError(("No connection found from user net {} to {}. "
+                                "Logical path exists from {} to {}")
+                                .format( NetUtils._dereference(module, user_head),
+                                    NetUtils._dereference(module, user_tail),
+                                    NetUtils._dereference(logical, predecessors[0]),
+                                    logical_sink ))
+                        edge["cfg_bits"] = cfg_bits
+                        continue
+                    prev = NetUtils._dereference(logical, predecessors[0])
+                    if prev.net_type.is_const:
+                        continue
+                    elif prev.net_type.is_port or not prev.bus.model.net_class.is_switch:
+                        raise PRGAInternalError("No user-counterpart found for logical net {}".format(prev))
+                    switch = prev.bus.instance
+                    for idx, input_ in enumerate(switch.pins["i"]):
+                        this_cfg_bits = cfg_bits
+                        for digit in range(idx.bit_length()):
+                            if (idx & (1 << digit)):
+                                this_cfg_bits += (switch.cfg_bitoffset + digit, )
+                        stack.append( (input_, this_cfg_bits) )

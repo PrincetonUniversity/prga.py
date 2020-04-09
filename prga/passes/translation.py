@@ -65,13 +65,29 @@ class TranslationPass(Object, AbstractPass):
             return d.get(user_ref, user_ref)
 
     @classmethod
+    def _l2u(cls, logical_model, logical_ref):
+        d = getattr(logical_model, "_user_cp", None)
+        if d is None:
+            return logical_ref
+        else:
+            return d.get(logical_ref, logical_ref)
+
+    @classmethod
     def _register_u2l(cls, logical_model, user_net, logical_net, coalesced = False):
+        user_node = NetUtils._reference(user_net, coalesced = coalesced)
+        logical_node = NetUtils._reference(logical_net, coalesced = coalesced)
+        # user -> logical
         try:
             d = logical_model._logical_cp
         except AttributeError:
             d = logical_model._logical_cp = ({} if coalesced else MemOptNonCoalescedNodeDict())
-        d[NetUtils._reference(user_net, coalesced = coalesced)] = NetUtils._reference(logical_net,
-                coalesced = coalesced)
+        d[user_node] = logical_node
+        # logical -> user
+        try:
+            d = logical_model._user_cp
+        except AttributeError:
+            d = logical_model._user_cp = ({} if coalesced else MemOptNonCoalescedNodeDict())
+        d[logical_node] = user_node
 
     @property
     def key(self):

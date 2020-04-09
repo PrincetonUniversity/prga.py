@@ -265,7 +265,7 @@ class Position(namedtuple('Position', 'x y')):
     def __neg__(self):
         return Position(-self.x, -self.y)
 
-    def __str__(self):
+    def __repr__(self):
         return 'Position({}, {})'.format(self.x, self.y)
 
 # ----------------------------------------------------------------------------
@@ -338,11 +338,10 @@ class PrimitiveClass(Enum):
     flipflop    = 1     #: D-flipflop
     inpad       = 2     #: input pad
     outpad      = 3     #: output pad 
-    iopad       = 4     #: half-duplex input/output pad
     # user-defined primitives
-    memory      = 5     #: user-defined memory
-    custom      = 6     #: user-defined primitives
-    multimode   = 7     #: user-defined multi-mode primitives
+    memory      = 4     #: user-defined memory
+    custom      = 5     #: user-defined primitives
+    multimode   = 6     #: user-defined multi-mode primitives
 
 # ----------------------------------------------------------------------------
 # -- Primitive Port Class ----------------------------------------------------
@@ -536,7 +535,7 @@ class SegmentID(namedtuple('SegmentID', 'position prototype orientation segment_
     def __hash__(self):
         return hash( (self.position.x, self.position.y, self.prototype.name, self.orientation, self.segment_type) )
 
-    def __str__(self):
+    def __repr__(self):
         return 'SegmentID({}, ({}, {}), {}, {})'.format(self.segment_type.name,
                 self.position.x, self.position.y, self.prototype.name, self.orientation.name)
 
@@ -573,7 +572,7 @@ class BlockPinID(namedtuple('BlockPinID', 'position prototype subblock'), Abstra
         return hash( (self.position.x, self.position.y, self.prototype.parent.key, self.prototype.key,
             self.subblock) )
 
-    def __str__(self):
+    def __repr__(self):
         return 'BlockPinID(({}, {}, {}), {}.{})'.format(
                 self.position.x, self.position.y, self.subblock,
                 self.prototype.parent.name, self.prototype.name)

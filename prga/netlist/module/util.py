@@ -9,10 +9,11 @@ from ..net.common import PortDirection
 from ..net.util import NetUtils
 from ..net.bus import Port, Pin
 from ...exception import PRGAInternalError
+from ...util import uno
 
 from collections import OrderedDict
 from itertools import chain, product
-from networkx import NetworkXError
+from networkx import NetworkXError, DiGraph
 
 import logging
 _logger = logging.getLogger(__name__)
@@ -24,117 +25,6 @@ __all__ = ['ModuleUtils']
 # ----------------------------------------------------------------------------
 class ModuleUtils(object):
     """A wrapper class for utility functions for modules."""
-
-    # @classmethod
-    # def _elaborate_clocks(cls, module, instance = None):
-    #     """Elaborate clock connections for hierarchical instance ``instance`` in ``module``."""
-    #     model = instance.model if instance else module
-    #     # 1. find all clocks and assign clock groups
-    #     for net in itervalues(instance.pins if instance else module.ports):
-    #         port = net if net.net_type.is_port else net.model
-    #         if not port.is_clock:
-    #             continue
-    #         if port.clock is not None:
-    #             _logger.warning("Clock '{}' marked as clocked by '{}' in '{}'"
-    #                     .format(port, port.clock, model))
-    #         # 1.1 find the predecessor(s) of this net
-    #         net_node = NetUtils._reference(net, coalesced = module._coalesce_connections)
-    #         try:
-    #             predit = module._conn_graph.predecessors( net_node )
-    #             # 1.2 make sure there is one predecessor
-    #             pred_node = next(predit)
-    #         except (NetworkXError, StopIteration):  # no predecessors
-    #             if instance:
-    #                 _logger.warning("Clock '{}' is unconnected".format(net))
-    #             # module._conn_graph.setdefault("clock_groups", {}).setdefault(net_node, []).append( net_node )
-    #             module._conn_graph.add_node(net_node, clock_group = net_node)   # clock grouped to itself
-    #             continue
-    #         # 1.3 make sure there is only one predecessor
-    #         try:
-    #             next(predit)
-    #             raise PRGAInternalError("Clock '{}' is connected to multiple sources".format(net))
-    #         except StopIteration:
-    #             pass
-    #         # 1.4 get the clock group of the predecessor
-    #         try:
-    #             clock_group = module._conn_graph.nodes[pred_node]['clock_group']
-    #         except KeyError:
-    #             pred_net = NetUtils._dereference(module, pred_node,
-    #                     coalesced = module._coalesce_connections)
-    #             raise PRGAInternalError("Clock '{}' is connected to '{}' which is not assigned into any clock group"
-    #                     .format(net, pred_net))
-    #         # 1.5 assign this clock into the predecessor's clock group
-    #         # module._conn_graph["clock_groups"][clock_group].append( net_node )
-    #         module._conn_graph.add_node(net_node, clock_group = clock_group)
-    #     # 2. find all clocked nets
-    #     for net in itervalues(instance.pins if instance else module.ports):
-    #         port = net if net.net_type.is_port else net.model
-    #         if port.is_clock or port.clock is None:
-    #             continue
-    #         clock = model.ports.get(port.clock)
-    #         if clock is None:
-    #             raise PRGAInternalError("'{}' is marked as clocked by '{}' but no such port in '{}'"
-    #                     .format(port, port.clock, model))
-    #         elif not clock.is_clock:
-    #             raise PRGAInternalError("Net '{}' is marked as clocked by '{}' but '{}' is not a clock"
-    #                     .format(port, port.clock, clock))
-    #         if instance:
-    #             clock = clock._to_pin(instance)
-    #         if module._coalesce_connections:
-    #             clock_node = NetUtils._reference(clock, coalesced = True)
-    #             module._conn_graph.add_node( NetUtils._reference(net, coalesced = True),
-    #                     clock = module._conn_graph.nodes[clock_node]['clock_group'] )
-    #         else:
-    #             clock_node = NetUtils._reference(clock)
-    #             for bit in net:
-    #                 module._conn_graph.add_node( NetUtils._reference(bit),
-    #                         clock = module._conn_graph.nodes[clock_node]['clock_group'] )
-
-    # @classmethod
-    # def _elaborate(cls, module, instance, skip):
-    #     """Elaborate one hierarchical instance ``instance``."""
-    #     submodule = instance.model
-    #     if module._coalesce_connections != submodule._coalesce_connections:
-    #         raise PRGAInternalError(
-    #                 "Module '{}' has `coalesce_connections` {} but submodule '{}' (hierarchy: {}) has it {}"
-    #                 .format(module, "set" if module._coalesce_connections else "unset",
-    #                     submodule, "/".join(i.name for i in reversed(instance)),
-    #                     "set" if submodule._coalesce_connections else "unset"))
-    #     # 1. add connections in this instance to the connection graph
-    #     hierarchy = instance.hierarchical_key
-    #     if module._coalesce_connections:
-    #         for u, v in submodule._conn_graph.edges:
-    #             module._conn_graph.add_edge(u + hierarchy, v + hierarchy)
-    #     else:
-    #         for u, v in submodule._conn_graph.edges:
-    #             module._conn_graph.add_edge((u[0], u[1] + hierarchy), (v[0], v[1] + hierarchy))
-    #     # 2. clocks
-    #     cls._elaborate_clocks(module, instance)
-    #     # 3. iterate sub-instances 
-    #     for subinstance in itervalues(submodule.instances):
-    #         hierarchy = instance.delve(subinstance)
-    #         if skip(hierarchy):
-    #             continue
-    #         cls._elaborate(module, hierarchy, skip)
-    #     # 4. register this instance as elaborated
-    #     module._elaborated.add( instance.hierarchical_key )
-
-    # @classmethod
-    # def elaborate(cls, module, hierarchical = False, skip = lambda instance: False):
-    #     """Elaborate ``module``.
-
-    #     Args:
-    #         module (`AbstractModule`):
-    #         hierarchical (:obj:`bool`): If set, all nets in the hierarchy are elaborated
-    #         skip (:obj:`Function` [`AbstractInstance` ] -> :obj:`bool`): If ``hierarchical`` is set,
-    #             this is a function testing if a specific hierarchical instance should be skipped during elaboration.
-    #     """
-    #     cls._elaborate_clocks(module)
-    #     if not hierarchical:
-    #         return
-    #     for instance in itervalues(module.instances):
-    #         if not skip(instance):
-    #             cls._elaborate(module, instance, skip)
 
     @classmethod
     def create_port(cls, module, name, width, direction, *, key = None, is_clock = False, **kwargs):
@@ -192,3 +82,128 @@ class ModuleUtils(object):
         if value is not new:
             raise PRGAInternalError("Key '{}' already taken by {} in {}".format(new.key, value, module))
         return module._children.setdefault(name, value)
+
+    @classmethod
+    def _elaborate_clocks(cls, module, graph, instance = None):
+        for net in itervalues(module.ports) if instance is None else itervalues(instance.pins):
+            if not net.is_clock:
+                continue
+            node = NetUtils._reference(net)
+            # 1. find the predecessor(s) of this net
+            try:
+                predit = graph.predecessors(node)
+                pred_node = next(predit)
+            except (NetworkXError, StopIteration):
+                # 2. if there's no predecessor, assign a clock group
+                if instance is not None:
+                    _logger.warning("Clock {} is not connected".format(net))
+                graph.add_node(node, clock_group = node)
+                continue
+            # 3. make sure there is only one predecessor
+            try:
+                next(predit)
+                raise PRGAInternalError("Clock {} is connected to multiple sources".format(net))
+            except StopIteration:
+                pass
+            # 4. get the clock group of the predecessor
+            try:
+                clock_group = graph.nodes[pred_node]["clock_group"]
+            except KeyError:
+                pred_net = NetUtils._dereference(module, pred_node)
+                raise PRGAInternalError("Clock {} is connected to non-clock {}".format(net, pred_net))
+            # 5. update clock group
+            graph.add_node(node, clock_group = clock_group)
+
+    @classmethod
+    def _elaborate_sub_timing_graph(cls, module, graph, blackbox_instance, instance = None):
+        model = instance.model if instance is not None else module
+        hierarchy = tuple(inst.key for inst in instance.hierarchy) if instance is not None else tuple()
+        # 1. add connections in this model to the timing graph
+        if model._coalesce_connections:
+            for u, v in model._conn_graph.edges:
+                bu, bv = map(lambda node: NetUtils._dereference(model, node, coalesced = True), (u, v))
+                assert len(bu) == len(bv)
+                for i in range(len(bu)):
+                    graph.add_edge((i, u + hierarchy), (i, v + hierarchy))
+        else:
+            for u, v in model._conn_graph.edges:
+                graph.add_edge((u[0], u[1] + hierarchy), (v[0], v[1] + hierarchy))
+        # 2. elaborate clocks
+        cls._elaborate_clocks(module, graph, instance)
+        # 3. elaborate sub-instances
+        for sub in itervalues(model.instances):
+            if instance is not None:
+                sub = sub.extend_hierarchy(above = instance)
+            if blackbox_instance(sub):
+                continue
+            cls._elaborate_sub_timing_graph(module, graph, blackbox_instance, sub)
+
+    @classmethod
+    def reduce_timing_graph(cls, module, *,
+            initial_graph = None,
+            blackbox_instance = lambda i: False,
+            create_node = lambda m, n: {},
+            create_edge = lambda m, path: {"path": path[1:-1]},
+            ):
+        """`networkx.DiGraph`_: Create a timing graph for ``module``.
+
+        Args:
+            module (:obj:`AbstractModule`): The module to be processed
+
+        Keyword Args:
+            initial_graph (`networkx.DiGraph`_):
+            blackbox_instance (:obj:`Function` [`AbstractInstance` ] -> :obj:`bool`): A function testing if an
+                instance should be blackboxed during elaboration. If ``True`` is returned, everything inside the
+                instance will be ignored. Only the pins of the instance will be kept.
+            create_node (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`Mapping`): A function that
+                returns a node attribute mapping. Return ``None`` if the node should be discarded (will be kept in the
+                path if ``drop_path`` is not set
+            create_path (:obj:`Function` [`AbstractModule`, :obj:`Sequence` [:obj:`Hashable` ] -> :obj:`Mapping`): A
+                function that returns an edge attribute mapping
+
+        .. _networkx.DiGraph: https://networkx.github.io/documentation/stable/reference/classes/digraph.html#networkx.DiGraph
+        """
+        graph = uno(initial_graph, DiGraph())
+        # 1. phase 1: elaborate the entire timing graph
+        cls._elaborate_sub_timing_graph(module, graph, blackbox_instance)
+        # 2. phase 2: reduce the timing graph
+        # 2.1 filter out leaf nodes
+        leaf_nodes = tuple(node for node in graph if graph.out_degree(node) == 0)
+        discard_nodes = set()
+        for node in leaf_nodes:
+            attributes = create_node(module, node)
+            if attributes is None:
+                discard_nodes.add(node)
+            else:
+                graph.add_node(node, kept = True, **attributes)
+            # 2.2 DFS
+            stack = [(node,         None if attributes is None else node, None if attributes is None else (node, ))]
+            while stack:
+                head, tail, path = stack.pop()
+                predecessors = tuple(graph.predecessors(head))
+                for prev in predecessors:
+                    if graph.nodes[prev].get("kept"):   # previous node already processed
+                        if tail is None:
+                            continue
+                        elif graph.edges.get((prev, tail), {}).get("kept"):
+                            raise PRGAInternalError("Multiple paths found from {} to {}"
+                                    .format(NetUtils._dereference(module, prev),
+                                        NetUtils._dereference(module, tail)))
+                        else:
+                            graph.add_edge(prev, tail, kept = True, **create_edge(module, (prev, ) + path))
+                        continue
+                    prev_attrs = create_node(module, prev)
+                    if prev_attrs is not None:
+                        graph.add_node(prev, kept = True, **prev_attrs)
+                        if tail is not None:
+                            graph.add_edge(prev, tail, kept = True, **create_edge(module, (prev, ) + path))
+                        stack.append( (prev, prev, (prev, )) )
+                    else:
+                        discard_nodes.add(prev)
+                        if tail is not None:
+                            stack.append( (prev, tail, (prev, ) + path) )
+                        else:
+                            stack.append( (prev, None, None) )
+        # 2.3 remove unwanted nodes
+        graph.remove_nodes_from(discard_nodes)
+        return graph

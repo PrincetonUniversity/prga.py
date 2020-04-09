@@ -361,7 +361,7 @@ class Slice(Object, AbstractGenericNet):
 
     def __repr__(self):
         if self.__len__() == 1:
-            return 'Bit({}[{}])'.format(self.bus, self.index)
+            return 'Bit({}[{}])'.format(self.bus, self.index.start)
         else:
             return 'Slice({}[{}:{}])'.format(self.bus, self.index.stop - 1, self.index.start)
 

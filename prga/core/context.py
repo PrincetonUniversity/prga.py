@@ -84,7 +84,7 @@ class Context(Object):
         self._tunnels = OrderedDict()
         self._segments = OrderedDict()
         if database is None:
-            self._database = self._new_database()
+            self._new_database()
         else:
             self._database = database
         self._top = None
@@ -92,9 +92,8 @@ class Context(Object):
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
 
-    @classmethod
-    def _new_database(cls):
-        database = OrderedDict()
+    def _new_database(self):
+        database = self._database = OrderedDict()
 
         # 1. register built-in modules: LUTs
         for i in range(2, 9):
@@ -126,20 +125,35 @@ class Context(Object):
             NetUtils.connect(clk, [D, Q], fully = True)
             database[ModuleView.user, flipflop.key] = flipflop
 
-        # 3. register built-in modules: iopads
-        for class_ in (PrimitiveClass.inpad, PrimitiveClass.outpad, PrimitiveClass.iopad):
+        # 3. register built-in modules: I/O
+        for class_ in (PrimitiveClass.inpad, PrimitiveClass.outpad):
             pad = Module(class_.name,
                     view = ModuleView.user,
                     is_cell = True,
                     module_class = ModuleClass.primitive,
                     primitive_class = class_)
-            if class_ in (PrimitiveClass.inpad, PrimitiveClass.iopad):
+            if class_.is_inpad:
                 ModuleUtils.create_port(pad, 'inpad', 1, PortDirection.output)
-            if class_ in (PrimitiveClass.outpad, PrimitiveClass.iopad):
+            else:
                 ModuleUtils.create_port(pad, 'outpad', 1, PortDirection.input_)
             database[ModuleView.user, pad.key] = pad
 
-        return database
+        # 4. register dual-mode I/O
+        if True:
+            pad = self.create_multimode("iopad")
+            pad.create_input("outpad", 1)
+            pad.create_output("inpad", 1)
+
+            mode = pad.create_mode("inpad")
+            inst = mode.instantiate(self.primitives["inpad"], "io")
+            mode.connect(inst.pins["inpad"], mode.ports["inpad"])
+            mode.commit()
+
+            mode = pad.create_mode("outpad")
+            inst = mode.instantiate(self.primitives["outpad"], "io")
+            mode.connect(mode.ports["outpad"], inst.pins["outpad"])
+            mode.commit()
+            database[ModuleView.user, "iopad"] = pad.commit()
 
     # == low-level API =======================================================
     @property
