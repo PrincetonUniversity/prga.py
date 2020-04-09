@@ -75,7 +75,7 @@ class Port(Object, AbstractPort):
     @property
     def index(self):
         """:obj:`int` or :obj:`slice`: Index of this net in the bus."""
-        return slice(None)
+        return slice(0, len(self))
 
     @property
     def node(self):
@@ -133,7 +133,7 @@ class Pin(Object, AbstractPin):
     @property
     def index(self):
         """:obj:`int` or :obj:`slice`: Index of this net in the bus."""
-        return slice(None)
+        return slice(0, len(self))
 
     # -- implementing properties/methods required by superclass --------------
     def __len__(self):

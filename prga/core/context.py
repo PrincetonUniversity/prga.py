@@ -103,7 +103,7 @@ class Context(Object):
                     module_class = ModuleClass.primitive,
                     primitive_class = PrimitiveClass.lut)
             in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_,
-                    port_class = PrimitivePortClass.lut_in)
+                    port_class = PrimitivePortClass.lut_in, vpr_combinational_sinks = ("out", ))
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
                     port_class = PrimitivePortClass.lut_out)
             NetUtils.connect(in_, out, fully = True)
@@ -119,9 +119,9 @@ class Context(Object):
             clk = ModuleUtils.create_port(flipflop, 'clk', 1, PortDirection.input_,
                     is_clock = True, port_class = PrimitivePortClass.clock)
             D = ModuleUtils.create_port(flipflop, 'D', 1, PortDirection.input_,
-                    port_class = PrimitivePortClass.D)
+                    port_class = PrimitivePortClass.D, clock = "clk")
             Q = ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
-                    port_class = PrimitivePortClass.Q)
+                    port_class = PrimitivePortClass.Q, clock = "clk")
             NetUtils.connect(clk, [D, Q], fully = True)
             database[ModuleView.user, flipflop.key] = flipflop
 
@@ -145,12 +145,12 @@ class Context(Object):
             pad.create_output("inpad", 1)
 
             mode = pad.create_mode("inpad")
-            inst = mode.instantiate(self.primitives["inpad"], "io")
+            inst = mode.instantiate(self.primitives["inpad"], "pad")
             mode.connect(inst.pins["inpad"], mode.ports["inpad"])
             mode.commit()
 
             mode = pad.create_mode("outpad")
-            inst = mode.instantiate(self.primitives["outpad"], "io")
+            inst = mode.instantiate(self.primitives["outpad"], "pad")
             mode.connect(mode.ports["outpad"], inst.pins["outpad"])
             mode.commit()
             database[ModuleView.user, "iopad"] = pad.commit()

@@ -50,7 +50,7 @@ class FASMDelegate(Object):
         return tuple()
 
     def fasm_prefix_for_intrablock_module(self, instance):
-        """Get the "fasm_prefix" string for a hierarchical cluster/primitive ``instance``.
+        """Get the "fasm_prefix" string for hierarchical cluster/primitive ``instance``.
 
         Args:
             instance (`AbstractInstance`): Hierarchical instance in the logic/io block
@@ -254,22 +254,22 @@ class _VPRArchGeneration(Object, AbstractPass):
     def _net2vpr(cls, net, parent_name = None):
         if net.bus_type.is_concat:
             return " ".join(cls._net2vpr(i, parent_name) for i in net.items)
-        if net.bus_type.is_nonref:
-            if net.net_type.is_port:
-                return '{}.{}'.format(parent_name or net.parent.name, net.name)
+        elif net.net_type.is_const:
+            raise PRGAInternalError("Cannot express constant nets in VPR")
+        prefix, suffix = None, ''
+        if net.net_type.is_port:
+            prefix = '{}.{}'.format(parent_name or net.parent.name, net.bus.name)
+        elif hasattr(net.bus.instance.hierarchy[0], "vpr_num_pb"):
+            prefix = '{}[{}].{}'.format(net.bus.instance.hierarchy[0].key[0],
+                    net.bus.instance.hierarchy[0].key[1], net.bus.model.name)
+        else:
+            prefix = '{}.{}'.format(net.bus.instance.hierarchy[0].name, net.bus.model.name)
+        if net.bus_type.is_slice:
+            if net.index.stop == net.index.start + 1:
+                suffix = '[{}]'.format(net.index.start)
             else:
-                return '{}.{}'.format(net.hierarchy[0].name, net.model.name)
-        elif net.bus_type.is_slice:
-            s = ""
-            if net.net_type.is_port:
-                s = '{}.{}'.format(parent_name or net.parent.name, net.bus.name)
-            else:
-                s = '{}.{}'.format(net.bus.hierarchy[0].name, net.bus.model.name)
-            if isinstance(net.index, int):
-                s += "[{}]".format(net.index)
-            else:
-                s += "[{}:{}]".format(net.index.start, net.index.stop - 1)
-            return s
+                suffix = '[{}:{}]'.format(net.index.stop - 1, net.index.start)
+        return prefix + suffix
 
     def _tile(self, block, ori = None):
         tile_name = block.name if ori is None else '{}_{}'.format(block.name, ori.name[0])
@@ -296,13 +296,11 @@ class _VPRArchGeneration(Object, AbstractPass):
                         range(block.width),
                         range(block.height),
                         Orientation if ori is None else (ori.opposite, )):
-                    if orientation.is_auto:
-                        continue
-                    elif x not in (0, block.width - 1) and y not in (0, block.height - 1):
+                    if x not in (0, block.width - 1) and y not in (0, block.height - 1):
                         continue
                     ports = []
                     for port in itervalues(block.ports):
-                        if port.position == (x, y) and port.orientation in (Orientation.auto, orientation):
+                        if port.position == (x, y) and port.orientation in (None, orientation):
                             ports.append(port)
                     if ports:
                         self.xml.element_leaf("loc", {
@@ -313,31 +311,27 @@ class _VPRArchGeneration(Object, AbstractPass):
             with self.xml.element("equivalent_sites"):
                 self.xml.element_leaf("site", {"pb_type": block.name, "pin_mapping": "direct"})
 
-    def _interconnect(self, sink, hierarchy = None, parent_name = None):
+    def _interconnect(self, sink, instance = None, parent_name = None):
         sources = NetUtils.get_multisource(sink)
         if len(sources) == 0:
             return
         type_ = "direct" if len(sources) == 1 else "mux"
         # get a unique name for the interconnect
         name = [type_]
-        if sink.bus_type.is_slice:
-            if sink.bus.parent.module_class.is_mode:
-                name.append( sink.bus.parent.key )
-        else:
-            if sink.parent.module_class.is_mode:
-                name.append( sink.parent.key )
+        if sink.bus.parent.module_class.is_mode:
+            name.append( sink.bus.parent.key )
         if sink.net_type.is_pin:
             if sink.bus_type.is_slice:
-                name.append( sink.bus.hierarchy[0].name )
+                name.append( sink.bus.instance.name )
                 name.append( sink.bus.model.name )
-                name.append( str(sink.index) )
+                name.append( str(sink.index.start) )
             else:
-                name.append( sink.hierarchy[0].name )
+                name.append( sink.instance.name )
                 name.append( sink.model.name )
         else:
             if sink.bus_type.is_slice:
                 name.append( sink.bus.name )
-                name.append( str(sink.index) )
+                name.append( str(sink.index.start) )
             else:
                 name.append( sink.name )
         # generate XML tag
@@ -351,7 +345,7 @@ class _VPRArchGeneration(Object, AbstractPass):
             for src in sources:
                 src_vpr = self._net2vpr(src, parent_name)
                 # FASM mux
-                fasm_mux = self.fasm.fasm_mux_for_intrablock_switch(src, sink, hierarchy)
+                fasm_mux = self.fasm.fasm_mux_for_intrablock_switch(src, sink, instance)
                 if fasm_mux:
                     fasm_muxes[src_vpr] = ", ".join(fasm_mux)
                 elif len(sources) > 1:
@@ -368,11 +362,11 @@ class _VPRArchGeneration(Object, AbstractPass):
                         "out_port": self._net2vpr(sink, parent_name),
                         })
                 # timing
-                max_, min_ = self.timing.vpr_delay_of_intrablock_switch(src, sink, hierarchy)
+                max_, min_ = self.timing.vpr_delay_of_intrablock_switch(src, sink, instance)
                 if not (max_ is None and min_ is None):
                     attrs = {
-                            "in_port": self._net2vpr(src),
-                            "out_port": self._net2vpr(sink),
+                            "in_port": self._net2vpr(src, parent_name),
+                            "out_port": self._net2vpr(sink, parent_name),
                             }
                     if max_ is not None:
                         attrs["max"] = max_
@@ -384,43 +378,14 @@ class _VPRArchGeneration(Object, AbstractPass):
                     self.xml.element_leaf("meta", {"name": "fasm_mux"},
                             '\n'.join('{} : {}'.format(src, features) for src, features in iteritems(fasm_muxes)))
 
-    def _leaf_pb_type(self, hierarchy):
-        instance = hierarchy[0]
-        primitive = instance.model
-        if primitive.primitive_class.is_iopad:
-            with self.xml.element("pb_type", {"name": instance.name, "num_pb": 1}):
-                # ports
-                self.xml.element_leaf('input', {'name': 'outpad', 'num_pins': '1'})
-                self.xml.element_leaf('output', {'name': 'inpad', 'num_pins': '1'})
-                # mode: inpad
-                with self.xml.element('mode', {'name': 'inpad'}):
-                    with self.xml.element('pb_type', {'name': 'inpad', 'blif_model': '.input', 'num_pb': '1'}):
-                        self.xml.element_leaf('output', {'name': 'inpad', 'num_pins': '1'})
-                    with self.xml.element('interconnect'), self.xml.element('direct', {'name': 'inpad',
-                        'input': 'inpad.inpad', 'output': '{}.inpad'.format(instance.name)}):
-                        # this timing is forced to be fake now. It will be fixed later when dual-mode IO is handled as
-                        # a multi-mode primitive instead of a special primitive
-                        self.xml.element_leaf('delay_constant', {'max': '1e-11',
-                            'in_port': 'inpad.inpad', 'out_port': '{}.inpad'.format(instance.name)})
-                    fasm_features = '\n'.join(self.fasm.fasm_features_for_mode(hierarchy, "inpad"))
-                    if fasm_features:
-                        with self.xml.element("metadata"):
-                            self.xml.element_leaf('meta', {'name': 'fasm_features'}, fasm_features)
-                # mode: outpad
-                with self.xml.element('mode', {'name': 'outpad'}):
-                    with self.xml.element('pb_type', {'name': 'outpad', 'blif_model': '.output', 'num_pb': '1'}):
-                        self.xml.element_leaf('input', {'name': 'outpad', 'num_pins': '1'})
-                    with self.xml.element('interconnect'), self.xml.element('direct', {'name': 'outpad',
-                        'output': 'outpad.outpad', 'input': '{}.outpad'.format(instance.name)}):
-                        self.xml.element_leaf('delay_constant', {'max': '1e-11',
-                            'out_port': 'outpad.outpad', 'in_port': '{}.outpad'.format(instance.name)})
-                    fasm_features = '\n'.join(self.fasm.fasm_features_for_mode(hierarchy, "outpad"))
-                    if fasm_features:
-                        with self.xml.element("metadata"):
-                            self.xml.element_leaf('meta', {'name': 'fasm_features'}, fasm_features)
-            return
-        elif primitive.primitive_class.is_multimode:
-            with self.xml.element("pb_type", {"name": instance.name, "num_pb": 1}):
+    def _leaf_pb_type(self, instance, fasm_prefix = None):
+        leaf, primitive, attrs = instance.hierarchy[0], instance.model, {}
+        if hasattr(leaf, "vpr_num_pb"):
+            attrs = {"name": leaf.key[0], "num_pb": leaf.vpr_num_pb}
+        else:
+            attrs = {"name": leaf.name, "num_pb": 1}
+        if primitive.primitive_class.is_multimode:
+            with self.xml.element("pb_type", attrs):
                 # 1. emit ports:
                 for port in itervalues(primitive.ports):
                     attrs = {'name': port.name, 'num_pins': len(port)}
@@ -430,9 +395,8 @@ class _VPRArchGeneration(Object, AbstractPass):
                 # 2. enumerate modes
                 for mode_name, mode in iteritems(primitive.modes):
                     with self.xml.element("mode", {"name": mode_name}):
-                        self._pb_type_body(mode, hierarchy)
+                        self._pb_type_body(mode, instance)
             return
-        attrs = {'name': instance.name, 'num_pb': '1'}
         bitwise_timing = True
         if primitive.primitive_class.is_lut:
             self.lut_sizes.add( len(primitive.ports['in']) )
@@ -454,6 +418,7 @@ class _VPRArchGeneration(Object, AbstractPass):
             bitwise_timing = getattr(primitive, "vpr_bitwise_timing", True)
             attrs.update({
                 "blif_model": ".subckt " + getattr(primitive, "vpr_model", primitive.name), })
+        parent_name = attrs["name"]
         with self.xml.element('pb_type', attrs):
             # 1. emit ports
             for port in itervalues(primitive.ports):
@@ -476,7 +441,7 @@ class _VPRArchGeneration(Object, AbstractPass):
                         outputs_with_comb_path.add(sink)
                         delay, max_of_max, min_of_min = {}, None, None
                         for srcbit, sinkbit in product(port, sink):
-                            max_, min_ = self.timing.vpr_delay_of_primitive_path(srcbit, sinkbit, hierarchy)
+                            max_, min_ = self.timing.vpr_delay_of_primitive_path(srcbit, sinkbit, instance)
                             delay[NetUtils._reference(srcbit), NetUtils._reference(sinkbit)] = max_, min_
                             if max_ is not None and (max_of_max is None or max_ > max_of_max):
                                 max_of_max = max_
@@ -484,54 +449,54 @@ class _VPRArchGeneration(Object, AbstractPass):
                                 min_of_min = min_
                         if max_of_max is None:
                             raise PRGAInternalError("Max delay required for comb. path from '{}' to '{}' in '{}'"
-                                    .format(port, sink, hierarchy))
+                                    .format(port, sink, instance))
                         if bitwise_timing:
                             for srcbit, sinkbit in product(port, sink):
                                 max_, min_ = delay[NetUtils._reference(srcbit), NetUtils._reference(sinkbit)]
                                 min_ = uno(min_, min_of_min)
                                 attrs = {"max": uno(max_, max_of_max),
-                                        "in_port": self._net2vpr(srcbit, instance.name),
-                                        "out_port": self._net2vpr(sinkbit, instance.name), }
+                                        "in_port": self._net2vpr(srcbit, parent_name),
+                                        "out_port": self._net2vpr(sinkbit, parent_name), }
                                 if min_ is not None:
                                     attrs["min"] = min_
                                 self.xml.element_leaf("delay_constant", attrs)
                         else:
                             attrs = {"max": max_of_max,
-                                    "in_port": self._net2vpr(port, instance.name),
-                                    "out_port": self._net2vpr(sink, instance.name), }
+                                    "in_port": self._net2vpr(port, parent_name),
+                                    "out_port": self._net2vpr(sink, parent_name), }
                             if min_of_min is not None:
                                 attrs["min"] = min_of_min
                             self.xml.element_leaf("delay_constant", attrs)
                 # clocked?
-                if port.clock is not None:
+                if hasattr(port, "clock"):
                     clock = primitive.ports[port.clock]
                     # setup & hold
                     if port.direction.is_input or port in outputs_with_comb_path:
                         setup, max_setup = [], None
                         for i, bit in enumerate(port):
-                            this_setup = self.timing.vpr_setup_time_of_primitive_port(bit, hierarchy)
+                            this_setup = self.timing.vpr_setup_time_of_primitive_port(bit, instance)
                             setup.append(this_setup)
                             if this_setup is not None and (max_setup is None or this_setup > max_setup):
                                 max_setup = this_setup
                         if max_setup is None:
                             raise PRGAInternalError("Setup time required for seq. endpoint '{}' in '{}'"
-                                    .format(port, hierarchy))
+                                    .format(port, instance))
                         if bitwise_timing:
                             for i, bit in enumerate(port):
                                 self.xml.element_leaf("T_setup", {
-                                    "port": self._net2vpr(bit, instance.name),
+                                    "port": self._net2vpr(bit, parent_name),
                                     "value": uno(setup[i], max_setup),
                                     "clock": clock.name, })
                         else:
                             self.xml.element_leaf("T_setup", {
-                                "port": self._net2vpr(port, instance.name),
+                                "port": self._net2vpr(port, parent_name),
                                 "value": max_setup,
                                 "clock": clock.name, })
                     # clk2q
                     if port.direction.is_output or getattr(port, "vpr_combinational_sinks", False):
                         clk2q, max_of_max, min_of_min = [], None, None
                         for i, bit in enumerate(port):
-                            max_, min_ = self.timing.vpr_clk2q_time_of_primitive_port(port, hierarchy)
+                            max_, min_ = self.timing.vpr_clk2q_time_of_primitive_port(port, instance)
                             clk2q.append( (max_, min_) )
                             if max_ is not None and (max_of_max is None or max_ > max_of_max):
                                 max_of_max = max_
@@ -539,48 +504,80 @@ class _VPRArchGeneration(Object, AbstractPass):
                                 min_of_min = min_
                         if max_of_max is None:
                             raise PRGAInternalError("Max clk-to-Q time required for seq. startpoint '{}' in '{}'"
-                                    .format(port, hierarchy))
+                                    .format(port, instance))
                         if bitwise_timing:
                             for i, bit in enumerate(port):
                                 max_, min_ = clk2q[i]
                                 min_ = uno(min_, min_of_min)
                                 attrs = {"max": uno(max_, max_of_max),
-                                        "port": self._net2vpr(bit, instance.name),
+                                        "port": self._net2vpr(bit, parent_name),
                                         "clock": clock.name, }
                                 if min_ is not None:
                                     attrs["min"] = min_
                                 self.xml.element_leaf("T_clock_to_Q", attrs)
                         else:
                             attrs = {"max": max_of_max,
-                                    "port": self._net2vpr(port, instance.name),
+                                    "port": self._net2vpr(port, parent_name),
                                     "clock": clock.name, }
                             if min_of_min is not None:
                                 attrs["min"] = min_of_min
                             self.xml.element_leaf("T_clock_to_Q", attrs)
             # 3. FASM parameters
-            fasm_params = self.fasm.fasm_params_for_primitive(hierarchy)
-            if fasm_params:
+            fasm_params = self.fasm.fasm_params_for_primitive(instance)
+            if fasm_params or fasm_prefix:
                 with self.xml.element('metadata'):
-                    self.xml.element_leaf("meta", {"name": "fasm_params"},
-                        '\n'.join("{} = {}".format(config, param) for param, config in iteritems(fasm_params)))
+                    if fasm_params:
+                        self.xml.element_leaf("meta", {"name": "fasm_params"},
+                            '\n'.join("{} = {}".format(config, param) for param, config in iteritems(fasm_params)))
+                    if fasm_prefix:
+                        self.xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefix)
 
-    def _pb_type_body(self, module, hierarchy = None):
-        parent_name = hierarchy[0].name if hierarchy else module.name
+    def _pb_type_body(self, module, instance = None, fasm_prefix = None):
+        parent_name = module.name
+        if instance:
+            if hasattr(instance.hierarchy[0], "vpr_num_pb"):
+                parent_name = instance.hierarchy[0].key[0]
+            else:
+                parent_name = instance.hierarchy[0].name
         # 1. emit cluster/primitive instances
         fasm_luts = {}
-        for instance in itervalues(module.instances):
-            hierarchical_instance = (hierarchy.delve(instance, no_check = module.module_class.is_mode)
-                    if hierarchy else instance)
-            if instance.model.module_class.is_cluster:
-                self._pb_type(instance.model, hierarchical_instance)
-            elif instance.model.module_class.is_primitive:
-                self._leaf_pb_type(hierarchical_instance)
-                if instance.model.primitive_class.is_lut:
-                    fasm_lut = self.fasm.fasm_lut(hierarchical_instance)
-                    if fasm_lut:
-                        fasm_luts[instance.name] = fasm_lut
-                    else:
-                        fasm_luts[instance.name] = 'ignored[{}:0]'.format(2 ** len(instance.pins['in']) - 1)
+        for sub in itervalues(module.instances):
+            hierarchical = sub.extend_hierarchy(above = instance)
+            vpr_num_pb = getattr(sub, "vpr_num_pb", None)
+            if vpr_num_pb is not None:
+                if sub.key[1] != 0:
+                    continue
+                group = tuple( module.instances[sub.key[0], i].extend_hierarchy(above = instance)
+                        for i in range(vpr_num_pb) )
+                sub_prefix = tuple(self.fasm.fasm_prefix_for_intrablock_module(i) for i in group)
+                if any(sub_prefix):
+                    sub_prefix = "\n".join(p or "ignored" for p in sub_prefix)
+                else:
+                    sub_prefix = ''
+                if sub.model.module_class.is_cluster:
+                    self._pb_type(sub.model, hierarchical, sub_prefix)
+                elif sub.model.module_class.is_primitive:
+                    self._leaf_pb_type(hierarchical, sub_prefix)
+                    if sub.model.primitive_class.is_lut:
+                        for i, subsub in enumerate(group):
+                            fasm_lut = self.fasm.fasm_lut(subsub)
+                            if fasm_lut:
+                                fasm_luts['{}[{}]'.format(sub.key[0], i)] = fasm_lut
+                            else:
+                                fasm_luts['{}[{}]'.format(sub.key[0], i)] = 'ignored[{}:0]'.format(
+                                        2 ** len(subsub.pins["in"]) - 1)
+            else:
+                sub_prefix = self.fasm.fasm_prefix_for_intrablock_module(hierarchical)
+                if sub.model.module_class.is_cluster:
+                    self._pb_type(sub.model, hierarchical, sub_prefix)
+                elif sub.model.module_class.is_primitive:
+                    self._leaf_pb_type(hierarchical, sub_prefix)
+                    if sub.model.primitive_class.is_lut:
+                        fasm_lut = self.fasm.fasm_lut(hierarchical)
+                        if fasm_lut:
+                            fasm_luts['{}[0]'.format(sub.name)] = fasm_lut
+                        else:
+                            fasm_luts['{}[0]'.format(sub.name)] = 'ignored[{}:0]'.format(2 ** len(sub.pins["in"]) - 1)
         # 2. emit interconnect
         with self.xml.element('interconnect'):
             for net in chain(itervalues(module.ports),
@@ -588,12 +585,11 @@ class _VPRArchGeneration(Object, AbstractPass):
                 if not net.is_sink:
                     continue
                 for sink in net:
-                    self._interconnect(sink, hierarchy, parent_name)
+                    self._interconnect(sink, instance, parent_name)
         # 3. FASM metadata
         fasm_features = ''
         if module.module_class.is_mode:
-            fasm_features = '\n'.join(self.fasm.fasm_features_for_mode(hierarchy, module.key))
-        fasm_prefix = self.fasm.fasm_prefix_for_intrablock_module(hierarchy)
+            fasm_features = '\n'.join(self.fasm.fasm_features_for_mode(instance, module.key))
         if all(fasm_lut.startswith("ignored") for fasm_lut in itervalues(fasm_luts)):
             fasm_luts = {}
         if not (fasm_features or fasm_prefix or fasm_luts):
@@ -606,31 +602,37 @@ class _VPRArchGeneration(Object, AbstractPass):
             if len(fasm_luts) > 1:
                 self.xml.element_leaf('meta', {'name': 'fasm_type'}, 'SPLIT_LUT')
                 self.xml.element_leaf('meta', {'name': 'fasm_lut'},
-                        '\n'.join('{} = {}[0]'.format(lut, name) for name, lut in iteritems(fasm_luts)))
+                        '\n'.join('{} = {}'.format(lut, name) for name, lut in iteritems(fasm_luts)))
             elif len(fasm_luts) == 1:
                 name, lut = next(iter(iteritems(fasm_luts)))
                 self.xml.element_leaf('meta', {'name': 'fasm_type'}, 'LUT')
                 self.xml.element_leaf('meta', {'name': 'fasm_lut'},
                         '{} = {}'.format(lut, name))
 
-    def _pb_type(self, module, hierarchy = None):
-        parent_name = hierarchy[0].name if hierarchy else module.name
-        attrs = {"name": parent_name}
-        if hierarchy:
-            attrs["num_pb"] = 1
+    def _pb_type(self, module, instance = None, fasm_prefix = None):
+        attrs, parent_name = {}, module.name
+        if instance:
+            vpr_num_pb = getattr(instance.hierarchy[0], "vpr_num_pb", None)
+            if vpr_num_pb:
+                parent_name = instance.hierarchy[0].key[0]
+                attrs["num_pb"] = vpr_num_pb
+            else:
+                parent_name = instance.hierarchy[0].name
+                attrs["num_pb"] = 1
+        attrs["name"] = parent_name
         with self.xml.element("pb_type", attrs):
             # 1. emit ports:
             for port in itervalues(module.ports):
                 attrs = {'name': port.name, 'num_pins': len(port)}
                 if not port.is_clock and hasattr(port, 'global_'):
                     attrs['is_non_clock_global'] = "true"
-                if module.module_class.is_block and getattr(port, "vpr_equivalent_pins", False):
+                if getattr(port, "vpr_equivalent_pins", False):
                     attrs["equivalent"] = "full"
                 self.xml.element_leaf(
                         'clock' if port.is_clock else port.direction.case('input', 'output'),
                         attrs)
             # 2. emit pb_type body
-            self._pb_type_body(module, hierarchy)
+            self._pb_type_body(module, instance, fasm_prefix)
 
     def _model(self, primitive, vpr_name):
         with self.xml.element("model", {"name": vpr_name}):
@@ -811,11 +813,11 @@ class VPRArchGeneration(_VPRArchGeneration):
 
     @classmethod
     def _iob_orientation(cls, blk_inst):
-        position = blk_inst.key[0]
-        array = blk_inst.parent
+        position = blk_inst.hierarchy[0].key[0]
+        array = blk_inst.hierarchy[0].parent
         # find the connection box(es) in this tile
         cbox_presence = tuple(ori for ori in iter(Orientation)
-                if not ori.is_auto and (position, ori.to_subtile()) in array.instances)
+                if (position, ori.to_subtile()) in array.instances)
         if len(cbox_presence) == 0:
             raise PRGAInternalError(
                     "No connection box found around IO block '{}' at {} of array '{}'"
@@ -839,27 +841,18 @@ class VPRArchGeneration(_VPRArchGeneration):
     def _update_output_file(self, summary, output_file):
         summary["arch"] = output_file
 
-    def _layout_array(self, array, hierarchy = None, elaborated = None):
-        elaborated = uno(elaborated, set())
+    def _layout_array(self, array, instance = None, elaborated = None):
         if array.module_class.is_nonleaf_array:
-            if not hierarchy:
-                ModuleUtils.elaborate(array, True, lambda x: x.model.module_class.is_leaf_array)
-                for instance in itervalues(array.instances):
-                    self._layout_array(instance.model, instance, elaborated)
-            else:
-                for instance in itervalues(array.instances):
-                    self._layout_array(instance.model, hierarchy.delve(instance), elaborated)
+            for subarray in itervalues(array.instances):
+                self._layout_array(subarray.model, subarray.extend_hierarchy(above = instance))
         else:
-            if array.key not in elaborated:
-                ModuleUtils.elaborate(array, True, lambda x: x.model.module_class.is_block)
-                elaborated.add(array.key)
-            position = NonLeafArrayBuilder._instance_position(hierarchy) if hierarchy is not None else Position(0, 0)
+            position = NonLeafArrayBuilder._instance_position(instance) if instance else Position(0, 0)
             for x, y in product(range(array.width), range(array.height)):
                 blk_inst = array.instances.get( ((x, y), Subtile.center) )
                 if blk_inst is None:
                     continue
                 fasm_prefix = '\n'.join(self.fasm.fasm_prefix_for_tile(
-                    hierarchy.delve(blk_inst) if hierarchy is not None else blk_inst ))
+                    blk_inst.extend_hierarchy(above = instance) ))
                 attrs = {'priority': 1, 'x': position.x + x, 'y': position.y + y}
                 if blk_inst.model.module_class.is_io_block:
                     # special process needed for IO blocks
@@ -985,8 +978,8 @@ class VPRScalableArchGeneration(_VPRArchGeneration):
     """Generate a scalable version of VPR's architecture description XML.
 
     **WARNING**: The routing graph generated by VPR during FPGA sizing and routing channel fitting is almost
-    guaranteed to be different than the underlying architecture. Use the generated architecture description only for
-    exploring, but then use fixed layout and channel width for your real chip.
+    certain to be different than the underlying architecture. Use the generated architecture description only for
+    exploring, and then use fixed layout and channel width for your real chip.
     """
 
     __slots__ = ['delegate', 'update_summary']
