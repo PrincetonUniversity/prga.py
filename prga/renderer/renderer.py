@@ -9,6 +9,7 @@ from ..exception import PRGAInternalError
 
 import os
 import jinja2 as jj
+from collections import OrderedDict
 
 __all__ = ['FileRenderer']
 
@@ -24,7 +25,7 @@ class FileRenderer(Object):
     def __init__(self, *paths):
         self.template_search_paths = [DEFAULT_TEMPLATE_SEARCH_PATH]
         self.template_search_paths.extend(paths)
-        self.tasks = {}
+        self.tasks = OrderedDict()
         self._yosys_synth_script_task = None
 
     @classmethod

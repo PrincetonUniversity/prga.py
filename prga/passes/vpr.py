@@ -9,6 +9,7 @@ from ..core.common import (Position, Subtile, Orientation, ModuleView, Dimension
 from ..core.builder.array import NonLeafArrayBuilder
 from ..netlist.net.common import NetType
 from ..netlist.net.util import NetUtils
+from ..netlist.module.common import LazyDict
 from ..netlist.module.util import ModuleUtils
 from ..util import Object, uno
 from ..xml import XMLGenerator
@@ -1072,7 +1073,6 @@ class VPR_RRG_Generation(Object, AbstractPass):
     __slots__ = ['output_file', 'fasm', 'timing',                           # customizable variables
             # temporary variables:
             'xml', 'block2id', 'blockpin2ptc', 'switch2id', 'sgmt2id', 'sgmt2ptc',
-            # 'sgmt2node_id', 'sgmt2node_id_truncated', 'chanx_id', 'chany_id', 'srcsink_id', 'blockpin_id',
             "chanx", "chany", "conn_graph",
             ]
     def __init__(self, output_file, *, fasm = None, timing = None):
@@ -1155,7 +1155,12 @@ class VPR_RRG_Generation(Object, AbstractPass):
             return chan - (1, 0), ori, block_position
 
     class _NodeOrderedDiGraph(nx.DiGraph):
+        class _NodeAttrDict(LazyDict):
+            __slots__ = ["id", "srcsink_id", "type", "equivalent"]
+
         node_dict_factory = OrderedDict
+        node_attr_dict_factory = _NodeAttrDict
+        edge_attr_dict_factory = LazyDict
 
     def _construct_conn_graph(self, top):
         node_id = 0
@@ -1195,6 +1200,7 @@ class VPR_RRG_Generation(Object, AbstractPass):
                 graph_constructor = self._NodeOrderedDiGraph,
                 blackbox_instance = lambda i: i.model.module_class.is_block or i.model.module_class.is_routing_box,
                 create_node = create_node,
+                create_edge = None,
                 coalesce_connections = True)
 
     def _tile_pinlist(self, port, subblock_name, srcsink_ptc, iopin_ptc):

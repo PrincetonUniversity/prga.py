@@ -29,7 +29,7 @@ def _update_config_list(module, config, prefix = '', base = 0):
         prev = NetUtils.get_source(cur)
         if not prev.net_type.is_pin:
             break
-        instance = prev.hierarchy
+        instance = prev.instance
         assert not instance.is_hierarchical
         if instance.model.module_class in (ModuleClass.primitive, ModuleClass.switch, ModuleClass.cfg):
             global_base = base + instance.cfg_bitoffset

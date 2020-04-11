@@ -195,14 +195,19 @@ class ModuleUtils(object):
                             raise PRGAInternalError("Multiple paths found from {} to {}"
                                     .format(NetUtils._dereference(module, prev),
                                         NetUtils._dereference(module, tail)))
-                        else:
+                        elif create_edge is not None:
                             graph.add_edge(prev, tail, **create_edge(module, (prev, ) + path))
+                        else:
+                            graph.add_edge(prev, tail)
                         continue
                     prev_attrs = create_node(module, prev)
                     if prev_attrs is not None:
                         graph.add_node(prev, **prev_attrs)
                         if tail is not None:
-                            graph.add_edge(prev, tail, **create_edge(module, (prev, ) + path))
+                            if create_edge is not None:
+                                graph.add_edge(prev, tail, **create_edge(module, (prev, ) + path))
+                            else:
+                                graph.add_edge(prev, tail)
                         stack.append( (prev, prev, (prev, )) )
                     elif tail is not None:
                         stack.append( (prev, tail, (prev, ) + path) )
