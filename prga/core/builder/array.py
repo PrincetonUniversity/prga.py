@@ -877,11 +877,11 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             if driver is None:
                 pass
             elif driver.net_type.is_pin:
-                assert driver.hierarchy[0].model.module_class.is_connection_box
-                bridge = driver.hierarchy[0].model.ports.get(BlockPinID(tunnel.offset, tunnel.source), None)
+                assert driver.instance.model.module_class.is_connection_box
+                bridge = driver.instance.model.ports.get(BlockPinID(tunnel.offset, tunnel.source), None)
                 if bridge is None:
-                    bridge = ConnectionBoxBuilder(self._context, driver.hierarchy[0].model)._add_tunnel_bridge(tunnel)
-                sink = driver.hierarchy[0].pins[bridge.key]
+                    bridge = ConnectionBoxBuilder(self._context, driver.instance.model)._add_tunnel_bridge(tunnel)
+                sink = driver.instance.pins[bridge.key]
             elif driver.net_type.is_port:
                 assert driver.parent is self._module
                 continue

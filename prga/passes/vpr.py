@@ -407,6 +407,10 @@ class _VPRArchGeneration(Object, AbstractPass):
                 for mode_name, mode in iteritems(primitive.modes):
                     with self.xml.element("mode", {"name": mode_name}):
                         self._pb_type_body(mode, instance)
+                # 3. FASM prefix
+                if fasm_prefix:
+                    with self.xml.element('metadata'):
+                        self.xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefix)
             return
         bitwise_timing = True
         if primitive.primitive_class.is_lut:
@@ -654,7 +658,7 @@ class _VPRArchGeneration(Object, AbstractPass):
                     attrs = {"name": port.name}
                     if port.is_clock:
                         attrs["is_clock"] = "1"
-                    elif port.clock is not None:
+                    elif getattr(port, "clock", None) is not None:
                         attrs["clock"] = port.clock
                     self.xml.element_leaf("port", attrs)
             with self.xml.element("input_ports"):
@@ -665,7 +669,7 @@ class _VPRArchGeneration(Object, AbstractPass):
                     if port.is_clock:
                         attrs["is_clock"] = "1"
                     else:
-                        if port.clock is not None:
+                        if getattr(port, "clock", None) is not None:
                             attrs["clock"] = port.clock
                         if getattr(port, "vpr_combinational_sinks", False):
                             attrs["combinational_sink_ports"] = " ".join(port.vpr_combinational_sinks)

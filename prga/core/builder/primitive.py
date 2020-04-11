@@ -200,19 +200,31 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
         i, o = PortDirection.input_, PortDirection.output
         p = []
         if single_port:
-            p.append(ModuleUtils.create_port(m, "we", 1, i, port_class = PrimitivePortClass.write_en))
-            p.append(ModuleUtils.create_port(m, "addr", addr_width, i, port_class = PrimitivePortClass.address))
-            p.append(ModuleUtils.create_port(m, "data", data_width, i, port_class = PrimitivePortClass.data_in))
-            p.append(ModuleUtils.create_port(m, "out", data_width, o, port_class = PrimitivePortClass.data_out))
+            p.append(ModuleUtils.create_port(m, "we", 1, i, clock = "clk",
+                port_class = PrimitivePortClass.write_en))
+            p.append(ModuleUtils.create_port(m, "addr", addr_width, i, clock = "clk",
+                port_class = PrimitivePortClass.address))
+            p.append(ModuleUtils.create_port(m, "data", data_width, i, clock = "clk",
+                port_class = PrimitivePortClass.data_in))
+            p.append(ModuleUtils.create_port(m, "out", data_width, o, clock = "clk",
+                port_class = PrimitivePortClass.data_out))
         else:
-            p.append(ModuleUtils.create_port(m, "we1", 1, i, port_class = PrimitivePortClass.write_en1))
-            p.append(ModuleUtils.create_port(m, "addr1", addr_width, i, port_class = PrimitivePortClass.address1))
-            p.append(ModuleUtils.create_port(m, "data1", data_width, iport_class = PrimitivePortClass.data_in1))
-            p.append(ModuleUtils.create_port(m, "out1", data_width, o, port_class = PrimitivePortClass.data_out1))
-            p.append(ModuleUtils.create_port(m, "we2", 1, i, port_class = PrimitivePortClass.write_en2))
-            p.append(ModuleUtils.create_port(m, "addr2", addr_width, i, port_class = PrimitivePortClass.address2))
-            p.append(ModuleUtils.create_port(m, "data2", data_width, i, port_class = PrimitivePortClass.data_in2))
-            p.append(ModuleUtils.create_port(m, "out2", data_width, o, port_class = PrimitivePortClass.data_out2))
+            p.append(ModuleUtils.create_port(m, "we1", 1, i, clock = "clk",
+                port_class = PrimitivePortClass.write_en1))
+            p.append(ModuleUtils.create_port(m, "addr1", addr_width, i, clock = "clk",
+                port_class = PrimitivePortClass.address1))
+            p.append(ModuleUtils.create_port(m, "data1", data_width, i, clock = "clk",
+                port_class = PrimitivePortClass.data_in1))
+            p.append(ModuleUtils.create_port(m, "out1", data_width, o, clock = "clk",
+                port_class = PrimitivePortClass.data_out1))
+            p.append(ModuleUtils.create_port(m, "we2", 1, i, clock = "clk",
+                port_class = PrimitivePortClass.write_en2))
+            p.append(ModuleUtils.create_port(m, "addr2", addr_width, i, clock = "clk",
+                port_class = PrimitivePortClass.address2))
+            p.append(ModuleUtils.create_port(m, "data2", data_width, i, clock = "clk",
+                port_class = PrimitivePortClass.data_in2))
+            p.append(ModuleUtils.create_port(m, "out2", data_width, o, clock = "clk",
+                port_class = PrimitivePortClass.data_out2))
         NetUtils.connect(clk, p, fully = True)
         return m
 
