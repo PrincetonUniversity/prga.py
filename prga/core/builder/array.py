@@ -636,7 +636,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             *,
             fc_override = None,
             identifier = None,
-            sbox_pattern = SwitchBoxPattern.span_limited,
+            sbox_pattern = SwitchBoxPattern.wilton,
             **kwargs):
         """Fill routing boxes into the array being built."""
         fc_override = uno(fc_override, {})

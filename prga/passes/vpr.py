@@ -15,6 +15,7 @@ from ..xml import XMLGenerator
 from ..exception import PRGAInternalError, PRGAAPIError
 
 import os
+import networkx as nx
 from itertools import product, chain
 from collections import OrderedDict, namedtuple
 from abc import abstractproperty, abstractmethod
@@ -107,7 +108,7 @@ class FASMDelegate(Object):
         """
         return tuple()
 
-    def fasm_features_for_routing_switch(self, source, sink, instance):
+    def fasm_features_for_routing_switch(self, source, sink, instance = None):
         """Get the "fasm_features" strings for connecting routing box ports ``source`` and ``sink`` in hierarchical
         routing box ``instance``.
 
@@ -220,14 +221,23 @@ class TimingDelegate(Object):
         """
         return 1e-11, None
 
-    def vpr_interblock_routing_switch(self, source, sink):
+    def vpr_interblock_routing_switch(self, source, sink, delay = 1e-11):
         """Get the routing switch for connection ``source`` -> ``sink``.
 
         Arg:
             source (`AbstractGenericNet`): Hierarchical source bit
             sink (`AbstractGenericNet`): Hierarchical sink bit
         """
-        return self.vpr_switches[0].name
+        return self.vpr_switches[0]
+
+    def vpr_delay_of_routing_switch(self, source, sink):
+        """Get the propagation delay for connection ``source`` -> ``sink``.
+
+        Arg:
+            source (`AbstractGenericNet`): Hierarchical source bit
+            sink (`AbstractGenericNet`): Hierarchical sink bit
+        """
+        return 1e-11
 
 TimingDelegate._default_switches = (TimingDelegate.Switch("default", 1e-11), )
 
@@ -1061,9 +1071,9 @@ class VPR_RRG_Generation(Object, AbstractPass):
 
     __slots__ = ['output_file', 'fasm', 'timing',                           # customizable variables
             # temporary variables:
-            'xml', 'block2id', 'blockpin2ptc', 'switch2id',
-            'sgmt2id', 'sgmt2ptc', 'sgmt2node_id', 'sgmt2node_id_truncated',
-            'chanx_id', 'chany_id', 'srcsink_id', 'blockpin_id',
+            'xml', 'block2id', 'blockpin2ptc', 'switch2id', 'sgmt2id', 'sgmt2ptc',
+            # 'sgmt2node_id', 'sgmt2node_id_truncated', 'chanx_id', 'chany_id', 'srcsink_id', 'blockpin_id',
+            "chanx", "chany", "conn_graph",
             ]
     def __init__(self, output_file, *, fasm = None, timing = None):
         self.output_file = output_file
@@ -1082,54 +1092,110 @@ class VPR_RRG_Generation(Object, AbstractPass):
     def is_readonly_pass(self):
         return True
 
-    @classmethod
-    def _get_hierarchical_block(cls, array, position):
-        if array.module_class.is_nonleaf_array:
-            subarray = array._instances.get_root(position)
-            if subarray is None:
-                return None, None
-            return cls._get_hierarchical_block(subarray.model, position - subarray.key)
+    def _analyze_track(self, node):
+        """Analyze a track node.
+
+        Args:
+            node (:obj:`Sequence` [:obj:`Hashable` ]): A reference node of a switch box pin (coalesced)
+
+        Returns:
+            orientation (`Orientation`): Expansion orientation
+            lower_position (`Position`): The lower position of starting/ending channel
+            higher_position (`Position`): The higher position of starting/ending channel
+            ptc_position (:obj:`int`): Used to calculate the PTC for VPR
+        """
+        segment, ori = node[0].prototype, node[0].orientation
+        sbox_position, corner = sum(node[2:], node[1][0]), node[1][1].to_corner()
+        virtual_start = sbox_position + node[0].position
+        low = high = (sbox_position + corner.case( (0, 0), (-1, 0), (0, -1), (-1, -1) ) +
+                ori.case( (0, 1), (1, 0), (0, 0), (0, 0) ))
+        dim, dir_ = ori.decompose()
+        chan, step = dim.case((self.chanx, (1, 0)), (self.chany, (0, 1)))
+        if dir_.is_inc:
+            for _ in range(low[dim] - virtual_start[dim] + 1, segment.length):
+                pos = high + step
+                if chan[pos.x][pos.y]:
+                    high = pos
+                else:
+                    break
         else:
-            inst = array.instances.get( (position, Subtile.center) )
-            if inst is None:
-                return None, None
-            elif inst.model.module_class.is_io_block:
-                return inst.model, VPRArchGeneration._iob_orientation(inst)
-            else:
-                return inst.model, None
+            for _ in range(virtual_start[dim] - low[dim] + 1, segment.length):
+                pos = low - step
+                if chan[pos.x][pos.y]:
+                    low = pos
+                else:
+                    break
+        return ori, low, high, virtual_start[dim] - dir_.case(1, segment.length)
 
-    @classmethod
-    def _calc_hierarchical_position(cls, hierarchy, base = Position(0, 0)):
-        return sum(iter(i.key[0] if i.parent.module_class.is_leaf_array else i.key for i in hierarchy), base)
+    def _analyze_blockpin(self, pin):
+        """Analyze a block pin node.
 
-    @classmethod
-    def _analyze_routable_pin(cls, pin):
-        bus = pin.bus if pin.bus_type.is_slice else pin
-        if isinstance(bus.model.key, SegmentID):    # segment
-            node = bus.model.key
-            chan_offset = Position(*bus.hierarchy[0].key[1].case(
-                    northeast = node.orientation.case((0, 1), (1, 0), (0, 0), (0, 0)),
-                    northwest = node.orientation.case((-1, 1), (0, 0), (-1, 0), (-1, 0)),
-                    southeast = node.orientation.case((0, 0), (1, -1), (0, -1), (0, -1)),
-                    southwest = node.orientation.case((-1, 0), (0, -1), (-1, -1), (-1, -1)),
-                    ))
-            section = node.orientation.case(
-                    chan_offset.y - node.position.y,
-                    chan_offset.x - node.position.x,
-                    node.position.y - chan_offset.y,
-                    node.position.x - chan_offset.x,
-                    )
-            chanpos = cls._calc_hierarchical_position(bus.hierarchy) + chan_offset
-            return chanpos, node.orientation.dimension, node.orientation.direction, node.prototype.length - section
-        else:                                       # block pin
-            ori = None
-            if bus.hierarchy.model.module_class.is_io_block:
-                ori = VPRArchGeneration._iob_orientation(bus.hierarchy[0]).opposite
+        Args:
+            pin (`Pin`): Hierarchical pin
+
+        Returns:
+            channel_position (`Position`): Position of the routing channel
+            orientation (`Orientation`): Orientation of the port
+            block_position (`Position`): Position of the parent block instance, used to calculate the
+                xlow/ylow/xhigh/yhigh attributes for the src/sink nodes
+        """
+        port = pin.model
+        block_position = NonLeafArrayBuilder._instance_position(pin.instance)
+        chan = block_position + port.position
+        ori = port.orientation
+        if port.parent.module_class.is_io_block:
+            ori = VPRArchGeneration._iob_orientation(pin.instance).opposite
+        if ori.is_north:
+            return chan, ori, block_position
+        elif ori.is_east:
+            return chan, ori, block_position
+        elif ori.is_south:
+            return chan - (0, 1), ori, block_position
+        else:
+            return chan - (1, 0), ori, block_position
+
+    class _NodeOrderedDiGraph(nx.DiGraph):
+        node_dict_factory = OrderedDict
+
+    def _construct_conn_graph(self, top):
+        node_id = 0
+        def create_node(m, n):
+            nonlocal node_id
+            nonlocal self
+            try:
+                node, ((x, y), subtile) = n[:2]
+            except (ValueError, TypeError):
+                return None
+            if isinstance(node, SegmentID):
+                if node.segment_type.is_sboxout:
+                    pos = (sum(n[2:], n[1][0]) + n[1][1].to_corner().case( (0, 0), (-1, 0), (0, -1), (-1, -1) ) +
+                            node.orientation.case( (0, 1), (1, 0), (0, 0), (0, 0) ))
+                    if node.orientation.dimension.case(self.chanx, self.chany)[pos.x][pos.y]:
+                        d = {"id": node_id, "type": "TRACK"}
+                        node_id += node.prototype.width
+                        return d
+                    else:
+                        return None
+                else:
+                    return {}
+            elif isinstance(node, BlockPinID):
+                return {}
             else:
-                ori = bus.model.orientation
-            chanpos = (cls._calc_hierarchical_position(bus.hierarchy) + bus.model.position +
-                    ori.case( (0, 0), (0, 0), (0, -1), (-1, 0) ))
-            return chanpos, ori.dimension.perpendicular, None, None
+                net = NetUtils._dereference(m, n, coalesced = True)
+                assert net.model.parent.module_class.is_block
+                d = {"srcsink_id": node_id, "type": net.model.direction.case("IPIN", "OPIN")}
+                if getattr(net.model, "vpr_equivalent_pins", False):
+                    d.update({"id": node_id + 1, "equivalent": True})
+                    node_id += 1 + len(net)
+                else:
+                    d["id"] = node_id + len(net)
+                    node_id += 2 * len(net)
+                return d
+        self.conn_graph = ModuleUtils.reduce_timing_graph(top,
+                graph_constructor = self._NodeOrderedDiGraph,
+                blackbox_instance = lambda i: i.model.module_class.is_block or i.model.module_class.is_routing_box,
+                create_node = create_node,
+                coalesce_connections = True)
 
     def _tile_pinlist(self, port, subblock_name, srcsink_ptc, iopin_ptc):
         equivalent = getattr(port, "vpr_equivalent_pins", False)
@@ -1184,15 +1250,18 @@ class VPR_RRG_Generation(Object, AbstractPass):
                 self.xml.element_leaf("grid_loc", {
                     "block_type_id": 0, "x": x, "y": y, "width_offset": 0, "height_offset": 0})
             else:
-                rootpos = sum(
-                        iter(inst.key if inst.model.module_class.is_array else inst.key[0] for inst in instance),
-                        Position(0, 0))
+                rootpos = NonLeafArrayBuilder._instance_position(instance)
+                if rootpos == pos:
+                    for xx, yy in product(range(instance.model.width), range(instance.model.height - 1)):
+                        self.chanx[x + xx][y + yy] = False
+                    for xx, yy in product(range(instance.model.width - 1), range(instance.model.height)):
+                        self.chany[x + xx][y + yy] = False
                 id_ = None
-                if instance[0].model.module_class.is_io_block:
-                    ori = VPRArchGeneration._iob_orientation(instance[0])
-                    id_ = self.block2id[instance[0].model.key, ori]
+                if instance.model.module_class.is_io_block:
+                    ori = VPRArchGeneration._iob_orientation(instance)
+                    id_ = self.block2id[instance.model.key, ori]
                 else:
-                    id_ = self.block2id[instance[0].model.key, None]
+                    id_ = self.block2id[instance.model.key, None]
                 self.xml.element_leaf("grid_loc", {
                     "block_type_id": id_, "x": x, "y": y,
                     "width_offset": x - rootpos.x, "height_offset": y - rootpos.y})
@@ -1222,168 +1291,81 @@ class VPR_RRG_Generation(Object, AbstractPass):
             if type_ in ("CHANX", "CHANY"):
                 self.xml.element_leaf("segment", {"segment_id": self.sgmt2id[segment.name]})
 
-    def _calc_blockpin_id(self, pin, srcsink = False, position_hint = None):
-        bus, index = (pin.bus, pin.index) if pin.bus_type.is_slice else (pin, 0)
-        id_base = self.srcsink_id if srcsink else self.blockpin_id
-        if position_hint is None:
-            position_hint = self._calc_hierarchical_position(bus.hierarchy)
-        id_base = id_base[position_hint.x][position_hint.y]
-        pin2ptc = self.blockpin2ptc[bus.model.parent.key]
-        srcsink_ptc, equivalent, iopin_ptc = pin2ptc[bus.model.key]
-        total_srcsink, _, total_iopin = pin2ptc["#"]
-        blockptc, pinptc = ((total_srcsink, srcsink_ptc + (0 if equivalent else index)) if srcsink
-                else (total_iopin, iopin_ptc + index))
-        return id_base + blockptc * bus.hierarchy[0].key[1] + pinptc
-
-    def _calc_track_id(self, pin):
-        bus, index = (pin.bus, pin.index) if pin.bus_type.is_slice else (pin, 0)
-        node = bus.model.key
-        dim, dir_ = node.orientation.dimension, node.orientation.direction
-        # 1. which channel are we working on?
-        channel_position = self._calc_hierarchical_position(bus.hierarchy)
-        # adjustments based on switch box position
-        corner = bus.hierarchy[0].key[1].to_corner()
-        if node.orientation.is_east and corner.dotx(Dimension.x).is_inc:
-            channel_position += (1, 0)
-        elif not node.orientation.is_east and corner.dotx(Dimension.x).is_dec:
-            channel_position -= (1, 0)
-        if node.orientation.is_north and corner.dotx(Dimension.y).is_inc:
-            channel_position += (0, 1)
-        elif not node.orientation.is_north and corner.dotx(Dimension.y).is_dec:
-            channel_position -= (0, 1)
-        pos = channel_position # short alias
-        # 2. channel id base
-        node_id_base, before, after = dim.case(self.chanx_id, self.chany_id)[pos.x][pos.y]
-        if node_id_base is None:
-            _logger.warning("Node ID not assigned for channel {} at {}".format(dim.name, pos))
-            return None
-        # 3. section?
-        section = node.orientation.case(
-                north = corner.dotx(Dimension.y).case(1, 0) - node.position.y,
-                east = corner.dotx(Dimension.x).case(1, 0) - node.position.x,
-                south = corner.dotx(Dimension.y).case(0, 1) + node.position.y,
-                west = corner.dotx(Dimension.x).case(0, 1) + node.position.x)
-        # 4. segment id base
-        segment_node_id_base = (self.sgmt2node_id if dir_.case(before, after)
-                else self.sgmt2node_id_truncated)[node.prototype.name]
-        # 5. return the ID
-        return (node_id_base +
-                dir_.case(0, (self.sgmt2node_id if before else self.sgmt2node_id_truncated)["#"]) +
-                segment_node_id_base +
-                section * node.prototype.width + index)
-
-    def _edges(self, sink, sink_node, sinkpos, sinkdim, sinkdir, sinkspan):
-        _logger.debug("Scanning edges leading to node {} ({})"
-                .format(sink_node, sink))
-        num_edges = 0
-        sink_conngraph_node = NetUtils._reference(sink)
-        def yield_or_stop(m, n):
-            idx, net_key = n
-            if isinstance(idx, NetType):
-                return False
-            elif isinstance(net_key[0], SegmentID):
-                return net_key[0].segment_type.is_sboxout
-            elif isinstance(net_key[0], BlockPinID):
-                return False
-            else:
-                return True
-        def skip(m, n):
-            idx, net_key = n
-            if isinstance(net_key[0], SegmentID) or isinstance(net_key[0], BlockPinID):
-                return not m.hierarchy[net_key[1:]].model.module_class.is_routing_box
-            return False
-        for path in NetUtils._navigate_backwards(sink.parent, sink_conngraph_node,
-                yield_ = yield_or_stop, stop = yield_or_stop, skip = skip):
-            src = NetUtils._dereference(sink.parent, path[0])
-            srcpos, srcdim, srcdir, srcspan = self._analyze_routable_pin(src)
-            src_bus, src_index = (src.bus, src.index) if src.bus_type.is_slice else (src, 0)
-            src_node = None
-            if isinstance(src_bus.model.key, SegmentID):
-                srcori = Orientation.compose(srcdim, srcdir)
-                diff = sinkpos - srcpos
-                if sinkdir is None:    # track to block pin
-                    # 1. same dimension
-                    if not (srcdim is sinkdim and srcdim.case(diff.y, diff.x) == 0):
-                        _logger.debug(" ... [x] Rejected b/c dim mismatch: {}".format(src))
-                        continue
-                    # 2. within reach
-                    elif not (0 <= srcori.case(diff.y, diff.x, -diff.y, -diff.x) < srcspan):
-                        _logger.debug(" ... [x] Rejected b/c out of reach: {}".format(src))
-                        continue
-                else:               # track to track
-                    # 1. if in the same dimension
-                    if srcdim is sinkdim:
-                        # 1.1 same direction
-                        if not (srcdir is sinkdir and srcdim.case(diff.y, diff.x) == 0):
-                            _logger.debug(" ... [x] Rejected b/c dir mismatch: {}".format(src))
-                            continue
-                        # 1.2 within reach
-                        elif not (0 < srcori.case(diff.y, diff.x, -diff.y, -diff.x) <= srcspan):
-                            _logger.debug(" ... [x] Rejected b/c out of reach: {}".format(src))
-                            continue
-                    # 2. if in perpendicular dimensions
-                    else:
-                        if not srcori.case(
-                                diff.x == sinkdir.case(1, 0) and 0 <= diff.y < srcspan,
-                                diff.y == sinkdir.case(1, 0) and 0 <= diff.x < srcspan,
-                                diff.x == sinkdir.case(1, 0) and 0 < -diff.y <= srcspan,
-                                diff.y == sinkdir.case(1, 0) and 0 < -diff.x <= srcspan,
-                                ):
-                            _logger.debug(" ... [x] Rejected b/c out of reach: {}".format(src))
-                            continue
-                    # 3. append to path
-                    path = path + (sink_conngraph_node, )
-                src_node = self._calc_track_id(src)
-                if src_node is None:
-                    continue
-            else:
-                if sinkdir is not None:     # block pin to track
-                    sinkori = Orientation.compose(sinkdim, sinkdir)
-                    diff = srcpos - sinkpos
-                    # 1. same dimension
-                    if not (srcdim is sinkdim and srcdim.case(diff.y, diff.x) == 0):
-                        _logger.debug(" ... [x] Rejected b/c dim mismatch: {}".format(src))
-                        continue
-                    # 2. within reach
-                    elif not 0 <= sinkori.case(diff.y, diff.x, -diff.y, -diff.x) < sinkspan:
-                        _logger.debug(" ... [x] Rejected b/c out of reach: {}".format(src))
-                        continue
-                    # 3. append to path
-                    path = path + (sink_conngraph_node, )
-                src_node = self._calc_blockpin_id(src)
-            _logger.debug(" ... [v] Accepted: {}".format(src))
-            num_edges += 1
-            switch_name = self.timing.vpr_interblock_routing_switch(src, sink)
-            attrs = { "src_node": src_node, "sink_node": sink_node, "switch_id": self.switch2id[switch_name]}
-            # pair nodes
-            assert len(path) % 2 == 1
-            fasm_features = []
-            for i in range(1, len(path), 2):
-                box_input, box_output = map(lambda x: NetUtils._dereference(sink.parent, x),
-                        (path[i], path[i + 1]))
-                hierarchy = None
-                if box_input.bus_type.is_slice:
-                    hierarchy = box_input.bus.hierarchy
-                    box_input = box_input.bus.model[box_input.index]
-                else:
-                    hierarchy = box_input.hierarchy
-                    box_input = box_input.model
-                if box_output.bus_type.is_slice:
-                    box_output = box_output.bus.model[box_output.index]
-                else:
-                    box_output = box_output.model
-                fasm_features.extend(self.fasm.fasm_features_for_routing_switch(
-                    box_input, box_output, hierarchy))
-            if fasm_features:
-                with self.xml.element("edge", attrs), self.xml.element("metadata"):
-                    self.xml.element_leaf("meta", {"name": "fasm_features"},
-                            "\n".join(fasm_features))
-            else:
-                self.xml.element_leaf("edge", attrs)
-        if num_edges:
-            _logger.debug(" === {} edges found connected to node {} ({})".format(num_edges, sink_node, sink))
+    def _edge(self, src_id, sink_id, head_pin_bit = None, tail_pin_bit = None, delay = 0.0, fasm_features = tuple(),
+            switch_id = None):
+        if switch_id is None:
+            switch = self.timing.vpr_interblock_routing_switch(head_pin_bit, tail_pin_bit, delay)
+            switch_id = self.switch2id[switch.name]
+        attrs = {"src_node": src_id,
+                "sink_node": sink_id,
+                "switch_id": switch_id,
+                }
+        if fasm_features:
+            with self.xml.element("edge", attrs), self.xml.element("metadata"):
+                self.xml.element_leaf("meta", {"name": "fasm_features"},
+                        "\n".join(fasm_features))
         else:
-            _logger.info(" === No edge found connected to node {} ({})".format(sink_node, sink))
+            self.xml.element_leaf("edge", attrs)
+
+    def _edge_box_output(self, head_pin_bit, tail_pin_bit, tail_pkg, fasm_features = tuple(), delay = 0.0):
+        sink_port_bit = head_pin_bit.bus.model[head_pin_bit.index]
+        for src_port_bit in NetUtils.get_multisource(sink_port_bit):
+            this_fasm = fasm_features + self.fasm.fasm_features_for_routing_switch(src_port_bit, sink_port_bit,
+                    head_pin_bit.bus.instance)
+            this_delay = delay + self.timing.vpr_delay_of_routing_switch(src_port_bit, sink_port_bit)
+            self._edge_box_input(head_pin_bit.bus.instance.pins[src_port_bit.bus.key][src_port_bit.index],
+                    tail_pin_bit, tail_pkg, this_fasm, this_delay)
+
+    def _edge_box_input(self, head_pin_bit, tail_pin_bit, tail_pkg, fasm_features = tuple(), delay = 0.0):
+        head_idx, head_node = NetUtils._reference(head_pin_bit)
+
+        try:
+            predit = self.conn_graph.predecessors(head_node)
+            pred_node = next(predit)
+        except (nx.NetworkXError, StopIteration):
+            return
+
+        id_ = self.conn_graph.nodes[pred_node].get("id")
+        head_pin_bit = NetUtils._dereference(head_pin_bit.parent, pred_node, coalesced = True)[head_idx]
+        if id_ is None:
+            self._edge_box_output(head_pin_bit, tail_pin_bit, tail_pkg, fasm_features, delay)
+            return
+        elif isinstance(tail_pin_bit.bus.model.key, SegmentID):     # ??? -> track
+            tail_id, tail_lower, tail_higher, tail_ori = tail_pkg
+            tail_start = tail_ori.direction.case(tail_lower, tail_higher)
+            if isinstance(pred_node[0], SegmentID):                 # track -> track
+                head_ori, head_lower, head_higher, _ = self._analyze_track(pred_node)
+                if head_ori is tail_ori:                            # straight connection
+                    dim, dir_ = tail_ori.decompose()
+                    if (head_lower[dim.perpendicular] == tail_start[dim.perpendicular] and
+                            head_lower[dim] <= tail_start[dim] + dir_.case(-1, 1) <= head_higher[dim]):
+                        self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
+                        return
+                elif head_ori is not tail_ori.opposite:             # not a U-turn
+                    from_dim, from_dir = head_ori.decompose()
+                    to_dim, to_dir = tail_ori.decompose()
+                    if (head_lower[to_dim] + to_dir.case(1, 0) == tail_start[to_dim] and
+                            head_lower[from_dim] <= tail_start[from_dim] + from_dir.case(0, 1) <= head_higher[from_dim]):
+                        self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
+                        return
+            else:                                                   # block pin -> track
+                head_chan, head_ori, _ = self._analyze_blockpin(head_pin_bit.bus)
+                dim = head_ori.dimension.perpendicular
+                if dim is tail_ori.dimension and head_chan == tail_start:
+                    self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
+                    return
+        else:                                                       # ??? -> block pin
+            tail_id, tail_chan, dim = tail_pkg
+            if isinstance(pred_node[0], SegmentID):                 # track -> block pin
+                head_ori, head_lower, head_higher, _ = self._analyze_track(pred_node)
+                if (dim is head_ori.dimension and head_lower[dim] <= tail_chan[dim] <= head_higher[dim]
+                        and tail_chan[dim.perpendicular] == head_lower[dim.perpendicular]):
+                    self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
+                    return
+            else:                                                   # block pin -> block pin
+                self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
+                return
+        _logger.info("Physical connection {} -> {} ignored due to reachability".format(head_pin_bit, tail_pin_bit))
 
     def run(self, context):
         # runtime-generated data
@@ -1392,38 +1374,12 @@ class VPR_RRG_Generation(Object, AbstractPass):
         self.switch2id = OrderedDict()
         self.sgmt2id = OrderedDict()
         self.sgmt2ptc = OrderedDict()
-        self.sgmt2node_id = OrderedDict()
-        self.sgmt2node_id_truncated = OrderedDict()
-        # VPR nodes: CHANX. [x][y] -> node_id_base, consecutive channels to the left, ... to the right
-        self.chanx_id = [[(None, 0, 0) for _ in range(context.top.height)] for _ in range(context.top.width)]
-        for y in range(context.top.height):
-            startx = context.top.width
-            for x in range(context.top.width):
-                if NonLeafArrayBuilder._no_channel(context.top, Position(x, y), Orientation.east):
-                    for xx in range(startx, x):
-                        self.chanx_id[xx][y] = (0, xx - startx, x - 1 - xx)
-                    startx = context.top.width
-                elif x < startx:
-                    startx = x
-        # VPR node: CHANY. [x][y] -> node_id_base, consecutive channels to from below, ... from above
-        self.chany_id = [[(None, 0, 0) for _ in range(context.top.height)] for _ in range(context.top.width)]
-        for x in range(context.top.width):
-            starty = context.top.height
-            for y in range(context.top.height):
-                if NonLeafArrayBuilder._no_channel(context.top, Position(x, y), Orientation.north):
-                    for yy in range(starty, y):
-                        self.chany_id[x][yy] = (0, yy - starty, y - 1 - yy)
-                    starty = context.top.height
-                elif y < starty:
-                    starty = y
-        # total number of nodes
+        self.chanx = [[(0 < x < context.top.width - 1 and 0 <= y < context.top.height - 1)
+            for y in range(context.top.height)] for x in range(context.top.width)]
+        self.chany = [[(0 <= x < context.top.width - 1 and 0 < y < context.top.height - 1)
+            for y in range(context.top.height)] for x in range(context.top.width)]
         channel_width = context.summary.vpr["channel_width"] = 2 * sum(sgmt.width * sgmt.length
                 for sgmt in itervalues(context.segments))
-        total_num_nodes = 0
-        # VPR nodes: SOURCE & SINK
-        self.srcsink_id = [[None for _ in range(context.top.height)] for _ in range(context.top.width)]
-        # VPR nodes: IPIN & OPIN
-        self.blockpin_id = [[None for _ in range(context.top.height)] for _ in range(context.top.width)]
         # update VPR summary
         if isinstance(self.output_file, basestring):
             f = os.path.abspath(self.output_file)
@@ -1472,20 +1428,14 @@ class VPR_RRG_Generation(Object, AbstractPass):
                                 {'mux_trans_size': switch.mux_trans_size, 'buf_size': switch.buf_size, })
             # segments
             with xml.element('segments'):
-                ptc, node_id, node_id_truncated = 0, 0, 0
+                ptc = 0
                 for i, (name, sgmt) in enumerate(iteritems(context.segments)):
                     self.sgmt2id[name] = i
                     self.sgmt2ptc[name] = ptc
                     ptc += 2 * sgmt.width * sgmt.length
-                    self.sgmt2node_id[name] = node_id
-                    node_id += sgmt.width
-                    self.sgmt2node_id_truncated[name] = node_id_truncated
-                    node_id_truncated += sgmt.width * sgmt.length
                     with self.xml.element("segment", {"name": name, "id": i}):
                         sgmt = self.timing.vpr_segment(sgmt)
                         self.xml.element_leaf("timing", {"R_per_meter": sgmt.Rmetal, "C_per_meter": sgmt.Cmetal})
-                self.sgmt2node_id["#"] = node_id
-                self.sgmt2node_id_truncated["#"] = node_id_truncated
             # block types
             with xml.element('block_types'):
                 xml.element_leaf("block_type", {"id": 0, "name": "EMPTY", "width": 1, "height": 1})
@@ -1498,116 +1448,89 @@ class VPR_RRG_Generation(Object, AbstractPass):
                     else:
                         self.block2id[block_key, None] = len(self.block2id) + 1
                         self._tile(block)
-            # grid
+            # flatten grid and create coalesced connection graph
             with xml.element("grid"):
                 self._grid(context.top)
+                self._construct_conn_graph(context.top)
             # nodes
             with xml.element("rr_nodes"):
-                for x, y in product(range(context.top.width), range(context.top.height)):
-                    pos = Position(x, y)
-                    # 1. block pin nodes
-                    block, ori = self._get_hierarchical_block(context.top, pos)
-                    if block is not None:
-                        pin2ptc = self.blockpin2ptc[block.key]
-                        total_srcsink, _, total_iopin = pin2ptc["#"]
-                        self.srcsink_id[x][y] = total_num_nodes
-                        for subblock in range(block.capacity):
-                            ptc_base = subblock * total_srcsink
-                            for key, (ptc, equivalent, _) in iteritems(pin2ptc):
-                                if key == "#":
-                                    continue
-                                port = block.ports[key]
-                                if equivalent:
-                                    self._node(port.direction.case("SINK", "SOURCE"), total_num_nodes,
-                                            ptc_base + ptc, x, y, capacity = len(port),
-                                            xhigh = x + block.width - 1, yhigh = y + block.height - 1)
-                                    total_num_nodes += 1
-                                else:
-                                    for i in range(len(port)):
-                                        self._node(port.direction.case("SINK", "SOURCE"), total_num_nodes,
-                                                ptc_base + ptc + i, x, y,
-                                                xhigh = x + block.width - 1, yhigh = y + block.height - 1)
-                                        total_num_nodes += 1
-                        self.blockpin_id[x][y] = total_num_nodes
-                        for subblock in range(block.capacity):
-                            ptc_base = subblock * total_iopin
-                            for key, (_0, _1, ptc) in iteritems(pin2ptc):
-                                if key == "#":
-                                    continue
-                                port = block.ports[key]
-                                port_ori = ori.opposite if block.module_class.is_io_block else port.orientation
-                                for i in range(len(port)):
-                                    self._node(port.direction.case("IPIN", "OPIN"), total_num_nodes,
-                                            ptc_base + ptc + i, x + port.position.x, y + port.position.y,
-                                            port_ori = port_ori)
-                                    total_num_nodes += 1
-                    # 2. channel nodes
-                    for dim in Dimension:
-                        node_id_base, before, after = dim.case(self.chanx_id, self.chany_id)[x][y]
-                        if node_id_base is None:
-                            continue
-                        dim.case(self.chanx_id, self.chany_id)[x][y] = (total_num_nodes, before, after)
-                        for dir_, (name, segment_id) in product(Direction, iteritems(self.sgmt2id)):
-                            segment = context.segments[name]
-                            ori = Orientation.compose(dim, dir_)
-                            for section, i in product(range(1 if dir_.case(before, after) > 0 else segment.length),
-                                    range(segment.width)):
-                                remainder = ori.case(
-                                        y - section + segment.length - 1,
-                                        x - section + segment.length - 1,
-                                        y + section,
-                                        x + section) % segment.length
-                                ptc = self.sgmt2ptc[name] + 2 * remainder * segment.width + i * 2 + dir_.case(0, 1)
-                                self._node(dim.case("CHANX", "CHANY"), total_num_nodes, ptc,
-                                        ori.case(x, x, x, x - min(before, segment.length - 1 - section)),
-                                        ori.case(y, y, y - min(before, segment.length - 1 - section), y),
-                                        track_dir = dir_,
-                                        xhigh = ori.case(x, x + min(after, segment.length - 1 - section), x, x),
-                                        yhigh = ori.case(y + min(after, segment.length - 1 - section), y, y, y),
-                                        segment = self.timing.vpr_segment(segment),
-                                        )
-                                total_num_nodes += 1
+                for node, data in self.conn_graph.nodes(data = True):
+                    if "id" not in data:
+                        continue
+                    elif isinstance(node[0], SegmentID):  # track
+                        ori, lower, higher, ptc_pos = self._analyze_track(node)
+                        segment = node[0].prototype
+                        ptc = self.sgmt2ptc[segment.name] + ori.direction.case(0, 1)
+                        for i in range(segment.width):
+                            self._node(ori.dimension.case("CHANX", "CHANY"),
+                                    data["id"] + i, 
+                                    ptc + 2 * (ptc_pos % segment.length) * segment.width + i * 2,
+                                    lower.x,
+                                    lower.y,
+                                    track_dir = ori.direction,
+                                    xhigh = higher.x,
+                                    yhigh = higher.y,
+                                    segment = self.timing.vpr_segment(segment),
+                                    )
+                    else:                               # block pin
+                        pin = NetUtils._dereference(context.top, node, coalesced = True)
+                        _, ori, pos = self._analyze_blockpin(pin)
+                        port, block = pin.model, pin.model.parent
+                        srcsink_per_block, _, iopin_per_block = self.blockpin2ptc[block.key]["#"]
+                        srcsink_ptc, equivalent, iopin_ptc = self.blockpin2ptc[block.key][port.key]
+                        # SOURCE/SINK node
+                        if equivalent:
+                            self._node(port.direction.case("SINK", "SOURCE"), data["srcsink_id"],
+                                    node[1][1] * srcsink_per_block + srcsink_ptc,
+                                    pos.x, pos.y, capacity = len(port),
+                                    xhigh = pos.x + block.width - 1, yhigh = pos.y + block.height - 1)
+                        else:
+                            for i in range(len(port)):
+                                self._node(port.direction.case("SINK", "SOURCE"), data["srcsink_id"] + i,
+                                        node[1][1] * srcsink_per_block + srcsink_ptc + i,
+                                        pos.x, pos.y, capacity = 1,
+                                        xhigh = pos.x + block.width - 1, yhigh = pos.y + block.height - 1)
+                        # IPIN/OPIN node
+                        for i in range(len(port)):
+                            self._node(port.direction.case("IPIN", "OPIN"), data["id"] + i,
+                                    node[1][1] * iopin_per_block + iopin_ptc + i,
+                                    pos.x + port.position.x, pos.y + port.position.y, port_ori = ori)
             # edges
             with xml.element("rr_edges"):
-                for x, y in product(range(context.top.width), range(context.top.height)):
-                    pos = Position(x, y)
-                    # block pin
-                    inst = NonLeafArrayBuilder._get_hierarchical_root(context.top, pos, Subtile.center)
-                    if inst is not None and pos == self._calc_hierarchical_position(inst):
-                        # this is a block instance
-                        block = inst.model
-                        pin2ptc = self.blockpin2ptc[block.key]
-                        for subblock in range(block.capacity):
-                            inst = NonLeafArrayBuilder._get_hierarchical_root(context.top, pos, subblock)
-                            for key in pin2ptc:
-                                if key == "#":
-                                    continue
-                                port = block.ports[key]
-                                channel = pos + port.position + port.orientation.case(
-                                        (0, 0), (0, 0), (0, -1), (-1, 0))
-                                pin = port._to_pin( inst )
-                                for bit in pin:
-                                    xml.element_leaf('edge', {
-                                        'src_node': self._calc_blockpin_id(bit, port.direction.is_output, pos),
-                                        'sink_node': self._calc_blockpin_id(bit, port.direction.is_input, pos),
-                                        'switch_id': 0,
-                                        })
-                                if port.direction.is_input and not hasattr(port, 'global_'):
-                                    args = self._analyze_routable_pin(pin)
-                                    for bit in pin:
-                                        self._edges(bit, self._calc_blockpin_id(bit, False, pos), *args)
-                    # segments
-                    for corner in Corner:
-                        inst = NonLeafArrayBuilder._get_hierarchical_root(context.top, pos, corner.to_subtile())
-                        if inst is None or not inst.model.module_class.is_switch_box:
-                            continue
-                        for node, port in iteritems(inst.model.ports):
-                            if not node.segment_type.is_sboxout:
-                                continue
-                            pin = port._to_pin( inst )
-                            args = self._analyze_routable_pin(pin)
-                            for bit in pin:
-                                sink_node = self._calc_track_id(bit)
-                                if sink_node is not None:
-                                    self._edges(bit, sink_node, *args)
+                for sink_node, sink_data in self.conn_graph.nodes(data = True):
+                    type_ = sink_data.get("type", None)
+                    if type_ == "TRACK":
+                        # 1. get the pin
+                        sink_pin = NetUtils._dereference(context.top, sink_node, coalesced = True)
+                        # 2. prepare the tail package
+                        ori, lower, higher, _ = self._analyze_track(sink_node)
+                        # 3. emit edges
+                        for i, sink_pin_bit in enumerate(sink_pin):
+                            self._edge_box_output(sink_pin_bit, sink_pin_bit,
+                                    # tail_id,            lower_pos, higher_pos, orientation
+                                    (sink_data["id"] + i, lower,     higher,     ori))
+                    elif type_ == "IPIN":
+                        # 1. get the pin
+                        sink_pin = NetUtils._dereference(context.top, sink_node, coalesced = True)
+                        # 2. prepare the tail package
+                        chan, ori, _ = self._analyze_blockpin(sink_pin)
+                        iopin_id = sink_data["id"]
+                        srcsink_id = sink_data["srcsink_id"]
+                        equivalent = sink_data.get("equivalent", False)
+                        for i, sink_pin_bit in enumerate(sink_pin):
+                            # 3.1 IPIN -> SINK
+                            self._edge(iopin_id + i, srcsink_id + (0 if equivalent else i), switch_id = 0)
+                            # 3.2 ??? -> IPIN
+                            self._edge_box_input(sink_pin_bit, sink_pin_bit,
+                                    # tail_id,     chan_pos, dimension
+                                    (iopin_id + i, chan,     ori.dimension.perpendicular))
+                    elif type_ == "OPIN":
+                        # 1. get the pin
+                        sink_pin = NetUtils._dereference(context.top, sink_node, coalesced = True)
+                        # 2. emit SOURCE -> OPIN edges
+                        iopin_id = sink_data["id"]
+                        srcsink_id = sink_data["srcsink_id"]
+                        equivalent = sink_data.get("equivalent", False)
+                        for i in range(len(sink_pin)):
+                            self._edge(srcsink_id + (0 if equivalent else i), iopin_id + i, switch_id = 0)
             del self.xml

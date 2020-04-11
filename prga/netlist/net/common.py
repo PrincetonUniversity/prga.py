@@ -284,9 +284,9 @@ class Const(Object, AbstractGenericNet):
 
     def __repr__(self):
         if self.value is None:
-            return "Unconnected({})".format(self.width)
+            return "Unconnected({})".format(len(self))
         else:
-            return "Const({}'h{:x})".format(self.width, self.value)
+            return "Const({}'h{:x})".format(len(self), self.value)
 
     # == low-level API =======================================================
     @property

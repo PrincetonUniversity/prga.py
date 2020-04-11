@@ -107,7 +107,7 @@ class Pin(Object, AbstractPin):
         self._instance = instance
 
     def __repr__(self):
-        return 'Pin({}/{}/{})'.format(self.parent.name, self._instance.name, self._model.name)
+        return 'Pin({}/{})'.format(self._instance, self._model.name)
 
     def __eq__(self, other):
         return (isinstance(other, type(self)) and self._model is other._model and

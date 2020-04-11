@@ -152,6 +152,7 @@ class HierarchicalInstance(Object, AbstractInstance):
         s = '{}/{}'.format(self._hierarchy[-1].parent.name, self._hierarchy[-1].name)
         for inst in reversed(self._hierarchy[:-1]):
             s += "[{}]/{}".format(inst.parent.name, inst.name)
+        s += "[{}]".format(self.model.name)
         return "HierarchicalInstance({})".format(s)
 
     # == low-level API =======================================================

@@ -329,6 +329,15 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
     def _sbox_key(cls, corner, identifier = None):
         return _SwitchBoxKey(corner, identifier)
 
+    @classmethod
+    def _get_trackset_reverser(cls, rev):
+        """If ``rev`` is set, return a lambda function that reverts a reversible iterator. Otherwise return a lambda
+        function that echoes the input."""
+        if rev:
+            return lambda x: reversed(x)
+        else:
+            return lambda x: x
+
     def _add_cboxout(self, node):
         """Add and connect a cboxout input."""
         if node.segment_type.is_sboxin_cboxout and node in self.ports:
@@ -358,7 +367,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
         # 1. normal output tracks
         if not crosspoints_only:
             # output tracks
-            tracks = [(sgmt, i) for sgmt in segments for i in range(sgmt.width)]
+            tracks = tuple((sgmt, i) for sgmt in segments for i in range(sgmt.width))
             o_balanced = 0
             # generate connections
             for iori in iter(Orientation):  # input orientation
@@ -373,26 +382,38 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                         if input_ is not None and output is not None:
                             self.connect(input_, output)
                     continue
+                # input & output sets
+                #   east -> north: rev, non, +1
+                #   east -> south: non, non, -1
+                #   west -> north: non, non, -1
+                #   west -> south: rev, non, -1
+                #   north -> east: rev, non, -1
+                #   north -> west: non, non, +1
+                #   south -> east: non, non, +1
+                #   south -> west: rev, non, +1
                 # input tracks
-                # ending wires: do rotation
-                rotation = 1
-                if (iori, output_orientation) in ((Orientation.west, Orientation.north),
+                irev = self._get_trackset_reverser(iori.direction == output_orientation.direction)
+                rotation = -1
+                if (iori, output_orientation) in (
+                        (Orientation.east, Orientation.north),
+                        (Orientation.north, Orientation.west),
+                        (Orientation.south, Orientation.west),
                         (Orientation.south, Orientation.east)):
-                    rotation = -1
+                    rotation = 1
                 # enumerate connections
-                for i, (isgmt, idx) in enumerate(tracks):
+                for i, (isgmt, idx) in enumerate(irev(tracks)):
                     osgmt, odx = tracks[(i + rotation + len(tracks)) % len(tracks)]
                     self._connect_tracks(isgmt, iori, isgmt.length, idx,
                             osgmt, output_orientation, 0, odx, dont_create)
                 # passing wires: do balance
-                for isgmt in segments:
-                    for isec, idx in product(range(1, isgmt.length), range(isgmt.width)):
+                for isgmt in irev(segments):
+                    for isec, idx in product(irev(range(1, isgmt.length)), irev(range(isgmt.width))):
                         osgmt, odx = tracks[o_balanced]
                         o_balanced = (o_balanced + 1) % len(tracks)
                         self._connect_tracks(isgmt, iori, isec, idx,
                                 osgmt, output_orientation, 0, odx, dont_create)
         # 2. crosspoints
-        if drive_at_crosspoints:
+        if drive_at_crosspoints and any(sgmt.length > 1 for sgmt in segments):
             # output tracks
             tracks = [(sgmt, section, i) for sgmt in segments for section in range(1, sgmt.length)
                     for i in range(sgmt.width)]
@@ -403,16 +424,18 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                     continue
                 elif iori in exclude_input_orientations:
                     continue
+                # input tracks
+                irev = self._get_trackset_reverser(iori.direction == output_orientation.direction)
                 # input tracks: ending wires first
-                for isgmt in segments:
-                    for idx in range(isgmt.width):
+                for isgmt in irev(segments):
+                    for idx in irev(range(isgmt.width)):
                         osgmt, osec, odx = tracks[o]
                         o = (o + 1) % len(tracks)
                         self._connect_tracks(isgmt, iori, isgmt.length, idx,
                                 osgmt, output_orientation, osec, odx, dont_create)
                 # passing wires next
-                for isgmt in segments:
-                    for isec, idx in product(range(1, isgmt.length), range(isgmt.width)):
+                for isgmt in irev(segments):
+                    for isec, idx in product(irev(range(1, isgmt.length)), irev(range(isgmt.width))):
                         osgmt, osec, odx = tracks[o]
                         o = (o + 1) % len(tracks)
                         self._connect_tracks(isgmt, iori, isec, idx,
@@ -421,9 +444,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
     def _fill_cycle_free(self, output_orientation, segments, 
             drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create):
         # tracks
-        tracks = []
-        for sgmt_idx, sgmt in enumerate(segments):
-            tracks.extend( (sgmt, i) for i in range(sgmt.width) )
+        tracks = tuple( (sgmt, i) for sgmt in segments for i in range(sgmt.width) )
         # logical class offsets
         lco = {
                 Orientation.east: 0,

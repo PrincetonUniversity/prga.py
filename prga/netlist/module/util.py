@@ -84,11 +84,11 @@ class ModuleUtils(object):
         return module._children.setdefault(name, value)
 
     @classmethod
-    def _elaborate_clocks(cls, module, graph, instance = None):
+    def _elaborate_clocks(cls, module, graph, instance = None, keep_coalesced = False):
         for net in itervalues(module.ports) if instance is None else itervalues(instance.pins):
             if not net.is_clock:
                 continue
-            node = NetUtils._reference(net)
+            node = NetUtils._reference(net, coalesced = keep_coalesced)
             # 1. find the predecessor(s) of this net
             try:
                 predit = graph.predecessors(node)
@@ -109,17 +109,22 @@ class ModuleUtils(object):
             try:
                 clock_group = graph.nodes[pred_node]["clock_group"]
             except KeyError:
-                pred_net = NetUtils._dereference(module, pred_node)
+                pred_net = NetUtils._dereference(module, pred_node, coalesced = keep_coalesced)
                 raise PRGAInternalError("Clock {} is connected to non-clock {}".format(net, pred_net))
             # 5. update clock group
             graph.add_node(node, clock_group = clock_group)
 
     @classmethod
-    def _elaborate_sub_timing_graph(cls, module, graph, blackbox_instance, instance = None):
+    def _elaborate_sub_timing_graph(cls, module, graph, blackbox_instance, instance = None, keep_coalesced = False):
         model = instance.model if instance is not None else module
         hierarchy = tuple(inst.key for inst in instance.hierarchy) if instance is not None else tuple()
         # 1. add connections in this model to the timing graph
-        if model._coalesce_connections:
+        if keep_coalesced:
+            if not model._coalesce_connections:
+                raise PRGAInternalError("{} supports bit-wise connections".format(model))
+            for u, v in model._conn_graph.edges:
+                graph.add_edge(u + hierarchy, v + hierarchy)
+        elif model._coalesce_connections:
             for u, v in model._conn_graph.edges:
                 bu, bv = map(lambda node: NetUtils._dereference(model, node, coalesced = True), (u, v))
                 assert len(bu) == len(bv)
@@ -129,21 +134,22 @@ class ModuleUtils(object):
             for u, v in model._conn_graph.edges:
                 graph.add_edge((u[0], u[1] + hierarchy), (v[0], v[1] + hierarchy))
         # 2. elaborate clocks
-        cls._elaborate_clocks(module, graph, instance)
+        cls._elaborate_clocks(module, graph, instance, keep_coalesced)
         # 3. elaborate sub-instances
         for sub in itervalues(model.instances):
             if instance is not None:
                 sub = sub.extend_hierarchy(above = instance)
             if blackbox_instance(sub):
                 continue
-            cls._elaborate_sub_timing_graph(module, graph, blackbox_instance, sub)
+            cls._elaborate_sub_timing_graph(module, graph, blackbox_instance, sub, keep_coalesced)
 
     @classmethod
     def reduce_timing_graph(cls, module, *,
-            initial_graph = None,
+            graph_constructor = None,
             blackbox_instance = lambda i: False,
             create_node = lambda m, n: {},
             create_edge = lambda m, path: {"path": path[1:-1]},
+            coalesce_connections = False,
             ):
         """`networkx.DiGraph`_: Create a timing graph for ``module``.
 
@@ -151,7 +157,7 @@ class ModuleUtils(object):
             module (:obj:`AbstractModule`): The module to be processed
 
         Keyword Args:
-            initial_graph (`networkx.DiGraph`_):
+            graph_constructor: Alternative graph constructor other than `_networkx.DiGraph`_
             blackbox_instance (:obj:`Function` [`AbstractInstance` ] -> :obj:`bool`): A function testing if an
                 instance should be blackboxed during elaboration. If ``True`` is returned, everything inside the
                 instance will be ignored. Only the pins of the instance will be kept.
@@ -160,50 +166,46 @@ class ModuleUtils(object):
                 path if ``drop_path`` is not set
             create_path (:obj:`Function` [`AbstractModule`, :obj:`Sequence` [:obj:`Hashable` ] -> :obj:`Mapping`): A
                 function that returns an edge attribute mapping
+            coalesce_connections (:obj:`bool`): If set, the reduced timing graph coalesce bus connections
 
         .. _networkx.DiGraph: https://networkx.github.io/documentation/stable/reference/classes/digraph.html#networkx.DiGraph
         """
-        graph = uno(initial_graph, DiGraph())
+        tmp = uno(graph_constructor, DiGraph)()
         # 1. phase 1: elaborate the entire timing graph
-        cls._elaborate_sub_timing_graph(module, graph, blackbox_instance)
+        cls._elaborate_sub_timing_graph(module, tmp, blackbox_instance, keep_coalesced = coalesce_connections)
         # 2. phase 2: reduce the timing graph
-        # 2.1 filter out leaf nodes
-        leaf_nodes = tuple(node for node in graph if graph.out_degree(node) == 0)
-        discard_nodes = set()
-        for node in leaf_nodes:
+        graph = uno(graph_constructor, DiGraph)()
+        for node in tmp:
+            # 2.1 filter out leaf nodes
+            if tmp.out_degree(node) > 0:
+                continue
             attributes = create_node(module, node)
-            if attributes is None:
-                discard_nodes.add(node)
-            else:
-                graph.add_node(node, kept = True, **attributes)
+            if attributes is not None:
+                graph.add_node(node, **attributes)
             # 2.2 DFS
-            stack = [(node,         None if attributes is None else node, None if attributes is None else (node, ))]
+            #         head node, tail node,                            path
+            stack = [(node,      None if attributes is None else node, None if attributes is None else (node, ))]
             while stack:
                 head, tail, path = stack.pop()
-                predecessors = tuple(graph.predecessors(head))
-                for prev in predecessors:
-                    if graph.nodes[prev].get("kept"):   # previous node already processed
+                for prev in tmp.predecessors(head):
+                    if prev in graph:                   # previous node already processed
                         if tail is None:
                             continue
-                        elif graph.edges.get((prev, tail), {}).get("kept"):
+                        elif (prev, tail) in graph.edges:
                             raise PRGAInternalError("Multiple paths found from {} to {}"
                                     .format(NetUtils._dereference(module, prev),
                                         NetUtils._dereference(module, tail)))
                         else:
-                            graph.add_edge(prev, tail, kept = True, **create_edge(module, (prev, ) + path))
+                            graph.add_edge(prev, tail, **create_edge(module, (prev, ) + path))
                         continue
                     prev_attrs = create_node(module, prev)
                     if prev_attrs is not None:
-                        graph.add_node(prev, kept = True, **prev_attrs)
+                        graph.add_node(prev, **prev_attrs)
                         if tail is not None:
-                            graph.add_edge(prev, tail, kept = True, **create_edge(module, (prev, ) + path))
+                            graph.add_edge(prev, tail, **create_edge(module, (prev, ) + path))
                         stack.append( (prev, prev, (prev, )) )
+                    elif tail is not None:
+                        stack.append( (prev, tail, (prev, ) + path) )
                     else:
-                        discard_nodes.add(prev)
-                        if tail is not None:
-                            stack.append( (prev, tail, (prev, ) + path) )
-                        else:
-                            stack.append( (prev, None, None) )
-        # 2.3 remove unwanted nodes
-        graph.remove_nodes_from(discard_nodes)
+                        stack.append( (prev, None, None) )
         return graph

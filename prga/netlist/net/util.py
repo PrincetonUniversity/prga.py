@@ -80,7 +80,7 @@ class NetUtils(object):
             if instance is None:
                 instance = module.instances[inst_key]
             else:
-                instance = instance.build_hierarchy(below = instance.model.instances[inst_key])
+                instance = instance.extend_hierarchy(below = instance.model.instances[inst_key])
         bus = instance.pins[net_key] if instance else module.ports[net_key]
         if index is not None:
             return bus[index]
