@@ -189,7 +189,11 @@ class Scanchain(object):
         context = Context("scanchain", cfg_width = cfg_width)
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width)
         context._fasm_delegate = ScanchainFASMDelegate(context)
+        cls.register_primitives(context, cfg_width, dont_add_primitive)
+        return context
 
+    @classmethod
+    def register_primitives(cls, context, cfg_width, dont_add_primitive = tuple()):
         # modify dual-mode I/O
         if True:
             iopad = context.primitives["iopad"]
@@ -420,8 +424,6 @@ class Scanchain(object):
             cls._get_or_create_cfg_ports(fle6._module, cfg_width)
 
             fle6.commit()
-
-        return context
 
     @classmethod
     def new_renderer(cls, additional_template_search_paths = tuple()):
