@@ -5,8 +5,9 @@ module {{ module.name }} (
     input wire [{{ width - 1 }}:0] in,
     output reg [0:0] out,
 
-    input wire [0:0] cfg_e,
     input wire [0:0] cfg_clk,
+    input wire [0:0] cfg_e,
+    input wire [0:0] cfg_we,
     input wire [{{ cfg_width - 1 }}:0] cfg_i,
     output wire [{{ cfg_width - 1 }}:0] cfg_o
     );
@@ -35,7 +36,7 @@ module {{ module.name }} (
     end
 
     always @* begin
-        if (cfg_e) begin
+        if (cfg_e) begin        // avoid pre-programming oscillating
             out = 1'b0;
         end else begin
             case (internal_in)  // synopsys infer_mux
@@ -49,7 +50,7 @@ module {{ module.name }} (
     wire [{{ module.cfg_bitcount + cfg_width - 1 }}:0] cfg_d_next;
 
     always @(posedge cfg_clk) begin
-        if (cfg_e) begin
+        if (cfg_e && cfg_we) begin
             cfg_d <= cfg_d_next;
         end
     end

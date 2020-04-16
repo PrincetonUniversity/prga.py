@@ -3,8 +3,9 @@
 `timescale 1ns/1ps
 module {{ behav.name }}_tb_wrapper;
 
-    localparam  bs_num_qwords       = {{ config.bs_num_qwords }},
-                bs_word_size        = {{ config.bs_word_size }};
+    localparam  bs_total_bits       = {{ config.bs_total_size }},
+                bs_num_qwords       = {{ config.bs_num_qwords }},
+                bs_last_bit_index   = {{ config.bs_last_bit_index }};
 
     // system control
     reg sys_clk, sys_rst;
@@ -146,22 +147,19 @@ module {{ behav.name }}_tb_wrapper;
     localparam  INIT            = 3'd0,
                 RESET           = 3'd1,
                 PROGRAMMING     = 3'd2,
-                PROG_STABLIZING = 3'd3,
-                TB_RESET        = 3'd4,
+                PROG_DONE       = 3'd3,
+                PROG_STABLIZING = 3'd4,
                 IMPL_RUNNING    = 3'd5;
 
-    reg [2:0]       state;
+    reg [2:0]       state, state_next;
     reg [0:256*8-1] bs_file;
-    reg [63:0]      cfg_m [0:bs_num_qwords];
-    reg [bs_word_size-1:0]          cfg_i;
-    wire [bs_word_size-1:0]         cfg_o;
+    reg [63:0]      cfg_m [0:bs_num_qwords - 1];
+    reg             cfg_i;
     reg             cfg_e;
-    reg             cfg_we, cfg_we_prev, cfg_we_o_prev;
-    wire            cfg_we_o;
+    reg             cfg_we;
     wire            cfg_clk;
     reg [63:0]      cfg_progress;
-    reg [31:0]      cfg_fragments;
-    reg             fakeprog;
+    reg [7:0]       cfg_percentage;
 
     assign cfg_clk = cfg_e && sys_clk;
 
@@ -171,8 +169,6 @@ module {{ behav.name }}_tb_wrapper;
         ,.cfg_i(cfg_i)
         ,.cfg_e(cfg_e)
         ,.cfg_we(cfg_we)
-        ,.cfg_we_o(cfg_we_o)
-        ,.cfg_o(cfg_o)
         {%- for name, port in iteritems(impl.ports) %}
             {%- if port.direction.name == 'output' %}
         ,.{{ name }}(impl_{{ port.name }})
@@ -185,8 +181,8 @@ module {{ behav.name }}_tb_wrapper;
     // test setup
     initial begin
         state = INIT;
-        cfg_e = 'b0;
-        cfg_we = 'b0;
+        cfg_e = 1'b0;
+        cfg_we = 1'b0;
 
         if (!$value$plusargs("bitstream_memh=%s", bs_file)) begin
             if (verbose)
@@ -195,107 +191,30 @@ module {{ behav.name }}_tb_wrapper;
         end
 
         $readmemh(bs_file, cfg_m);
-        cfg_m[bs_num_qwords] = 'b0;
-
-        fakeprog = 'b0;
-        if ($test$plusargs("fakeprog")) begin
-            fakeprog = 'b1;
-            {% for mem, addr, low, high in impl.config %}
-            impl.{{ mem }} = cfg_m[{{ config.bs_num_qwords - 1 - addr }}][{{ high }}:{{ low }}];
-            {%- endfor %}
-        end
+        {% for mem, addr, low, high in impl.config %}
+        impl.{{ mem }} = cfg_m[{{ addr }}][{{ high }}:{{ low }}];
+        {%- endfor %}
     end
 
     // configuration
     always @(posedge sys_clk) begin
         if (sys_rst) begin
-            state <= RESET;
-            cfg_progress <= 'b0;
-        end else if (fakeprog) begin
-            case (state)
-                RESET:
-                    state <= TB_RESET;
-                TB_RESET:
-                    state <= IMPL_RUNNING;
-            endcase
+            state <= PROGRAMMING;
         end else begin
             case (state)
-                RESET:
-                    state <= PROGRAMMING;
-                PROGRAMMING: begin
-                    if (cfg_we) begin
-                        if (cfg_progress + bs_word_size >= bs_num_qwords * 64) begin
-                            $display("[INFO] [Cycle %04d] Bitstream writing completed", cycle_count);
-                            state <= PROG_STABLIZING;
-                        end else begin
-                            cfg_progress <= cfg_progress + bs_word_size;
-                        end
-                    end
-                end
-                PROG_STABLIZING: begin
-                    if (cfg_fragments == 0) begin
-                        $display("[INFO] [Cycle %04d] Bitstream loading completed", cycle_count);
-                        state <= TB_RESET;
-                    end
-                end
-                TB_RESET: begin
+                PROGRAMMING:
+                    state <= PROG_DONE;
+                PROG_DONE:
+                    state <= PROG_STABLIZING;
+                PROG_STABLIZING:
                     state <= IMPL_RUNNING;
-                end
             endcase
-        end
-    end
-    
-    always @(posedge sys_clk) begin
-        if (sys_rst) begin
-            cfg_we_prev <= 'b0;
-            cfg_we_o_prev <= 'b0;
-            cfg_fragments <= 'b0;
-        end else begin
-            cfg_we_prev <= cfg_we;
-            cfg_we_o_prev <= cfg_we_o;
-
-            if ((cfg_we && ~cfg_we_prev) && ~(cfg_we_o && ~cfg_we_o_prev)) begin
-                cfg_fragments <= cfg_fragments + 1;
-            end else if (~(cfg_we && ~cfg_we_prev) && (cfg_we_o && ~cfg_we_o_prev)) begin
-                cfg_fragments <= cfg_fragments - 1;
-            end
         end
     end
 
     always @* begin
-        cfg_e = 1'b0;
-        cfg_we = 1'b0;
-        cfg_i = {cfg_m[cfg_progress / 64], cfg_m[cfg_progress / 64 + 1]} >> (128 - bs_word_size - cfg_progress % 64);
+        cfg_e = state == PROGRAMMING;
         tb_rst = sys_rst || state != IMPL_RUNNING;
-
-        case (state)
-            RESET: begin
-                cfg_e = 'b1;
-                cfg_we = 'b0;
-            end
-            PROGRAMMING: begin
-                cfg_e = 'b1;
-                cfg_we = cycle_count % 100;     // skip once every 100 cycles
-            end
-            PROG_STABLIZING: begin
-                cfg_e = 'b1;
-            end
-        endcase
-    end
-
-    // progress tracking
-    reg [7:0]       cfg_percentage;
-
-    always @(posedge sys_clk) begin
-        if (sys_rst) begin
-            cfg_percentage <= 'b0;
-        end else begin
-            if (cfg_progress * 100 / bs_num_qwords / 64 > cfg_percentage) begin
-                cfg_percentage <= cfg_percentage + 1;
-
-                $display("[INFO] Programming progress: %02d%%", cfg_percentage + 1);
-            end
-        end
     end
 
     // output tracking

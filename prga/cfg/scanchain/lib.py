@@ -29,10 +29,11 @@ ADDITIONAL_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(_
 class ScanchainSwitchDatabase(Object, AbstractSwitchDatabase):
     """Switch database for scanchain configuration circuitry."""
 
-    __slots__ = ["context", "cfg_width"]
-    def __init__(self, context, cfg_width):
+    __slots__ = ["context", "cfg_width", "entry"]
+    def __init__(self, context, cfg_width, entry):
         self.context = context
         self.cfg_width = cfg_width
+        self.entry = entry
 
     def get_switch(self, width, module = None):
         key = (ModuleClass.switch, width)
@@ -52,7 +53,7 @@ class ScanchainSwitchDatabase(Object, AbstractSwitchDatabase):
         o = ModuleUtils.create_port(switch, 'o', 1, PortDirection.output, net_class = NetClass.switch)
         NetUtils.connect(i, o, fully = True)
         # configuration circuits
-        Scanchain._get_or_create_cfg_ports(switch, self.cfg_width)
+        self.entry._get_or_create_cfg_ports(switch, self.cfg_width)
         return self.context._database.setdefault((ModuleView.logical, key), switch)
 
 # ----------------------------------------------------------------------------
@@ -155,45 +156,62 @@ class ScanchainFASMDelegate(FASMDelegate):
 class Scanchain(object):
     """Scanchain configuration circuitry entry point."""
 
-    class _PrimitiveParameter(namedtuple("_PrimitiveParameter", "cfg_bitoffset cfg_bitcount")):
+    class PrimitiveParameter(namedtuple("PrimitiveParameter", "cfg_bitoffset cfg_bitcount")):
         pass
 
     @classmethod
-    def _get_or_create_cfg_ports(cls, module, cfg_width, enable_only = False):
+    def _get_or_create_cfg_ports(cls, module, cfg_width, *, enable_only = False, we_o = False):
         try:
             if enable_only:
                 return module.ports['cfg_e']
             else:
-                return tuple(map(lambda x: module.ports[x], ("cfg_clk", "cfg_e", "cfg_i", "cfg_o")))
+                keys = ("cfg_clk", "cfg_e", "cfg_we", "cfg_i", "cfg_o")
+                if we_o:
+                    keys += ("cfg_we_o", )
+                return {k: module.ports[k] for k in keys}
         except KeyError:
             if enable_only:
                 return ModuleUtils.create_port(module, 'cfg_e', 1, PortDirection.input_,
                         net_class = NetClass.cfg)
             else:
+                ports = {}
                 cfg_clk = ModuleUtils.create_port(module, 'cfg_clk', 1, PortDirection.input_,
                         is_clock = True, net_class = NetClass.cfg)
                 cfg_e = module.ports.get("cfg_e")
                 if cfg_e is None:
                     cfg_e = ModuleUtils.create_port(module, 'cfg_e', 1, PortDirection.input_,
                             net_class = NetClass.cfg)
-                cfg_i = ModuleUtils.create_port(module, 'cfg_i', cfg_width, PortDirection.input_,
+                ports["cfg_e"] = cfg_e
+                ports["cfg_we"] = ModuleUtils.create_port(module, "cfg_we", 1, PortDirection.input_,
                         net_class = NetClass.cfg)
-                cfg_o = ModuleUtils.create_port(module, 'cfg_o', cfg_width, PortDirection.output,
+                if we_o:
+                    ports["cfg_we_o"] = ModuleUtils.create_port(module, "cfg_we_o", 1, PortDirection.output,
+                            net_class = NetClass.cfg)
+                ports["cfg_i"] = ModuleUtils.create_port(module, 'cfg_i', cfg_width, PortDirection.input_,
+                        net_class = NetClass.cfg)
+                ports["cfg_o"] = ModuleUtils.create_port(module, 'cfg_o', cfg_width, PortDirection.output,
                         net_class = NetClass.cfg)
                 if module.is_cell:
-                    NetUtils.connect(cfg_clk, [cfg_e, cfg_i, cfg_o], fully = True, allow_multisource = True)
-                return cfg_clk, cfg_e, cfg_i, cfg_o
+                    NetUtils.connect(cfg_clk, itervalues(ports), fully = True)
+                ports["cfg_clk"] = cfg_clk
+                return ports
 
     @classmethod
-    def new_context(cls, cfg_width = 1, *, dont_add_primitive = tuple()):
+    def new_context(cls, cfg_width = 1, *, dont_add_primitive = tuple(), dont_add_logical_primitive = tuple()):
         context = Context("scanchain", cfg_width = cfg_width)
-        context._switch_database = ScanchainSwitchDatabase(context, cfg_width)
+        context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
         context._fasm_delegate = ScanchainFASMDelegate(context)
-        cls.register_primitives(context, cfg_width, dont_add_primitive)
+        cls._register_primitives(context, cfg_width, dont_add_primitive, dont_add_logical_primitive)
         return context
 
     @classmethod
-    def register_primitives(cls, context, cfg_width, dont_add_primitive = tuple()):
+    def _register_primitives(cls, context, cfg_width, dont_add_primitive, dont_add_logical_primitive):
+        if not isinstance(dont_add_primitive, set):
+            dont_add_primitive = set(iter(dont_add_primitive))
+
+        if not isinstance(dont_add_logical_primitive, set):
+            dont_add_logical_primitive = set(iter(dont_add_logical_primitive)) | dont_add_primitive
+
         # modify dual-mode I/O
         if True:
             iopad = context.primitives["iopad"]
@@ -201,10 +219,20 @@ class Scanchain(object):
             iopad.modes["inpad"].cfg_mode_selection = tuple()
             iopad.modes["outpad"].cfg_mode_selection = (0, )
 
+        # register chain delimiter
+        if "cfg_delim" not in dont_add_logical_primitive:
+            delim = Module("cfg_delim",
+                    view = ModuleView.logical,
+                    is_cell = True,
+                    module_class = ModuleClass.cfg,
+                    verilog_template = "cfg_delim.tmpl.v")
+            cls._get_or_create_cfg_ports(delim, cfg_width, we_o = True)
+            context._database[ModuleView.logical, "cfg_delim"] = delim
+
         # register luts
         for i in range(2, 9):
             name = "lut" + str(i)
-            if name in dont_add_primitive:
+            if name in dont_add_logical_primitive:
                 continue
             lut = Module(name,
                     view = ModuleView.logical,
@@ -225,7 +253,7 @@ class Scanchain(object):
             context._database[ModuleView.user, lut.key].cfg_bitcount = 2 ** i
 
         # register flipflops
-        if "flipflop" not in dont_add_primitive:
+        if "flipflop" not in dont_add_logical_primitive:
             flipflop = Module('flipflop',
                     view = ModuleView.logical,
                     is_cell = True,
@@ -243,24 +271,8 @@ class Scanchain(object):
             cls._get_or_create_cfg_ports(flipflop, cfg_width, enable_only = True)
             context._database[ModuleView.logical, flipflop.key] = flipflop
 
-        # register single-bit configuration filler
-        if "cfg_bit" not in dont_add_primitive:
-            cfg_bit = Module('cfg_bit',
-                    view = ModuleView.logical,
-                    is_cell = True,
-                    module_class = ModuleClass.cfg,
-                    cfg_bitcount = 1,
-                    verilog_template = "cfg_bit.tmpl.v")
-            cfg_clk, _0, _1, _2 = cls._get_or_create_cfg_ports(cfg_bit, cfg_width)
-            cfg_d = ModuleUtils.create_port(cfg_bit, 'cfg_d', 1, PortDirection.output,
-                    net_class = NetClass.cfg)
-            NetUtils.connect(cfg_clk, cfg_d)
-            context._database[ModuleView.logical, cfg_bit.key] = cfg_bit
-
         # register fracturable LUT6
-        if ("lut5" not in dont_add_primitive and
-                "lut6" not in dont_add_primitive and
-                "fraclut6" not in dont_add_primitive):
+        if {"lut5", "lut6", "fraclut6"} - dont_add_primitive:
             # user view
             fraclut6 = context.create_multimode('fraclut6', cfg_bitcount = 65)
             fraclut6.create_input("in", 6)
@@ -285,15 +297,17 @@ class Scanchain(object):
                 mode.connect(insts[1].pins["out"], mode.ports["o5"], pack_patterns = ("lut5B_dff", ))
                 mode.commit()
 
-            fraclut6 = fraclut6.create_logical_counterpart(
-                    cfg_bitcount = 65, verilog_template = "fraclut6.tmpl.v")
+            # logical view
+            if "fraclut6" not in dont_add_logical_primitive:
+                fraclut6 = fraclut6.create_logical_counterpart(
+                        cfg_bitcount = 65, verilog_template = "fraclut6.tmpl.v")
 
-            # combinational paths
-            fraclut6.add_timing_arc(fraclut6.ports["in"], fraclut6.ports["o6"])
-            fraclut6.add_timing_arc(fraclut6.ports["in"][:5], fraclut6.ports["o5"])
+                # combinational paths
+                fraclut6.add_timing_arc(fraclut6.ports["in"], fraclut6.ports["o6"])
+                fraclut6.add_timing_arc(fraclut6.ports["in"][:5], fraclut6.ports["o5"])
 
-            # configuration ports
-            cls._get_or_create_cfg_ports(fraclut6._module, cfg_width)
+                # configuration ports
+                cls._get_or_create_cfg_ports(fraclut6._module, cfg_width)
 
             fraclut6.commit()
 
@@ -309,9 +323,9 @@ class Scanchain(object):
                         "opt -full",
                         ),
                     parameters = {
-                        "ENABLE_CE": {"init": "1'b0", "cfg": cls._PrimitiveParameter(0, 1)},
-                        "ENABLE_SR": {"init": "1'b0", "cfg": cls._PrimitiveParameter(1, 1)},
-                        "SR_SET": {"init": "1'b0", "cfg": cls._PrimitiveParameter(2, 1)},
+                        "ENABLE_CE": {"init": "1'b0", "cfg": cls.PrimitiveParameter(0, 1)},
+                        "ENABLE_SR": {"init": "1'b0", "cfg": cls.PrimitiveParameter(1, 1)},
+                        "SR_SET": {"init": "1'b0", "cfg": cls.PrimitiveParameter(2, 1)},
                         },
                     cfg_bitcount = 3)
             clk = mdff.create_clock("clk")
@@ -323,10 +337,12 @@ class Scanchain(object):
             NetUtils.connect(clk, p, fully = True)
 
             # logical view
-            mdff = mdff.create_logical_counterpart(
-                    cfg_bitcount = 3,
-                    verilog_template = "mdff.tmpl.v")
-            cls._get_or_create_cfg_ports(mdff._module, cfg_width)
+            if "mdff" not in dont_add_logical_primitive:
+                mdff = mdff.create_logical_counterpart(
+                        cfg_bitcount = 3,
+                        verilog_template = "mdff.tmpl.v")
+                cls._get_or_create_cfg_ports(mdff._module, cfg_width)
+            
             mdff.commit()
 
         # register adder
@@ -335,7 +351,7 @@ class Scanchain(object):
             adder = context.create_primitive("adder",
                     techmap_template = "adder.techmap.tmpl.v",
                     parameters = {
-                        "CIN_FABRIC": {"init": "1'b0", "cfg": cls._PrimitiveParameter(0, 1)},
+                        "CIN_FABRIC": {"init": "1'b0", "cfg": cls.PrimitiveParameter(0, 1)},
                         },
                     cfg_bitcount = 1)
             i, o = [], []
@@ -349,18 +365,16 @@ class Scanchain(object):
             NetUtils.connect(i, o, fully = True)
 
             # logical view
-            adder = adder.create_logical_counterpart(
-                    cfg_bitcount = 1,
-                    verilog_template = "adder.tmpl.v")
-            cls._get_or_create_cfg_ports(adder._module, cfg_width)
+            if "adder" not in dont_add_logical_primitive:
+                adder = adder.create_logical_counterpart(
+                        cfg_bitcount = 1,
+                        verilog_template = "adder.tmpl.v")
+                cls._get_or_create_cfg_ports(adder._module, cfg_width)
+
             adder.commit()
 
         # register simplified stratix-IV FLE
-        if ("lut5" not in dont_add_primitive and
-                "lut6" not in dont_add_primitive and
-                "adder" not in dont_add_primitive and
-                "flipflop" not in dont_add_primitive and
-                "fle6" not in dont_add_primitive):
+        if {"lut5", "lut6", "adder", "flipflop", "fle6"} - dont_add_primitive:
             # user view
             fle6 = context.create_multimode('fle6', cfg_bitcount = 69)
             fle6.create_clock("clk")
@@ -413,17 +427,38 @@ class Scanchain(object):
                 mode.commit()
 
             # logical view
-            fle6 = fle6.create_logical_counterpart(
-                    cfg_bitcount = 69, verilog_template = "fle6.tmpl.v")
+            if "fle6" not in dont_add_logical_primitive:
+                fle6 = fle6.create_logical_counterpart(
+                        cfg_bitcount = 69, verilog_template = "fle6.tmpl.v")
 
-            # combinational paths
-            fle6.add_timing_arc([fle6.ports["in"], fle6.ports["cin"]], [fle6.ports["out"], fle6.ports["cout"]])
-            fle6.add_timing_arc(fle6.ports["clk"], fle6.ports["out"])
+                # combinational paths
+                fle6.add_timing_arc([fle6.ports["in"], fle6.ports["cin"]], [fle6.ports["out"], fle6.ports["cout"]])
+                fle6.add_timing_arc(fle6.ports["clk"], fle6.ports["out"])
 
-            # configuration ports
-            cls._get_or_create_cfg_ports(fle6._module, cfg_width)
+                # configuration ports
+                cls._get_or_create_cfg_ports(fle6._module, cfg_width)
 
             fle6.commit()
+
+    @classmethod
+    def _get_or_register_filler(cls, context, cfg_width, filler_width):
+        key = ("cfg_filler", filler_width)
+        try:
+            return context.database[ModuleView.logical, key]
+        except KeyError:
+            filler = Module("cfg_filler_{}".format(filler_width),
+                    view = ModuleView.logical,
+                    is_cell = True,
+                    module_class = ModuleClass.cfg,
+                    verilog_template = "cfg_filler.tmpl.v",
+                    key = key,
+                    cfg_bitcount = filler_width)
+            cfg_clk = cls._get_or_create_cfg_ports(filler, cfg_width)["cfg_clk"]
+            cfg_d = ModuleUtils.create_port(filler, "cfg_d", filler_width, PortDirection.output,
+                    net_class = NetClass.cfg)
+            NetUtils.connect(cfg_clk, cfg_d, fully = True)
+            context._database[ModuleView.logical, key] = filler
+            return filler
 
     @classmethod
     def new_renderer(cls, additional_template_search_paths = tuple()):
@@ -433,18 +468,22 @@ class Scanchain(object):
         return r
 
     @classmethod
-    def complete_scanchain(cls, context, logical_module, *, iter_instances = lambda m: itervalues(m.instances)):
+    def complete_scanchain(cls, context, logical_module, *,
+            iter_instances = lambda m: itervalues(m.instances),
+            append_delimiter = lambda m: m.module_class.is_block or m.module_class.is_routing_box):
         """Complete the scanchain."""
         module = logical_module
-        # special process needed for IO blocks (output enable)
+        # special processing needed for IO blocks (output enable)
         if module.module_class.is_io_block:
             oe = module.ports.get(IOType.oe)
             if oe is not None:
-                inst = ModuleUtils.instantiate(module, context.database[ModuleView.logical, 'cfg_bit'], '_cfg_oe')
+                inst = ModuleUtils.instantiate(module,
+                        cls._get_or_register_filler(context, context.cfg_width, 1),
+                        '_cfg_oe')
                 NetUtils.connect(inst.pins["cfg_d"], oe)
         # connecting scanchain ports
         cfg_bitoffset = 0
-        cfg_clk, cfg_e, cfg_i, cfg_o = (None, ) * 4
+        cfg_nets = {}
         for instance in iter_instances(module):
             if instance.model.module_class not in (ModuleClass.primitive, ModuleClass.switch, ModuleClass.cfg):
                 if not hasattr(instance.model, 'cfg_bitcount'):
@@ -453,23 +492,52 @@ class Scanchain(object):
             inst_cfg_e = instance.pins.get('cfg_e')
             if inst_cfg_e is None:
                 continue
-            cfg_e = cls._get_or_create_cfg_ports(module, context.cfg_width, True)
+            cfg_e = cfg_nets.get("cfg_e")
+            if cfg_e is None:
+                cfg_e = cfg_nets["cfg_e"] = cls._get_or_create_cfg_ports(module, context.cfg_width,
+                        enable_only = True)
             NetUtils.connect(cfg_e, inst_cfg_e)
             # actual bitstream loading pin
             inst_cfg_i = instance.pins.get('cfg_i')
             if inst_cfg_i is None:
                 continue
             assert len(inst_cfg_i) == context.cfg_width
-            if cfg_clk is None:
-                cfg_clk, cfg_e, cfg_i, cfg_o = cls._get_or_create_cfg_ports(module, context.cfg_width)
             instance.cfg_bitoffset = cfg_bitoffset
-            NetUtils.connect(cfg_clk, instance.pins['cfg_clk'])
-            NetUtils.connect(cfg_i, inst_cfg_i)
-            cfg_i = instance.pins['cfg_o']
             cfg_bitoffset += instance.model.cfg_bitcount
-        if cfg_i is not None:
-            NetUtils.connect(cfg_i, cfg_o)
+            # connect nets
+            if "cfg_clk" not in cfg_nets:
+                cfg_nets = cls._get_or_create_cfg_ports(module, context.cfg_width)
+            NetUtils.connect(cfg_nets["cfg_clk"], instance.pins['cfg_clk'])
+            NetUtils.connect(cfg_nets["cfg_i"], inst_cfg_i)
+            NetUtils.connect(cfg_nets["cfg_we"], instance.pins["cfg_we"])
+            cfg_nets["cfg_i"] = instance.pins['cfg_o']
+            cfg_we_o = instance.pins.get("cfg_we_o")
+            if cfg_we_o:
+                cfg_nets["cfg_we"] = cfg_we_o
+                if "cfg_we_o" not in cfg_nets:
+                    cfg_nets["cfg_we_o"] = ModuleUtils.create_port(module, "cfg_we_o", 1, PortDirection.output,
+                            net_class = NetClass.cfg)
         module.cfg_bitcount = cfg_bitoffset
+        if "cfg_i" in cfg_nets:
+            if append_delimiter(module):
+                cfg_we_o = cfg_nets.get("cfg_we_o")
+                if cfg_we_o is None:
+                    cfg_we_o = ModuleUtils.create_port(module, "cfg_we_o", 1, PortDirection.output,
+                            net_class = NetClass.cfg)
+                delimiter = ModuleUtils.instantiate(module, 
+                        context.database[ModuleView.logical, "cfg_delim"],
+                        "_cfg_delim")
+                NetUtils.connect(cfg_nets["cfg_clk"], delimiter.pins["cfg_clk"])
+                NetUtils.connect(cfg_nets["cfg_e"], delimiter.pins["cfg_e"])
+                NetUtils.connect(cfg_nets["cfg_we"], delimiter.pins["cfg_we"])
+                NetUtils.connect(cfg_nets["cfg_i"], delimiter.pins["cfg_i"])
+                NetUtils.connect(delimiter.pins["cfg_o"], cfg_nets["cfg_o"])
+                NetUtils.connect(delimiter.pins["cfg_we_o"], cfg_we_o)
+            else:
+                NetUtils.connect(cfg_nets["cfg_i"], cfg_nets["cfg_o"])
+                cfg_we_o = cfg_nets.get("cfg_we_o")
+                if cfg_we_o:
+                    NetUtils.connect(cfg_nets["cfg_we"], cfg_we_o)
         if module.key == context.top.key:
             if not hasattr(context.summary, "scanchain"):
                 context.summary.scanchain = {}

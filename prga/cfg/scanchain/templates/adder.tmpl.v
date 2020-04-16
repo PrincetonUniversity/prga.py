@@ -12,8 +12,9 @@ module adder (
     output wire [0:0] cout_fabric,
 
     // configuartion ports
-    input wire [0:0] cfg_e,
     input wire [0:0] cfg_clk,
+    input wire [0:0] cfg_e,
+    input wire [0:0] cfg_we,
     input wire [{{ cfg_width - 1 }}:0] cfg_i,
     output wire [{{ cfg_width - 1 }}:0] cfg_o
     );
@@ -23,7 +24,7 @@ module adder (
     reg [0:0] cfg_d;
 
     always @* begin
-        if (cfg_e) begin
+        if (cfg_e) begin    // avoid pre-programming oscillation
             s = 1'b0;
             cout = 1'b0;
         end else begin
@@ -40,7 +41,7 @@ module adder (
     wire [{{ 0 + cfg_width }}:0] cfg_d_next;
 
     always @(posedge cfg_clk) begin
-        if (cfg_e) begin
+        if (cfg_e && cfg_we) begin
             cfg_d <= cfg_d_next;
         end
     end

@@ -7,8 +7,9 @@ module fraclut6 (
     output reg [0:0] o6,
 
     // configuartion ports
-    input wire [0:0] cfg_e,
     input wire [0:0] cfg_clk,
+    input wire [0:0] cfg_e,
+    input wire [0:0] cfg_we,
     input wire [{{ cfg_width - 1 }}:0] cfg_i,
     output wire [{{ cfg_width - 1 }}:0] cfg_o
     );
@@ -38,7 +39,7 @@ module fraclut6 (
     end
 
     always @* begin
-        if (cfg_e) begin
+        if (cfg_e) begin    // avoid pre-programming oscillation
             o5 = 1'b0;
             lut5A_out = 1'b0;
             o6 = 1'b0;
@@ -66,7 +67,7 @@ module fraclut6 (
     wire [{{ 64 + cfg_width }}:0] cfg_d_next;
 
     always @(posedge cfg_clk) begin
-        if (cfg_e) begin
+        if (cfg_e && cfg_we) begin
             cfg_d <= cfg_d_next;
         end
     end

@@ -9,8 +9,9 @@ module mdff (
     input wire [0:0] sr,
 
     // configuartion ports
-    input wire [0:0] cfg_e,
     input wire [0:0] cfg_clk,
+    input wire [0:0] cfg_e,
+    input wire [0:0] cfg_we,
     input wire [{{ cfg_width - 1 }}:0] cfg_i,
     output wire [{{ cfg_width - 1 }}:0] cfg_o
     );
@@ -39,7 +40,7 @@ module mdff (
     end
 
     always @(posedge clk) begin
-        if (cfg_e) begin
+        if (cfg_e) begin    // avoid pre-programming oscillation
             Q <= 1'b0;
         end else if (~cfg_d[ENABLE_CE] || internal_ce) begin
             if (cfg_d[ENABLE_SR] && internal_sr) begin
@@ -53,7 +54,7 @@ module mdff (
     wire [{{ 2 + cfg_width }}:0] cfg_d_next;
 
     always @(posedge cfg_clk) begin
-        if (cfg_e) begin
+        if (cfg_e && cfg_we) begin
             cfg_d <= cfg_d_next;
         end
     end

@@ -9,8 +9,9 @@ module fle6 (
     output reg [0:0] cout,
 
     // configuartion ports
-    input wire [0:0] cfg_e,
     input wire [0:0] cfg_clk,
+    input wire [0:0] cfg_e,
+    input wire [0:0] cfg_we,
     input wire [{{ cfg_width - 1 }}:0] cfg_i,
     output wire [{{ cfg_width - 1 }}:0] cfg_o
     );
@@ -81,7 +82,7 @@ module fle6 (
     end
 
     always @* begin
-        if (cfg_e) begin
+        if (cfg_e) begin    // avoid pre-programming oscillating
             internal_lut = 2'b0;
         end else begin
             case (internal_in[4:0])     // synopsys infer_mux
@@ -96,7 +97,7 @@ module fle6 (
     end
 
     always @* begin
-        if (cfg_e) begin
+        if (cfg_e) begin    // avoid pre-programming oscillating
             out = 2'b0;
             cout = 1'b0;
         end else begin
@@ -144,7 +145,7 @@ module fle6 (
     wire [CFG_BITCOUNT - 1 + {{ cfg_width }}:0] cfg_d_next;
 
     always @(posedge cfg_clk) begin
-        if (cfg_e) begin
+        if (cfg_e && cfg_we) begin
             cfg_d <= cfg_d_next;
         end
     end

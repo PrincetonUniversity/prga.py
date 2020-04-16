@@ -13,7 +13,7 @@ COMP ?= iverilog
 FLAGS := -g2005 -gspecify
 {%- elif compiler == 'vcs' %}
 COMP ?= vcs
-FLAGS := -full64 -v2005
+FLAGS := -full64 -sverilog
 {%- endif %}
 
 # ----------------------------------------------------------------------------
@@ -26,13 +26,20 @@ TARGET_SRCS := {{ target.sources|join(' ') }}
 TARGET_FLAGS :={% for inc in target.includes %} {% if compiler == 'iverilog' %}-I{{ inc }}{% elif compiler == 'vcs' %}+incdir+{{ inc }}{% endif %}{% endfor %}
 TARGET_FLAGS +={% for macro in target.defines %} {% if compiler == 'iverilog' %}-D{{ macro }}{% elif compiler == 'vcs' %}+define+{{ macro }}{% endif %}{% endfor %}
 
+{%- if host is defined %}
 HOST := {{ host.name }}
 HOST_SRCS := {{ host.sources|join(' ') }}
 HOST_FLAGS :={% for inc in host.includes %} {% if compiler == 'iverilog' %}-I{{ inc }}{% elif compiler == 'vcs' %}+incdir+{{ inc }}{% endif %}{% endfor %}
 HOST_FLAGS +={% for macro in host.defines %} {% if compiler == 'iverilog' %}-D{{ macro }}{% elif compiler == 'vcs' %}+define+{{ macro }}{% endif %}{% endfor %}
 HOST_ARGS :={% for arg in host.args %} +{{ arg }}{% endfor %}
+{%- else %}
+HOST :=
+HOST_SRCS :=
+HOST_FLAGS :=
+HOST_ARGS :=
+{%- endif %}
 
-SUMMARY := {{ summary }}
+CTX := {{ context }}
 
 YOSYS_SCRIPT := {{ yosys_script }}
 
@@ -64,7 +71,6 @@ FASM_LOG := $(TARGET).fasm.log
 BITGEN_RESULT := $(TARGET).memh
 SIM := sim_$(TARGET)
 SIM_LOG := $(TARGET).log
-QUICKSIM_LOG := $(TARGET).quick.log
 SIM_WAVEFORM := $(TARGET).vpd
 
 OUTPUTS := $(SYNTHESIS_RESULT)
@@ -88,7 +94,7 @@ JUNKS += *.vpd DVEfiles opendatabase.log
 # ----------------------------------------------------------------------------
 # -- Phony rules -------------------------------------------------------------
 # ----------------------------------------------------------------------------
-.PHONY: verify synth pack bind place route fasm bitgen compile waveform clean cleanlog cleanall makefile_validation_ disp quick
+.PHONY: verify synth pack bind place route fasm bitgen compile waveform clean cleanlog cleanall makefile_validation_ disp
 verify: $(SIM_LOG) makefile_validation_
 	@echo '********************************************'
 	@echo '**                 Report                 **'
@@ -125,12 +131,10 @@ disp: $(SYNTHESIS_RESULT) $(PACK_RESULT) $(PLACE_RESULT) $(ROUTE_RESULT) makefil
 		--place_file $(PLACE_RESULT) --route_file $(ROUTE_RESULT) --analysis \
 		--route_chan_width $(VPR_CHAN_WIDTH) --read_rr_graph $(VPR_RRGRAPH) --disp on
 
-quick: $(QUICKSIM_LOG) makefile_validation_
-
 {# compiler options #}
 {%- if compiler not in ['iverilog', 'vcs'] %}
 makefile_validation_:
-	echo "Unknown compiler option: {{ compiler }}. This generated Makefile is invalid"
+	echo "[Error] Unknown compiler option: {{ compiler }}. This generated Makefile is invalid"
 	exit 1
 {%- else %}
 makefile_validation_: ;
@@ -166,17 +170,19 @@ $(FASM_RESULT): $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) $(VPR_RRGRAPH) $(PACK_RESULT)
 		--route_chan_width $(VPR_CHAN_WIDTH) --read_rr_graph $(VPR_RRGRAPH) \
 		| tee $(FASM_LOG)
 
-$(BITGEN_RESULT): $(SUMMARY) $(FASM_RESULT)
-	$(PYTHON) -m prga_tools.scanchain.bitgen $^ $@
+$(BITGEN_RESULT): $(CTX) $(FASM_RESULT)
+	$(PYTHON) -m prga_tools.packetizedchain.bitgen $^ $@
 
 $(SIM): $(TESTBENCH_WRAPPER) $(TARGET_SRCS) $(HOST_SRCS) $(FPGA_RTL)
-	$(COMP) $(FLAGS) $(HOST_FLAGS) $(TARGET_FLAGS) $< -o $@ $(addprefix -v ,$(wordlist 2,$(words $^),$^))
+	{%- if host is defined %}
+	$(COMP) $(FLAGS) $(HOST_FLAGS) $(TARGET_FLAGS) $< -o $@ $(addprefix -v ,$^)
+	{%- else %}
+	echo "[Error] Test host not specified during project generation"
+	exit 1
+	{%- endif %}
 
 $(SIM_LOG): $(SIM) $(BITGEN_RESULT)
 	./$< $(HOST_ARGS) +bitstream_memh=$(BITGEN_RESULT) | tee $@
-
-$(QUICKSIM_LOG): $(SIM) $(BITGEN_RESULT)
-	./$< $(HOST_ARGS) +bitstream_memh=$(BITGEN_RESULT) +fakeprog | tee $@
 
 $(SIM_WAVEFORM): $(SIM) $(BITGEN_RESULT)
 	./$< $(HOST_ARGS) +bitstream_memh=$(BITGEN_RESULT) +waveform_dump=$@

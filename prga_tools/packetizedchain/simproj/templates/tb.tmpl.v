@@ -4,7 +4,10 @@
 module {{ behav.name }}_tb_wrapper;
 
     localparam  bs_num_qwords       = {{ config.bs_num_qwords }},
-                bs_word_size        = {{ config.bs_word_size }};
+                bs_last_bit_index   = {{ config.bs_last_bit_index }},
+                magic_sop           = {{ config.magic_sop }};
+
+    localparam  cfg_width           = {{ config.width }};
 
     // system control
     reg sys_clk, sys_rst;
@@ -143,36 +146,37 @@ module {{ behav.name }}_tb_wrapper;
     end
 
     // configuration (programming) control 
-    localparam  INIT            = 3'd0,
-                RESET           = 3'd1,
-                PROGRAMMING     = 3'd2,
-                PROG_STABLIZING = 3'd3,
-                TB_RESET        = 3'd4,
-                IMPL_RUNNING    = 3'd5;
+    localparam  INIT            = 3'd0,     // initializing
+                RESET           = 3'd1,     // reset the FPGA
+                PROGRAMMING     = 3'd2,     // loading program data
+                PROG_STABLIZING = 3'd3,     // waiting for the confirmation on the output
+                PROG_DONE       = 3'd4,     // EOP received
+                IMPL_RUNNING    = 3'd5;     // running the implementation
 
-    reg [2:0]       state;
-    reg [0:256*8-1] bs_file;
-    reg [63:0]      cfg_m [0:bs_num_qwords];
-    reg [bs_word_size-1:0]          cfg_i;
-    wire [bs_word_size-1:0]         cfg_o;
-    reg             cfg_e;
-    reg             cfg_we, cfg_we_prev, cfg_we_o_prev;
-    wire            cfg_we_o;
-    wire            cfg_clk;
-    reg [63:0]      cfg_progress;
-    reg [31:0]      cfg_fragments;
-    reg             fakeprog;
+    wire                    cfg_clk;
+    reg                     cfg_e;
+    reg                     cfg_pkt_val_i;
+    reg [cfg_width-1:0]     cfg_pkt_data_i;
+    wire                    cfg_pkt_val_o;
+    wire [cfg_width-1:0]    cfg_pkt_data_o;
 
-    assign cfg_clk = cfg_e && sys_clk;
+    reg [2:0]               state, state_next;
+    reg [0:256*8-1]         bs_file;
+    reg [63:0]              cfg_m [0:bs_num_qwords - 1];
+    reg [15:0]              output_buf;     // buffer for cfg_pkt_data_o
+    reg [$clog2(bs_num_qwords)-1:0] word_index;
+    reg [5:0]               bit_index;
+
+    assign cfg_clk = sys_clk;
 
     // FPGA implementation
     {{ impl.name }} impl (
         .cfg_clk(cfg_clk)
-        ,.cfg_i(cfg_i)
         ,.cfg_e(cfg_e)
-        ,.cfg_we(cfg_we)
-        ,.cfg_we_o(cfg_we_o)
-        ,.cfg_o(cfg_o)
+        ,.cfg_pkt_val_i(cfg_pkt_val_i)
+        ,.cfg_pkt_data_i(cfg_pkt_data_i)
+        ,.cfg_pkt_val_o(cfg_pkt_val_o)
+        ,.cfg_pkt_data_o(cfg_pkt_data_o)
         {%- for name, port in iteritems(impl.ports) %}
             {%- if port.direction.name == 'output' %}
         ,.{{ name }}(impl_{{ port.name }})
@@ -185,117 +189,101 @@ module {{ behav.name }}_tb_wrapper;
     // test setup
     initial begin
         state = INIT;
-        cfg_e = 'b0;
-        cfg_we = 'b0;
+        cfg_e = 1'b0;
 
         if (!$value$plusargs("bitstream_memh=%s", bs_file)) begin
-            if (verbose)
-                $display("[ERROR] Missing required argument: bitstream_memh");
+            $display("[ERROR] Missing required argument: bitstream_memh");
             $finish;
         end
 
         $readmemh(bs_file, cfg_m);
-        cfg_m[bs_num_qwords] = 'b0;
-
-        fakeprog = 'b0;
-        if ($test$plusargs("fakeprog")) begin
-            fakeprog = 'b1;
-            {% for mem, addr, low, high in impl.config %}
-            impl.{{ mem }} = cfg_m[{{ config.bs_num_qwords - 1 - addr }}][{{ high }}:{{ low }}];
-            {%- endfor %}
-        end
     end
 
     // configuration
     always @(posedge sys_clk) begin
         if (sys_rst) begin
             state <= RESET;
-            cfg_progress <= 'b0;
-        end else if (fakeprog) begin
-            case (state)
-                RESET:
-                    state <= TB_RESET;
-                TB_RESET:
-                    state <= IMPL_RUNNING;
-            endcase
         end else begin
-            case (state)
-                RESET:
-                    state <= PROGRAMMING;
-                PROGRAMMING: begin
-                    if (cfg_we) begin
-                        if (cfg_progress + bs_word_size >= bs_num_qwords * 64) begin
-                            $display("[INFO] [Cycle %04d] Bitstream writing completed", cycle_count);
-                            state <= PROG_STABLIZING;
-                        end else begin
-                            cfg_progress <= cfg_progress + bs_word_size;
-                        end
-                    end
-                end
-                PROG_STABLIZING: begin
-                    if (cfg_fragments == 0) begin
-                        $display("[INFO] [Cycle %04d] Bitstream loading completed", cycle_count);
-                        state <= TB_RESET;
-                    end
-                end
-                TB_RESET: begin
-                    state <= IMPL_RUNNING;
-                end
-            endcase
-        end
-    end
-    
-    always @(posedge sys_clk) begin
-        if (sys_rst) begin
-            cfg_we_prev <= 'b0;
-            cfg_we_o_prev <= 'b0;
-            cfg_fragments <= 'b0;
-        end else begin
-            cfg_we_prev <= cfg_we;
-            cfg_we_o_prev <= cfg_we_o;
+            state <= state_next;
 
-            if ((cfg_we && ~cfg_we_prev) && ~(cfg_we_o && ~cfg_we_o_prev)) begin
-                cfg_fragments <= cfg_fragments + 1;
-            end else if (~(cfg_we && ~cfg_we_prev) && (cfg_we_o && ~cfg_we_o_prev)) begin
-                cfg_fragments <= cfg_fragments - 1;
+            if (cfg_pkt_val_i) begin
+                if (bit_index == 64 - cfg_width) begin
+                    bit_index <= 6'd0;
+                    word_index <= word_index + 1;
+                end else begin
+                    bit_index <= bit_index + cfg_width;
+                end
+            end else if (state != PROGRAMMING) begin
+                bit_index <= 0;
+                word_index <= 0;
+            end
+
+            if (cfg_pkt_val_o) begin
+                output_buf <= {{ '{' -}} output_buf, cfg_pkt_data_o {{- '}' }};
             end
         end
+    end
+
+    reg [7:0] random_num;
+
+    always @(posedge sys_clk) begin
+        random_num <= $urandom_range(0, 99);
     end
 
     always @* begin
         cfg_e = 1'b0;
-        cfg_we = 1'b0;
-        cfg_i = {cfg_m[cfg_progress / 64], cfg_m[cfg_progress / 64 + 1]} >> (128 - bs_word_size - cfg_progress % 64);
-        tb_rst = sys_rst || state != IMPL_RUNNING;
+        tb_rst = sys_rst;
+        cfg_pkt_val_i = 1'b0;
+        cfg_pkt_data_i = cfg_m[word_index][bit_index +: cfg_width];
+        state_next = state;
 
         case (state)
             RESET: begin
-                cfg_e = 'b1;
-                cfg_we = 'b0;
+                state_next = PROGRAMMING;
             end
             PROGRAMMING: begin
-                cfg_e = 'b1;
-                cfg_we = cycle_count % 100;     // skip once every 100 cycles
+                cfg_e = 1'b1;
+                tb_rst = 1'b1;
+
+                if (random_num >= 20) begin
+                    cfg_pkt_val_i = 1'b1;
+                    if (word_index == bs_num_qwords - 1 && bit_index == bs_last_bit_index) begin
+                        state_next = PROG_STABLIZING;
+                    end
+                end
             end
             PROG_STABLIZING: begin
-                cfg_e = 'b1;
+                cfg_e = 1'b1;
+                tb_rst = 1'b1;
+                if (output_buf[8+:8] == magic_sop) begin
+                    case (output_buf[0+:8])
+                        8'hFF: begin
+                            state_next = PROG_DONE;
+                        end
+                        8'h80: begin
+                            $display("[ERROR] Programming error: Head of chain mismatch");
+                            $finish;
+                        end
+                        8'h81: begin
+                            $display("[ERROR] Programming error: Start of packet mismatch");
+                            $finish;
+                        end
+                        8'h82: begin
+                            $display("[ERROR] Programming error: Unknown state");
+                            $finish;
+                        end
+                        default: begin
+                            $display("[ERROR] Programming error: Unexpected message type %02h", output_buf[0+:8]);
+                            $finish;
+                        end
+                    endcase
+                end
+            end
+            PROG_DONE: begin
+                tb_rst = 1'b1;
+                state_next = IMPL_RUNNING;
             end
         endcase
-    end
-
-    // progress tracking
-    reg [7:0]       cfg_percentage;
-
-    always @(posedge sys_clk) begin
-        if (sys_rst) begin
-            cfg_percentage <= 'b0;
-        end else begin
-            if (cfg_progress * 100 / bs_num_qwords / 64 > cfg_percentage) begin
-                cfg_percentage <= cfg_percentage + 1;
-
-                $display("[INFO] Programming progress: %02d%%", cfg_percentage + 1);
-            end
-        end
     end
 
     // output tracking
