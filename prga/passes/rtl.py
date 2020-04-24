@@ -22,6 +22,7 @@ class VerilogCollection(Object, AbstractPass):
         self.renderer = renderer
         self.output_dir = output_dir
         self.view = view
+        self.visited = {}
 
     def _process_module(self, module):
         if module.key in self.visited:

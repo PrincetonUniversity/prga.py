@@ -272,7 +272,7 @@ class Scanchain(object):
             context._database[ModuleView.logical, flipflop.key] = flipflop
 
         # register fracturable LUT6
-        if {"lut5", "lut6", "fraclut6"} - dont_add_primitive:
+        if not ({"lut5", "lut6", "fraclut6"} & dont_add_primitive):
             # user view
             fraclut6 = context.create_multimode('fraclut6', cfg_bitcount = 65)
             fraclut6.create_input("in", 6)
@@ -374,7 +374,7 @@ class Scanchain(object):
             adder.commit()
 
         # register simplified stratix-IV FLE
-        if {"lut5", "lut6", "adder", "flipflop", "fle6"} - dont_add_primitive:
+        if not ({"lut5", "lut6", "adder", "flipflop", "fle6"} & dont_add_primitive):
             # user view
             fle6 = context.create_multimode('fle6', cfg_bitcount = 69)
             fle6.create_clock("clk")
@@ -446,7 +446,7 @@ class Scanchain(object):
         try:
             return context.database[ModuleView.logical, key]
         except KeyError:
-            filler = Module("cfg_filler_{}".format(filler_width),
+            filler = Module("cfg_filler_d{}".format(filler_width),
                     view = ModuleView.logical,
                     is_cell = True,
                     module_class = ModuleClass.cfg,
