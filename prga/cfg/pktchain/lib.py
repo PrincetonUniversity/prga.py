@@ -6,7 +6,7 @@ from prga.compatible import *
 from ..scanchain.lib import Scanchain, ScanchainSwitchDatabase
 from ...core.common import ModuleClass, ModuleView, NetClass
 from ...core.context import Context
-from ...netlist.net.common import PortDirection
+from ...netlist.net.common import PortDirection, Const
 from ...netlist.net.util import NetUtils
 from ...netlist.module.module import Module
 from ...netlist.module.util import ModuleUtils
@@ -284,8 +284,8 @@ class Pktchain(Scanchain):
         chains, ypos = [], 0
         cfg_nets = {}
         for instance in iter_instances(module):
-            # end the current chain and start a new one
             if instance is None:
+                # end the current chain and start a new one
                 if "phit" in cfg_nets:
                     chain = len(chains)
                     NetUtils.connect(cfg_nets.pop("phit_wr"), ModuleUtils.create_port(module, 
@@ -375,3 +375,141 @@ class Pktchain(Scanchain):
                 PortDirection.input_, net_class = NetClass.cfg), cfg_nets.pop("phit_full"))
             chains.append(ypos)
         module.cfg_chains = tuple(chains)
+
+    @classmethod
+    def complete_pktchain_top(cls, context, logical_module, *, iter_instances = lambda m: itervalues(m.instances)):
+        # short alias
+        module = logical_module
+        # make sure this is a non-leaf array
+        if not module.module_class.is_nonleaf_array:
+            raise PRGAInternalError("Cannot complete pktchain (top) in {}, not a non-leaf array".format(module))
+        # complete network
+        chains, ypos = [], 0
+        cfg_nets = {}
+        prev_dispatcher = None
+        gatherers = []
+        for instance in iter_instances(module):
+            if instance is None:
+                # end the current chain and start a new one
+                if "phit" in cfg_nets:
+                    chain = len(chains)
+                    gather = ModuleUtils.instantiate(module,
+                            context.database[ModuleView.logical, "pktchain_gatherer"],
+                            "_cfg_gatherer_c{}".format(chain))
+                    NetUtils.connect(cfg_nets["cfg_clk"], gather.pins["cfg_clk"])
+                    NetUtils.connect(cfg_nets["cfg_rst"], gather.pins["cfg_rst"])
+                    NetUtils.connect(cfg_nets.pop("phit_wr"), gather.pins["phit_iy_wr"])
+                    NetUtils.connect(gather.pins["phit_iy_full"], cfg_nets.pop("phit_full"))
+                    NetUtils.connect(cfg_nets.pop("phit"), gather.pins["phit_iy"])
+                    gatherers.append(gather)
+                chains.append(ypos)
+                ypos = 0
+                continue
+            chain = len(chains)
+            # complete sub-instance
+            if not hasattr(instance.model, "cfg_chains"):
+                if instance.model.module_class.is_leaf_array:
+                    cls.complete_pktchain_leaf(context, instance.model, iter_instances = iter_instances)
+                else:
+                    cls.complete_pktchain_network(context, instance.model, iter_instances = iter_instances)
+            # is the sub-chain specified?
+            try:
+                instance, subchain = instance
+            except (TypeError, ValueError):
+                chainoffsets = getattr(instance, "cfg_chainoffsets", {})
+                assert set(range(len(chainoffsets))) == set(chainoffsets)
+                subchain = len(chainoffsets)
+            # enable pin?
+            inst_cfg_e = instance.pins.get("cfg_e")
+            if inst_cfg_e is None:
+                continue
+            elif NetUtils.get_source(inst_cfg_e, return_none_if_unconnected = True) is None:
+                NetUtils.connect(cls._get_or_create_cfg_ports(module, context.cfg_width, enable_only = True),
+                    inst_cfg_e)
+            # network pin
+            if cls._phit_port_name("phit_i", subchain) not in instance.pins:
+                continue
+            # update chains and instance chain mapping
+            try:
+                subchain_length = instance.model.cfg_chains[subchain]
+            except (AttributeError, IndexError):
+                raise PRGAInternalError("{} does not have chain No. {}".format(subchain))
+            chainoffsets = getattr(instance, "cfg_chainoffsets", None)
+            if chainoffsets is None:
+                chainoffsets = instance.cfg_chainoffsets = {}
+            chainoffsets[subchain] = chain, ypos
+            ypos += subchain_length
+            # connect clock/reset pins if we haven't done so
+            if NetUtils.get_source(instance.pins["cfg_clk"], return_none_if_unconnected = True) is None:
+                cfg_clk = cfg_nets.get("cfg_clk")
+                if cfg_clk is None:
+                    cfg_clk = cfg_nets["cfg_clk"] = ModuleUtils.create_port(module, "cfg_clk", 1,
+                            PortDirection.input_, is_clock = True, net_class = NetClass.cfg)
+                NetUtils.connect(cfg_clk, instance.pins["cfg_clk"])
+                cfg_rst = cfg_nets.get("cfg_rst")
+                if cfg_rst is None:
+                    cfg_rst = cfg_nets["cfg_rst"] = ModuleUtils.create_port(module, "cfg_rst", 1,
+                            PortDirection.input_, net_class = NetClass.cfg)
+                NetUtils.connect(cfg_rst, instance.pins["cfg_rst"])
+            # connect other pins
+            if "phit" not in cfg_nets:
+                dispatcher = ModuleUtils.instantiate(module,
+                        context.database[ModuleView.logical, "pktchain_dispatcher"],
+                        "_cfg_dispatcher_c{}".format(chain))
+                NetUtils.connect(cfg_nets["cfg_clk"], dispatcher.pins["cfg_clk"])
+                NetUtils.connect(cfg_nets["cfg_rst"], dispatcher.pins["cfg_rst"])
+                if prev_dispatcher is None:
+                    NetUtils.connect(ModuleUtils.create_port(module, "phit_i_wr", 1, PortDirection.input_,
+                        net_class = NetClass.cfg), dispatcher.pins["phit_i_wr"])
+                    NetUtils.connect(ModuleUtils.create_port(module, "phit_i", context.phit_width, PortDirection.input_,
+                        net_class = NetClass.cfg), dispatcher.pins["phit_i"])
+                    NetUtils.connect(dispatcher.pins["phit_i_full"], ModuleUtils.create_port(module, "phit_i_full",
+                        1, PortDirection.output, net_class = NetClass.cfg))
+                else:
+                    NetUtils.connect(prev_dispatcher.pins["phit_ox_wr"], dispatcher.pins["phit_i_wr"])
+                    NetUtils.connect(prev_dispatcher.pins["phit_ox"], dispatcher.pins["phit_i"])
+                    NetUtils.connect(dispatcher.pins["phit_i_full"], prev_dispatcher.pins["phit_ox_full"])
+                prev_dispatcher = dispatcher
+                cfg_nets["phit_full"] = dispatcher.pins["phit_oy_full"]
+                cfg_nets["phit_wr"] = dispatcher.pins["phit_oy_wr"]
+                cfg_nets["phit"] = dispatcher.pins["phit_oy"]
+            NetUtils.connect(instance.pins[cls._phit_port_name("phit_i_full", subchain)], cfg_nets["phit_full"])
+            NetUtils.connect(cfg_nets["phit_wr"], instance.pins[cls._phit_port_name("phit_i_wr", subchain)])
+            NetUtils.connect(cfg_nets["phit"], instance.pins[cls._phit_port_name("phit_i", subchain)])
+            cfg_nets["phit_full"] = instance.pins[cls._phit_port_name("phit_o_full", subchain)]
+            cfg_nets["phit_wr"] = instance.pins[cls._phit_port_name("phit_o_wr", subchain)]
+            cfg_nets["phit"] = instance.pins[cls._phit_port_name("phit_o", subchain)]
+        # close up on the last dispatcher
+        if prev_dispatcher is not None:
+            NetUtils.connect(Const(1), prev_dispatcher.pins["phit_ox_full"])
+        # final gatherer
+        if "phit" in cfg_nets:
+            chain = len(chains)
+            gather = ModuleUtils.instantiate(module,
+                    context.database[ModuleView.logical, "pktchain_gatherer"],
+                    "_cfg_gatherer_c{}".format(chain))
+            NetUtils.connect(cfg_nets["cfg_clk"], gather.pins["cfg_clk"])
+            NetUtils.connect(cfg_nets["cfg_rst"], gather.pins["cfg_rst"])
+            NetUtils.connect(cfg_nets.pop("phit_wr"), gather.pins["phit_iy_wr"])
+            NetUtils.connect(gather.pins["phit_iy_full"], cfg_nets.pop("phit_full"))
+            NetUtils.connect(cfg_nets.pop("phit"), gather.pins["phit_iy"])
+            gatherers.append(gather)
+            chains.append(ypos)
+        module.cfg_chains = tuple(chains)
+        if not gatherers:
+            return
+        # connect gathers
+        prev_gatherer = gatherers.pop()
+        NetUtils.connect(Const(0), prev_gatherer.pins["phit_ix_wr"])
+        for gather in reversed(gatherers):
+            NetUtils.connect(prev_gatherer.pins["phit_o_wr"], gather.pins["phit_ix_wr"])
+            NetUtils.connect(prev_gatherer.pins["phit_o"], gather.pins["phit_ix"])
+            NetUtils.connect(gather.pins["phit_ix_full"], prev_gatherer.pins["phit_o_full"])
+            prev_gatherer = gather
+        # connect final pins
+        NetUtils.connect(ModuleUtils.create_port(module, "phit_o_full", 1, PortDirection.input_,
+            net_class = NetClass.cfg), prev_gatherer.pins["phit_o_full"])
+        NetUtils.connect(prev_gatherer.pins["phit_o_wr"], ModuleUtils.create_port(module, "phit_o_wr", 1,
+            PortDirection.output, net_class = NetClass.cfg))
+        NetUtils.connect(prev_gatherer.pins["phit_o"], ModuleUtils.create_port(module, "phit_o", context.phit_width,
+            PortDirection.output, net_class = NetClass.cfg))
