@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from ..scanchain.lib import Scanchain, ScanchainSwitchDatabase
+from ..scanchain.lib import Scanchain, ScanchainSwitchDatabase, ScanchainFASMDelegate
 from ...core.common import ModuleClass, ModuleView, NetClass
 from ...core.context import Context
 from ...netlist.net.common import PortDirection, Const
@@ -20,9 +20,56 @@ import os
 from collections import OrderedDict, namedtuple
 from itertools import chain, product
 
+import logging
+_logger = logging.getLogger(__name__)
+
 __all__ = ['Pktchain']
 
 ADDITIONAL_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
+
+# ----------------------------------------------------------------------------
+# -- FASM Delegate -----------------------------------------------------------
+# ----------------------------------------------------------------------------
+class PktchainFASMDelegate(ScanchainFASMDelegate):
+    """FASM delegate for pktchain configuration circuitry.
+    
+    Args:
+        context (`Context`):
+    """
+
+    def _instance_chainoffset(self, instance):
+        assert instance.model.module_class.is_leaf_array
+        chain, ypos = 0, 0
+        for i in instance.hierarchy:
+            chain, ypos_inc = i.cfg_chainoffsets[chain]
+            ypos += ypos_inc
+        return chain, ypos
+
+    def fasm_prefix_for_tile(self, instance):
+        leaf_array_instance = instance.shrink_hierarchy(slice(1, None))
+        bitoffsets = []
+        for subblock in range(instance.model.capacity):
+            blk_inst = leaf_array_instance.model.instances[instance.hierarchy[0].key[0], subblock]
+            inst_bitoffset = self._instance_bitoffset(blk_inst)
+            if inst_bitoffset is None:
+                return tuple()
+            bitoffsets.append( inst_bitoffset )
+        chain, ypos = self._instance_chainoffset(leaf_array_instance)
+        return tuple("x{}.y{}.b{}".format(chain, ypos, bitoffset) for bitoffset in bitoffsets)
+
+    def fasm_features_for_routing_switch(self, source, sink, instance = None):
+        below, above = None, None
+        for split, i in enumerate(instance.hierarchy):
+            if i.model.module_class.is_leaf_array:
+                below = instance.shrink_hierarchy(slice(None, split))
+                above = instance.shrink_hierarchy(slice(split, None))
+                break
+        assert above is not None
+        chain, ypos = self._instance_chainoffset(above)
+        return tuple('x{}.y{}.{}'.format(chain, ypos, f) for f in self._features_for_path(source, sink, below))
+
+    # def fasm_features_for_routing_switch(self, source, sink, instance = None):
+    #     return self._features_for_path(source, sink, instance)
 
 # ----------------------------------------------------------------------------
 # -- Pktchain Configuration Circuitry Main Entry -----------------------------
@@ -58,7 +105,7 @@ class Pktchain(Scanchain):
     @classmethod
     def new_context(cls, phit_width = 8, cfg_width = 1, *,
             dont_add_primitive = tuple(), dont_add_logical_primitive = tuple()):
-        if phit_width not in (1, 2, 4, 8, 16):
+        if phit_width not in (1, 2, 4, 8, 16, 32):
             raise PRGAAPIError("Unsupported configuration phit width: {}. Supported values are: [1, 2, 4, 8, 16]"
                     .format(phit_width))
         if cfg_width not in (1, 2, 4):
@@ -66,7 +113,10 @@ class Pktchain(Scanchain):
                     .format(cfg_width))
         context = Context("pktchain", phit_width = phit_width, cfg_width = cfg_width)
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
-        context._fasm_delegate = FASMDelegate()
+        context._fasm_delegate = PktchainFASMDelegate(context)
+        context._verilog_headers["pktchain.vh"] = ("pktchain.tmpl.vh",
+                {"phit_width_log2": (phit_width - 1).bit_length(), "cfg_width_log2": (cfg_width - 1).bit_length()})
+        context._verilog_headers["pktchain_axilite_intf.vh"] = ("pktchain_axilite_intf.tmpl.vh", {})
         cls._register_primitives(context, phit_width, cfg_width, dont_add_primitive, dont_add_logical_primitive)
         return context
 
@@ -92,29 +142,27 @@ class Pktchain(Scanchain):
             context._database[ModuleView.logical, "pktchain_clasp"] = mod
 
         # register pktchain router input fifo
-        if "pktchain_fifo" not in dont_add_logical_primitive:
-            mod = Module("pktchain_fifo",
+        if "pktchain_frame_assemble" not in dont_add_logical_primitive:
+            mod = Module("pktchain_frame_assemble",
                     view = ModuleView.logical,
                     is_cell = True,
                     module_class = ModuleClass.cfg,
-                    phit_width = phit_width,
-                    verilog_template = "pktchain_fifo.tmpl.v")
+                    verilog_template = "pktchain_frame_assemble.tmpl.v")
             # we don't need to create ports for this module.
-            context._database[ModuleView.logical, "pktchain_fifo"] = mod
+            context._database[ModuleView.logical, "pktchain_frame_assemble"] = mod
 
         # register pktchain router output fifo
-        if "pktchain_frame_sender" not in dont_add_logical_primitive:
-            mod = Module("pktchain_frame_sender",
+        if "pktchain_frame_disassemble" not in dont_add_logical_primitive:
+            mod = Module("pktchain_frame_disassemble",
                     view = ModuleView.logical,
                     is_cell = True,
                     module_class = ModuleClass.cfg,
-                    phit_width = phit_width,
-                    verilog_template = "pktchain_frame_sender.tmpl.v")
+                    verilog_template = "pktchain_frame_disassemble.tmpl.v")
             # we don't need to create ports for this module.
-            context._database[ModuleView.logical, "pktchain_frame_sender"] = mod
+            context._database[ModuleView.logical, "pktchain_frame_disassemble"] = mod
 
         # register pktchain router
-        if not ({"pktchain_clasp", "pktchain_fifo", "pktchain_frame_sender", "pktchain_router"} &
+        if not ({"pktchain_clasp", "pktchain_frame_assemble", "pktchain_frame_disassemble", "pktchain_router"} &
                 dont_add_logical_primitive):
             mod = Module("pktchain_router",
                     view = ModuleView.logical,
@@ -139,12 +187,12 @@ class Pktchain(Scanchain):
             # NetUtils.connect(cfg_clk, clocked_ports, fully = True)
             # sub-instances
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_clasp"], "clasp")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_fifo"], "ififo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_sender"], "ofifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_assemble"], "ififo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_disassemble"], "ofifo")
             context._database[ModuleView.logical, "pktchain_router"] = mod
 
         # register pktchain dispatcher (column/row header)
-        if not ({"pktchain_dispatcher", "pktchain_fifo", "pktchain_frame_sender"} &
+        if not ({"pktchain_dispatcher", "pktchain_frame_assemble", "pktchain_frame_disassemble"} &
                 dont_add_logical_primitive):
             mod = Module("pktchain_dispatcher",
                     view = ModuleView.logical,
@@ -167,13 +215,13 @@ class Pktchain(Scanchain):
                     )
             # NetUtils.connect(cfg_clk, clocked_ports, fully = True)
             # sub-instances
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_fifo"], "ififo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_sender"], "ox")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_sender"], "oy")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_assemble"], "ififo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_disassemble"], "ox")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_disassemble"], "oy")
             context._database[ModuleView.logical, "pktchain_dispatcher"] = mod
 
         # register pktchain gatherer (column/row footer)
-        if not ({"pktchain_gatherer", "pktchain_fifo", "pktchain_frame_sender"} &
+        if not ({"pktchain_gatherer", "pktchain_frame_assemble", "pktchain_frame_disassemble"} &
                 dont_add_logical_primitive):
             mod = Module("pktchain_gatherer",
                     view = ModuleView.logical,
@@ -196,9 +244,9 @@ class Pktchain(Scanchain):
                     )
             # NetUtils.connect(cfg_clk, clocked_ports, fully = True)
             # sub-instances
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_fifo"], "ix")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_fifo"], "iy")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_sender"], "ofifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_assemble"], "ix")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_assemble"], "iy")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_disassemble"], "ofifo")
             context._database[ModuleView.logical, "pktchain_gatherer"] = mod
 
     @classmethod
@@ -270,8 +318,10 @@ class Pktchain(Scanchain):
             NetUtils.connect(router.pins["phit_o_wr"], phit_intf["phit_o_wr"]) 
             NetUtils.connect(router.pins["phit_o"], phit_intf["phit_o"]) 
             module.cfg_chains = (1, )
+            _logger.info("Pktchain(leaf) injected to {}. Total bits: {}".format(module, cfg_bitoffset))
         else:
             module.cfg_chains = tuple()
+            _logger.info("Pktchain(leaf) not injected to {}. No bits".format(module))
 
     @classmethod
     def complete_pktchain_network(cls, context, logical_module, *, iter_instances = lambda m: itervalues(m.instances)):
@@ -375,11 +425,12 @@ class Pktchain(Scanchain):
                 PortDirection.input_, net_class = NetClass.cfg), cfg_nets.pop("phit_full"))
             chains.append(ypos)
         module.cfg_chains = tuple(chains)
+        _logger.info("Pktchain(network) injected to {}. Chains: {}".format(module, ", ".join(map(str, chains))))
 
     @classmethod
-    def complete_pktchain_top(cls, context, logical_module, *, iter_instances = lambda m: itervalues(m.instances)):
+    def complete_pktchain(cls, context, logical_module = None, *, iter_instances = lambda m: itervalues(m.instances)):
         # short alias
-        module = logical_module
+        module = uno(logical_module, context.database[ModuleView.logical, context.top.key])
         # make sure this is a non-leaf array
         if not module.module_class.is_nonleaf_array:
             raise PRGAInternalError("Cannot complete pktchain (top) in {}, not a non-leaf array".format(module))
@@ -496,6 +547,7 @@ class Pktchain(Scanchain):
             gatherers.append(gather)
             chains.append(ypos)
         module.cfg_chains = tuple(chains)
+        _logger.info("Pktchain(network) injected to {}. Chains: {}".format(module, ", ".join(map(str, chains))))
         if not gatherers:
             return
         # connect gathers
@@ -513,3 +565,20 @@ class Pktchain(Scanchain):
             PortDirection.output, net_class = NetClass.cfg))
         NetUtils.connect(prev_gatherer.pins["phit_o"], ModuleUtils.create_port(module, "phit_o", context.phit_width,
             PortDirection.output, net_class = NetClass.cfg))
+
+    @classmethod
+    def annotate_user_view(cls, context, user_module = None, *, _annotated = None):
+        module = uno(user_module, context.top)
+        _annotated = uno(_annotated, set())
+        if module.module_class.is_nonleaf_array:
+            logical = context.database[ModuleView.logical, module.key]
+            # annotate user instances
+            for instance in itervalues(module.instances):
+                # look for the corresponding logical instance and annotate cfg_chainoffsets
+                logical_instance = logical.instances[instance.key]
+                if hasattr(logical_instance, "cfg_chainoffsets"):
+                    instance.cfg_chainoffsets = logical_instance.cfg_chainoffsets
+                    if instance.model.key not in _annotated:
+                        cls.annotate_user_view(context, instance.model, _annotated = _annotated)
+        else:
+            super(Pktchain, cls).annotate_user_view(context, module, _annotated = _annotated)

@@ -19,6 +19,9 @@ import os
 from collections import OrderedDict, namedtuple
 from itertools import chain
 
+import logging
+_logger = logging.getLogger(__name__)
+
 __all__ = ['Scanchain']
 
 ADDITIONAL_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
@@ -468,11 +471,11 @@ class Scanchain(object):
         return r
 
     @classmethod
-    def complete_scanchain(cls, context, logical_module, *,
+    def complete_scanchain(cls, context, logical_module = None, *,
             iter_instances = lambda m: itervalues(m.instances),
             append_delimiter = lambda m: m.module_class.is_block or m.module_class.is_routing_box):
         """Complete the scanchain."""
-        module = logical_module
+        module = uno(logical_module, context.database[ModuleView.logical, context.top.key])
         # special processing needed for IO blocks (output enable)
         if module.module_class.is_io_block:
             oe = module.ports.get(IOType.oe)
@@ -538,6 +541,7 @@ class Scanchain(object):
                 cfg_we_o = cfg_nets.get("cfg_we_o")
                 if cfg_we_o:
                     NetUtils.connect(cfg_nets["cfg_we"], cfg_we_o)
+        _logger.info("Scanchain injected to {}. Total bits: {}".format(module, cfg_bitoffset))
         if module.key == context.top.key:
             if not hasattr(context.summary, "scanchain"):
                 context.summary.scanchain = {}

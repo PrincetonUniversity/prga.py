@@ -75,6 +75,7 @@ class Context(Object):
             '_top',                 # logical top
             '_switch_database',     # switch database
             '_fasm_delegate',       # FASM delegate
+            '_verilog_headers',     # Verilog header rendering tasks
             'summary',              # FPGA summary
             '__dict__']
 
@@ -88,6 +89,8 @@ class Context(Object):
         else:
             self._database = database
         self._top = None
+        self._verilog_headers = OrderedDict()
+        self._verilog_headers["prga_utils.vh"] = "stdlib/include/prga_utils.tmpl.vh", {}
         self.summary = ContextSummary()
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
@@ -154,6 +157,14 @@ class Context(Object):
             mode.connect(mode.ports["outpad"], inst.pins["outpad"])
             mode.commit()
             database[ModuleView.user, "iopad"] = pad.commit()
+
+        # 5. register stdlib logical designs
+        # TODO: add as physical designs as well
+        for d in ("prga_ram_1r1w", "prga_fifo", "prga_fifo_narrower", "prga_fifo_widener"):
+            context._database[ModuleView.logical, d] = Module(d,
+                    view = ModuleView.logical,
+                    is_cell = True,
+                    verilog_template = "stdlib/{}.v".format(d))
 
     # == low-level API =======================================================
     @property

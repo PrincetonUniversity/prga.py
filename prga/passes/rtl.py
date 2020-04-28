@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from .base import AbstractPass
 from ..core.common import ModuleView
-from ..util import Object
+from ..util import Object, uno
 
 import os
 
@@ -17,17 +17,18 @@ __all__ = ['VerilogCollection']
 class VerilogCollection(Object, AbstractPass):
     """Collecting Verilog rendering tasks."""
 
-    __slots__ = ['renderer', 'output_dir', 'view', 'visited']
-    def __init__(self, renderer, output_dir = ".", view = ModuleView.logical):
+    __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'view', 'visited']
+    def __init__(self, renderer, src_output_dir = ".", header_output_dir = None, view = ModuleView.logical):
         self.renderer = renderer
-        self.output_dir = output_dir
+        self.src_output_dir = src_output_dir
+        self.header_output_dir = uno(header_output_dir, os.path.join(src_output_dir, "include"))
         self.view = view
         self.visited = {}
 
     def _process_module(self, module):
         if module.key in self.visited:
             return
-        f = os.path.join(os.path.abspath(self.output_dir), module.name + ".v")
+        f = os.path.join(os.path.abspath(self.src_output_dir), module.name + ".v")
         self.visited[module.key] = f
         self.renderer.add_verilog(module, f, getattr(module, "verilog_template", "module.tmpl.v"))
         for instance in itervalues(module.instances):
@@ -53,4 +54,6 @@ class VerilogCollection(Object, AbstractPass):
         if not hasattr(context.summary, "rtl"):
             context.summary.rtl = {}
         self.visited = context.summary.rtl["sources"] = {}
+        for f, (template, parameters) in iteritems(context._verilog_headers):
+            self.renderer.add_generic(os.path.join(self.header_output_dir, f), template, **parameters)
         self._process_module(top)
