@@ -145,20 +145,25 @@ class Pktchain(Scanchain):
         if "pktchain_frame_assemble" not in dont_add_logical_primitive:
             mod = Module("pktchain_frame_assemble",
                     view = ModuleView.logical,
-                    is_cell = True,
                     module_class = ModuleClass.cfg,
                     verilog_template = "pktchain_frame_assemble.tmpl.v")
             # we don't need to create ports for this module.
+            # sub-instances (hierarchy-only)
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo_resizer"], "resizer")
             context._database[ModuleView.logical, "pktchain_frame_assemble"] = mod
 
         # register pktchain router output fifo
         if "pktchain_frame_disassemble" not in dont_add_logical_primitive:
             mod = Module("pktchain_frame_disassemble",
                     view = ModuleView.logical,
-                    is_cell = True,
                     module_class = ModuleClass.cfg,
                     verilog_template = "pktchain_frame_disassemble.tmpl.v")
             # we don't need to create ports for this module.
+            # sub-instances (hierarchy-only)
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo_resizer"], "resizer")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo_adapter"], "adapter")
             context._database[ModuleView.logical, "pktchain_frame_disassemble"] = mod
 
         # register pktchain router

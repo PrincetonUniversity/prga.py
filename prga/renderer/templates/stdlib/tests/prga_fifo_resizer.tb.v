@@ -1,4 +1,4 @@
-module prga_fifo_narrower_widener_tb ();
+module prga_fifo_resizer_tb ();
 
     localparam DATA_WIDTH = 8;
     localparam MULTIPLIER = 4;
@@ -44,7 +44,7 @@ module prga_fifo_narrower_widener_tb ();
     prga_fifo #(
         .DATA_WIDTH                     (DATA_WIDTH)
         ,.DEPTH_LOG2                    (2)
-        ,.LOOKAHEAD                     (1)
+        ,.LOOKAHEAD                     (0)
     ) A (
         .clk        (clk)
         ,.rst       (rst)
@@ -56,18 +56,19 @@ module prga_fifo_narrower_widener_tb ();
         ,.dout      (A_dout)
         );
 
-    prga_fifo_widener #(
+    prga_fifo_resizer #(
         .DATA_WIDTH                     (DATA_WIDTH)
-        ,.MULTIPLIER                    (MULTIPLIER)
+        ,.OUTPUT_MULTIPLIER             (MULTIPLIER)
+        ,.OUTPUT_LOOKAHEAD              (1)
     ) widener (
         .clk        (clk)
         ,.rst       (rst)
         ,.empty_i   (A_empty)
         ,.rd_i      (A_rd)
         ,.dout_i    (A_dout)
-        ,.full_o    (B_full)
-        ,.wr_o      (B_wr)
-        ,.din_o     (B_din)
+        ,.empty     (B_wr)
+        ,.rd        (~B_full)
+        ,.dout      (B_din)
         );
 
     prga_fifo #(
@@ -78,25 +79,27 @@ module prga_fifo_narrower_widener_tb ();
         .clk        (clk)
         ,.rst       (rst)
         ,.full      (B_full)
-        ,.wr        (B_wr)
+        ,.wr        (~B_wr)
         ,.din       (B_din)
         ,.empty     (B_empty)
         ,.rd        (B_rd)
         ,.dout      (B_dout)
         );
 
-    prga_fifo_narrower #(
+    prga_fifo_resizer #(
         .DATA_WIDTH                     (DATA_WIDTH)
-        ,.MULTIPLIER                    (MULTIPLIER)
+        ,.INPUT_MULTIPLIER              (MULTIPLIER)
+        ,.INPUT_LOOKAHEAD               (1)
+        ,.OUTPUT_LOOKAHEAD              (1)
     ) narrower (
         .clk        (clk)
         ,.rst       (rst)
         ,.empty_i   (B_empty)
         ,.rd_i      (B_rd)
         ,.dout_i    (B_dout)
-        ,.full_o    (C_full)
-        ,.wr_o      (C_wr)
-        ,.din_o     (C_din)
+        ,.empty     (C_wr)
+        ,.rd        (~C_full)
+        ,.dout      (C_din)
         );
 
     prga_fifo #(
@@ -107,7 +110,7 @@ module prga_fifo_narrower_widener_tb ();
         .clk        (clk)
         ,.rst       (rst)
         ,.full      (C_full)
-        ,.wr        (C_wr)
+        ,.wr        (~C_wr)
         ,.din       (C_din)
         ,.empty     (C_empty)
         ,.rd        (C_rd)

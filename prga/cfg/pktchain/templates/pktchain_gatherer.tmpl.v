@@ -129,6 +129,7 @@ module pktchain_gatherer (
                 end
             end
             STATE_FORWARD_Y: begin
+                frame_o = frame_iy;
                 frame_iy_rd = !frame_o_full;
                 frame_o_wr = !frame_iy_empty;
 

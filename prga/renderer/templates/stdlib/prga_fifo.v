@@ -2,8 +2,7 @@
 module prga_fifo #(
     parameter DEPTH_LOG2 = 1,
     parameter DATA_WIDTH = 32,
-    parameter LOOKAHEAD = 1,
-    parameter FORCE_RAM_REGISTERED_OUTPUT = 1
+    parameter LOOKAHEAD = 0
 ) (
     input wire [0:0] clk,
     input wire [0:0] rst,
@@ -25,7 +24,7 @@ module prga_fifo #(
         .DATA_WIDTH         (DATA_WIDTH)
         ,.ADDR_WIDTH        (DEPTH_LOG2)
         ,.RAM_ROWS          (FIFO_DEPTH)
-        ,.REGISTERED_OUTPUT (!LOOKAHEAD || FORCE_RAM_REGISTERED_OUTPUT)
+        ,.REGISTER_OUTPUT   (!LOOKAHEAD)
     ) ram (
         .clk                (clk)
         ,.raddr             (rd_ptr)
@@ -38,48 +37,21 @@ module prga_fifo #(
     always @(posedge clk or posedge rst) begin
         if (rst) begin
             wr_ptr <= 'b0;
+            rd_ptr <= 'b0;
         end else begin
             if (~full && wr) begin
                 wr_ptr <= wr_ptr + 1;
             end
+
+            if (~empty && rd) begin
+                rd_ptr <= rd_ptr + 1;
+            end
         end
     end
 
-    generate if (LOOKAHEAD && FORCE_RAM_REGISTERED_OUTPUT) begin
-        reg [DEPTH_LOG2:0] rd_ptr_f;
-
-        always @(posedge clk or posedge rst) begin
-            if (rst) begin
-                empty <= 'b1;
-                rd_ptr_f <= 'b0;
-            end else begin
-                if (empty || rd) begin
-                    empty <= rd_ptr == wr_ptr;
-                end
-
-                rd_ptr_f <= rd_ptr;
-            end
-        end
-
-        always @* begin
-            full = rd_ptr_f == {~wr_ptr[DEPTH_LOG2], wr_ptr[0 +: DEPTH_LOG2]};
-            rd_ptr = (!empty && rd) ? (rd_ptr_f + 1) : rd_ptr_f;
-        end
-    end else begin
-        always @(posedge clk or posedge rst) begin
-            if (rst) begin
-                rd_ptr <= 'b0;
-            end else begin
-                if (!empty && rd) begin
-                    rd_ptr <= rd_ptr + 1;
-                end
-            end
-        end
-
-        always @* begin
-            full = rd_ptr == {~wr_ptr[DEPTH_LOG2], wr_ptr[0 +: DEPTH_LOG2]};
-            empty = rd_ptr == wr_ptr;
-        end
-    end endgenerate
+    always @* begin
+        full = rd_ptr == {~wr_ptr[DEPTH_LOG2], wr_ptr[0 +: DEPTH_LOG2]};
+        empty = rd_ptr == wr_ptr;
+    end
 
 endmodule

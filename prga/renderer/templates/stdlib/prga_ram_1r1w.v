@@ -3,7 +3,7 @@ module prga_ram_1r1w #(
     parameter DATA_WIDTH = 32,
     parameter ADDR_WIDTH = 6,
     parameter RAM_ROWS = 64,
-    parameter REGISTERED_OUTPUT = 1
+    parameter REGISTER_OUTPUT = 1
 ) (
     input wire [0:0] clk,
 
@@ -23,7 +23,7 @@ module prga_ram_1r1w #(
         end
     end
 
-    generate if (REGISTERED_OUTPUT) begin
+    generate if (REGISTER_OUTPUT) begin
         always @(posedge clk) begin
             dout <= data[raddr];
         end

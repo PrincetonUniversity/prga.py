@@ -34,6 +34,10 @@ class VerilogCollection(Object, AbstractPass):
         for instance in itervalues(module.instances):
             self._process_module(instance.model)
 
+    def _collect_headers(self, context):
+        for f, (template, parameters) in iteritems(context._verilog_headers):
+            self.renderer.add_generic(os.path.join(self.header_output_dir, f), template, **parameters)
+
     @property
     def key(self):
         return "rtl.verilog"
@@ -54,6 +58,5 @@ class VerilogCollection(Object, AbstractPass):
         if not hasattr(context.summary, "rtl"):
             context.summary.rtl = {}
         self.visited = context.summary.rtl["sources"] = {}
-        for f, (template, parameters) in iteritems(context._verilog_headers):
-            self.renderer.add_generic(os.path.join(self.header_output_dir, f), template, **parameters)
+        self._collect_headers(context)
         self._process_module(top)

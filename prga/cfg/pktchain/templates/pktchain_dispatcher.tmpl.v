@@ -47,7 +47,7 @@ module pktchain_dispatcher (
         );
 
     pktchain_frame_disassemble #(
-        DEPTH_LOG2 = 4  // increased Y-dimension buffering capability
+        .DEPTH_LOG2     (6)  // increased Y-dimension buffering capability
     ) oy (  
         .cfg_clk        (cfg_clk)
         ,.cfg_rst       (cfg_rst)

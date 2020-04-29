@@ -160,11 +160,16 @@ class Context(Object):
 
         # 5. register stdlib logical designs
         # TODO: add as physical designs as well
-        for d in ("prga_ram_1r1w", "prga_fifo", "prga_fifo_narrower", "prga_fifo_widener"):
-            context._database[ModuleView.logical, d] = Module(d,
+        for d in ("prga_ram_1r1w", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer", "prga_fifo_adapter"):
+            self._database[ModuleView.logical, d] = Module(d,
                     view = ModuleView.logical,
-                    is_cell = True,
                     verilog_template = "stdlib/{}.v".format(d))
+        ModuleUtils.instantiate(self._database[ModuleView.logical, "prga_fifo"],
+                self._database[ModuleView.logical, "prga_ram_1r1w"], "ram")
+        ModuleUtils.instantiate(self._database[ModuleView.logical, "prga_fifo_resizer"],
+                self._database[ModuleView.logical, "prga_fifo_lookahead_buffer"], "buffer")
+        ModuleUtils.instantiate(self._database[ModuleView.logical, "prga_fifo_adapter"],
+                self._database[ModuleView.logical, "prga_fifo_lookahead_buffer"], "buffer")
 
     # == low-level API =======================================================
     @property
