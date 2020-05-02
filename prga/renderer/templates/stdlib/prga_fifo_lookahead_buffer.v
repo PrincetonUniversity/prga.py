@@ -31,7 +31,7 @@ module prga_fifo_lookahead_buffer #(
         reg [DATA_WIDTH - 1:0] dout_i_f;
         reg dout_i_valid;
 
-        always @(posedge clk or posedge rst) begin
+        always @(posedge clk) begin
             if (rst) begin
                 empty <= 'b1;
                 dout_i_valid <= 'b0;

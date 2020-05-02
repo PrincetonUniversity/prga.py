@@ -160,7 +160,8 @@ class Context(Object):
 
         # 5. register stdlib logical designs
         # TODO: add as physical designs as well
-        for d in ("prga_ram_1r1w", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer", "prga_fifo_adapter"):
+        for d in ("prga_ram_1r1w", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer",
+                "prga_fifo_adapter", "prga_byteaddressable_reg"):
             self._database[ModuleView.logical, d] = Module(d,
                     view = ModuleView.logical,
                     verilog_template = "stdlib/{}.v".format(d))

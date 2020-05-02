@@ -19,6 +19,13 @@ module pktchain_dispatcher (
     output wire [`PHIT_WIDTH - 1:0] phit_oy
     );
 
+    // register reset signal
+    reg cfg_rst_f;
+
+    always @(posedge cfg_clk) begin
+        cfg_rst_f <= cfg_rst;
+    end
+
     wire frame_i_empty, frame_ox_full, frame_oy_full;
     wire [`FRAME_SIZE - 1:0] frame_i;
     reg [`FRAME_SIZE - 1:0] frame_ox;
@@ -26,7 +33,7 @@ module pktchain_dispatcher (
 
     pktchain_frame_assemble ififo (
         .cfg_clk        (cfg_clk)
-        ,.cfg_rst       (cfg_rst)
+        ,.cfg_rst       (cfg_rst_f)
         ,.phit_full     (phit_i_full)
         ,.phit_wr       (phit_i_wr)
         ,.phit_i        (phit_i)
@@ -37,7 +44,7 @@ module pktchain_dispatcher (
 
     pktchain_frame_disassemble ox (
         .cfg_clk        (cfg_clk)
-        ,.cfg_rst       (cfg_rst)
+        ,.cfg_rst       (cfg_rst_f)
         ,.frame_full    (frame_ox_full)
         ,.frame_wr      (frame_ox_wr)
         ,.frame_i       (frame_ox)
@@ -47,10 +54,10 @@ module pktchain_dispatcher (
         );
 
     pktchain_frame_disassemble #(
-        .DEPTH_LOG2     (6)  // increased Y-dimension buffering capability
+        .DEPTH_LOG2     (9 - `PHIT_WIDTH_LOG2)  // increased Y-dimension buffering capability: 16 frames
     ) oy (  
         .cfg_clk        (cfg_clk)
-        ,.cfg_rst       (cfg_rst)
+        ,.cfg_rst       (cfg_rst_f)
         ,.frame_full    (frame_oy_full)
         ,.frame_wr      (frame_oy_wr)
         ,.frame_i       (frame_i)
@@ -68,8 +75,8 @@ module pktchain_dispatcher (
     reg [`PAYLOAD_WIDTH - 1:0] payload;
     reg payload_rst;
 
-    always @(posedge cfg_clk or posedge cfg_rst) begin
-        if (cfg_rst) begin
+    always @(posedge cfg_clk) begin
+        if (cfg_rst_f) begin
             state <= STATE_RESET;
             payload <= 'b0;
         end else begin

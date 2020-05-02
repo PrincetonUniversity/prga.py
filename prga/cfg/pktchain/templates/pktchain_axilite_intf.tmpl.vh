@@ -8,23 +8,63 @@
 
 `define PRGA_AXI_ADDR_WIDTH         8
 `define PRGA_AXI_DATA_WIDTH         (1 << `PRGA_AXI_DATA_WIDTH_LOG2)
-`define PRGA_AXI_DATA_BYTES         (1 << (`PRGA_AXI_DATA_WIDTH_LOG2 - 3))
+`define PRGA_BYTES_PER_AXI_DATA     (1 << (`PRGA_AXI_DATA_WIDTH_LOG2 - 3))
+
+`define PRGA_FRAMES_PER_AXI_DATA    (1 << (`PRGA_AXI_DATA_WIDTH_LOG2 - `FRAME_SIZE_LOG2))
+`define PRGA_BYTES_PER_FRAME        (1 << (`FRAME_SIZE_LOG2 - 3))
 
 // Controller management
 `define PRGA_CREG_ADDR_STATE                `PRGA_CREG_ADDR_WIDTH'h0    // writing to this address triggers some state transition.
-`define PRGA_CREG_ADDR_ERR                  `PRGA_CREG_ADDR_WIDTH'h1    // read/clear error flags
+`define PRGA_CREG_ADDR_CONFIG               `PRGA_CREG_ADDR_WIDTH'h1    // configuration flags
+`define PRGA_CREG_ADDR_ERR_COUNT            `PRGA_CREG_ADDR_WIDTH'h2    // number of errors captured. write to clear all errors
+`define PRGA_CREG_ADDR_ERR_FIFO             `PRGA_CREG_ADDR_WIDTH'h3    // [RO] one error at a time
 
 // Bitstream management
 `define PRGA_CREG_ADDR_BITSTREAM_ID         `PRGA_CREG_ADDR_WIDTH'h8    // ID of the current bitstream
-`define PRGA_CREG_ADDR_BITSTREAM_FIFO       `PRGA_CREG_ADDR_WIDTH'h9    // Data FIFO
+`define PRGA_CREG_ADDR_BITSTREAM_FIFO       `PRGA_CREG_ADDR_WIDTH'h9    // [WO] Data FIFO
 
 // PRGA controller states
 `define PRGA_STATE_WIDTH                    8
-`define PRGA_STATE_RESET                    `PRGA_CREG_STATE_WIDTH'h0   // PRGA is under reset
-`define PRGA_STATE_STANDBY                  `PRGA_CREG_STATE_WIDTH'h1   // PRGA not configured/being configured. Controller ready for reconfig
-`define PRGA_STATE_PROGRAMMING              `PRGA_CREG_STATE_WIDTH'h2   // PRGA is being programmed
+`define PRGA_STATE_RESET                    `PRGA_CREG_STATE_WIDTH'h0   // PRGA is just reset. Write this value to soft reset PRGA
+`define PRGA_STATE_PROGRAMMING              `PRGA_CREG_STATE_WIDTH'h1   // Programming PRGA. Write this value to start programming
+`define PRGA_STATE_PROG_STABILIZING         `PRGA_CREG_STATE_WIDTH'h2   // PRGA is programmed. Write this value to indicate end of bitstream
+`define PRGA_STATE_PROG_ERR                 `PRGA_CREG_STATE_WIDTH'h3   // An error occured during programming
+`define PRGA_STATE_APP_READY                `PRGA_CREG_STATE_WIDTH'h4   // PRGA is programmed and the application is ready (but not busy)
 
-// PRGA controller error flags
-`define PRGA_ERR_PROTOCOL_VIOLATION         `PRGA_AXI_DATA_WIDTH'h1     // protocol violation
+// PRGA Config Flags
+`define PRGA_CONFIG_UNPROGRAMMED_TILES_OK                           0   // if set, not all PRGA tiles must be programmed
+
+// PRGA controller error messages
+`define PRGA_ERR_FIFO_DEPTH_LOG2            7
+`define PRGA_ERR_TYPE_WIDTH                 8                           // error message type field
+`define PRGA_ERR_TYPE_INDEX                 `PRGA_AXI_DATA_WIDTH-1-:`PRGA_ERR_TYPE_WIDTH
+`define PRGA_ERR_INVAL                      `PRGA_ERR_TYPE_WIDTH'h0     // invalid error message
+`define PRGA_ERR_PROTOCOL_VIOLATION         `PRGA_ERR_TYPE_WIDTH'h1     // error: protocol violated (address: [0 +: `PRGA_AXI_ADDR_WIDTH])
+`define PRGA_ERR_INVAL_WR                   `PRGA_ERR_TYPE_WIDTH'h2     // invalid write (address: [0 +: `PRGA_AXI_ADDR_WIDTH])
+`define PRGA_ERR_INVAL_RD                   `PRGA_ERR_TYPE_WIDTH'h3     // invalid read (address: [0 +: `PRGA_AXI_ADDR_WIDTH])
+`define PRGA_ERR_BITSTREAM                  `PRGA_ERR_TYPE_WIDTH'h4     // bitstream error (detailed error: [0 +: `FRAME_SIZE])
+    `define PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH    8
+    `define PRGA_ERR_BITSTREAM_SUBTYPE_INDEX    `PRGA_AXI_DATA_WIDTH-`PRGA_ERR_TYPE_WIDTH-1-:`PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH
+    `define PRGA_ERR_BITSTREAM_SUBTYPE_INVAL_HEADER         `PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH'h0
+    `define PRGA_ERR_BITSTREAM_SUBTYPE_UNINITIALIZED_TILE   `PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH'h1
+    `define PRGA_ERR_BITSTREAM_SUBTYPE_COMPLETED_TILE       `PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH'h2
+    `define PRGA_ERR_BITSTREAM_SUBTYPE_REINITIALIZING_TILE  `PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH'h3
+    `define PRGA_ERR_BITSTREAM_SUBTYPE_INCOMPLETE_TILES     `PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH'h4    // # incomplete tiles: [`YPOS_BASE +: 2 * `POS_WIDTH]
+    `define PRGA_ERR_BITSTREAM_SUBTYPE_ERROR_TILES          `PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH'h5    // # error tiles: [`YPOS_BASE +: 2 * `POS_WIDTH]
+`define PRGA_ERR_PROG_RESP                  `PRGA_ERR_TYPE_WIDTH'h5     // programming response error (detailed error: [0 +: `FRAME_SIZE])
+
+// PRGA tile status tracker
+`define PRGA_TILE_STATUS_TRACKER_WIDTH      3
+`define PRGA_TILE_STATUS_RESET              `PRGA_TILE_STATUS_TRACKER_WIDTH'h0  // reset and not programmed yet
+    // Depending on configuration, some tiles may be not need to be configured
+    // for the fabric to be fully configured
+`define PRGA_TILE_STATUS_ERROR              `PRGA_TILE_STATUS_TRACKER_WIDTH'h1  // the tile is not correctly programmed
+`define PRGA_TILE_STATUS_DONE               `PRGA_TILE_STATUS_TRACKER_WIDTH'h2  // the tile has been successfully programmed
+`define PRGA_TILE_STATUS_PROGRAMMING        `PRGA_TILE_STATUS_TRACKER_WIDTH'h4  // programming packets (including the init packet) have been sent to the tile
+`define PRGA_TILE_STATUS_PENDING            `PRGA_TILE_STATUS_TRACKER_WIDTH'h5  // checksum packet has been sent to the tile
+
+// Other configurations
+`define PRGA_TIMER_WIDTH                    32
+`define PRGA_TRANSIENT_CYCLES               `PRGA_TIMER_WIDTH'd200
 
 `endif

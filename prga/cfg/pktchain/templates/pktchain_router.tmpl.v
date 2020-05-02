@@ -23,6 +23,13 @@ module {{ module.name }} (
     output wire [`CFG_WIDTH-1:0] cfg_o
     );
 
+    // register reset signal
+    reg cfg_rst_f;
+
+    always @(posedge cfg_clk) begin
+        cfg_rst_f <= cfg_rst;
+    end
+
     // Physical-level protocol:
     //  phit size = PHIT_WIDTH
     //
@@ -40,22 +47,6 @@ module {{ module.name }} (
     // The frame size (32) is not a multiple of phit width ({{ phit_width }})
     __PRGA_RTLGEN_ERROR__ __PKTCHAIN_UNSUPPORTED_PHIT_WIDTH__();
     {%- endif %}
-    localparam  MSG_TYPE_INVAL                      = `MSG_TYPE_WIDTH'h00,
-
-                // DATA messages
-                MSG_TYPE_DATA                       = `MSG_TYPE_WIDTH'h08,
-                MSG_TYPE_DATA_INIT                  = `MSG_TYPE_WIDTH'h09,
-                MSG_TYPE_DATA_CHECKSUM              = `MSG_TYPE_WIDTH'h0A,
-                MSG_TYPE_DATA_INIT_CHECKSUM         = `MSG_TYPE_WIDTH'h0B,
-                MSG_TYPE_DATA_ACK                   = `MSG_TYPE_WIDTH'h0F,
-
-                // Control messages
-                MSG_TYPE_TEST                       = `MSG_TYPE_WIDTH'h40,
-
-                // error messages
-                MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE     = `MSG_TYPE_WIDTH'h80,
-                MSG_TYPE_ERROR_ECHO_MISMATCH        = `MSG_TYPE_WIDTH'h81,
-                MSG_TYPE_ERROR_CHECKSUM_MISMATCH    = `MSG_TYPE_WIDTH'h82;
 
     wire frame_i_empty, frame_o_full;
     wire [`FRAME_SIZE - 1:0] frame_i;
@@ -66,7 +57,7 @@ module {{ module.name }} (
 
     pktchain_frame_assemble ififo (
         .cfg_clk        (cfg_clk)
-        ,.cfg_rst       (cfg_rst)
+        ,.cfg_rst       (cfg_rst_f)
         ,.phit_full     (phit_i_full)
         ,.phit_wr       (phit_i_wr)
         ,.phit_i        (phit_i)
@@ -77,7 +68,7 @@ module {{ module.name }} (
 
     pktchain_frame_disassemble ofifo (
         .cfg_clk        (cfg_clk)
-        ,.cfg_rst       (cfg_rst)
+        ,.cfg_rst       (cfg_rst_f)
         ,.frame_full    (frame_o_full)
         ,.frame_wr      (frame_o_wr)
         ,.frame_i       (frame_o)
@@ -88,7 +79,7 @@ module {{ module.name }} (
 
     pktchain_clasp clasp (
         .cfg_clk            (cfg_clk)
-        ,.cfg_rst           (cfg_rst)
+        ,.cfg_rst           (cfg_rst_f)
         ,.frame_empty       (frame_clasp_empty)
         ,.frame_rd          (frame_clasp_rd)
         ,.frame_i           (frame_i)
@@ -114,8 +105,8 @@ module {{ module.name }} (
     reg checksum_pending, checksum_checked;
     reg payload_rst, start_clasp_trx;
 
-    always @(posedge cfg_clk or posedge cfg_rst) begin
-        if (cfg_rst) begin
+    always @(posedge cfg_clk) begin
+        if (cfg_rst_f) begin
             state <= STATE_RESET;
             payload <= 'b0;
             checksum_pending <= 'b0;
@@ -130,15 +121,15 @@ module {{ module.name }} (
             end
 
             if (start_clasp_trx) begin
-                clasp_init <= (frame_i[`MSG_TYPE_INDEX] == MSG_TYPE_DATA_INIT ||
-                              frame_i[`MSG_TYPE_INDEX] == MSG_TYPE_DATA_INIT_CHECKSUM);
+                clasp_init <= (frame_i[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_INIT ||
+                              frame_i[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_INIT_CHECKSUM);
             end else if (!frame_clasp_empty && frame_clasp_rd) begin
                 clasp_init <= 'b0;
             end
 
             if (start_clasp_trx) begin
-                checksum_pending <= (frame_i[`MSG_TYPE_INDEX] == MSG_TYPE_DATA_CHECKSUM ||
-                                    frame_i[`MSG_TYPE_INDEX] == MSG_TYPE_DATA_INIT_CHECKSUM);
+                checksum_pending <= (frame_i[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_CHECKSUM ||
+                                    frame_i[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_INIT_CHECKSUM);
             end else if (checksum_checked) begin
                 checksum_pending <= 'b0;
             end
@@ -163,16 +154,16 @@ module {{ module.name }} (
             STATE_IDLE: begin
                 if (checksum_pending && ~clasp_programming) begin
                     frame_o_wr = 'b1;
-                    frame_o = ( clasp_echo_mismatch ? MSG_TYPE_ERROR_ECHO_MISMATCH :
-                            clasp_checksum_mismatch ? MSG_TYPE_ERROR_CHECKSUM_MISMATCH :
-                                                      MSG_TYPE_DATA_ACK ) << `MSG_TYPE_BASE;
+                    frame_o = ( clasp_echo_mismatch ? `MSG_TYPE_ERROR_ECHO_MISMATCH :
+                            clasp_checksum_mismatch ? `MSG_TYPE_ERROR_CHECKSUM_MISMATCH :
+                                                      `MSG_TYPE_DATA_ACK ) << `MSG_TYPE_BASE;
                     checksum_checked = ~frame_o_full;
                 end else if (~frame_i_empty) begin  // valid input frame
                     case (frame_i[`MSG_TYPE_INDEX])
-                        MSG_TYPE_DATA,
-                        MSG_TYPE_DATA_INIT,
-                        MSG_TYPE_DATA_CHECKSUM,
-                        MSG_TYPE_DATA_INIT_CHECKSUM: begin
+                        `MSG_TYPE_DATA,
+                        `MSG_TYPE_DATA_INIT,
+                        `MSG_TYPE_DATA_CHECKSUM,
+                        `MSG_TYPE_DATA_INIT_CHECKSUM: begin
                             if (frame_i[`YPOS_INDEX] == 0) begin    // this message is for me
                                 if (~checksum_pending) begin        // only react if I'm not waiting for the checksum
                                     state_next = STATE_CLASP;
@@ -191,11 +182,11 @@ module {{ module.name }} (
                                 payload_rst = 'b1;
                             end
                         end
-                        MSG_TYPE_TEST,
-                        MSG_TYPE_DATA_ACK,
-                        MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE,
-                        MSG_TYPE_ERROR_ECHO_MISMATCH,
-                        MSG_TYPE_ERROR_CHECKSUM_MISMATCH: begin
+                        `MSG_TYPE_TEST,
+                        `MSG_TYPE_DATA_ACK,
+                        `MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE,
+                        `MSG_TYPE_ERROR_ECHO_MISMATCH,
+                        `MSG_TYPE_ERROR_CHECKSUM_MISMATCH: begin
                             if (~frame_o_full) begin
                                 frame_i_rd = 'b1;
                             end
@@ -213,7 +204,7 @@ module {{ module.name }} (
                             end
 
                             frame_o_wr = 'b1;
-                            frame_o = MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE << `MSG_TYPE_BASE;
+                            frame_o = `MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE << `MSG_TYPE_BASE;
                             payload_rst = 'b1;
                         end
                     endcase

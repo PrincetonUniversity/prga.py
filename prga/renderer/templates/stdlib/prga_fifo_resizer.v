@@ -57,7 +57,7 @@ module prga_fifo_resizer #(
 
             assign rd_i = dout_i_ready;
         end else begin
-            always @(posedge clk or posedge rst) begin
+            always @(posedge clk) begin
                 if (rst) begin
                     dout_i_valid <= 'b0;
                 end else begin
@@ -92,7 +92,7 @@ module prga_fifo_resizer #(
 
             reg [INPUT_COUNTER_WIDTH - 1:0] counter;
 
-            always @(posedge clk or posedge rst) begin
+            always @(posedge clk) begin
                 if (rst) begin
                     counter <= 'b0;
                 end else begin
@@ -119,7 +119,7 @@ module prga_fifo_resizer #(
             reg [DATA_WIDTH * INPUT_MULTIPLIER - 1:0] ibuf;
             reg [OUTPUT_COUNTER_WIDTH - 1:0] counter;
 
-            always @(posedge clk or posedge rst) begin
+            always @(posedge clk) begin
                 if (rst) begin
                     counter <= 'b0;
                 end else begin

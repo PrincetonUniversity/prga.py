@@ -19,6 +19,13 @@ module pktchain_gatherer (
     output wire [`PHIT_WIDTH - 1:0] phit_o
     );
 
+    // register reset signal
+    reg cfg_rst_f;
+
+    always @(posedge cfg_clk) begin
+        cfg_rst_f <= cfg_rst;
+    end
+
     wire frame_ix_empty, frame_iy_empty, frame_o_full;
     wire [`FRAME_SIZE - 1:0] frame_ix, frame_iy;
     reg [`FRAME_SIZE - 1:0] frame_o;
@@ -26,7 +33,7 @@ module pktchain_gatherer (
 
     pktchain_frame_assemble ix (
         .cfg_clk        (cfg_clk)
-        ,.cfg_rst       (cfg_rst)
+        ,.cfg_rst       (cfg_rst_f)
         ,.phit_full     (phit_ix_full)
         ,.phit_wr       (phit_ix_wr)
         ,.phit_i        (phit_ix)
@@ -37,7 +44,7 @@ module pktchain_gatherer (
 
     pktchain_frame_assemble iy (
         .cfg_clk        (cfg_clk)
-        ,.cfg_rst       (cfg_rst)
+        ,.cfg_rst       (cfg_rst_f)
         ,.phit_full     (phit_iy_full)
         ,.phit_wr       (phit_iy_wr)
         ,.phit_i        (phit_iy)
@@ -48,7 +55,7 @@ module pktchain_gatherer (
 
     pktchain_frame_disassemble ofifo (
         .cfg_clk        (cfg_clk)
-        ,.cfg_rst       (cfg_rst)
+        ,.cfg_rst       (cfg_rst_f)
         ,.frame_full    (frame_o_full)
         ,.frame_wr      (frame_o_wr)
         ,.frame_i       (frame_o)
@@ -66,8 +73,8 @@ module pktchain_gatherer (
     reg [`PAYLOAD_WIDTH - 1:0] payload;
     reg payload_rst;
 
-    always @(posedge cfg_clk or posedge cfg_rst) begin
-        if (cfg_rst) begin
+    always @(posedge cfg_clk) begin
+        if (cfg_rst_f) begin
             state <= STATE_RESET;
             payload <= 'b0;
         end else begin

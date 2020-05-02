@@ -16,7 +16,7 @@ module {{ module.name }} (
     input wire [0:0] m_axi_wvalid,
     output reg [0:0] m_axi_wready,
     input wire [`PRGA_AXI_DATA_WIDTH - 1:0] m_axi_wdata,
-    input wire [`PRGA_AXI_DATA_BYTES - 1:0] m_axi_wstrb,
+    input wire [`PRGA_BYTES_PER_AXI_DATA - 1:0] m_axi_wstrb,
 
     // write response channel
     output reg [0:0] m_axi_bvalid,
@@ -53,41 +53,66 @@ module {{ module.name }} (
     // TODO: Supervising control over PRGA Coherent Memory Interface
     );
 
-    // CREG basic interface
-    wire creg_wreq_valid, creg_rreq_valid;
-    reg creg_wreq_accept, creg_wreq_ignore, creg_rreq_accept;
+    // register reset signal
+    reg rst_f, soft_rst;
+
+    always @(posedge clk) begin
+        rst_f <= rst;
+    end
+
+    always @* begin
+        cfg_rst = rst_f || soft_rst;
+    end
+
+    localparam  OP_INVAL            = 2'h0,
+                OP_ACCEPT           = 2'h1,
+                OP_REJECT           = 2'h2;
+
+    // =======================================================================
+    // -- CREG Basic Interface (AXI handling) --------------------------------
+    // =======================================================================
+    wire creg_wreq_valid;
+    reg [1:0] creg_wreq_op;
+    wire creg_wreq_accept, creg_wreq_reject;
+
+    assign creg_wreq_accept = creg_wreq_op == OP_ACCEPT;
+    assign creg_wreq_reject = creg_wreq_op == OP_REJECT;
 
     // AXI write request FIFOs
     wire axi_waddr_fifo_full, axi_waddr_fifo_empty;
     wire [`PRGA_AXI_ADDR_WIDTH - 1:0] creg_wreq_addr;
 
-    pktchain_fifo #(
-        DATA_WIDTH = `PRGA_AXI_ADDR_WIDTH
+    prga_fifo #(
+        .DATA_WIDTH                 (`PRGA_AXI_ADDR_WIDTH)
+        ,.LOOKAHEAD                 (1)
+        ,.DEPTH_LOG2                (2)
     ) axi_waddr_fifo (
         .clk                        (clk)
-        ,.rst                       (rst)
+        ,.rst                       (rst_f)
         ,.full                      (axi_waddr_fifo_full)
         ,.wr                        (m_axi_awvalid)
         ,.din                       (m_axi_awaddr)
         ,.empty                     (axi_waddr_fifo_empty)
-        ,.rd                        (creg_wreq_accept || creg_wreq_ignore)
+        ,.rd                        (creg_wreq_accept || creg_wreq_reject)
         ,.dout                      (creg_wreq_addr)
         );
 
     wire axi_wdata_fifo_full, axi_wdata_fifo_empty;
-    wire [`PRGA_AXI_DATA_BYTES - 1:0] creg_wreq_mask;
+    wire [`PRGA_BYTES_PER_AXI_DATA - 1:0] creg_wreq_mask;
     wire [`PRGA_AXI_DATA_WIDTH - 1:0] creg_wreq_data;
 
-    pktchain_fifo #(
-        DATA_WIDTH = `PRGA_AXI_DATA_BYTES + `PRGA_AXI_DATA_WIDTH
+    prga_fifo #(
+        .DATA_WIDTH                 (`PRGA_BYTES_PER_AXI_DATA + `PRGA_AXI_DATA_WIDTH)
+        ,.LOOKAHEAD                 (1)
+        ,.DEPTH_LOG2                (2)
     ) axi_wdata_fifo (
         .clk                        (clk)
-        ,.rst                       (rst)
+        ,.rst                       (rst_f)
         ,.full                      (axi_wdata_fifo_full)
         ,.wr                        (m_axi_wvalid)
         ,.din                       ({m_axi_wstrb, m_axi_wdata})
         ,.empty                     (axi_wdata_fifo_empty)
-        ,.rd                        (creg_wreq_accept || creg_wreq_ignore)
+        ,.rd                        (creg_wreq_accept || creg_wreq_reject)
         ,.dout                      ({creg_wreq_mask, creg_wreq_data})
         );
 
@@ -96,28 +121,38 @@ module {{ module.name }} (
     // AXI write response FIFOs
     wire axi_wresp_fifo_full, axi_wresp_fifo_empty;
 
-    pktchain_fifo #(
-        DATA_WIDTH = 2
+    prga_fifo #(
+        .DATA_WIDTH                 (2)
+        ,.LOOKAHEAD                 (1)
+        ,.DEPTH_LOG2                (2)
     ) axi_wresp_fifo (
         .clk                        (clk)
-        ,.rst                       (rst)
+        ,.rst                       (rst_f)
         ,.full                      (axi_wresp_fifo_full)
-        ,.wr                        (creg_wreq_accept || creg_wreq_ignore)
+        ,.wr                        (creg_wreq_accept || creg_wreq_reject)
         ,.din                       (2'b0)  // AXI OKAY
         ,.empty                     (axi_wresp_fifo_empty)
         ,.rd                        (m_axi_bready)
         ,.dout                      (m_axi_bresp)
         );
 
-    // AXI read request FIFOs
-    wire axi_raddr_fifo_full, axi_raddr_fifo_empty;
+    // AXI read request/response FIFOs
+    wire axi_rreq_valid;
+    wire axi_raddr_fifo_full, axi_raddr_fifo_empty, axi_rdata_fifo_full, axi_rdata_fifo_empty;
     wire [`PRGA_AXI_ADDR_WIDTH - 1:0] creg_rreq_addr;
 
-    pktchain_fifo #(
-        DATA_WIDTH = `PRGA_AXI_ADDR_WIDTH
+    reg creg_rreq_accept;
+    reg [`PRGA_AXI_DATA_WIDTH - 1:0] creg_rreq_data;
+
+    assign axi_rreq_valid = ~axi_raddr_fifo_empty && ~axi_rdata_fifo_full;
+
+    prga_fifo #(
+        .DATA_WIDTH                 (`PRGA_AXI_ADDR_WIDTH)
+        ,.LOOKAHEAD                 (1)
+        ,.DEPTH_LOG2                (2)
     ) axi_raddr_fifo (
         .clk                        (clk)
-        ,.rst                       (rst)
+        ,.rst                       (rst_f)
         ,.full                      (axi_raddr_fifo_full)
         ,.wr                        (m_axi_arvalid)
         ,.din                       (m_axi_araddr)
@@ -126,17 +161,13 @@ module {{ module.name }} (
         ,.dout                      (creg_rreq_addr)
         );
 
-    assign creg_rreq_valid = ~axi_raddr_fifo_empty;
-
-    // AXI read response FIFOs
-    wire axi_rdata_fifo_full, axi_rdata_fifo_empty;
-    reg [`PRGA_AXI_DATA_WIDTH - 1:0] creg_rreq_data;
-
-    pktchain_fifo #(
-        DATA_WIDTH = `PRGA_AXI_DATA_WIDTH
+    prga_fifo #(
+        .DATA_WIDTH                 (`PRGA_AXI_DATA_WIDTH)
+        ,.LOOKAHEAD                 (1)
+        ,.DEPTH_LOG2                (2)
     ) axi_rdata_fifo (
         .clk                        (clk)
-        ,.rst                       (rst)
+        ,.rst                       (rst_f)
         ,.full                      (axi_rdata_fifo_full)
         ,.wr                        (creg_rreq_accept)
         ,.din                       (creg_rreq_data)
@@ -155,125 +186,899 @@ module {{ module.name }} (
         m_axi_rresp = 2'b0;     // AXI OKAY
     end
 
-    // bitstream FIFO
-    wire bitstream_frames_fifo_full;
-    reg bitstream_frames_fifo_wr;
+    // =======================================================================
+    // -- CREG Implementation ------------------------------------------------
+    // =======================================================================
+    // STATE: customized update, not byte-addressable
+    reg [`PRGA_CREG_STATE_WIDTH - 1:0] creg_state, creg_state_next;
 
-    pktchain_frame_disassemble #(
-        DEPTH_LOG2 = 4,                         // 16 64-bit entries
-        DATA_WIDTH_LOG2 = `PRGA_AXI_DATA_WIDTH_LOG2
-    ) bitstream_frames_fifo (
-        .cfg_clk                    (clk)
-        ,.cfg_rst                   (rst)
-        ,.frame_full                (bitstream_frames_fifo_full)
-        ,.frame_wr                  (bitstream_frames_fifo_wr)
-        ,.frame_i                   (m_axi_wdata)
-        ,.phit_full                 (cfg_phit_o_full)
-        ,.phit_wr                   (cfg_phit_o_wr)
-        ,.phit_o                    (cfg_phit_o)
-        );
-
-    // bitstream response collection
-
-    // CREG writes
-    reg [`PRGA_CREG_STATE_WIDTH - 1:0] state, state_next;
-    reg [`PRGA_AXI_DATA_WIDTH - 1:0] creg_err_flags, creg_err_flags_next;
-    reg [`PRGA_AXI_DATA_WIDTH - 1:0] creg_bitstream_id;
-
-    // CREG writes that are byte-addressable
-    genvar creg_byte_i;
-    generate for (creg_byte_i = 0; creg_byte_i < `PRGA_AXI_DATA_BYTES; creg_byte_i = creg_byte_i + 1) begin: creg_byte
-        always @(posedge clk or posedge rst) begin
-            if (rst) begin
-                creg_bitstream_id[creg_byte_i * 8 +: 8] <= 'b0;
-            end else if (creg_wreq_valid && creg_wreq_accept) begin
-                case (creg_wreq_addr)
-                    `PRGA_CREG_ADDR_BITSTREAM_ID: begin
-                        creg_bitstream_id[creg_byte_i * 8 +: 8] <= creg_wreq_mask[creg_byte_i] ?
-                                                                   creg_wreq_data[creg_byte_i * 8 +: 8] :
-                                                                   creg_bitstream_id[creg_byte_i * 8 +: 8];
-                    end
-                endcase
-            end
-        end
-    end endgenerate
-
-    // CREG writes that are not byte-addressable
-    always @(posedge clk or posedge rst) begin
-        if (rst) begin
-            state <= `PRGA_STATE_RESET;
-            creg_err_flags <= 'b0;
+    always @(posedge clk) begin
+        if (rst_f) begin
+            creg_state <= `PRGA_STATE_RESET;
         end else begin
-            state <= state_next;
-
-            if (creg_wreq_valid && creg_wreq_accept) begin
-                case (creg_wreq_addr)
-                    `PRGA_CREG_ADDR_ERR: begin
-                        creg_err_flags <= creg_wreq_data;
-                    end
-                endcase
-            end else begin
-                creg_err_flags <= creg_err_flags_next;
-            end
+            creg_state <= creg_state_next;
         end
     end
-    
-    // CREG reads
+
+    // CONFIG: byte-addressable
+    wire [`PRGA_AXI_DATA_WIDTH - 1:0] creg_config;
+
+    prga_byteaddressable_reg #(
+        .NUM_BYTES                  (`PRGA_BYTES_PER_AXI_DATA)
+    ) creg_config_reg (
+        .clk                        (clk)
+        ,.rst                       (rst_f)
+        ,.wr                        (creg_wreq_valid && creg_wreq_accept && creg_wreq_addr == `PRGA_CREG_ADDR_CONFIG)
+        ,.mask                      (creg_wreq_mask)
+        ,.din                       (creg_wreq_data)
+        ,.dout                      (creg_config)
+        );
+
+    // Error interface:
+    localparam  CREG_ERR_FIFO_OP_INVAL  = 2'h0,
+                CREG_ERR_FIFO_OP_CLEAR  = 2'h1,
+                CREG_ERR_FIFO_OP_APPEND = 2'h2,
+                CREG_ERR_FIFO_OP_READ   = 2'h3;
+    reg [1:0] creg_err_op;
+    reg [`PRGA_AXI_DATA_WIDTH - 1:0] creg_err;
+
+    // ERROR FIFO: read-only FIFO
+    wire creg_err_fifo_full, creg_err_fifo_empty;
+    wire [`PRGA_AXI_DATA_WIDTH - 1:0] creg_err_fifo_dout;
+
+    prga_fifo #(
+        .DATA_WIDTH                 (`PRGA_AXI_DATA_WIDTH)
+        ,.DEPTH_LOG2                (`PRGA_ERR_FIFO_DEPTH_LOG2)
+        ,.LOOKAHEAD                 (1)
+    ) creg_err_fifo (
+        .clk                        (clk)
+        ,.rst                       (rst_f || creg_err_op == CREG_ERR_FIFO_OP_CLEAR)
+        ,.full                      (creg_err_fifo_full)
+        ,.wr                        (creg_err_op == CREG_ERR_FIFO_OP_APPEND)
+        ,.din                       (creg_err)
+        ,.empty                     (creg_err_fifo_empty)
+        ,.rd                        (creg_err_op == CREG_ERR_FIFO_OP_READ)
+        ,.dout                      (creg_err_fifo_dout)
+        );
+
+    // ERROR COUNT: customized update, not byte-addressable
+    reg [`PRGA_ERR_FIFO_DEPTH_LOG2:0] creg_err_count;
+
+    always @(posedge clk) begin
+        if (rst_f) begin
+            creg_err_count <= 'b0;
+        end else begin
+            case (creg_err_op)
+                CREG_ERR_FIFO_OP_CLEAR: begin
+                    creg_err_count <= 'b0;
+                end
+                CREG_ERR_FIFO_OP_APPEND: begin
+                    if (~creg_err_fifo_full) begin
+                        creg_err_count <= creg_err_count + 1;
+                    end
+                end
+                CREG_ERR_FIFO_OP_READ: begin
+                    if (~creg_err_fifo_empty) begin
+                        creg_err_count <= creg_err_count - 1;
+                    end
+                end
+            endcase
+        end
+    end
+
+    // BITSTREAM ID: byte-addressable
+    wire [`PRGA_AXI_DATA_WIDTH - 1:0] creg_bsid;
+
+    prga_byteaddressable_reg #(
+        .NUM_BYTES                  (`PRGA_BYTES_PER_AXI_DATA)
+    ) creg_bsid_reg (
+        .clk                        (clk)
+        ,.rst                       (rst_f)
+        ,.wr                        (creg_wreq_valid && creg_wreq_accept && creg_wreq_addr == `PRGA_CREG_ADDR_BITSTREAM_ID)
+        ,.mask                      (creg_wreq_mask)
+        ,.din                       (creg_wreq_data)
+        ,.dout                      (creg_bsid)
+        );
+
+    // BITSTREAM FIFO: frame-addressable (all byte enabling bits in a frame must be set), not readable
+    wire [`FRAME_SIZE - 1:0] bsframe;
+    wire bsframe_valid;
+    reg [1:0] bsframe_op;
+
+    wire [`PRGA_AXI_DATA_WIDTH + `PRGA_BYTES_PER_AXI_DATA - 1:0] bsqword_fifo_din, bsqword_fifo_dout;
+    wire [`FRAME_SIZE + `PRGA_BYTES_PER_FRAME - 1:0] bsframe_resizer_dout;
+    wire bsqword_fifo_full, bsqword_fifo_empty, bsqword_fifo_rd, bsframe_resizer_empty, bsframe_resizer_rd;
+
+    // put byte enable close to each byte (so the resizer can grab those correctly)
+    genvar bsqword_asm_i;
+    generate
+        for (bsqword_asm_i = 0; bsqword_asm_i < `PRGA_BYTES_PER_AXI_DATA; bsqword_asm_i = bsqword_asm_i + 1) begin: bsqword_asm
+            assign bsqword_fifo_din[bsqword_asm_i * 9 +: 9] = {creg_wreq_mask[bsqword_asm_i],
+                creg_wreq_data[bsqword_asm_i * 8 +: 8]};
+        end
+    endgenerate
+
+    // disassemble bitstream frame
+    wire [`PRGA_BYTES_PER_FRAME - 1:0] bsframe_mask;
+    genvar bsframe_disasm_i;
+    generate
+        for (bsframe_disasm_i = 0; bsframe_disasm_i < `PRGA_BYTES_PER_FRAME; bsframe_disasm_i = bsframe_disasm_i + 1) begin: bsframe_disasm
+            assign {bsframe_mask[bsframe_disasm_i], bsframe[bsframe_disasm_i * 8 +: 8]} = bsframe_resizer_dout[bsframe_disasm_i * 9 +: 9];
+        end
+    endgenerate
+
+    assign bsframe_valid = ~bsframe_resizer_empty && (&bsframe_mask);
+    assign bsframe_resizer_rd = ~(&bsframe_mask) || bsframe_op == OP_ACCEPT || bsframe_op == OP_REJECT;
+
+    prga_fifo #(
+        .DATA_WIDTH                 (`PRGA_AXI_DATA_WIDTH + `PRGA_BYTES_PER_AXI_DATA)
+        ,.DEPTH_LOG2                (6)                     // 64 Qword + mask entries
+        ,.LOOKAHEAD                 (0)
+    ) bsqword_fifo (
+        .clk                        (clk)
+        ,.rst                       (cfg_rst)
+        ,.full                      (bsqword_fifo_full)
+        ,.wr                        (creg_wreq_valid && creg_wreq_accept && creg_wreq_addr == `PRGA_CREG_ADDR_BITSTREAM_FIFO)
+        ,.din                       (bsqword_fifo_din)
+        ,.empty                     (bsqword_fifo_empty)
+        ,.rd                        (bsqword_fifo_rd)
+        ,.dout                      (bsqword_fifo_dout)
+        );
+
+    prga_fifo_resizer #(
+        .DATA_WIDTH                 (`FRAME_SIZE + `PRGA_BYTES_PER_FRAME)
+        ,.INPUT_MULTIPLIER          (`PRGA_FRAMES_PER_AXI_DATA)
+        ,.INPUT_LOOKAHEAD           (0)
+        ,.OUTPUT_LOOKAHEAD          (1)
+    ) bsframe_resizer (
+        .clk                        (clk)
+        ,.rst                       (cfg_rst)
+        ,.empty_i                   (bsqword_fifo_empty)
+        ,.rd_i                      (bsqword_fifo_rd)
+        ,.dout_i                    (bsqword_fifo_dout)
+        ,.empty                     (bsframe_resizer_empty)
+        ,.rd                        (bsframe_resizer_rd)
+        ,.dout                      (bsframe_resizer_dout)
+        );
+
+    // =======================================================================
+    // -- CREG Read Handling -------------------------------------------------
+    // =======================================================================
     always @* begin
-        creg_rreq_accept = ~axi_rdata_fifo_full;
         creg_rreq_data = 'b0;
 
         case (creg_rreq_addr)
             `PRGA_CREG_ADDR_STATE: begin
-                creg_rreq_data = `PRGA_AXI_DATA_WIDTH'b0 | state;
+                creg_rreq_data[0 +: `PRGA_STATE_WIDTH] = creg_state;
             end
-            `PRGA_CREG_ADDR_ERR: begin
-                creg_rreq_data = creg_err_flags;
+            `PRGA_CREG_ADDR_CONFIG: begin
+                creg_rreq_data = creg_config;
+            end
+            `PRGA_CREG_ADDR_ERR_COUNT: begin
+                creg_rreq_data[0 +: `PRGA_ERR_FIFO_DEPTH_LOG2 + 1] = creg_err_count;
+            end
+            `PRGA_CREG_ADDR_ERR_FIFO: begin
+                if (~creg_err_fifo_empty) begin
+                    creg_rreq_data = creg_err_fifo_dout;
+                end
             end
             `PRGA_CREG_ADDR_BITSTREAM_ID: begin
-                creg_rreq_data = creg_bitstream_id;
+                creg_rreq_data = creg_bsid;
             end
         endcase
     end
 
-    // main state machine
-    always @* begin
-        state_next = state;
-        creg_err_flags_next = creg_err_flags;
-        bitstream_frames_fifo_wr = 'b0;
-        creg_wreq_accept = 'b0;
-        creg_wreq_ignore = 'b0;
+    // =======================================================================
+    // -- Tile Status Tracker ------------------------------------------------
+    // =======================================================================
 
-        case (state)
-            `PRGA_STATE_RESET: begin
-                state_next = `PRGA_STATE_STANDBY;
+    // Tile status tracker
+    reg [`CLOG2(`PKTCHAIN_X_TILES) - 1:0]   tile_status_tracker_rd_xpos,
+                                            tile_status_tracker_rd_xpos_f;
+    reg [`CLOG2(`PKTCHAIN_Y_TILES) - 1:0]   tile_status_tracker_rd_ypos,
+                                            tile_status_tracker_rd_ypos_f;
+    wire [`PKTCHAIN_Y_TILES * `PRGA_TILE_STATUS_TRACKER_WIDTH - 1:0] tile_status_tracker_col_dout;
+    reg [`PKTCHAIN_Y_TILES * `PRGA_TILE_STATUS_TRACKER_WIDTH - 1:0] tile_status_tracker_col_din;
+    wire tile_status_tracker_col_we;
+
+    prga_ram_1r1w #(
+        .DATA_WIDTH                 (`PKTCHAIN_Y_TILES * `PRGA_TILE_STATUS_TRACKER_WIDTH)
+        ,.ADDR_WIDTH                (`CLOG2(`PKTCHAIN_X_TILES))
+        ,.RAM_ROWS                  (`PKTCHAIN_X_TILES)
+    ) tile_status_tracker (
+        .clk                        (clk)
+        ,.raddr                     (tile_status_tracker_rd_xpos)
+        ,.dout                      (tile_status_tracker_col_dout)
+        ,.waddr                     (tile_status_tracker_rd_xpos_f)
+        ,.din                       (tile_status_tracker_col_din)
+        ,.we                        (tile_status_tracker_col_we)
+        );
+
+    always @(posedge clk) begin
+        if (rst_f) begin
+            tile_status_tracker_rd_xpos_f <= 'b0;
+            tile_status_tracker_rd_ypos_f <= 'b0;
+        end else begin
+            tile_status_tracker_rd_xpos_f <= tile_status_tracker_rd_xpos;
+            tile_status_tracker_rd_ypos_f <= tile_status_tracker_rd_ypos;
+        end
+    end
+
+    reg [`PRGA_TILE_STATUS_TRACKER_WIDTH - 1:0] tile_status_tracker_dout;
+    reg [`PRGA_TILE_STATUS_TRACKER_WIDTH - 1:0] tile_status_tracker_din;
+    reg tile_status_tracker_wop_clean_col, tile_status_tracker_wop_update;
+
+    always @* begin
+        tile_status_tracker_col_we = tile_status_tracker_wop_clean_col || tile_status_tracker_wop_update;
+        tile_status_tracker_dout = tile_status_tracker_col_dout[tile_status_tracker_rd_ypos_f * `PRGA_TILE_STATUS_TRACKER_WIDTH +:
+                                   `PRGA_TILE_STATUS_TRACKER_WIDTH];
+        tile_status_tracker_col_din = tile_status_tracker_col_dout;
+        
+        if (tile_status_tracker_wop_clean_col) begin
+            tile_status_tracker_col_din = 'b0;
+        end else if (tile_status_tracker_wop_update) begin
+            tile_status_tracker_col_din[tile_status_tracker_rd_ypos_f * `PRGA_TILE_STATUS_TRACKER_WIDTH +:
+                `PRGA_TILE_STATUS_TRACKER_WIDTH] = tile_status_tracker_din;
+        end
+    end
+
+    // =======================================================================
+    // -- Bitstream Programming Output & Response Input ----------------------
+    // =======================================================================
+
+    wire bsframe_fifo_full, bsresp_fifo_empty;
+    reg bsresp_fifo_rd;
+    wire [`FRAME_SIZE - 1:0] bsresp;
+
+    pktchain_frame_disassemble #(
+        .DEPTH_LOG2                 (9 - `PHIT_WIDTH_LOG2)  // buffering capability: 16 frames
+    ) bsframe_fifo (
+        .cfg_clk                    (clk)
+        ,.cfg_rst                   (cfg_rst)
+        ,.frame_full                (bsframe_fifo_full)
+        ,.frame_wr                  (bsframe_valid && bsframe_op == OP_ACCEPT)
+        ,.frame_i                   (bsframe)
+        ,.phit_wr                   (cfg_phit_o_wr)
+        ,.phit_full                 (cfg_phit_o_full)
+        ,.phit_o                    (cfg_phit_o)
+        );
+
+    pktchain_frame_assemble #(
+        .DEPTH_LOG2                 (2)                     // buffering capability: 4 frames
+    ) bsresp_fifo (
+        .cfg_clk                    (clk)
+        ,.cfg_rst                   (cfg_rst)
+        ,.phit_full                 (cfg_phit_i_full)
+        ,.phit_wr                   (cfg_phit_i_wr)
+        ,.phit_i                    (cfg_phit_i)
+        ,.frame_empty               (bsresp_fifo_empty)
+        ,.frame_rd                  (bsresp_fifo_rd)
+        ,.frame_o                   (bsresp)
+        );
+
+    // =======================================================================
+    // -- Main Control Logic -------------------------------------------------
+    // =======================================================================
+    // Signals that interacts with the code below are:
+    //  CREG writes:
+    //      input creg_wreq_valid
+    //      input creg_wreq_addr
+    //      input creg_wreq_mask
+    //      input creg_wreq_data
+    //      output creg_wreq_op
+    //  CREG reads:
+    //      input creg_rreq_valid
+    //      input creg_rreq_addr
+    //      output creg_rreq_accept
+    //  CREG-state
+    //      input creg_state
+    //      output creg_state_next
+    //  CREG-config
+    //      input creg_config
+    //  CREG-err
+    //      input creg_err_fifo_full
+    //      output creg_err_op
+    //      output creg_err
+    //  CREG-bitstream ID
+    //      input creg_bsid
+    //  CREG-bitstream FIFO
+    //      input bsframe
+    //      input bsframe_valid
+    //      input bsframe_fifo_full
+    //      output bsframe_op
+    //  Tile Status Tracker
+    //      input tile_status_tracker_dout
+    //      input tile_status_tracker_rd_xpos_f
+    //      output tile_status_tracker_wop_clean_col
+    //      output tile_status_tracker_wop_update
+    //      output tile_status_tracker_rd_xpos
+    //      output tile_status_tracker_rd_ypos
+    //  Bitstream Programming Reponses:
+    //      input bsresp_fifo_empty
+    //      input bsresp
+    //      output bsresp_fifo_rd
+
+    // main state machine
+    localparam  STATE_WIDTH                         = 8;
+    localparam  
+                // RESET phase
+                ST_RST_INIT                         = 8'h00,
+                ST_RST_CLR_TILE_STATS_TRACKER       = 8'h01,
+                // STANDBY phase
+                ST_STDBY                            = 8'h02,
+                // PROG phase
+                ST_PROG_IDLE                        = 8'h03,
+                ST_PROG_RESP_HDR                    = 8'h04,
+                ST_PROG_DUMP_RESP_PLD               = 8'h05,
+                ST_PROG_PKT_HDR                     = 8'h06,
+                ST_PROG_PKT_PLD                     = 8'h07,
+                ST_PROG_DUMP_PKT_PLD                = 8'h08,
+                // STBLIZ phase
+                ST_STBLIZ_PENDING_TILES             = 8'h09,
+                ST_STBLIZ_RESP_HDR                  = 8'h0A,
+                ST_STBLIZ_DUMP_RESP_PLD             = 8'h0B,
+                ST_STBLIZ_TRANSIENT                 = 8'h0C,
+                ST_STBLIZ_APP_RST                   = 8'h0D,
+                // APP state
+                ST_APP_READY                        = 8'h10,
+                // ERROR state
+                ST_ERROR                            = 8'hFF;
+
+    reg [STATE_WIDTH - 1:0] state, state_next;
+    reg [`MSG_TYPE_WIDTH - 1:0] bs_msg_type, bs_msg_type_next;
+    reg [`PAYLOAD_WIDTH:0] bs_payload, bs_payload_next;
+    reg [`POS_WIDTH + `POS_WIDTH - 1:0] programming_tiles, programming_tiles_next;
+    reg [`POS_WIDTH + `POS_WIDTH - 1:0] pending_tiles, pending_tiles_next;
+    reg [`POS_WIDTH + `POS_WIDTH - 1:0] err_tiles, err_tiles_next;
+    reg [`PRGA_TIMER_WIDTH:0] timer;
+    reg timer_rst;
+
+    always @(posedge clk) begin
+        if (rst_f) begin
+            state <= ST_RST_INIT;
+            bs_payload <= 'b0;
+            bs_msg_type <= 'b0;
+            pending_tiles <= 'b0;
+            programming_tiles <= 'b0;
+            err_tiles <= 'b0;
+            timer <= 'b0;
+        end else begin
+            state <= state_next;
+            bs_payload <= bs_payload_next;
+            bs_msg_type <= bs_msg_type_next;
+            pending_tiles <= pending_tiles_next;
+            programming_tiles <= programming_tiles_next;
+            err_tiles <= err_tiles_next;
+
+            if (timer_rst) begin
+                timer <= 'b0;
+            end else begin
+                timer <= timer + 1;
             end
-            `PRGA_STATE_STANDBY: begin
+        end
+    end
+    {#
+        // ===================================================================
+        // -- Define Text Macros (Jinja2) ------------------------------------
+        // ===================================================================
+        #}
+    {%- macro handle_common_creg_writes(active) %}
+    `PRGA_CREG_ADDR_ERR_COUNT: begin
+        // if no operation is chosen yet
+        if (creg_err_op == CREG_ERR_FIFO_OP_INVAL) begin
+            creg_wreq_op = OP_ACCEPT;
+            creg_err_op = CREG_ERR_FIFO_OP_CLEAR;
+        end
+    end
+    // Unconditional accept
+    `PRGA_CREG_ADDR_CONFIG,
+    `PRGA_CREG_ADDR_BITSTREAM_ID: begin
+        creg_wreq_op = OP_ACCEPT;
+    end
+    {%- if active %}
+    // Unconditional reject (and error)
+    default: begin
+        // if no operation is chosen yet
+        if (creg_err_op == CREG_ERR_FIFO_OP_INVAL) begin
+            creg_wreq_op = OP_REJECT;
+            creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+            creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_INVAL_WR;
+            creg_err[0 +: `PRGA_AXI_ADDR_WIDTH] = creg_wreq_addr;
+        end
+    end
+    {%- endif %}
+    {%- endmacro %}
+
+    {%- macro handle_creg_reads() %}
+    if (creg_rreq_valid) begin
+        case (creg_rreq_addr)
+            `PRGA_CREG_ADDR_ERR_FIFO: begin
+                // if no operation is chosen yet
+                if (creg_err_op == CREG_ERR_FIFO_OP_INVAL) begin
+                    creg_rreq_accept = 'b1;
+                    creg_err_op = CREG_ERR_FIFO_OP_READ;
+                end
+            end
+            // Unconditional accept
+            `PRGA_CREG_ADDR_STATE,
+            `PRGA_CREG_ADDR_CONFIG,
+            `PRGA_CREG_ADDR_ERR_COUNT,
+            `PRGA_CREG_ADDR_BITSTREAM_ID: begin
+                creg_rreq_accept = 'b1;
+            end
+            // Unconditional reject (and error)
+            default: begin
+                if (creg_err_op == CREG_ERR_FIFO_OP_INVAL) begin
+                    creg_rreq_accept = 'b1;
+                    creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                    creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_INVAL_RD;
+                    creg_err[0 +: `PRGA_AXI_ADDR_WIDTH] = creg_rreq_addr;
+                end
+            end
+        endcase
+    end
+    {%- endmacro %}
+
+    {%- macro handle_creg_accesses(programming, handle_reset = false) %}
+    if (creg_wreq_valid) begin
+        case (creg_wreq_addr)
+            {%- if handle_reset %}
+            `PRGA_CREG_ADDR_STATE: begin
+                case (creg_wreq_data[0 +: `PRGA_STATE_WIDTH])
+                    `PRGA_STATE_RESET: begin
+                        state_next = ST_RST_INIT;
+                    end
+                    default: if (creg_err_op == CREG_ERR_FIFO_OP_INVAL) begin
+                        creg_wreq_op = OP_REJECT;
+                        creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                        creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROTOCOL_VIOLATION;
+                        creg_err[0 +: `PRGA_AXI_ADDR_WIDTH] = creg_wreq_addr;
+                    end
+                endcase
+            end
+            {%- endif %}
+            {%- if programming %}
+            `PRGA_CREG_ADDR_BITSTREAM_FIFO: begin
+                if (~bsqword_fifo_full) begin
+                    creg_wreq_op = OP_ACCEPT;
+                end
+            end
+            {%- endif %}
+            {{- handle_common_creg_writes(handle_reset)|indent(8) }}
+        endcase
+    end
+    {{- handle_creg_reads() }}
+    {%- endmacro %}
+
+    {%- macro peek_bsresp_header(cur_state, ok_state, dump_state) %}
+    // TEMPLATED-BEGIN: Generated with template: peek_bsresp_header({{ cur_state }}, {{ ok_state }}, {{ dump_state }})
+    if (bsresp[`XPOS_INDEX] >= `PKTCHAIN_X_TILES || bsresp[`YPOS_INDEX] >= `PKTCHAIN_Y_TILES || bsresp[`PAYLOAD_INDEX] > 0) begin
+        bsresp_fifo_rd = 'b1;
+        creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+        creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROG_RESP;
+        creg_err[0 +: `FRAME_SIZE] = bsresp;
+
+        if (bsresp[`PAYLOAD_INDEX] == 0) begin
+            state_next = {{ cur_state }};
+        end else begin
+            bs_payload_next = bsresp[`PAYLOAD_INDEX];
+            state_next = {{ dump_state }};
+        end
+    end else begin
+        tile_status_tracker_rd_xpos = `PKTCHAIN_X_TILES - 1 - bsresp[`XPOS_INDEX];
+        tile_status_tracker_rd_ypos = `PKTCHAIN_Y_TILES - 1 - bsresp[`YPOS_INDEX];
+        state_next = {{ ok_state }};
+    end
+    // TEMPLATED-END
+    {%- endmacro %}
+
+    {%- macro handle_bsresp_header() %}
+    bsresp_fifo_rd = 'b1;
+    tile_status_tracker_wop_update = 'b1;
+
+    if (tile_status_tracker_dout == `PRGA_TILE_STATUS_PENDING && bsresp[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_ACK) begin
+        tile_status_tracker_din = `PRGA_TILE_STATUS_DONE;
+    end else begin
+        if (tile_status_tracker_dout == `PRGA_TILE_STATUS_PROGRAMMING) begin
+            programming_tiles_next = programming_tiles - 1;
+        end
+
+        if (tile_status_tracker_dout != `PRGA_TILE_STATUS_ERROR) begin
+            err_tiles_next = err_tiles + 1;
+        end
+
+        tile_status_tracker_din = `PRGA_TILE_STATUS_ERROR;
+        creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+        creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROG_RESP;
+        creg_err[0 +: `FRAME_SIZE] = bsresp;
+    end
+    {%- endmacro %}
+
+    {%- macro handle_pkt_payload(cur_state, ok_state) %}
+    // TEMPLATED-BEGIN: Generated with template: handle_pkt_payload({{ cur_state }}, {{ ok_state }})
+    if (bsframe_valid) begin
+        bsframe_accept = 'b1;
+        bs_payload_next = bs_payload - 1;
+
+        if (bs_payload == 1) begin
+            state_next = {{ ok_state }};
+        end else begin
+            state_next = {{ cur_state }};
+        end
+    end
+    // TEMPLATED-END
+    {%- endmcaro %}
+
+    {%- macro accept_bsframe_cond() %}
+    if (~bsframe_fifo_full) begin
+        bsframe_op = OP_ACCEPT;
+        bs_payload_next = bs_payload - 1;
+    end
+    {%- endmacro %}
+
+    {%- macro reject_pkt_header(error) %}
+    bsframe_op = OP_REJECT;
+    bs_payload_next = bs_payload - 1;
+    creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+    creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
+    creg_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = {{ error }};
+    creg_err[`XPOS_INDEX] = tile_status_tracker_rd_xpos_f;
+    creg_err[`YPOS_INDEX] = tile_status_tracker_rd_ypos_f;
+    {%- endmacro %}
+
+    always @* begin
+        soft_rst = 'b0;
+        creg_wreq_op = OP_INVAL;
+        creg_rreq_accept = 'b0;
+        creg_state_next = creg_state;
+        creg_err_op = CREG_ERR_FIFO_OP_INVAL;
+        creg_err = 'b0;
+        bsframe_op = OP_INVAL;
+        tile_status_tracker_wop_clean_col = 'b0;
+        tile_status_tracker_wop_update = 'b0;
+        tile_status_tracker_rd_xpos = 'b0;
+        tile_status_tracker_rd_ypos = 'b0;
+        tile_status_tracker_din = tile_status_tracker_dout;
+        bsresp_fifo_rd = 'b0;
+
+        state_next = state;
+        bs_payload_next = bs_payload;
+        programming_tiles_next = programming_tiles;
+        pending_tiles_next = pending_tiles;
+        err_tiles_next = err_tiles;
+        timer_rst = 'b0;
+
+        cfg_e = 'b1;
+
+        // state transitioning
+        case (state)
+            ST_RST_INIT: begin
+                soft_rst = 'b1;
+                creg_state_next = `PRGA_STATE_RESET;
+                creg_err_op = CREG_ERR_FIFO_OP_CLEAR;
+                tile_status_tracker_rd_xpos = 'b0;
+                bs_payload_next = 'b0;
+                programming_tiles_next = 'b0;
+                pending_tiles_next = 'b0;
+                err_tiles_next = 'b0;
+                state_next = ST_RST_CLR_TILE_STATS_TRACKER;
+            end
+            ST_RST_CLR_TILE_STATS_TRACKER: begin
+                soft_rst = 'b1;
+                creg_err_op = CREG_ERR_FIFO_OP_CLEAR;
+                bs_payload_next = 'b0;
+                programming_tiles_next = 'b0;
+                pending_tiles_next = 'b0;
+                err_tiles_next = 'b0;
+                tile_status_tracker_rd_xpos = tile_status_tracker_rd_xpos_f + 1;
+                tile_status_tracker_wop_clean_col = 'b1;
+
+                if (tile_status_tracker_rd_xpos_f == `PKTCHAIN_Y_TILES - 1) begin
+                    state_next = ST_STDBY;
+                end
+            end
+            ST_STDBY: begin
+                // handle CREG writes
                 if (creg_wreq_valid) begin
                     // some writes would trigger state transition
                     case (creg_wreq_addr)
-                        `PRGA_CREG_ADDR_BITSTREAM_ID: begin
-                            // bitstream ID specified. Transition to bitstream loading state
-                            creg_wreq_accept = 'b1;
-                            state_next = `PRGA_STATE_PROGRAMMING;
+                        `PRGA_CREG_ADDR_STATE: begin
+                            case (creg_wreq_data[0 +: `PRGA_STATE_WIDTH])
+                                `PRGA_STATE_RESET: begin            // soft reset
+                                    state_next = ST_RST_INIT;
+                                end
+                                `PRGA_STATE_PROGRAMMING: begin
+                                    creg_wreq_op = OP_ACCEPT;
+                                    creg_state_next = `PRGA_STATE_PROGRAMMING;
+                                    state_next = ST_PROG_IDLE;
+                                end
+                                default: begin
+                                    creg_wreq_op = OP_REJECT;
+                                    creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                                    creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROTOCOL_VIOLATION;
+                                    creg_err[0 +: `PRGA_AXI_ADDR_WIDTH] = creg_wreq_addr;
+                                end
+                            endcase
                         end
-                        default: begin
-                            creg_err_flags_next = creg_err_flags | `PRGA_ERR_PROTOCOL_VIOLATION;
-                            creg_wreq_ignore = 'b1;
+                        `PRGA_CREG_ADDR_BITSTREAM_FIFO: begin
+                            creg_wreq_op = OP_REJECT;
+                            creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                            creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROTOCOL_VIOLATION;
+                            creg_err[0 +: `PRGA_AXI_ADDR_WIDTH] = creg_wreq_addr;
                         end
+                        {{- handle_common_creg_writes(true)|indent(20) }}
                     endcase
                 end
+                {{- handle_creg_reads()|indent(12) }}
             end
-            `PRGA_STATE_PROGRAMMING: begin
+            ST_PROG_IDLE: begin
+                // First priority: handle bitstream loading response
+                if (~bsresp_fifo_empty) begin
+                    {{- peek_bsresp_header(ST_PROG_IDLE, ST_PROG_RESP_HDR, ST_PROG_DUMP_RESP_PLD)|indent(16) }}
+                end
+
+                // Second priority (conflicted w/ first priority): handle incoming bitstream packet
+                else if (bsframe_valid) begin
+                    if (bsframe[`XPOS_INDEX] >= `PKTCHAIN_X_TILES || bsframe[`YPOS_INDEX] >= `PKTCHAIN_Y_TILES ||
+                        !(bsframe[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA || bsframe[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_INIT ||
+                        bsframe[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_CHECKSUM || bsframe[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_INIT_CHECKSUM)
+                    ) begin
+                        bsframe_op = OP_REJECT;
+                        creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                        creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
+                        creg_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_INVAL_HEADER;
+                        creg_err[0 +: `FRAME_SIZE] = bsframe;
+
+                        if (bsframe[`PAYLOAD_INDEX] > 0) begin
+                            bs_payload_next = bsframe[`PAYLOAD_INDEX];
+                            state_next = ST_PROG_DUMP_PKT_PLD;
+                        end
+                    end else begin
+                        tile_status_tracker_rd_xpos = bsframe[`XPOS_INDEX];
+                        tile_status_tracker_rd_ypos = bsframe[`YPOS_INDEX];
+                        bs_payload_next = bsframe[`PAYLOAD_INDEX] + 1;  // because header is not sent to the pipe yet
+                        state_next = ST_PROG_PKT_HDR;
+                    end
+                end
+
+                // Third priority (may conflict w/ 1st & 2nd priorities): handle CREG writes
                 if (creg_wreq_valid) begin
                     case (creg_wreq_addr)
+                        `PRGA_CREG_ADDR_STATE: begin
+                            case (creg_wreq_data[0 +: `PRGA_STATE_WIDTH])
+                                `PRGA_STATE_RESET: begin                // soft reset
+                                    state_next = ST_RST_INIT;
+                                end
+                                `PRGA_STATE_PROG_STABILIZING: begin
+                                    // conflicts with 1st & 2nd priorities
+                                    if (bsresp_fifo_empty && bsqword_fifo_empty && ~bsframe_valid) begin
+                                        creg_wreq_op = OP_ACCEPT;
+                                        if (programming_tiles > 0) begin
+                                            creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                                            creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_INCOMPLETE_TILES;
+                                            creg_err[`YPOS_BASE +: 2 * `POS_WIDTH] = programming_tiles;
+                                            creg_state_next = `PRGA_STATE_PROG_ERR;
+                                        end else if (err_tiles > 0) begin
+                                            creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                                            creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_ERROR_TILES;
+                                            creg_err[`YPOS_BASE +: 2 * `POS_WIDTH] = err_tiles;
+                                            creg_state_next = `PRGA_STATE_PROG_ERR;
+                                        end else begin
+                                            creg_state_next = `PRGA_STATE_PROG_STABILIZING;
+                                        end
+
+                                        if (pending_tiles > 0) begin
+                                            state_next = ST_STBLIZ_PENDING_TILES;
+                                        end else if (programming_tiles > 0 || err_tiles > 0) begin
+                                            state_next = STATE_PROG_ERROR;
+                                        end else begin
+                                            state_next = ST_STBLIZ_STABLIZING;
+                                        end
+                                    end
+                                end
+                                default: if (creg_err_op == CREG_ERR_FIFO_OP_INVAL) begin
+                                    creg_wreq_op = OP_REJECT;
+                                    creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                                    creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROTOCOL_VIOLATION;
+                                    creg_err[0 +: `PRGA_AXI_ADDR_WIDTH] = creg_wreq_addr;
+                                end
+                            endcase
+                        end
                         `PRGA_CREG_ADDR_BITSTREAM_FIFO: begin
                             // write to bitstream loading FIFO
-                            bitstream_frames_fifo_wr = 'b1;
-                            creg_wreq_accept = ~bitstream_frames_fifo_full;
+                            if (~bsqword_fifo_full) begin
+                                creg_wreq_op = OP_ACCEPT;
+                            end
                         end
+                        {{- handle_common_creg_writes(true)|indent(20) }}
                     endcase
                 end
+
+                // Fourth priority: (may conflict with higher priorities): handle CREG reads
+                {{- handle_creg_reads()|indent(12) }}
+            end
+            ST_PROG_RESP_HDR: begin
+                {{- handle_bsresp_header()|indent(12) }}
+                state_next = ST_PROG_IDLE;
+                if (tile_status_tracker_dout == `PRGA_TILE_STATUS_PENDING) begin
+                    pending_tiles_next = pending_tiles - 1;
+                end
+                {{- handle_creg_accesses(true)|indent(12) }}
+            end
+            ST_PROG_DUMP_RESP_PLD: begin
+                bsresp_fifo_rd = 'b1;
+
+                if (~bsresp_fifo_empty) begin
+                    if (bs_payload == 1) begin
+                        state_next = ST_PROG_IDLE;
+                    end else begin
+                        bs_payload_next = bs_payload - 1;
+                    end
+                end
+                {{- handle_creg_accesses(true)|indent(12) }}
+            end
+            ST_PROG_PKT_HDR: begin
+                tile_status_tracker_wop_update = 'b1;
+
+                case (tile_status_tracker_dout)
+                    `PRGA_TILE_STATUS_RESET: begin
+                        case (bs_msg_type)
+                            `MSG_TYPE_DATA_INIT: begin
+                                {{- accept_bsframe_cond()|indent(28) }}
+                                programming_tiles_next = programming_tiles + 1;
+                                tile_status_tracker_dout = `PRGA_TILE_STATUS_PROGRAMMING;
+                            end
+                            `MSG_TYPE_DATA_INIT_CHECKSUM: begin
+                                {{- accept_bsframe_cond()|indent(28) }}
+                                pending_tiles_next = pending_tiles + 1;
+                                tile_status_tracker_dout = `PRGA_TILE_STATUS_PENDING;
+                            end
+                            default: begin
+                                // tile not initialized yet
+                                {{- reject_pkt_header(PRGA_ERR_BITSTREAM_SUBTYPE_UNINITIALIZED_TILE)|indent(28) }}
+                            end
+                        endcase
+                    end
+                    `PRGA_TILE_STATUS_ERROR: begin
+                        case (bs_msg_type)
+                            `MSG_TYPE_DATA_INIT: begin
+                                {{- accept_bsframe_cond()|indent(28) }}
+                                err_tiles_next = err_tiles - 1;
+                                programming_tiles_next = programming_tiles + 1;
+                                tile_status_tracker_dout = `PRGA_TILE_STATUS_PROGRAMMING;
+                            end
+                            `MSG_TYPE_DATA_INIT_CHECKSUM: begin
+                                {{- accept_bsframe_cond()|indent(28) }}
+                                err_tiles_next = err_tiles - 1;
+                                pending_tiles_next = pending_tiles + 1;
+                                tile_status_tracker_dout = `PRGA_TILE_STATUS_PENDING;
+                            end
+                            default: begin
+                                // tile not initialized yet
+                                {{- reject_pkt_header(PRGA_ERR_BITSTREAM_SUBTYPE_UNINITIALIZED_TILE)|indent(28) }}
+                            end
+                        endcase
+                    end
+                    `PRGA_TILE_STATUS_DONE,
+                    `PRGA_TILE_STATUS_PENDING: begin
+                        // tile already programmed
+                        {{- reject_pkt_header(PRGA_ERR_BITSTREAM_SUBTYPE_COMPLETED_TILE)|indent(20) }}
+                    end
+                    `PRGA_TILE_STATUS_PROGRAMMING: begin
+                        case (bs_msg_type)
+                            `MSG_TYPE_DATA_INIT,
+                            `MSG_TYPE_DATA_INIT_CHECKSUM: begin
+                                // tile already initialized
+                                {{- reject_pkt_header(PRGA_ERR_BITSTREAM_SUBTYPE_REINITIALIZING_TILE)|indent(28) }}
+                            end
+                            `MSG_TYPE_DATA: begin
+                                {{- accept_bsframe_cond()|indent(28) }}
+                            end
+                            `MSG_TYPE_DATA_CHECKSUM: begin
+                                {{- accept_bsframe_cond()|indent(28) }}
+                                programming_tiles_next = programming_tiles - 1;
+                                pending_tiles_next = pending_tiles_next + 1;
+                                tile_status_tracker_dout = `PRGA_TILE_STATUS_PENDING;
+                            end
+                        endcase
+                    end
+                endcase
+
+                if (bsframe_op == OP_REJECT) begin
+                    if (bs_payload == 1) begin
+                        state_next = ST_PROG_IDLE;
+                    end else begin
+                        state_next = ST_PROG_DUMP_PKT_PLD;
+                    end
+                end else if (bsframe_op == OP_ACCEPT) begin
+                    if (bs_payload == 1) begin
+                        state_next = ST_PROG_IDLE;
+                    end else begin
+                        state_next = ST_PROG_PKT_PLD;
+                    end
+                end else begin
+                    state_next = ST_PROG_PKT_PLD;
+                end
+                {{- handle_creg_accesses(true)|indent(12) }}
+            end
+            ST_PROG_PKT_PLD: begin
+                if (bsframe_valid && ~bsframe_fifo_full) begin
+                    bsframe_op = OP_ACCEPT;
+
+                    if (bs_payload == 1) begin
+                        state_next = ST_PROG_IDLE;
+                    end else begin
+                        bs_payload_next = bs_payload - 1;
+                    end
+                end
+                {{- handle_creg_accesses(true)|indent(12) }}
+            end
+            ST_PROG_DUMP_PKT_PLD: begin
+                if (bsframe_valid) begin
+                    bsframe_op = OP_REJECT;
+
+                    if (bs_payload == 1) begin
+                        state_next = ST_PROG_IDLE;
+                    end else begin
+                        bs_payload_next = bs_payload - 1;
+                    end
+                end
+                {{- handle_creg_accesses(true)|indent(12) }}
+            end
+            ST_STBLIZ_PENDING_TILES: begin
+                // First priority: handle bitstream loading response
+                if (~bsresp_fifo_empty) begin
+                    {{- peek_bsresp_header(ST_STBLIZ_PENDING_TILES, ST_STBLIZ_RESP_HDR, ST_STBLIZ_DUMP_RESP_PLD) }}
+                end
+
+                // Second priority: handle CREG accesses
+                {{- handle_creg_accesses(false, true)|indent(12) }}
+            end
+            ST_STBLIZ_RESP_HDR: begin
+                {{- handle_bsresp_header()|indent(12) }}
+                if (tile_status_tracker_dout == `PRGA_TILE_STATUS_PENDING) begin
+                    pending_tiles_next = pending_tiles - 1;
+
+                    if (pending_tiles == 1) begin   // last pending tile
+                        if (programming_tiles > 0 || err_tiles > 0) begin
+                            creg_state_next = `PRGA_STATE_PROG_ERR;
+                            state_next = ST_ERROR;
+                        end else begin
+                            timer_rst = 'b1;
+                            state_next = ST_STBLIZ_TRANSIENT;
+                        end
+                    end else begin
+                        state_next = ST_STBLIZ_PENDING_TILES;
+                    end
+                end
+                {{- handle_creg_accesses(false)|indent(12) }}
+            end
+            ST_STBLIZ_DUMP_RESP_PLD: begin
+                bsresp_fifo_rd = 'b1;
+
+                if (~bsresp_fifo_empty) begin
+                    if (bs_payload == 1) begin
+                        state_next = ST_STBLIZ_PENDING_TILES;
+                    end else begin
+                        bs_payload_next = bs_payload - 1;
+                    end
+                end
+                {{- handle_creg_accesses(false)|indent(12) }}
+            end
+            ST_ERROR: begin
+                // handle CREG writes
+                {{- handle_creg_accesses(false, true)|indent(12) }}
+            end
+            ST_STBLIZ_TRANSIENT: begin
+                if (timer == `PRGA_TRANSIENT_CYCLES) begin  // transient time is up. bitstream loading finally done. One last step: app reset
+                    timer_rst = 'b1;
+                    state_next = ST_STBLIZ_APP_RST;
+                end else begin                              // handle CREG accesses before transitioning to app domain.
+                    {{- handle_creg_accesses(false, true)|indent(12) }}
+                end
+            end
+            ST_STBLIZ_APP_RST: begin
+                // TODO
             end
         endcase
     end

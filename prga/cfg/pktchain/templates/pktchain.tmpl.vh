@@ -32,4 +32,21 @@
 `define XPOS_INDEX `XPOS_BASE+:`POS_WIDTH
 `define MSG_TYPE_INDEX `MSG_TYPE_BASE+:`MSG_TYPE_WIDTH 
 
+// Message types
+`define MSG_TYPE_DATA                       `MSG_TYPE_WIDTH'h10
+`define MSG_TYPE_DATA_INIT                  `MSG_TYPE_WIDTH'h11
+`define MSG_TYPE_DATA_CHECKSUM              `MSG_TYPE_WIDTH'h12
+`define MSG_TYPE_DATA_INIT_CHECKSUM         `MSG_TYPE_WIDTH'h13
+`define MSG_TYPE_DATA_ACK                   `MSG_TYPE_WIDTH'h14
+
+`define MSG_TYPE_TEST                       `MSG_TYPE_WIDTH'h20
+
+`define MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE     `MSG_TYPE_WIDTH'h80
+`define MSG_TYPE_ERROR_ECHO_MISMATCH        `MSG_TYPE_WIDTH'h81
+`define MSG_TYPE_ERROR_CHECKSUM_MISMATCH    `MSG_TYPE_WIDTH'h82
+
+// Fabric-specific
+`define PKTCHAIN_X_TILES                    {{ context.summary.pktchain.x_tiles }}
+`define PKTCHAIN_Y_TILES                    {{ context.summary.pktchain.y_tiles }}
+
 `endif

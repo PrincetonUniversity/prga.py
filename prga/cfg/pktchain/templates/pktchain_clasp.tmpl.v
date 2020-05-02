@@ -87,7 +87,7 @@ module pktchain_clasp (
     reg [7:0] break_counter;
     reg cfg_we_o_prev, cfg_we_i_prev;
 
-    always @(posedge cfg_clk or posedge cfg_rst) begin
+    always @(posedge cfg_clk) begin
         if (cfg_rst) begin
             state <= STATE_RESET;
             unit_counter <= 'b0;

@@ -115,7 +115,8 @@ class Pktchain(Scanchain):
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
         context._fasm_delegate = PktchainFASMDelegate(context)
         context._verilog_headers["pktchain.vh"] = ("pktchain.tmpl.vh",
-                {"phit_width_log2": (phit_width - 1).bit_length(), "cfg_width_log2": (cfg_width - 1).bit_length()})
+                {"phit_width_log2": (phit_width - 1).bit_length(), "cfg_width_log2": (cfg_width - 1).bit_length(),
+                    "context": context})
         context._verilog_headers["pktchain_axilite_intf.vh"] = ("pktchain_axilite_intf.tmpl.vh", {})
         cls._register_primitives(context, phit_width, cfg_width, dont_add_primitive, dont_add_logical_primitive)
         return context
@@ -570,6 +571,17 @@ class Pktchain(Scanchain):
             PortDirection.output, net_class = NetClass.cfg))
         NetUtils.connect(prev_gatherer.pins["phit_o"], ModuleUtils.create_port(module, "phit_o", context.phit_width,
             PortDirection.output, net_class = NetClass.cfg))
+        # update context summary if this is the top-level module
+        if module.key == context.top.key:
+            if not hasattr(context.summary, "pktchain"):
+                context.summary.pktchain = {}
+            context.summary.pktchain["x_tiles"] = len(chains)
+            y_tiles = chains[0]
+            for i, ypos in enumerate(chain[1:]):
+                if ypos != y_tiles:
+                    raise PRGAInternalError("Unbalanced chain. Col. {} has {} tiles but col. {} has {}"
+                            .format(0, y_tiles, i, ypos))
+            context.summary.pktchain["y_tiles"] = y_tiles
 
     @classmethod
     def annotate_user_view(cls, context, user_module = None, *, _annotated = None):
