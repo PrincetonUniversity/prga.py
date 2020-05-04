@@ -86,7 +86,7 @@ class FileRenderer(Object):
         parameters.update(kwargs)
         self.tasks.setdefault(file_, []).append( (template, parameters) )
 
-    def add_generic(self, file_, template, **parameters):
+    def add_generic(self, file_, template, **kwargs):
         """Add a generic file rendering task.
 
         Args:
@@ -94,6 +94,11 @@ class FileRenderer(Object):
             template (:obj:`str`): The template to be used
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
+        parameters = {
+                'itervalues': itervalues,
+                'iteritems': iteritems,
+                }
+        parameters.update(kwargs)
         self.tasks.setdefault(file_, []).append( (template, parameters) )
 
     def add_yosys_synth_script(self, file_, lut_sizes, template = 'synth.generic.tmpl.ys', **kwargs):

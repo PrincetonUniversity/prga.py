@@ -5,8 +5,8 @@
 `include "prga_utils.vh"
 
 `define FRAME_SIZE_LOG2 5
-`define PHIT_WIDTH_LOG2 {{ phit_width_log2 }}
-`define CFG_WIDTH_LOG2 {{ cfg_width_log2 }}
+`define PHIT_WIDTH_LOG2 {{ context.summary.pktchain.protocol.phit_width_log2 }}
+`define CFG_WIDTH_LOG2 {{ context.summary.pktchain.protocol.cfg_width_log2 }}
 
 `define FRAME_SIZE (1 << `FRAME_SIZE_LOG2)
 `define PHIT_WIDTH (1 << `PHIT_WIDTH_LOG2)
@@ -33,17 +33,9 @@
 `define MSG_TYPE_INDEX `MSG_TYPE_BASE+:`MSG_TYPE_WIDTH 
 
 // Message types
-`define MSG_TYPE_DATA                       `MSG_TYPE_WIDTH'h10
-`define MSG_TYPE_DATA_INIT                  `MSG_TYPE_WIDTH'h11
-`define MSG_TYPE_DATA_CHECKSUM              `MSG_TYPE_WIDTH'h12
-`define MSG_TYPE_DATA_INIT_CHECKSUM         `MSG_TYPE_WIDTH'h13
-`define MSG_TYPE_DATA_ACK                   `MSG_TYPE_WIDTH'h14
-
-`define MSG_TYPE_TEST                       `MSG_TYPE_WIDTH'h20
-
-`define MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE     `MSG_TYPE_WIDTH'h80
-`define MSG_TYPE_ERROR_ECHO_MISMATCH        `MSG_TYPE_WIDTH'h81
-`define MSG_TYPE_ERROR_CHECKSUM_MISMATCH    `MSG_TYPE_WIDTH'h82
+{%- for type_, value in iteritems(context.summary.pktchain.protocol.msg_types) %}
+`define {{ type_ }} `MSG_TYPE_WIDTH'h{{ "{:x}".format(value) }}
+{%- endfor %}
 
 // Fabric-specific
 `define PKTCHAIN_X_TILES                    {{ context.summary.pktchain.x_tiles }}

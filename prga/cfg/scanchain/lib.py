@@ -231,6 +231,22 @@ class Scanchain(object):
                     verilog_template = "cfg_delim.tmpl.v")
             cls._get_or_create_cfg_ports(delim, cfg_width, we_o = True)
             context._database[ModuleView.logical, "cfg_delim"] = delim
+        
+        # register enable register
+        if "cfg_e_reg" not in dont_add_logical_primitive:
+            ereg = Module("cfg_e_reg",
+                    view = ModuleView.logical,
+                    is_cell = True,
+                    module_class = ModuleClass.cfg,
+                    verilog_template = "cfg_e_reg.tmpl.v")
+            clk = ModuleUtils.create_port(ereg, "cfg_clk", 1, PortDirection.input_,
+                    is_clock = True, net_class = NetClass.cfg)
+            ei = ModuleUtils.create_port(ereg, "cfg_e_i", 1, PortDirection.input_,
+                    net_class = NetClass.cfg)
+            eo = ModuleUtils.create_port(ereg, "cfg_e", 1, PortDirection.output,
+                    net_class = NetClass.cfg)
+            NetUtils.connect(clk, [ei, eo], fully = True)
+            context._database[ModuleView.logical, "cfg_e_reg"] = ereg
 
         # register luts
         for i in range(2, 9):
@@ -473,7 +489,7 @@ class Scanchain(object):
     @classmethod
     def complete_scanchain(cls, context, logical_module = None, *,
             iter_instances = lambda m: itervalues(m.instances),
-            append_delimiter = lambda m: m.module_class.is_block or m.module_class.is_routing_box):
+            timing_enclosure = lambda m: m.module_class.is_block or m.module_class.is_routing_box):
         """Complete the scanchain."""
         module = uno(logical_module, context.database[ModuleView.logical, context.top.key])
         # special processing needed for IO blocks (output enable)
@@ -487,7 +503,8 @@ class Scanchain(object):
         # connecting scanchain ports
         cfg_bitoffset = 0
         cfg_nets = {}
-        for instance in iter_instances(module):
+        instances_snapshot = tuple(iter_instances(module))
+        for instance in instances_snapshot:
             if instance.model.module_class not in (ModuleClass.primitive, ModuleClass.switch, ModuleClass.cfg):
                 if not hasattr(instance.model, 'cfg_bitcount'):
                     cls.complete_scanchain(context, instance.model, iter_instances = iter_instances)
@@ -497,8 +514,19 @@ class Scanchain(object):
                 continue
             cfg_e = cfg_nets.get("cfg_e")
             if cfg_e is None:
-                cfg_e = cfg_nets["cfg_e"] = cls._get_or_create_cfg_ports(module, context.cfg_width,
-                        enable_only = True)
+                if timing_enclosure(module):
+                    ereg = ModuleUtils.instantiate(module,
+                            context.database[ModuleView.logical, "cfg_e_reg"],
+                            "_cfg_ereg")
+                    NetUtils.connect(cls._get_or_create_cfg_ports(module, context.cfg_width, enable_only = True),
+                            ereg.pins["cfg_e_i"])
+                    cfg_e = cfg_nets["cfg_e"] = ereg.pins["cfg_e"]
+                    for k, v in iteritems(cls._get_or_create_cfg_ports(module, context.cfg_width)):
+                        cfg_nets.setdefault(k, v)
+                    NetUtils.connect(cfg_nets["cfg_clk"], ereg.pins["cfg_clk"])
+                else:
+                    cfg_e = cfg_nets["cfg_e"] = cls._get_or_create_cfg_ports(module, context.cfg_width,
+                            enable_only = True)
             NetUtils.connect(cfg_e, inst_cfg_e)
             # actual bitstream loading pin
             inst_cfg_i = instance.pins.get('cfg_i')
@@ -509,7 +537,8 @@ class Scanchain(object):
             cfg_bitoffset += instance.model.cfg_bitcount
             # connect nets
             if "cfg_clk" not in cfg_nets:
-                cfg_nets = cls._get_or_create_cfg_ports(module, context.cfg_width)
+                for k, v in iteritems(cls._get_or_create_cfg_ports(module, context.cfg_width)):
+                    cfg_nets.setdefault(k, v)
             NetUtils.connect(cfg_nets["cfg_clk"], instance.pins['cfg_clk'])
             NetUtils.connect(cfg_nets["cfg_i"], inst_cfg_i)
             NetUtils.connect(cfg_nets["cfg_we"], instance.pins["cfg_we"])
@@ -522,7 +551,7 @@ class Scanchain(object):
                             net_class = NetClass.cfg)
         module.cfg_bitcount = cfg_bitoffset
         if "cfg_i" in cfg_nets:
-            if append_delimiter(module):
+            if timing_enclosure(module):
                 cfg_we_o = cfg_nets.get("cfg_we_o")
                 if cfg_we_o is None:
                     cfg_we_o = ModuleUtils.create_port(module, "cfg_we_o", 1, PortDirection.output,

@@ -36,7 +36,8 @@ class VerilogCollection(Object, AbstractPass):
 
     def _collect_headers(self, context):
         for f, (template, parameters) in iteritems(context._verilog_headers):
-            self.renderer.add_generic(os.path.join(self.header_output_dir, f), template, **parameters)
+            self.renderer.add_generic(os.path.join(self.header_output_dir, f), template, context = context,
+                    **parameters)
 
     @property
     def key(self):

@@ -90,7 +90,7 @@ class Context(Object):
             self._database = database
         self._top = None
         self._verilog_headers = OrderedDict()
-        self._verilog_headers["prga_utils.vh"] = "stdlib/include/prga_utils.tmpl.vh", {}
+        self._add_verilog_header("prga_utils.vh", "stdlib/include/prga_utils.tmpl.vh")
         self.summary = ContextSummary()
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
@@ -171,6 +171,10 @@ class Context(Object):
                 self._database[ModuleView.logical, "prga_fifo_lookahead_buffer"], "buffer")
         ModuleUtils.instantiate(self._database[ModuleView.logical, "prga_fifo_adapter"],
                 self._database[ModuleView.logical, "prga_fifo_lookahead_buffer"], "buffer")
+
+    def _add_verilog_header(self, f, template, **parameters):
+        """Add a Verilog header. This rendering task will be collected via the `VerilogCollection` pass."""
+        self._verilog_headers[f] = template, parameters
 
     # == low-level API =======================================================
     @property

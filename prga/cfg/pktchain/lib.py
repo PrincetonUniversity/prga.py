@@ -114,10 +114,25 @@ class Pktchain(Scanchain):
         context = Context("pktchain", phit_width = phit_width, cfg_width = cfg_width)
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
         context._fasm_delegate = PktchainFASMDelegate(context)
-        context._verilog_headers["pktchain.vh"] = ("pktchain.tmpl.vh",
-                {"phit_width_log2": (phit_width - 1).bit_length(), "cfg_width_log2": (cfg_width - 1).bit_length(),
-                    "context": context})
-        context._verilog_headers["pktchain_axilite_intf.vh"] = ("pktchain_axilite_intf.tmpl.vh", {})
+        context._add_verilog_header("pktchain.vh", "pktchain.tmpl.vh")
+        context._add_verilog_header("pktchain_axilite_intf.vh", "pktchain_axilite_intf.tmpl.vh")
+        context.summary.pktchain = {}
+        # define the programming protocol
+        context.summary.pktchain["protocol"] = {
+                "phit_width_log2": (phit_width - 1).bit_length(),
+                "cfg_width_log2": (cfg_width - 1).bit_length(),
+                "msg_types": {
+                    "MSG_TYPE_DATA": 0x10,
+                    "MSG_TYPE_DATA_INIT": 0X11,
+                    "MSG_TYPE_DATA_CHECKSUM": 0x12,
+                    "MSG_TYPE_DATA_INIT_CHECKSUM": 0x13,
+                    "MSG_TYPE_DATA_ACK": 0x14,
+                    "MSG_TYPE_TEST": 0x20,
+                    "MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE": 0x80,
+                    "MSG_TYPE_ERROR_ECHO_MISMATCH": 0x81,
+                    "MSG_TYPE_ERROR_CHECKSUM_MISMATCH": 0x82,
+                    },
+                }
         cls._register_primitives(context, phit_width, cfg_width, dont_add_primitive, dont_add_logical_primitive)
         return context
 
@@ -303,31 +318,50 @@ class Pktchain(Scanchain):
                 NetUtils.connect(cfg_nets["cfg_we_o"], instance.pins["cfg_we"])
             cfg_nets["cfg_o"] = instance.pins["cfg_o"]
             cfg_nets["cfg_we_o"] = instance.pins["cfg_we_o"]
+        # align to `cfg_width`
+        if cfg_bitoffset % context.cfg_width != 0:
+            remainder = context.cfg_width - (cfg_bitoffset % context.cfg_width)
+            filler = ModuleUtils.instantiate(module,
+                    cls._get_or_register_filler(context, context.cfg_width, remainder),
+                    "_cfg_filler_inst")
+            NetUtils.connect(cls._get_or_create_cfg_ports(module, context.cfg_width, enable_only = True),
+                    filler.pins["cfg_e"])
+            NetUtils.connect(cfg_nets["cfg_clk"], filler.pins["cfg_clk"])
+            NetUtils.connect(cfg_nets["cfg_we_o"], filler.pins["cfg_we"])
+            NetUtils.connect(cfg_nets["cfg_o"], filler.pins["cfg_i"])
+            cfg_nets["cfg_o"] = filler.pins["cfg_o"]
+            cfg_nets["cfg_we_o"] = filler.pins["cfg_we_o"]
+            cfg_bitoffset += remainder
         # inject router
         module.cfg_bitcount = cfg_bitoffset
+        # NOTE: inject router anyway because we need to balance chains
+        router = ModuleUtils.instantiate(module,
+                context.database[ModuleView.logical, "pktchain_router"],
+                "_cfg_router_inst")
         if "cfg_i" in cfg_nets:
-            router = ModuleUtils.instantiate(module,
-                    context.database[ModuleView.logical, "pktchain_router"],
-                    "_cfg_router_inst")
             NetUtils.connect(cfg_nets["cfg_clk"], router.pins["cfg_clk"])
             NetUtils.connect(router.pins["cfg_we_o"], cfg_nets["cfg_we"])
             NetUtils.connect(router.pins["cfg_o"], cfg_nets["cfg_i"])
             NetUtils.connect(cfg_nets["cfg_we_o"], router.pins["cfg_we_i"])
             NetUtils.connect(cfg_nets["cfg_o"], router.pins["cfg_i"])
-            NetUtils.connect(ModuleUtils.create_port(module, "cfg_rst", 1, PortDirection.input_,
-                net_class = NetClass.cfg), router.pins["cfg_rst"])
-            phit_intf = cls._get_or_create_fifo_intf(module, context.phit_width)
-            NetUtils.connect(router.pins["phit_i_full"], phit_intf["phit_i_full"]) 
-            NetUtils.connect(phit_intf["phit_i_wr"], router.pins["phit_i_wr"]) 
-            NetUtils.connect(phit_intf["phit_i"], router.pins["phit_i"]) 
-            NetUtils.connect(phit_intf["phit_o_full"], router.pins["phit_o_full"]) 
-            NetUtils.connect(router.pins["phit_o_wr"], phit_intf["phit_o_wr"]) 
-            NetUtils.connect(router.pins["phit_o"], phit_intf["phit_o"]) 
-            module.cfg_chains = (1, )
-            _logger.info("Pktchain(leaf) injected to {}. Total bits: {}".format(module, cfg_bitoffset))
         else:
-            module.cfg_chains = tuple()
-            _logger.info("Pktchain(leaf) not injected to {}. No bits".format(module))
+            cfg_clk = ModuleUtils.create_port(module, "cfg_clk", 1, PortDirection.input_,
+                    is_clock = True, net_class = NetClass.cfg)
+            NetUtils.connect(cfg_clk, router.pins["cfg_clk"])
+            NetUtils.connect(router.pins["cfg_we_o"], router.pins["cfg_we_i"])
+            NetUtils.connect(router.pins["cfg_o"], router.pins["cfg_i"])
+        NetUtils.connect(ModuleUtils.create_port(module, "cfg_rst", 1, PortDirection.input_,
+            net_class = NetClass.cfg), router.pins["cfg_rst"])
+        phit_intf = cls._get_or_create_fifo_intf(module, context.phit_width)
+        NetUtils.connect(router.pins["phit_i_full"], phit_intf["phit_i_full"]) 
+        NetUtils.connect(phit_intf["phit_i_wr"], router.pins["phit_i_wr"]) 
+        NetUtils.connect(phit_intf["phit_i"], router.pins["phit_i"]) 
+        NetUtils.connect(phit_intf["phit_o_full"], router.pins["phit_o_full"]) 
+        NetUtils.connect(router.pins["phit_o_wr"], phit_intf["phit_o_wr"]) 
+        NetUtils.connect(router.pins["phit_o"], phit_intf["phit_o"]) 
+        # cfg_chains[chain offset][router offset] -> cfg_bitcount
+        module.cfg_chains = ((cfg_bitoffset, ), )
+        _logger.info("Pktchain(leaf) injected to {}. Total bits: {}".format(module, cfg_bitoffset))
 
     @classmethod
     def complete_pktchain_network(cls, context, logical_module, *, iter_instances = lambda m: itervalues(m.instances)):
@@ -337,7 +371,7 @@ class Pktchain(Scanchain):
         if not module.module_class.is_nonleaf_array:
             raise PRGAInternalError("Cannot complete pktchain (non-leaf) in {}, not a non-leaf array".format(module))
         # complete network
-        chains, ypos = [], 0
+        chains, current_chain = [], []
         cfg_nets = {}
         for instance in iter_instances(module):
             if instance is None:
@@ -352,8 +386,8 @@ class Pktchain(Scanchain):
                         PortDirection.output, net_class = NetClass.cfg))
                     NetUtils.connect(ModuleUtils.create_port(module, cls._phit_port_name("phit_o_full", chain), 1,
                         PortDirection.input_, net_class = NetClass.cfg), cfg_nets.pop("phit_full"))
-                chains.append(ypos)
-                ypos = 0
+                    chains.append(tuple(current_chain))
+                current_chain = []
                 continue
             chain = len(chains)
             # complete sub-instance
@@ -371,25 +405,19 @@ class Pktchain(Scanchain):
                 subchain = len(chainoffsets)
             # enable pin?
             inst_cfg_e = instance.pins.get("cfg_e")
-            if inst_cfg_e is None:
-                continue
-            elif NetUtils.get_source(inst_cfg_e, return_none_if_unconnected = True) is None:
+            if inst_cfg_e is not None and NetUtils.get_source(inst_cfg_e, return_none_if_unconnected = True) is None:
                 NetUtils.connect(cls._get_or_create_cfg_ports(module, context.cfg_width, enable_only = True),
                     inst_cfg_e)
-            # network pin
-            inst_phit_i = instance.pins.get(cls._phit_port_name("phit_i", subchain))
-            if inst_phit_i is None:
-                continue
             # update chains and instance chain mapping
             try:
-                subchain_length = instance.model.cfg_chains[subchain]
+                subchain_bitmap = instance.model.cfg_chains[subchain]
             except (AttributeError, IndexError):
                 raise PRGAInternalError("{} does not have chain No. {}".format(subchain))
             chainoffsets = getattr(instance, "cfg_chainoffsets", None)
             if chainoffsets is None:
                 chainoffsets = instance.cfg_chainoffsets = {}
-            chainoffsets[subchain] = chain, ypos
-            ypos += subchain_length
+            chainoffsets[subchain] = chain, len(current_chain)
+            current_chain.extend(subchain_bitmap)
             # connect clock/reset pins if we haven't done so
             if NetUtils.get_source(instance.pins["cfg_clk"], return_none_if_unconnected = True) is None:
                 cfg_clk = cfg_nets.get("cfg_clk")
@@ -429,7 +457,7 @@ class Pktchain(Scanchain):
                 PortDirection.output, net_class = NetClass.cfg))
             NetUtils.connect(ModuleUtils.create_port(module, cls._phit_port_name("phit_o_full", chain), 1,
                 PortDirection.input_, net_class = NetClass.cfg), cfg_nets.pop("phit_full"))
-            chains.append(ypos)
+            chains.append(tuple(current_chain))
         module.cfg_chains = tuple(chains)
         _logger.info("Pktchain(network) injected to {}. Chains: {}".format(module, ", ".join(map(str, chains))))
 
@@ -441,7 +469,7 @@ class Pktchain(Scanchain):
         if not module.module_class.is_nonleaf_array:
             raise PRGAInternalError("Cannot complete pktchain (top) in {}, not a non-leaf array".format(module))
         # complete network
-        chains, ypos = [], 0
+        chains, current_chain = [], []
         cfg_nets = {}
         prev_dispatcher = None
         gatherers = []
@@ -459,8 +487,8 @@ class Pktchain(Scanchain):
                     NetUtils.connect(gather.pins["phit_iy_full"], cfg_nets.pop("phit_full"))
                     NetUtils.connect(cfg_nets.pop("phit"), gather.pins["phit_iy"])
                     gatherers.append(gather)
-                chains.append(ypos)
-                ypos = 0
+                    chains.append(tuple(current_chain))
+                current_chain = []
                 continue
             chain = len(chains)
             # complete sub-instance
@@ -478,24 +506,19 @@ class Pktchain(Scanchain):
                 subchain = len(chainoffsets)
             # enable pin?
             inst_cfg_e = instance.pins.get("cfg_e")
-            if inst_cfg_e is None:
-                continue
-            elif NetUtils.get_source(inst_cfg_e, return_none_if_unconnected = True) is None:
+            if inst_cfg_e is not None and NetUtils.get_source(inst_cfg_e, return_none_if_unconnected = True) is None:
                 NetUtils.connect(cls._get_or_create_cfg_ports(module, context.cfg_width, enable_only = True),
                     inst_cfg_e)
-            # network pin
-            if cls._phit_port_name("phit_i", subchain) not in instance.pins:
-                continue
             # update chains and instance chain mapping
             try:
-                subchain_length = instance.model.cfg_chains[subchain]
+                subchain_bitmap = instance.model.cfg_chains[subchain]
             except (AttributeError, IndexError):
                 raise PRGAInternalError("{} does not have chain No. {}".format(subchain))
             chainoffsets = getattr(instance, "cfg_chainoffsets", None)
             if chainoffsets is None:
                 chainoffsets = instance.cfg_chainoffsets = {}
-            chainoffsets[subchain] = chain, ypos
-            ypos += subchain_length
+            chainoffsets[subchain] = chain, len(current_chain)
+            current_chain.extend(subchain_bitmap)
             # connect clock/reset pins if we haven't done so
             if NetUtils.get_source(instance.pins["cfg_clk"], return_none_if_unconnected = True) is None:
                 cfg_clk = cfg_nets.get("cfg_clk")
@@ -551,7 +574,7 @@ class Pktchain(Scanchain):
             NetUtils.connect(gather.pins["phit_iy_full"], cfg_nets.pop("phit_full"))
             NetUtils.connect(cfg_nets.pop("phit"), gather.pins["phit_iy"])
             gatherers.append(gather)
-            chains.append(ypos)
+            chains.append(tuple(current_chain))
         module.cfg_chains = tuple(chains)
         _logger.info("Pktchain(network) injected to {}. Chains: {}".format(module, ", ".join(map(str, chains))))
         if not gatherers:
@@ -575,12 +598,13 @@ class Pktchain(Scanchain):
         if module.key == context.top.key:
             if not hasattr(context.summary, "pktchain"):
                 context.summary.pktchain = {}
+            context.summary.pktchain["chains"] = tuple(chains)
             context.summary.pktchain["x_tiles"] = len(chains)
-            y_tiles = chains[0]
-            for i, ypos in enumerate(chain[1:]):
-                if ypos != y_tiles:
+            y_tiles = len(chains[0])
+            for i, chain in enumerate(chains[1:]):
+                if len(chain) != y_tiles:
                     raise PRGAInternalError("Unbalanced chain. Col. {} has {} tiles but col. {} has {}"
-                            .format(0, y_tiles, i, ypos))
+                            .format(0, y_tiles, i, len(chain)))
             context.summary.pktchain["y_tiles"] = y_tiles
 
     @classmethod
