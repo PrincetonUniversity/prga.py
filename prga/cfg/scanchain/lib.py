@@ -201,7 +201,8 @@ class Scanchain(object):
 
     @classmethod
     def new_context(cls, cfg_width = 1, *, dont_add_primitive = tuple(), dont_add_logical_primitive = tuple()):
-        context = Context("scanchain", cfg_width = cfg_width)
+        context = Context("scanchain")
+        context.summary.scanchain = {"cfg_width": cfg_width}
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
         context._fasm_delegate = ScanchainFASMDelegate(context)
         cls._register_primitives(context, cfg_width, dont_add_primitive, dont_add_logical_primitive)
@@ -491,13 +492,14 @@ class Scanchain(object):
             iter_instances = lambda m: itervalues(m.instances),
             timing_enclosure = lambda m: m.module_class.is_block or m.module_class.is_routing_box):
         """Complete the scanchain."""
+        cfg_width = context.summary.scanchain["cfg_width"]
         module = uno(logical_module, context.database[ModuleView.logical, context.top.key])
         # special processing needed for IO blocks (output enable)
         if module.module_class.is_io_block:
             oe = module.ports.get(IOType.oe)
             if oe is not None:
                 inst = ModuleUtils.instantiate(module,
-                        cls._get_or_register_filler(context, context.cfg_width, 1),
+                        cls._get_or_register_filler(context, cfg_width, 1),
                         '_cfg_oe')
                 NetUtils.connect(inst.pins["cfg_d"], oe)
         # connecting scanchain ports
@@ -518,26 +520,26 @@ class Scanchain(object):
                     ereg = ModuleUtils.instantiate(module,
                             context.database[ModuleView.logical, "cfg_e_reg"],
                             "_cfg_ereg")
-                    NetUtils.connect(cls._get_or_create_cfg_ports(module, context.cfg_width, enable_only = True),
+                    NetUtils.connect(cls._get_or_create_cfg_ports(module, cfg_width, enable_only = True),
                             ereg.pins["cfg_e_i"])
                     cfg_e = cfg_nets["cfg_e"] = ereg.pins["cfg_e"]
-                    for k, v in iteritems(cls._get_or_create_cfg_ports(module, context.cfg_width)):
+                    for k, v in iteritems(cls._get_or_create_cfg_ports(module, cfg_width)):
                         cfg_nets.setdefault(k, v)
                     NetUtils.connect(cfg_nets["cfg_clk"], ereg.pins["cfg_clk"])
                 else:
-                    cfg_e = cfg_nets["cfg_e"] = cls._get_or_create_cfg_ports(module, context.cfg_width,
+                    cfg_e = cfg_nets["cfg_e"] = cls._get_or_create_cfg_ports(module, cfg_width,
                             enable_only = True)
             NetUtils.connect(cfg_e, inst_cfg_e)
             # actual bitstream loading pin
             inst_cfg_i = instance.pins.get('cfg_i')
             if inst_cfg_i is None:
                 continue
-            assert len(inst_cfg_i) == context.cfg_width
+            assert len(inst_cfg_i) == cfg_width
             instance.cfg_bitoffset = cfg_bitoffset
             cfg_bitoffset += instance.model.cfg_bitcount
             # connect nets
             if "cfg_clk" not in cfg_nets:
-                for k, v in iteritems(cls._get_or_create_cfg_ports(module, context.cfg_width)):
+                for k, v in iteritems(cls._get_or_create_cfg_ports(module, cfg_width)):
                     cfg_nets.setdefault(k, v)
             NetUtils.connect(cfg_nets["cfg_clk"], instance.pins['cfg_clk'])
             NetUtils.connect(cfg_nets["cfg_i"], inst_cfg_i)

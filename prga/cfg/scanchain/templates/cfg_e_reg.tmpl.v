@@ -2,7 +2,7 @@
 module {{ module.name }} (
     input wire [0:0] cfg_clk,
     input wire [0:0] cfg_e_i,
-    output wire [0:0] cfg_e
+    output reg [0:0] cfg_e
     );
 
     always @(posedge cfg_clk) begin

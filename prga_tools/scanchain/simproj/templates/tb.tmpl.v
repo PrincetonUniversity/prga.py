@@ -147,8 +147,9 @@ module {{ behav.name }}_tb_wrapper;
                 RESET           = 3'd1,
                 PROGRAMMING     = 3'd2,
                 PROG_STABLIZING = 3'd3,
-                TB_RESET        = 3'd4,
-                IMPL_RUNNING    = 3'd5;
+                PROG_DONE       = 3'd4,
+                TB_RESET        = 3'd5,
+                IMPL_RUNNING    = 3'd6;
 
     reg [2:0]       state;
     reg [0:256*8-1] bs_file;
@@ -158,16 +159,13 @@ module {{ behav.name }}_tb_wrapper;
     reg             cfg_e;
     reg             cfg_we, cfg_we_prev, cfg_we_o_prev;
     wire            cfg_we_o;
-    wire            cfg_clk;
     reg [63:0]      cfg_progress;
     reg [31:0]      cfg_fragments;
     reg             fakeprog;
 
-    assign cfg_clk = cfg_e && sys_clk;
-
     // FPGA implementation
     {{ impl.name }} impl (
-        .cfg_clk(cfg_clk)
+        .cfg_clk(sys_clk)
         ,.cfg_i(cfg_i)
         ,.cfg_e(cfg_e)
         ,.cfg_we(cfg_we)
@@ -214,6 +212,8 @@ module {{ behav.name }}_tb_wrapper;
         end else if (fakeprog) begin
             case (state)
                 RESET:
+                    state <= PROG_DONE;
+                PROG_DONE:
                     state <= TB_RESET;
                 TB_RESET:
                     state <= IMPL_RUNNING;
@@ -235,8 +235,11 @@ module {{ behav.name }}_tb_wrapper;
                 PROG_STABLIZING: begin
                     if (cfg_fragments == 0) begin
                         $display("[INFO] [Cycle %04d] Bitstream loading completed", cycle_count);
-                        state <= TB_RESET;
+                        state <= PROG_DONE;
                     end
+                end
+                PROG_DONE: begin
+                    state <= TB_RESET;
                 end
                 TB_RESET: begin
                     state <= IMPL_RUNNING;

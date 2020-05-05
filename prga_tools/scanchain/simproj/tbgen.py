@@ -67,7 +67,7 @@ def generate_scanchain_testbench_wrapper(context, renderer, ostream, tb_top, beh
     # configuration bits
     config_info = {}
     config_info['bs_num_qwords'] = fpga_top.cfg_bitcount // 64 + (1 if fpga_top.cfg_bitcount % 64 else 0)
-    config_info['bs_word_size'] = context.cfg_width
+    config_info['bs_word_size'] = context.summary.scanchain["cfg_width"]
 
     # extract io bindings
     impl_info = {'name': fpga_top.name, 'config': []}

@@ -111,12 +111,13 @@ class Pktchain(Scanchain):
         if cfg_width not in (1, 2, 4):
             raise PRGAAPIError("Unsupported configuration chain width: {}. Supported values are: [1, 2, 4]"
                     .format(cfg_width))
-        context = Context("pktchain", phit_width = phit_width, cfg_width = cfg_width)
+        context = Context("pktchain")
+        context.summary.scanchain = {"cfg_width": cfg_width}
+        context.summary.pktchain = {"phit_width": phit_width}
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
         context._fasm_delegate = PktchainFASMDelegate(context)
         context._add_verilog_header("pktchain.vh", "pktchain.tmpl.vh")
         context._add_verilog_header("pktchain_axilite_intf.vh", "pktchain_axilite_intf.tmpl.vh")
-        context.summary.pktchain = {}
         # define the programming protocol
         context.summary.pktchain["protocol"] = {
                 "phit_width_log2": (phit_width - 1).bit_length(),
@@ -280,6 +281,7 @@ class Pktchain(Scanchain):
     def complete_pktchain_leaf(cls, context, logical_module, *, iter_instances = lambda m: itervalues(m.instances)):
         # short alias
         module = logical_module
+        cfg_width = context.summary.scanchain["cfg_width"]
         # make sure this is an leaf array
         if not module.module_class.is_leaf_array:
             raise PRGAInternalError("Cannot complete pktchain (leaf) in {}, not a leaf array".format(module))
@@ -294,13 +296,13 @@ class Pktchain(Scanchain):
             inst_cfg_e = instance.pins.get("cfg_e")
             if inst_cfg_e is None:
                 continue
-            NetUtils.connect(cls._get_or_create_cfg_ports(module, context.cfg_width, enable_only = True),
+            NetUtils.connect(cls._get_or_create_cfg_ports(module, cfg_width, enable_only = True),
                     inst_cfg_e)
             # bitstream loading pin
             inst_cfg_i = instance.pins.get("cfg_i")
             if inst_cfg_i is None:
                 continue
-            assert len(inst_cfg_i) == context.cfg_width
+            assert len(inst_cfg_i) == cfg_width
             instance.cfg_bitoffset = cfg_bitoffset
             cfg_bitoffset += instance.model.cfg_bitcount
             # connect clocks
@@ -319,12 +321,12 @@ class Pktchain(Scanchain):
             cfg_nets["cfg_o"] = instance.pins["cfg_o"]
             cfg_nets["cfg_we_o"] = instance.pins["cfg_we_o"]
         # align to `cfg_width`
-        if cfg_bitoffset % context.cfg_width != 0:
-            remainder = context.cfg_width - (cfg_bitoffset % context.cfg_width)
+        if cfg_bitoffset % cfg_width != 0:
+            remainder = cfg_width - (cfg_bitoffset % cfg_width)
             filler = ModuleUtils.instantiate(module,
-                    cls._get_or_register_filler(context, context.cfg_width, remainder),
+                    cls._get_or_register_filler(context, cfg_width, remainder),
                     "_cfg_filler_inst")
-            NetUtils.connect(cls._get_or_create_cfg_ports(module, context.cfg_width, enable_only = True),
+            NetUtils.connect(cls._get_or_create_cfg_ports(module, cfg_width, enable_only = True),
                     filler.pins["cfg_e"])
             NetUtils.connect(cfg_nets["cfg_clk"], filler.pins["cfg_clk"])
             NetUtils.connect(cfg_nets["cfg_we_o"], filler.pins["cfg_we"])
@@ -352,7 +354,7 @@ class Pktchain(Scanchain):
             NetUtils.connect(router.pins["cfg_o"], router.pins["cfg_i"])
         NetUtils.connect(ModuleUtils.create_port(module, "cfg_rst", 1, PortDirection.input_,
             net_class = NetClass.cfg), router.pins["cfg_rst"])
-        phit_intf = cls._get_or_create_fifo_intf(module, context.phit_width)
+        phit_intf = cls._get_or_create_fifo_intf(module, context.summary.pktchain["phit_width"])
         NetUtils.connect(router.pins["phit_i_full"], phit_intf["phit_i_full"]) 
         NetUtils.connect(phit_intf["phit_i_wr"], router.pins["phit_i_wr"]) 
         NetUtils.connect(phit_intf["phit_i"], router.pins["phit_i"]) 
@@ -382,7 +384,7 @@ class Pktchain(Scanchain):
                         cls._phit_port_name("phit_o_wr", chain), 1,
                         PortDirection.output, net_class = NetClass.cfg))
                     NetUtils.connect(cfg_nets.pop("phit"), ModuleUtils.create_port(module,
-                        cls._phit_port_name("phit_o", chain), context.phit_width,
+                        cls._phit_port_name("phit_o", chain), context.summary.pktchain["phit_width"],
                         PortDirection.output, net_class = NetClass.cfg))
                     NetUtils.connect(ModuleUtils.create_port(module, cls._phit_port_name("phit_o_full", chain), 1,
                         PortDirection.input_, net_class = NetClass.cfg), cfg_nets.pop("phit_full"))
@@ -406,8 +408,8 @@ class Pktchain(Scanchain):
             # enable pin?
             inst_cfg_e = instance.pins.get("cfg_e")
             if inst_cfg_e is not None and NetUtils.get_source(inst_cfg_e, return_none_if_unconnected = True) is None:
-                NetUtils.connect(cls._get_or_create_cfg_ports(module, context.cfg_width, enable_only = True),
-                    inst_cfg_e)
+                NetUtils.connect(cls._get_or_create_cfg_ports(module, context.summary.scanchain["cfg_width"],
+                    enable_only = True), inst_cfg_e)
             # update chains and instance chain mapping
             try:
                 subchain_bitmap = instance.model.cfg_chains[subchain]
@@ -439,7 +441,7 @@ class Pktchain(Scanchain):
                         cls._phit_port_name("phit_i_wr", chain), 1,
                         PortDirection.input_, net_class = NetClass.cfg)
                 cfg_nets["phit"] = ModuleUtils.create_port(module,
-                        cls._phit_port_name("phit_i", chain), context.phit_width,
+                        cls._phit_port_name("phit_i", chain), context.summary.pktchain["phit_width"],
                         PortDirection.input_, net_class = NetClass.cfg)
             NetUtils.connect(instance.pins[cls._phit_port_name("phit_i_full", subchain)], cfg_nets["phit_full"])
             NetUtils.connect(cfg_nets["phit_wr"], instance.pins[cls._phit_port_name("phit_i_wr", subchain)])
@@ -453,7 +455,7 @@ class Pktchain(Scanchain):
                 cls._phit_port_name("phit_o_wr", chain), 1,
                 PortDirection.output, net_class = NetClass.cfg))
             NetUtils.connect(cfg_nets.pop("phit"), ModuleUtils.create_port(module,
-                cls._phit_port_name("phit_o", chain), context.phit_width,
+                cls._phit_port_name("phit_o", chain), context.summary.pktchain["phit_width"],
                 PortDirection.output, net_class = NetClass.cfg))
             NetUtils.connect(ModuleUtils.create_port(module, cls._phit_port_name("phit_o_full", chain), 1,
                 PortDirection.input_, net_class = NetClass.cfg), cfg_nets.pop("phit_full"))
@@ -507,8 +509,8 @@ class Pktchain(Scanchain):
             # enable pin?
             inst_cfg_e = instance.pins.get("cfg_e")
             if inst_cfg_e is not None and NetUtils.get_source(inst_cfg_e, return_none_if_unconnected = True) is None:
-                NetUtils.connect(cls._get_or_create_cfg_ports(module, context.cfg_width, enable_only = True),
-                    inst_cfg_e)
+                NetUtils.connect(cls._get_or_create_cfg_ports(module, context.summary.scanchain["cfg_width"],
+                    enable_only = True), inst_cfg_e)
             # update chains and instance chain mapping
             try:
                 subchain_bitmap = instance.model.cfg_chains[subchain]
@@ -541,8 +543,8 @@ class Pktchain(Scanchain):
                 if prev_dispatcher is None:
                     NetUtils.connect(ModuleUtils.create_port(module, "phit_i_wr", 1, PortDirection.input_,
                         net_class = NetClass.cfg), dispatcher.pins["phit_i_wr"])
-                    NetUtils.connect(ModuleUtils.create_port(module, "phit_i", context.phit_width, PortDirection.input_,
-                        net_class = NetClass.cfg), dispatcher.pins["phit_i"])
+                    NetUtils.connect(ModuleUtils.create_port(module, "phit_i", context.summary.pktchain["phit_width"],
+                        PortDirection.input_, net_class = NetClass.cfg), dispatcher.pins["phit_i"])
                     NetUtils.connect(dispatcher.pins["phit_i_full"], ModuleUtils.create_port(module, "phit_i_full",
                         1, PortDirection.output, net_class = NetClass.cfg))
                 else:
@@ -592,8 +594,8 @@ class Pktchain(Scanchain):
             net_class = NetClass.cfg), prev_gatherer.pins["phit_o_full"])
         NetUtils.connect(prev_gatherer.pins["phit_o_wr"], ModuleUtils.create_port(module, "phit_o_wr", 1,
             PortDirection.output, net_class = NetClass.cfg))
-        NetUtils.connect(prev_gatherer.pins["phit_o"], ModuleUtils.create_port(module, "phit_o", context.phit_width,
-            PortDirection.output, net_class = NetClass.cfg))
+        NetUtils.connect(prev_gatherer.pins["phit_o"], ModuleUtils.create_port(module, "phit_o",
+            context.summary.pktchain["phit_width"], PortDirection.output, net_class = NetClass.cfg))
         # update context summary if this is the top-level module
         if module.key == context.top.key:
             if not hasattr(context.summary, "pktchain"):
