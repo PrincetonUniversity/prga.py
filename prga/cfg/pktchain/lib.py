@@ -303,6 +303,9 @@ class Pktchain(Scanchain):
             if inst_cfg_i is None:
                 continue
             assert len(inst_cfg_i) == cfg_width
+            if instance.model.cfg_bitcount % cfg_width > 0:
+                raise PRGAInternalError("Scanchain in {} is not aligned to cfg_width ({})"
+                        .format(instance.model, cfg_width))
             instance.cfg_bitoffset = cfg_bitoffset
             cfg_bitoffset += instance.model.cfg_bitcount
             # connect clocks
@@ -320,20 +323,6 @@ class Pktchain(Scanchain):
                 NetUtils.connect(cfg_nets["cfg_we_o"], instance.pins["cfg_we"])
             cfg_nets["cfg_o"] = instance.pins["cfg_o"]
             cfg_nets["cfg_we_o"] = instance.pins["cfg_we_o"]
-        # align to `cfg_width`
-        if cfg_bitoffset % cfg_width != 0:
-            remainder = cfg_width - (cfg_bitoffset % cfg_width)
-            filler = ModuleUtils.instantiate(module,
-                    cls._get_or_register_filler(context, cfg_width, remainder),
-                    "_cfg_filler_inst")
-            NetUtils.connect(cls._get_or_create_cfg_ports(module, cfg_width, enable_only = True),
-                    filler.pins["cfg_e"])
-            NetUtils.connect(cfg_nets["cfg_clk"], filler.pins["cfg_clk"])
-            NetUtils.connect(cfg_nets["cfg_we_o"], filler.pins["cfg_we"])
-            NetUtils.connect(cfg_nets["cfg_o"], filler.pins["cfg_i"])
-            cfg_nets["cfg_o"] = filler.pins["cfg_o"]
-            cfg_nets["cfg_we_o"] = filler.pins["cfg_we_o"]
-            cfg_bitoffset += remainder
         # inject router
         module.cfg_bitcount = cfg_bitoffset
         # NOTE: inject router anyway because we need to balance chains

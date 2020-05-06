@@ -107,6 +107,7 @@ class PktchainBitgen(object):
                         for idx in reversed(range(cfg_width))]
                 reversed_crc = [cls.reverse_crc(c, len(tile) // cfg_width) for c in crc]
                 checksum = bitarray(endian="little")
+                effective_bits = len(tile)
                 # fill checksum
                 for digit, idx in product(range(8), range(cfg_width)):
                     checksum.append(bool(reversed_crc[idx] & (1 << digit)))
@@ -116,13 +117,13 @@ class PktchainBitgen(object):
                 if len(fullstream) % 32 != 0:
                     remainder = 32 - len(fullstream) % 32
                     fullstream += bitarray("0", endian="little") * remainder
-                col[y] = fullstream
+                col[y] = fullstream, effective_bits
         # dump the bitstream (or more precisely, the "packet" stream)
         if max_packet_frames == 0:
             for y, x in product(reversed(range(len(bits[0]))), reversed(range(len(bits)))):
-                bitstream = bits[x][y]
-                ostream.write("// DATA_INIT_CHECKSUM packet to ({}, {}), {} frames\n"
-                        .format(x, y, len(bitstream) // 32))
+                bitstream, effective_bits = bits[x][y]
+                ostream.write("// DATA_INIT_CHECKSUM packet to ({}, {}), {} frames, {} effective bits\n"
+                        .format(x, y, len(bitstream) // 32, effective_bits))
                 ostream.write("{:0>2x}{:0>2x}{:0>2x}{:0>2x}\n".format(
                     summary.pktchain["protocol"]["msg_types"]["MSG_TYPE_DATA_INIT_CHECKSUM"],
                     x, y, len(bitstream) // 32))
@@ -134,7 +135,7 @@ class PktchainBitgen(object):
             for pkt in count():
                 completed = True
                 for y, x in product(reversed(range(len(bits[0]))), reversed(range(len(bits)))):
-                    bitstream = bits[x][y]
+                    bitstream, effective_bits = bits[x][y]
                     total_frames = len(bitstream) // 32
                     if pkt * max_packet_frames >= total_frames:
                         continue
@@ -146,8 +147,8 @@ class PktchainBitgen(object):
                             "MSG_TYPE_DATA_CHECKSUM" if not init and checksum else
                             "MSG_TYPE_DATA")
                     payload = min(max_packet_frames, total_frames - pkt * max_packet_frames)
-                    ostream.write("// {} packet to ({}, {}), {} frames\n"
-                            .format(msg_type[9:0], x, y, payload))
+                    ostream.write("// {} packet to ({}, {}), {} frames, {} effective bits\n"
+                            .format(msg_type[9:0], x, y, payload, effective_bits))
                     ostream.write("{:0>2x}{:0>2x}{:0>2x}{:0>2x}\n".format(
                         summary.pktchain["protocol"]["msg_types"][msg_type],
                         x, y, payload))

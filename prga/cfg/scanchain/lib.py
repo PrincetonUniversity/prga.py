@@ -551,9 +551,22 @@ class Scanchain(object):
                 if "cfg_we_o" not in cfg_nets:
                     cfg_nets["cfg_we_o"] = ModuleUtils.create_port(module, "cfg_we_o", 1, PortDirection.output,
                             net_class = NetClass.cfg)
-        module.cfg_bitcount = cfg_bitoffset
         if "cfg_i" in cfg_nets:
             if timing_enclosure(module):
+                # align to `cfg_width`
+                if cfg_bitoffset % cfg_width != 0:
+                    remainder = cfg_width - (cfg_bitoffset % cfg_width)
+                    filler = ModuleUtils.instantiate(module,
+                            cls._get_or_register_filler(context, cfg_width, remainder),
+                            "_cfg_filler_inst")
+                    NetUtils.connect(cls._get_or_create_cfg_ports(module, cfg_width, enable_only = True),
+                            filler.pins["cfg_e"])
+                    NetUtils.connect(cfg_nets["cfg_clk"], filler.pins["cfg_clk"])
+                    NetUtils.connect(cfg_nets["cfg_we"], filler.pins["cfg_we"])
+                    NetUtils.connect(cfg_nets["cfg_i"], filler.pins["cfg_i"])
+                    cfg_nets["cfg_i"] = filler.pins["cfg_o"]
+                    cfg_bitoffset += remainder
+                # inject cfg_we register
                 cfg_we_o = cfg_nets.get("cfg_we_o")
                 if cfg_we_o is None:
                     cfg_we_o = ModuleUtils.create_port(module, "cfg_we_o", 1, PortDirection.output,
@@ -572,6 +585,7 @@ class Scanchain(object):
                 cfg_we_o = cfg_nets.get("cfg_we_o")
                 if cfg_we_o:
                     NetUtils.connect(cfg_nets["cfg_we"], cfg_we_o)
+        module.cfg_bitcount = cfg_bitoffset
         _logger.info("Scanchain injected to {}. Total bits: {}".format(module, cfg_bitoffset))
         if module.key == context.top.key:
             if not hasattr(context.summary, "scanchain"):

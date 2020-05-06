@@ -16,7 +16,7 @@ module prga_fifo_resizer #(
 
     output wire [0:0] empty,
     input wire [0:0] rd,
-    output reg [DATA_WIDTH * OUTPUT_MULTIPLIER - 1:0] dout
+    output wire [DATA_WIDTH * OUTPUT_MULTIPLIER - 1:0] dout
     );
 
     generate if (INPUT_MULTIPLIER == 1 && OUTPUT_MULTIPLIER == 1) begin
@@ -99,13 +99,15 @@ module prga_fifo_resizer #(
         assign rd_i_internal = counter < OUTPUT_MULTIPLIER || (counter == OUTPUT_MULTIPLIER && rd);
 
         if (OUTPUT_LOOKAHEAD) begin
-            always @* begin
-                dout = pipebuf[DATA_WIDTH * (INPUT_MULTIPLIER + OUTPUT_MULTIPLIER - 1) - 1 -: DATA_WIDTH * OUTPUT_MULTIPLIER];
-            end
+            assign dout = pipebuf[DATA_WIDTH * (INPUT_MULTIPLIER + OUTPUT_MULTIPLIER - 1) - 1 -: DATA_WIDTH * OUTPUT_MULTIPLIER];
         end else begin
+            reg [DATA_WIDTH * OUTPUT_MULTIPLIER - 1:0] dout_f;
+
             always @(posedge clk) begin
-                dout <= pipebuf[DATA_WIDTH * (INPUT_MULTIPLIER + OUTPUT_MULTIPLIER - 1) - 1 -: DATA_WIDTH * OUTPUT_MULTIPLIER];
+                dout_f <= pipebuf[DATA_WIDTH * (INPUT_MULTIPLIER + OUTPUT_MULTIPLIER - 1) - 1 -: DATA_WIDTH * OUTPUT_MULTIPLIER];
             end
+
+            assign dout = dout_f;
         end
     end endgenerate
 
