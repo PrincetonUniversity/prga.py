@@ -12,57 +12,61 @@ from ...util import find_verilog_top, parse_parameters
 import os
 import sys
 
-__all__ = ['generate_scanchain_makefile']
+__all__ = ['PktchainMkgen']
 
-def generate_scanchain_makefile(summary_f, summary, renderer, ostream, yosys_script,
-        tb_top, tb_sources, behav_top, behav_sources, io_binding, testbench_wrapper, compiler = "vcs",
-        tb_plus_args = None, tb_includes = None, tb_defines = None,
-        behav_includes = None, behav_defines = None):
-    """Generate Makefile for verification flow."""
+class PktchainMkgen(object):
 
-    param = {}
-    param["compiler"] = compiler
+    @classmethod
+    def generate_makefile(cls,
+            summary_f, summary, renderer, ostream, yosys_script,
+            tb_top, tb_sources, behav_top, behav_sources, io_binding, testbench_wrapper, compiler = "vcs",
+            tb_plus_args = None, tb_includes = None, tb_defines = None,
+            behav_includes = None, behav_defines = None):
+        """Generate Makefile for verification flow."""
 
-    # testbench wrapper
-    param["testbench_wrapper"] = testbench_wrapper
+        param = {}
+        param["compiler"] = compiler
 
-    # target (behavioral model)
-    target = param["target"] = {}
-    target["name"] = behav_top.name
-    target["sources"] = uno(behav_sources, tuple())
-    target["defines"] = uno(behav_defines, tuple())
+        # testbench wrapper
+        param["testbench_wrapper"] = testbench_wrapper
 
-    # host (testbench)
-    host = param["host"] = {}
-    host["name"] = tb_top.name
-    host["sources"] = uno(tb_sources, tuple())
-    host["defines"] = uno(tb_defines, tuple())
-    host["args"] = uno(tb_plus_args, tuple())
+        # target (behavioral model)
+        target = param["target"] = {}
+        target["name"] = behav_top.name
+        target["sources"] = uno(behav_sources, tuple())
+        target["defines"] = uno(behav_defines, tuple())
 
-    # summary
-    param["summary"] = summary_f
+        # host (testbench)
+        host = param["host"] = {}
+        host["name"] = tb_top.name
+        host["sources"] = uno(tb_sources, tuple())
+        host["defines"] = uno(tb_defines, tuple())
+        host["args"] = uno(tb_plus_args, tuple())
 
-    # yosys script
-    param["yosys_script"] = yosys_script
+        # summary
+        param["summary"] = summary_f
 
-    # vpr settings
-    vpr = param["vpr"] = {}
-    vpr["channel_width"] = summary.vpr["channel_width"]
-    vpr["archdef"] = os.path.join(summary.vpr["arch"])
-    vpr["rrgraph"] = os.path.join(summary.vpr["rrg"])
-    vpr["io_binding"] = io_binding
+        # yosys script
+        param["yosys_script"] = yosys_script
 
-    # fpga sources
-    param["rtl"] = tuple(iter(itervalues(summary.rtl["sources"])))
-    param["includes"] = tuple(summary.rtl["includes"])
+        # vpr settings
+        vpr = param["vpr"] = {}
+        vpr["channel_width"] = summary.vpr["channel_width"]
+        vpr["archdef"] = os.path.join(summary.vpr["arch"])
+        vpr["rrgraph"] = os.path.join(summary.vpr["rrg"])
+        vpr["io_binding"] = io_binding
 
-    # generate
-    renderer.add_generic( ostream, "tmpl.Makefile", **param )
+        # fpga sources
+        param["rtl"] = tuple(iter(itervalues(summary.rtl["sources"])))
+        param["includes"] = tuple(summary.rtl["includes"])
+
+        # generate
+        renderer.add_generic( ostream, "tmpl.Makefile", **param )
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(
-            description="Makefile generator for bitchain-style configuration circuitry")
+            description="Makefile generator for pktchain configuration circuitry")
     
     parser.add_argument('summary', type=str, help="Pickled architecture context summary object")
     parser.add_argument('io_binding', type=str, help="IO assignment")
@@ -107,7 +111,7 @@ if __name__ == '__main__':
     # create renderer
     r = FileRenderer(os.path.join(os.path.abspath(os.path.dirname(__file__)), 'templates'))
 
-    generate_scanchain_makefile(args.summary, summary, r, ostream, args.yosys_script,
+    PktchainMkgen.generate_makefile(args.summary, summary, r, ostream, args.yosys_script,
             tb_top, args.testbench, behav_top, args.model, args.io_binding, args.testbench_wrapper,
             args.compiler,
             args.testbench_plus_args, args.testbench_includes, args.testbench_defines,

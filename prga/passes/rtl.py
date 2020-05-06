@@ -21,7 +21,7 @@ class VerilogCollection(Object, AbstractPass):
     def __init__(self, renderer, src_output_dir = ".", header_output_dir = None, view = ModuleView.logical):
         self.renderer = renderer
         self.src_output_dir = src_output_dir
-        self.header_output_dir = uno(header_output_dir, os.path.join(src_output_dir, "include"))
+        self.header_output_dir = os.path.abspath(uno(header_output_dir, os.path.join(src_output_dir, "include")))
         self.view = view
         self.visited = {}
 
@@ -59,5 +59,6 @@ class VerilogCollection(Object, AbstractPass):
         if not hasattr(context.summary, "rtl"):
             context.summary.rtl = {}
         self.visited = context.summary.rtl["sources"] = {}
+        context.summary.rtl["includes"] = [self.header_output_dir]
         self._collect_headers(context)
         self._process_module(top)

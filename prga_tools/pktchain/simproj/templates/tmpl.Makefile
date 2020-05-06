@@ -70,7 +70,6 @@ FASM_LOG := $(TARGET).fasm.log
 BITGEN_RESULT := $(TARGET).memh
 SIM := sim_$(TARGET)
 SIM_LOG := $(TARGET).log
-QUICKSIM_LOG := $(TARGET).quick.log
 SIM_WAVEFORM := $(TARGET).vpd
 
 OUTPUTS := $(SYNTHESIS_RESULT)
@@ -94,7 +93,7 @@ JUNKS += *.vpd DVEfiles opendatabase.log
 # ----------------------------------------------------------------------------
 # -- Phony rules -------------------------------------------------------------
 # ----------------------------------------------------------------------------
-.PHONY: verify synth pack bind place route fasm bitgen compile waveform clean cleanlog cleanall makefile_validation_ disp quick
+.PHONY: verify synth pack bind place route fasm bitgen compile waveform clean cleanlog cleanall makefile_validation_ disp
 verify: $(SIM_LOG) makefile_validation_
 	@echo '********************************************'
 	@echo '**                 Report                 **'
@@ -130,8 +129,6 @@ disp: $(SYNTHESIS_RESULT) $(PACK_RESULT) $(PLACE_RESULT) $(ROUTE_RESULT) makefil
 	$(VPR) $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) --circuit_format eblif --net_file $(PACK_RESULT) \
 		--place_file $(PLACE_RESULT) --route_file $(ROUTE_RESULT) --analysis \
 		--route_chan_width $(VPR_CHAN_WIDTH) --read_rr_graph $(VPR_RRGRAPH) --disp on
-
-quick: $(QUICKSIM_LOG) makefile_validation_
 
 {# compiler options #}
 {%- if compiler not in ['iverilog', 'vcs'] %}
@@ -173,16 +170,13 @@ $(FASM_RESULT): $(VPR_ARCHDEF) $(SYNTHESIS_RESULT) $(VPR_RRGRAPH) $(PACK_RESULT)
 		| tee $(FASM_LOG)
 
 $(BITGEN_RESULT): $(SUMMARY) $(FASM_RESULT)
-	$(PYTHON) -m prga_tools.scanchain.bitgen $^ $@
+	$(PYTHON) -m prga_tools.pktchain.bitgen $^ $@
 
 $(SIM): $(TESTBENCH_WRAPPER) $(TARGET_SRCS) $(HOST_SRCS) $(FPGA_RTL)
 	$(COMP) $(FLAGS) $(HOST_FLAGS) $(TARGET_FLAGS) $< -o $@ $(addprefix -v ,$(wordlist 2,$(words $^),$^))
 
 $(SIM_LOG): $(SIM) $(BITGEN_RESULT)
 	./$< $(HOST_ARGS) +bitstream_memh=$(BITGEN_RESULT) | tee $@
-
-$(QUICKSIM_LOG): $(SIM) $(BITGEN_RESULT)
-	./$< $(HOST_ARGS) +bitstream_memh=$(BITGEN_RESULT) +fakeprog | tee $@
 
 $(SIM_WAVEFORM): $(SIM) $(BITGEN_RESULT)
 	./$< $(HOST_ARGS) +bitstream_memh=$(BITGEN_RESULT) +waveform_dump=$@
