@@ -70,8 +70,10 @@ module prga_fifo_resizer #(
         end
 
         // build shift pipeline
+        localparam COUNTER_WIDTH = `CLOG2(INPUT_MULTIPLIER + OUTPUT_MULTIPLIER);
+
         reg [DATA_WIDTH * (INPUT_MULTIPLIER + OUTPUT_MULTIPLIER - 1) - 1:0] pipebuf;
-        reg [`CLOG2(INPUT_MULTIPLIER + OUTPUT_MULTIPLIER):0] counter;
+        reg [COUNTER_WIDTH:0] counter;
 
         always @(posedge clk) begin
             if (rst) begin

@@ -6,30 +6,26 @@
 
 `define PRGA_AXI_DATA_WIDTH_LOG2    6
 
-`define PRGA_AXI_ADDR_WIDTH         8
 `define PRGA_AXI_DATA_WIDTH         (1 << `PRGA_AXI_DATA_WIDTH_LOG2)
 `define PRGA_BYTES_PER_AXI_DATA     (1 << (`PRGA_AXI_DATA_WIDTH_LOG2 - 3))
 
 `define PRGA_FRAMES_PER_AXI_DATA    (1 << (`PRGA_AXI_DATA_WIDTH_LOG2 - `FRAME_SIZE_LOG2))
 `define PRGA_BYTES_PER_FRAME        (1 << (`FRAME_SIZE_LOG2 - 3))
 
-// Controller management
-`define PRGA_CREG_ADDR_STATE                `PRGA_CREG_ADDR_WIDTH'h0    // writing to this address triggers some state transition.
-`define PRGA_CREG_ADDR_CONFIG               `PRGA_CREG_ADDR_WIDTH'h1    // configuration flags
-`define PRGA_CREG_ADDR_ERR_COUNT            `PRGA_CREG_ADDR_WIDTH'h2    // number of errors captured. write to clear all errors
-`define PRGA_CREG_ADDR_ERR_FIFO             `PRGA_CREG_ADDR_WIDTH'h3    // [RO] one error at a time
-
-// Bitstream management
-`define PRGA_CREG_ADDR_BITSTREAM_ID         `PRGA_CREG_ADDR_WIDTH'h8    // ID of the current bitstream
-`define PRGA_CREG_ADDR_BITSTREAM_FIFO       `PRGA_CREG_ADDR_WIDTH'h9    // [WO] Data FIFO
+`define PRGA_AXI_ADDR_WIDTH         8
+// -- BEGIN AUTO-GENERATION (see prga.cfg.pktchain.protocol for more info)
+{%- for addr in context.summary.pktchain.protocol.AXILiteAddr %}
+`define {{ addr.name }} `PRGA_AXI_ADDR_WIDTH'h{{ "{:>02x}".format(addr.value) }}
+{%- endfor %}
+// -- DONE AUTO-GENERATION
 
 // PRGA controller states
 `define PRGA_STATE_WIDTH                    8
-`define PRGA_STATE_RESET                    `PRGA_CREG_STATE_WIDTH'h0   // PRGA is just reset. Write this value to soft reset PRGA
-`define PRGA_STATE_PROGRAMMING              `PRGA_CREG_STATE_WIDTH'h1   // Programming PRGA. Write this value to start programming
-`define PRGA_STATE_PROG_STABILIZING         `PRGA_CREG_STATE_WIDTH'h2   // PRGA is programmed. Write this value to indicate end of bitstream
-`define PRGA_STATE_PROG_ERR                 `PRGA_CREG_STATE_WIDTH'h3   // An error occured during programming
-`define PRGA_STATE_APP_READY                `PRGA_CREG_STATE_WIDTH'h4   // PRGA is programmed and the application is ready (but not busy)
+// -- BEGIN AUTO-GENERATION (see prga.cfg.pktchain.protocol for more info)
+{%- for state in context.summary.pktchain.protocol.AXILiteState %}
+`define {{ state.name }} `PRGA_STATE_WIDTH'h{{ "{:>02x}".format(state.value) }}
+{%- endfor %}
+// -- DONE AUTO-GENERATION
 
 // PRGA Config Flags
 `define PRGA_CONFIG_UNPROGRAMMED_TILES_OK                           0   // if set, not all PRGA tiles must be programmed
@@ -38,20 +34,20 @@
 `define PRGA_ERR_FIFO_DEPTH_LOG2            7
 `define PRGA_ERR_TYPE_WIDTH                 8                           // error message type field
 `define PRGA_ERR_TYPE_INDEX                 `PRGA_AXI_DATA_WIDTH-1-:`PRGA_ERR_TYPE_WIDTH
-`define PRGA_ERR_INVAL                      `PRGA_ERR_TYPE_WIDTH'h0     // invalid error message
-`define PRGA_ERR_PROTOCOL_VIOLATION         `PRGA_ERR_TYPE_WIDTH'h1     // error: protocol violated (address: [0 +: `PRGA_AXI_ADDR_WIDTH])
-`define PRGA_ERR_INVAL_WR                   `PRGA_ERR_TYPE_WIDTH'h2     // invalid write (address: [0 +: `PRGA_AXI_ADDR_WIDTH])
-`define PRGA_ERR_INVAL_RD                   `PRGA_ERR_TYPE_WIDTH'h3     // invalid read (address: [0 +: `PRGA_AXI_ADDR_WIDTH])
-`define PRGA_ERR_BITSTREAM                  `PRGA_ERR_TYPE_WIDTH'h4     // bitstream error (detailed error: [0 +: `FRAME_SIZE])
-    `define PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH    8
-    `define PRGA_ERR_BITSTREAM_SUBTYPE_INDEX    `PRGA_AXI_DATA_WIDTH-`PRGA_ERR_TYPE_WIDTH-1-:`PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH
-    `define PRGA_ERR_BITSTREAM_SUBTYPE_INVAL_HEADER         `PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH'h0
-    `define PRGA_ERR_BITSTREAM_SUBTYPE_UNINITIALIZED_TILE   `PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH'h1
-    `define PRGA_ERR_BITSTREAM_SUBTYPE_COMPLETED_TILE       `PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH'h2
-    `define PRGA_ERR_BITSTREAM_SUBTYPE_REINITIALIZING_TILE  `PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH'h3
-    `define PRGA_ERR_BITSTREAM_SUBTYPE_INCOMPLETE_TILES     `PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH'h4    // # incomplete tiles: [`YPOS_BASE +: 2 * `POS_WIDTH]
-    `define PRGA_ERR_BITSTREAM_SUBTYPE_ERROR_TILES          `PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH'h5    // # error tiles: [`YPOS_BASE +: 2 * `POS_WIDTH]
-`define PRGA_ERR_PROG_RESP                  `PRGA_ERR_TYPE_WIDTH'h5     // programming response error (detailed error: [0 +: `FRAME_SIZE])
+// -- BEGIN AUTO-GENERATION (see prga.cfg.pktchain.protocol for more info)
+{%- for err in context.summary.pktchain.protocol.AXILiteError %}
+`define {{ err.name }} `PRGA_ERR_TYPE_WIDTH'h{{ "{:>02x}".format(err.value) }}
+{%- endfor %}
+// -- DONE AUTO-GENERATION
+
+// Bitstream error subtypes
+`define PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH    8
+`define PRGA_ERR_BITSTREAM_SUBTYPE_INDEX    `PRGA_AXI_DATA_WIDTH-`PRGA_ERR_TYPE_WIDTH-1-:`PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH
+// -- BEGIN AUTO-GENERATION (see prga.cfg.pktchain.protocol for more info)
+{%- for err in context.summary.pktchain.protocol.AXILiteBitstreamError %}
+`define {{ err.name }} `PRGA_ERR_BITSTREAM_SUBTYPE_WIDTH'h{{ "{:>02x}".format(err.value) }}
+{%- endfor %}
+// -- DONE AUTO-GENERATION
 
 // PRGA tile status tracker
 `define PRGA_TILE_STATUS_TRACKER_WIDTH      3

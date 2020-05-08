@@ -55,7 +55,9 @@ module {{ module.name }} (
     reg clasp_init, clasp_checksum;
     wire clasp_programming, clasp_echo_mismatch, clasp_checksum_mismatch;
 
-    pktchain_frame_assemble ififo (
+    pktchain_frame_assemble #(
+        .DEPTH_LOG2                 (`PKTCHAIN_ROUTER_FIFO_DEPTH_LOG2)
+    ) ififo (
         .cfg_clk        (cfg_clk)
         ,.cfg_rst       (cfg_rst_f)
         ,.phit_full     (phit_i_full)

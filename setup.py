@@ -21,7 +21,7 @@ setup(
             "Programming Language :: Python :: 3.3",
             "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
             ],
-        install_requires = ["future", "enum34", "jinja2", "lxml", "networkx", "bitarray", "hdlparse"],
+        install_requires = ["future", "jinja2", "lxml", "networkx", "bitarray", "hdlparse", "cocotb", "pympler"],
         setup_requires = ["pytest-runner"],
         tests_require = ["pytest"],
         )

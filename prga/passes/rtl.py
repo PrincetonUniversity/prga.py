@@ -55,7 +55,9 @@ class VerilogCollection(Object, AbstractPass):
         return True
 
     def run(self, context):
-        top = context.database[self.view, context.top.key]
+        top = context.system_top
+        if top is None:
+            raise PRGAInternalError("System top module is not set")
         if not hasattr(context.summary, "rtl"):
             context.summary.rtl = {}
         self.visited = context.summary.rtl["sources"] = {}

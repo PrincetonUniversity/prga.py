@@ -27,7 +27,7 @@ module prga_fifo #(
     localparam FIFO_DEPTH = 1 << DEPTH_LOG2;
 
     reg [DEPTH_LOG2:0] wr_ptr, rd_ptr;
-    wire rd_internal;
+    wire empty_internal, rd_internal;
     wire [DATA_WIDTH - 1:0] ram_dout;
 
     prga_ram_1r1w #(
@@ -37,9 +37,9 @@ module prga_fifo #(
         ,.REGISTER_OUTPUT   (!ALLOW_RAM_UNREGISTERED_OUTPUT || !LOOKAHEAD)
     ) ram (
         .clk                (clk)
-        ,.raddr             (rd_ptr)
+        ,.raddr             (rd_ptr[0 +: DEPTH_LOG2])
         ,.dout              (ram_dout)
-        ,.waddr             (wr_ptr)
+        ,.waddr             (wr_ptr[0 +: DEPTH_LOG2])
         ,.din               (din)
         ,.we                (!full && wr)
         );
@@ -53,13 +53,14 @@ module prga_fifo #(
                 wr_ptr <= wr_ptr + 1;
             end
 
-            if (~empty && rd_internal) begin
+            if (~empty_internal && rd_internal) begin
                 rd_ptr <= rd_ptr + 1;
             end
         end
     end
 
     assign full = rst_f || rd_ptr == {~wr_ptr[DEPTH_LOG2], wr_ptr[0 +: DEPTH_LOG2]};
+    assign empty_internal = rst_f || rd_ptr == wr_ptr;
 
     generate if (LOOKAHEAD && !ALLOW_RAM_UNREGISTERED_OUTPUT) begin
         prga_fifo_lookahead_buffer #(
@@ -68,7 +69,7 @@ module prga_fifo #(
         ) buffer (
             .clk                    (clk)
             ,.rst                   (rst)
-            ,.empty_i               (rst_f || rd_ptr == wr_ptr)
+            ,.empty_i               (empty_internal)
             ,.rd_i                  (rd_internal)
             ,.dout_i                (ram_dout)
             ,.empty                 (empty)
@@ -78,7 +79,7 @@ module prga_fifo #(
     end else begin
         assign rd_internal = rd;
         assign dout = ram_dout;
-        assign empty = rst_f || rd_ptr == wr_ptr;
+        assign empty = empty_internal;
     end endgenerate
 
 endmodule

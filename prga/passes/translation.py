@@ -263,4 +263,6 @@ class TranslationPass(Object, AbstractPass):
         if top is None:
             raise PRGAAPIError("Top-level array not set yet.")
         # recursively process modules
-        self._process_module(top, context, is_top = True)
+        system_top = self._process_module(top, context, is_top = True)
+        if top is context.top:
+            context.system_top = system_top

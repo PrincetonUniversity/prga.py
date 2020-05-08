@@ -5,8 +5,8 @@
 `include "prga_utils.vh"
 
 `define FRAME_SIZE_LOG2 5
-`define PHIT_WIDTH_LOG2 {{ context.summary.pktchain.protocol.phit_width_log2 }}
-`define CFG_WIDTH_LOG2 {{ context.summary.pktchain.protocol.cfg_width_log2 }}
+`define PHIT_WIDTH_LOG2 {{ (context.summary.pktchain.settings.phit_width - 1).bit_length() }}
+`define CFG_WIDTH_LOG2 {{ (context.summary.scanchain.cfg_width - 1).bit_length() }}
 
 `define FRAME_SIZE (1 << `FRAME_SIZE_LOG2)
 `define PHIT_WIDTH (1 << `PHIT_WIDTH_LOG2)
@@ -33,12 +33,15 @@
 `define MSG_TYPE_INDEX `MSG_TYPE_BASE+:`MSG_TYPE_WIDTH 
 
 // Message types
-{%- for type_, value in iteritems(context.summary.pktchain.protocol.msg_types) %}
-`define {{ type_ }} `MSG_TYPE_WIDTH'h{{ "{:x}".format(value) }}
+// -- BEGIN AUTO-GENERATION (see prga.cfg.pktchain.protocol for more info)
+{%- for type_ in context.summary.pktchain.protocol.MSGType %}
+`define {{ type_.name }} `MSG_TYPE_WIDTH'h{{ "{:>02x}".format(type_.value) }}
 {%- endfor %}
+// -- DONE AUTO-GENERATION
 
 // Fabric-specific
 `define PKTCHAIN_X_TILES                    {{ context.summary.pktchain.x_tiles }}
 `define PKTCHAIN_Y_TILES                    {{ context.summary.pktchain.y_tiles }}
+`define PKTCHAIN_ROUTER_FIFO_DEPTH_LOG2     {{ context.summary.pktchain.settings.router_fifo_depth_log2 }}
 
 `endif

@@ -72,7 +72,8 @@ class Context(Object):
             '_tunnels',             # direct inter-block tunnels
             '_segments',            # wire segments
             '_database',            # module database
-            '_top',                 # logical top
+            '_top',                 # fpga top in user view
+            '_system_top',          # system top in logical view
             '_switch_database',     # switch database
             '_fasm_delegate',       # FASM delegate
             '_verilog_headers',     # Verilog header rendering tasks
@@ -89,6 +90,7 @@ class Context(Object):
         else:
             self._database = database
         self._top = None
+        self._system_top = None
         self._verilog_headers = OrderedDict()
         self._add_verilog_header("prga_utils.vh", "stdlib/include/prga_utils.tmpl.vh")
         self.summary = ContextSummary()
@@ -177,6 +179,15 @@ class Context(Object):
         self._verilog_headers[f] = template, parameters
 
     # == low-level API =======================================================
+    @property
+    def system_top(self):
+        """`Module`: System top module in logical view."""
+        return self._system_top
+
+    @system_top.setter
+    def system_top(self, v):
+        self._system_top = v
+
     @property
     def database(self):
         """:obj:`Mapping` [:obj:`tuple` [`ModuleView`, :obj:`Hashable` ], `AbstractModule` ]: Module database."""

@@ -3,6 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
+from .protocol import PktchainProtocol
 from ..scanchain.lib import Scanchain, ScanchainSwitchDatabase, ScanchainFASMDelegate
 from ...core.common import ModuleClass, ModuleView, NetClass
 from ...core.context import Context
@@ -26,6 +27,9 @@ _logger = logging.getLogger(__name__)
 __all__ = ['Pktchain']
 
 ADDITIONAL_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
+
+_AXILITE_ADDR_WIDTH = 8
+_AXILITE_DATA_BYTES = 8
 
 # ----------------------------------------------------------------------------
 # -- FASM Delegate -----------------------------------------------------------
@@ -103,7 +107,39 @@ class Pktchain(Scanchain):
             return ports
 
     @classmethod
+    def _create_axilite_intf(cls, module, addr_width, data_bytes):
+        ports = {}
+        mcp = ModuleUtils.create_port
+        # write address channel
+        ports["m_AWVALID"]  = mcp(module,  "m_AWVALID", 1,              PortDirection.input_)
+        ports["m_AWREADY"]  = mcp(module,  "m_AWREADY", 1,              PortDirection.output)
+        ports["m_AWADDR"]   = mcp(module,  "m_AWADDR",  addr_width,     PortDirection.input_)
+        ports["m_AWPROT"]   = mcp(module,  "m_AWPROT",  3,              PortDirection.input_)
+        # write data channel
+        ports["m_WVALID"]   = mcp(module,  "m_WVALID",  1,              PortDirection.input_)
+        ports["m_WREADY"]   = mcp(module,  "m_WREADY",  1,              PortDirection.output)
+        ports["m_WDATA"]    = mcp(module,  "m_WDATA",   data_bytes * 8, PortDirection.input_)
+        ports["m_WSTRB"]    = mcp(module,  "m_WSTRB",   data_bytes,     PortDirection.input_)
+        # write response channel
+        ports["m_BVALID"]   = mcp(module,  "m_BVALID",  1,              PortDirection.output)
+        ports["m_BREADY"]   = mcp(module,  "m_BREADY",  1,              PortDirection.input_)
+        ports["m_BRESP"]    = mcp(module,  "m_BRESP",   2,              PortDirection.output)
+        # read address channel
+        ports["m_ARVALID"]  = mcp(module,  "m_ARVALID", 1,              PortDirection.input_)
+        ports["m_ARREADY"]  = mcp(module,  "m_ARREADY", 1,              PortDirection.output)
+        ports["m_ARADDR"]   = mcp(module,  "m_ARADDR",  addr_width,     PortDirection.input_)
+        ports["m_ARPROT"]   = mcp(module,  "m_ARPROT",  3,              PortDirection.input_)
+        # read response channel
+        ports["m_RVALID"]   = mcp(module,  "m_RVALID",  1,              PortDirection.output)
+        ports["m_RREADY"]   = mcp(module,  "m_RREADY",  1,              PortDirection.input_)
+        ports["m_RDATA"]    = mcp(module,  "m_RDATA",   data_bytes * 8, PortDirection.output)
+        ports["m_RRESP"]    = mcp(module,  "m_RRESP",   2,              PortDirection.output)
+        # return created ports
+        return ports
+
+    @classmethod
     def new_context(cls, phit_width = 8, cfg_width = 1, *,
+            router_fifo_depth_log2 = 4,
             dont_add_primitive = tuple(), dont_add_logical_primitive = tuple()):
         if phit_width not in (1, 2, 4, 8, 16, 32):
             raise PRGAAPIError("Unsupported configuration phit width: {}. Supported values are: [1, 2, 4, 8, 16]"
@@ -113,27 +149,18 @@ class Pktchain(Scanchain):
                     .format(cfg_width))
         context = Context("pktchain")
         context.summary.scanchain = {"cfg_width": cfg_width}
-        context.summary.pktchain = {"phit_width": phit_width}
+        context.summary.pktchain = {
+                "settings": {
+                    "phit_width": phit_width,
+                    "router_fifo_depth_log2": router_fifo_depth_log2,
+                    }
+                }
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
         context._fasm_delegate = PktchainFASMDelegate(context)
         context._add_verilog_header("pktchain.vh", "pktchain.tmpl.vh")
         context._add_verilog_header("pktchain_axilite_intf.vh", "pktchain_axilite_intf.tmpl.vh")
         # define the programming protocol
-        context.summary.pktchain["protocol"] = {
-                "phit_width_log2": (phit_width - 1).bit_length(),
-                "cfg_width_log2": (cfg_width - 1).bit_length(),
-                "msg_types": {
-                    "MSG_TYPE_DATA": 0x10,
-                    "MSG_TYPE_DATA_INIT": 0X11,
-                    "MSG_TYPE_DATA_CHECKSUM": 0x12,
-                    "MSG_TYPE_DATA_INIT_CHECKSUM": 0x13,
-                    "MSG_TYPE_DATA_ACK": 0x14,
-                    "MSG_TYPE_TEST": 0x20,
-                    "MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE": 0x80,
-                    "MSG_TYPE_ERROR_ECHO_MISMATCH": 0x81,
-                    "MSG_TYPE_ERROR_CHECKSUM_MISMATCH": 0x82,
-                    },
-                }
+        context.summary.pktchain["protocol"] = PktchainProtocol
         cls._register_primitives(context, phit_width, cfg_width, dont_add_primitive, dont_add_logical_primitive)
         return context
 
@@ -193,8 +220,8 @@ class Pktchain(Scanchain):
             # create a short alias
             mcp = ModuleUtils.create_port
             cfg_clk = mcp(mod, "cfg_clk", 1, PortDirection.input_, is_clock = True, net_class = NetClass.cfg)
-            mcp(mod, "cfg_rst", 1, PortDirection.input_, net_class = NetClass.cfg)
             clocked_ports = (
+                    mcp(mod, "cfg_rst", 1, PortDirection.input_, net_class = NetClass.cfg),
                     mcp(mod, "phit_i_full", 1, PortDirection.output, net_class = NetClass.cfg),
                     mcp(mod, "phit_i_wr", 1, PortDirection.input_, net_class = NetClass.cfg),
                     mcp(mod, "phit_i", phit_width, PortDirection.input_, net_class = NetClass.cfg),
@@ -223,8 +250,8 @@ class Pktchain(Scanchain):
             # create a short alias
             mcp = ModuleUtils.create_port
             cfg_clk = mcp(mod, "cfg_clk", 1, PortDirection.input_, is_clock = True, net_class = NetClass.cfg)
-            mcp(mod, "cfg_rst", 1, PortDirection.input_, net_class = NetClass.cfg)
             clocked_ports = (
+                    mcp(mod, "cfg_rst", 1, PortDirection.input_, net_class = NetClass.cfg),
                     mcp(mod, "phit_i_full", 1, PortDirection.output, net_class = NetClass.cfg),
                     mcp(mod, "phit_i_wr", 1, PortDirection.input_, net_class = NetClass.cfg),
                     mcp(mod, "phit_i", phit_width, PortDirection.input_, net_class = NetClass.cfg),
@@ -252,8 +279,8 @@ class Pktchain(Scanchain):
             # create a short alias
             mcp = ModuleUtils.create_port
             cfg_clk = mcp(mod, "cfg_clk", 1, PortDirection.input_, is_clock = True, net_class = NetClass.cfg)
-            mcp(mod, "cfg_rst", 1, PortDirection.input_, net_class = NetClass.cfg)
             clocked_ports = (
+                    mcp(mod, "cfg_rst", 1, PortDirection.input_, net_class = NetClass.cfg),
                     mcp(mod, "phit_ix_full", 1, PortDirection.output, net_class = NetClass.cfg),
                     mcp(mod, "phit_ix_wr", 1, PortDirection.input_, net_class = NetClass.cfg),
                     mcp(mod, "phit_ix", phit_width, PortDirection.input_, net_class = NetClass.cfg),
@@ -270,6 +297,57 @@ class Pktchain(Scanchain):
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_assemble"], "iy")
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_disassemble"], "ofifo")
             context._database[ModuleView.logical, "pktchain_gatherer"] = mod
+
+        # register pktchain AXILite interface
+        if not ({"pktchain_frame_disassemble", "pktchain_frame_assemble", "pktchain_axilite_intf"} &
+                dont_add_logical_primitive):
+            mod = Module("pktchain_axilite_intf",
+                    view = ModuleView.logical,
+                    verilog_template = "pktchain_axilite_intf.tmpl.v")
+            # create a short alias
+            mcp = ModuleUtils.create_port
+            clk = mcp(mod, "clk", 1, PortDirection.input_, is_clock = True)
+            clocked_ports = (
+                    mcp(mod, "rst",                 1,              PortDirection.input_),
+
+                    # configuration intf
+                    mcp(mod, "cfg_rst",             1,              PortDirection.output),
+                    mcp(mod, "cfg_e",               1,              PortDirection.output),
+
+                    # configuration output
+                    mcp(mod, "cfg_phit_o_full",     1,              PortDirection.input_),
+                    mcp(mod, "cfg_phit_o_wr",       1,              PortDirection.output),
+                    mcp(mod, "cfg_phit_o",          phit_width,     PortDirection.output),
+
+                    # configuration input
+                    mcp(mod, "cfg_phit_i_full",     1,              PortDirection.output),
+                    mcp(mod, "cfg_phit_i_wr",       1,              PortDirection.input_),
+                    mcp(mod, "cfg_phit_i",          phit_width,     PortDirection.input_),
+                    )
+            # create axilite interface
+            clocked_ports += tuple(itervalues(cls._create_axilite_intf(mod,
+                _AXILITE_ADDR_WIDTH, _AXILITE_DATA_BYTES)))
+            # sub-instances
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "axi_waddr_fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "axi_wdata_fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "axi_wresp_fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "axi_raddr_fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "axi_rdata_fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"],
+                    "creg_config_reg")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "creg_err_fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"],
+                    "creg_bsid_reg")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "bsqword_fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo_resizer"],
+                    "bsframe_resizer")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_ram_1r1w"],
+                    "tile_status_tracker")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_disassemble"],
+                    "bsframe_fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_assemble"],
+                    "bsresp_fifo")
+            context._database[ModuleView.logical, "pktchain_axilite_intf"] = mod
 
     @classmethod
     def new_renderer(cls, additional_template_search_paths = tuple()):
@@ -343,7 +421,7 @@ class Pktchain(Scanchain):
             NetUtils.connect(router.pins["cfg_o"], router.pins["cfg_i"])
         NetUtils.connect(ModuleUtils.create_port(module, "cfg_rst", 1, PortDirection.input_,
             net_class = NetClass.cfg), router.pins["cfg_rst"])
-        phit_intf = cls._get_or_create_fifo_intf(module, context.summary.pktchain["phit_width"])
+        phit_intf = cls._get_or_create_fifo_intf(module, context.summary.pktchain["settings"]["phit_width"])
         NetUtils.connect(router.pins["phit_i_full"], phit_intf["phit_i_full"]) 
         NetUtils.connect(phit_intf["phit_i_wr"], router.pins["phit_i_wr"]) 
         NetUtils.connect(phit_intf["phit_i"], router.pins["phit_i"]) 
@@ -373,7 +451,7 @@ class Pktchain(Scanchain):
                         cls._phit_port_name("phit_o_wr", chain), 1,
                         PortDirection.output, net_class = NetClass.cfg))
                     NetUtils.connect(cfg_nets.pop("phit"), ModuleUtils.create_port(module,
-                        cls._phit_port_name("phit_o", chain), context.summary.pktchain["phit_width"],
+                        cls._phit_port_name("phit_o", chain), context.summary.pktchain["settings"]["phit_width"],
                         PortDirection.output, net_class = NetClass.cfg))
                     NetUtils.connect(ModuleUtils.create_port(module, cls._phit_port_name("phit_o_full", chain), 1,
                         PortDirection.input_, net_class = NetClass.cfg), cfg_nets.pop("phit_full"))
@@ -430,7 +508,7 @@ class Pktchain(Scanchain):
                         cls._phit_port_name("phit_i_wr", chain), 1,
                         PortDirection.input_, net_class = NetClass.cfg)
                 cfg_nets["phit"] = ModuleUtils.create_port(module,
-                        cls._phit_port_name("phit_i", chain), context.summary.pktchain["phit_width"],
+                        cls._phit_port_name("phit_i", chain), context.summary.pktchain["settings"]["phit_width"],
                         PortDirection.input_, net_class = NetClass.cfg)
             NetUtils.connect(instance.pins[cls._phit_port_name("phit_i_full", subchain)], cfg_nets["phit_full"])
             NetUtils.connect(cfg_nets["phit_wr"], instance.pins[cls._phit_port_name("phit_i_wr", subchain)])
@@ -444,7 +522,7 @@ class Pktchain(Scanchain):
                 cls._phit_port_name("phit_o_wr", chain), 1,
                 PortDirection.output, net_class = NetClass.cfg))
             NetUtils.connect(cfg_nets.pop("phit"), ModuleUtils.create_port(module,
-                cls._phit_port_name("phit_o", chain), context.summary.pktchain["phit_width"],
+                cls._phit_port_name("phit_o", chain), context.summary.pktchain["settings"]["phit_width"],
                 PortDirection.output, net_class = NetClass.cfg))
             NetUtils.connect(ModuleUtils.create_port(module, cls._phit_port_name("phit_o_full", chain), 1,
                 PortDirection.input_, net_class = NetClass.cfg), cfg_nets.pop("phit_full"))
@@ -532,7 +610,8 @@ class Pktchain(Scanchain):
                 if prev_dispatcher is None:
                     NetUtils.connect(ModuleUtils.create_port(module, "phit_i_wr", 1, PortDirection.input_,
                         net_class = NetClass.cfg), dispatcher.pins["phit_i_wr"])
-                    NetUtils.connect(ModuleUtils.create_port(module, "phit_i", context.summary.pktchain["phit_width"],
+                    NetUtils.connect(ModuleUtils.create_port(module, "phit_i",
+                        context.summary.pktchain["settings"]["phit_width"],
                         PortDirection.input_, net_class = NetClass.cfg), dispatcher.pins["phit_i"])
                     NetUtils.connect(dispatcher.pins["phit_i_full"], ModuleUtils.create_port(module, "phit_i_full",
                         1, PortDirection.output, net_class = NetClass.cfg))
@@ -584,7 +663,7 @@ class Pktchain(Scanchain):
         NetUtils.connect(prev_gatherer.pins["phit_o_wr"], ModuleUtils.create_port(module, "phit_o_wr", 1,
             PortDirection.output, net_class = NetClass.cfg))
         NetUtils.connect(prev_gatherer.pins["phit_o"], ModuleUtils.create_port(module, "phit_o",
-            context.summary.pktchain["phit_width"], PortDirection.output, net_class = NetClass.cfg))
+            context.summary.pktchain["settings"]["phit_width"], PortDirection.output, net_class = NetClass.cfg))
         # update context summary if this is the top-level module
         if module.key == context.top.key:
             if not hasattr(context.summary, "pktchain"):
@@ -597,6 +676,44 @@ class Pktchain(Scanchain):
                     raise PRGAInternalError("Unbalanced chain. Col. {} has {} tiles but col. {} has {}"
                             .format(0, y_tiles, i, len(chain)))
             context.summary.pktchain["y_tiles"] = y_tiles
+
+    @classmethod
+    def create_system_axilite(cls, context,     # assign user-register interface pins to IO pins
+            *, name = "system"):
+        """Create a system wrapping the reconfigurable fabric.
+
+        Args:
+            context (`Context`):
+
+        Keyword Args:
+            name (:obj:`str`): Name of the system top module
+        """
+        system = context.system_top = Module(name, view = ModuleView.logical)
+        # create ports
+        clk = ModuleUtils.create_port(system, "clk", 1, PortDirection.input_, is_clock = True)
+        rst = ModuleUtils.create_port(system, "rst", 1, PortDirection.input_)
+        axilite = cls._create_axilite_intf(system, _AXILITE_ADDR_WIDTH, _AXILITE_DATA_BYTES)
+        # create sub-instances
+        fpga = ModuleUtils.instantiate(system, context.database[ModuleView.logical, context.top.key], "fabric")
+        intf = ModuleUtils.instantiate(system, context.database[ModuleView.logical, "pktchain_axilite_intf"], "intf")
+        # connect nets
+        NetUtils.connect(clk, [fpga.pins["cfg_clk"], intf.pins["clk"]], fully = True)
+        NetUtils.connect(rst, intf.pins["rst"])
+        for k, p in iteritems(axilite):
+            if p.direction.is_input:
+                NetUtils.connect(p, intf.pins[k])
+            else:
+                NetUtils.connect(intf.pins[k], p)
+        NetUtils.connect(intf.pins["cfg_rst"], fpga.pins["cfg_rst"])
+        NetUtils.connect(intf.pins["cfg_e"], fpga.pins["cfg_e"])
+        NetUtils.connect(fpga.pins["phit_i_full"],      intf.pins["cfg_phit_o_full"])
+        NetUtils.connect(intf.pins["cfg_phit_o_wr"],    fpga.pins["phit_i_wr"])
+        NetUtils.connect(intf.pins["cfg_phit_o"],       fpga.pins["phit_i"])
+
+        NetUtils.connect(intf.pins["cfg_phit_i_full"],  fpga.pins["phit_o_full"])
+        NetUtils.connect(fpga.pins["phit_o_wr"],        intf.pins["cfg_phit_i_wr"])
+        NetUtils.connect(fpga.pins["phit_o"],           intf.pins["cfg_phit_i"])
+        # TODO: connect user/memory interface, then expose the rest of the IO pins
 
     @classmethod
     def annotate_user_view(cls, context, user_module = None, *, _annotated = None):

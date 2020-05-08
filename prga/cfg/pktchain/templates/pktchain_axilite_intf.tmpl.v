@@ -7,33 +7,33 @@ module {{ module.name }} (
 
     // AXI4-Lite Follower Interface
     // write address channel
-    input wire [0:0] m_axi_awvalid,
-    output reg [0:0] m_axi_awready,
-    input wire [`PRGA_AXI_ADDR_WIDTH - 1:0] m_axi_awaddr,
-    input wire [2:0] m_axi_awprot,
+    input wire [0:0] m_AWVALID,
+    output reg [0:0] m_AWREADY,
+    input wire [`PRGA_AXI_ADDR_WIDTH - 1:0] m_AWADDR,
+    input wire [2:0] m_AWPROT,
 
     // write data channel
-    input wire [0:0] m_axi_wvalid,
-    output reg [0:0] m_axi_wready,
-    input wire [`PRGA_AXI_DATA_WIDTH - 1:0] m_axi_wdata,
-    input wire [`PRGA_BYTES_PER_AXI_DATA - 1:0] m_axi_wstrb,
+    input wire [0:0] m_WVALID,
+    output reg [0:0] m_WREADY,
+    input wire [`PRGA_AXI_DATA_WIDTH - 1:0] m_WDATA,
+    input wire [`PRGA_BYTES_PER_AXI_DATA - 1:0] m_WSTRB,
 
     // write response channel
-    output reg [0:0] m_axi_bvalid,
-    input wire [0:0] m_axi_bready,
-    output reg [1:0] m_axi_bresp,
+    output reg [0:0] m_BVALID,
+    input wire [0:0] m_BREADY,
+    output wire [1:0] m_BRESP,
 
     // read address channel
-    input wire [0:0] m_axi_arvalid,
-    output reg [0:0] m_axi_arready,
-    input wire [`PRGA_AXI_ADDR_WIDTH - 1:0] m_axi_araddr,
-    input wire [2:0] m_axi_arprot,
+    input wire [0:0] m_ARVALID,
+    output reg [0:0] m_ARREADY,
+    input wire [`PRGA_AXI_ADDR_WIDTH - 1:0] m_ARADDR,
+    input wire [2:0] m_ARPROT,
 
     // read data channel
-    output reg [0:0] m_axi_rvalid,
-    input wire [0:0] m_axi_rready,
-    output reg [`PRGA_AXI_DATA_WIDTH:0] m_axi_rdata,
-    output reg [1:0] m_axi_rresp,
+    output reg [0:0] m_RVALID,
+    input wire [0:0] m_RREADY,
+    output wire [`PRGA_AXI_DATA_WIDTH - 1:0] m_RDATA,
+    output reg [1:0] m_RRESP,
 
     // PRGA Reconfiguration Controller Interface
     output reg [0:0] cfg_rst,
@@ -90,8 +90,8 @@ module {{ module.name }} (
         .clk                        (clk)
         ,.rst                       (rst_f)
         ,.full                      (axi_waddr_fifo_full)
-        ,.wr                        (m_axi_awvalid)
-        ,.din                       (m_axi_awaddr)
+        ,.wr                        (m_AWVALID)
+        ,.din                       (m_AWADDR)
         ,.empty                     (axi_waddr_fifo_empty)
         ,.rd                        (creg_wreq_accept || creg_wreq_reject)
         ,.dout                      (creg_wreq_addr)
@@ -109,8 +109,8 @@ module {{ module.name }} (
         .clk                        (clk)
         ,.rst                       (rst_f)
         ,.full                      (axi_wdata_fifo_full)
-        ,.wr                        (m_axi_wvalid)
-        ,.din                       ({m_axi_wstrb, m_axi_wdata})
+        ,.wr                        (m_WVALID)
+        ,.din                       ({m_WSTRB, m_WDATA})
         ,.empty                     (axi_wdata_fifo_empty)
         ,.rd                        (creg_wreq_accept || creg_wreq_reject)
         ,.dout                      ({creg_wreq_mask, creg_wreq_data})
@@ -132,19 +132,18 @@ module {{ module.name }} (
         ,.wr                        (creg_wreq_accept || creg_wreq_reject)
         ,.din                       (2'b0)  // AXI OKAY
         ,.empty                     (axi_wresp_fifo_empty)
-        ,.rd                        (m_axi_bready)
-        ,.dout                      (m_axi_bresp)
+        ,.rd                        (m_BREADY)
+        ,.dout                      (m_BRESP)
         );
 
     // AXI read request/response FIFOs
-    wire axi_rreq_valid;
+    wire creg_rreq_valid;
     wire axi_raddr_fifo_full, axi_raddr_fifo_empty, axi_rdata_fifo_full, axi_rdata_fifo_empty;
     wire [`PRGA_AXI_ADDR_WIDTH - 1:0] creg_rreq_addr;
 
-    reg creg_rreq_accept;
     reg [`PRGA_AXI_DATA_WIDTH - 1:0] creg_rreq_data;
 
-    assign axi_rreq_valid = ~axi_raddr_fifo_empty && ~axi_rdata_fifo_full;
+    assign creg_rreq_valid = ~axi_raddr_fifo_empty && ~axi_rdata_fifo_full;
 
     prga_fifo #(
         .DATA_WIDTH                 (`PRGA_AXI_ADDR_WIDTH)
@@ -154,10 +153,10 @@ module {{ module.name }} (
         .clk                        (clk)
         ,.rst                       (rst_f)
         ,.full                      (axi_raddr_fifo_full)
-        ,.wr                        (m_axi_arvalid)
-        ,.din                       (m_axi_araddr)
+        ,.wr                        (m_ARVALID)
+        ,.din                       (m_ARADDR)
         ,.empty                     (axi_raddr_fifo_empty)
-        ,.rd                        (creg_rreq_accept)
+        ,.rd                        (creg_rreq_valid)
         ,.dout                      (creg_rreq_addr)
         );
 
@@ -169,28 +168,28 @@ module {{ module.name }} (
         .clk                        (clk)
         ,.rst                       (rst_f)
         ,.full                      (axi_rdata_fifo_full)
-        ,.wr                        (creg_rreq_accept)
+        ,.wr                        (creg_rreq_valid)
         ,.din                       (creg_rreq_data)
         ,.empty                     (axi_rdata_fifo_empty)
-        ,.rd                        (m_axi_rready)
-        ,.dout                      (m_axi_rdata)
+        ,.rd                        (m_RREADY)
+        ,.dout                      (m_RDATA)
         );
 
     // AXI interface handling
     always @* begin
-        m_axi_awready = ~axi_waddr_fifo_full;
-        m_axi_wready = ~axi_wdata_fifo_full;
-        m_axi_bvalid = ~axi_wresp_fifo_empty;
-        m_axi_arready = ~axi_raddr_fifo_full;
-        m_axi_rvalid = ~axi_rdata_fifo_empty;
-        m_axi_rresp = 2'b0;     // AXI OKAY
+        m_AWREADY = ~axi_waddr_fifo_full;
+        m_WREADY = ~axi_wdata_fifo_full;
+        m_BVALID = ~axi_wresp_fifo_empty;
+        m_ARREADY = ~axi_raddr_fifo_full;
+        m_RVALID = ~axi_rdata_fifo_empty;
+        m_RRESP = 2'b0;     // AXI OKAY
     end
 
     // =======================================================================
     // -- CREG Implementation ------------------------------------------------
     // =======================================================================
     // STATE: customized update, not byte-addressable
-    reg [`PRGA_CREG_STATE_WIDTH - 1:0] creg_state, creg_state_next;
+    reg [`PRGA_STATE_WIDTH - 1:0] creg_state, creg_state_next;
 
     always @(posedge clk) begin
         if (rst_f) begin
@@ -215,12 +214,11 @@ module {{ module.name }} (
         );
 
     // Error interface:
-    localparam  CREG_ERR_FIFO_OP_INVAL  = 2'h0,
-                CREG_ERR_FIFO_OP_CLEAR  = 2'h1,
-                CREG_ERR_FIFO_OP_APPEND = 2'h2,
-                CREG_ERR_FIFO_OP_READ   = 2'h3;
-    reg [1:0] creg_err_op;
+    wire creg_err_rd;
+    reg creg_err_clr, creg_err_wr;
     reg [`PRGA_AXI_DATA_WIDTH - 1:0] creg_err;
+
+    assign creg_err_rd = creg_rreq_valid && creg_rreq_addr == `PRGA_CREG_ADDR_ERR_FIFO;
 
     // ERROR FIFO: read-only FIFO
     wire creg_err_fifo_full, creg_err_fifo_empty;
@@ -232,12 +230,12 @@ module {{ module.name }} (
         ,.LOOKAHEAD                 (1)
     ) creg_err_fifo (
         .clk                        (clk)
-        ,.rst                       (rst_f || creg_err_op == CREG_ERR_FIFO_OP_CLEAR)
+        ,.rst                       (rst_f || creg_err_clr)
         ,.full                      (creg_err_fifo_full)
-        ,.wr                        (creg_err_op == CREG_ERR_FIFO_OP_APPEND)
+        ,.wr                        (creg_err_wr)
         ,.din                       (creg_err)
         ,.empty                     (creg_err_fifo_empty)
-        ,.rd                        (creg_err_op == CREG_ERR_FIFO_OP_READ)
+        ,.rd                        (creg_err_rd)
         ,.dout                      (creg_err_fifo_dout)
         );
 
@@ -248,21 +246,14 @@ module {{ module.name }} (
         if (rst_f) begin
             creg_err_count <= 'b0;
         end else begin
-            case (creg_err_op)
-                CREG_ERR_FIFO_OP_CLEAR: begin
-                    creg_err_count <= 'b0;
-                end
-                CREG_ERR_FIFO_OP_APPEND: begin
-                    if (~creg_err_fifo_full) begin
-                        creg_err_count <= creg_err_count + 1;
-                    end
-                end
-                CREG_ERR_FIFO_OP_READ: begin
-                    if (~creg_err_fifo_empty) begin
-                        creg_err_count <= creg_err_count - 1;
-                    end
-                end
-            endcase
+            if (creg_err_clr) begin     // clear takes precedence over read/write
+                creg_err_count <= 'b0;
+            end else begin
+                case ({creg_err_wr && ~creg_err_fifo_full, creg_err_rd && ~creg_err_fifo_empty})
+                    2'b01: creg_err_count <= creg_err_count - 1;
+                    2'b10: creg_err_count <= creg_err_count + 1;
+                endcase
+            end
         end
     end
 
@@ -373,17 +364,19 @@ module {{ module.name }} (
     // =======================================================================
 
     // Tile status tracker
-    reg [`CLOG2(`PKTCHAIN_X_TILES) - 1:0]   tile_status_tracker_rd_xpos,
-                                            tile_status_tracker_rd_xpos_f;
-    reg [`CLOG2(`PKTCHAIN_Y_TILES) - 1:0]   tile_status_tracker_rd_ypos,
-                                            tile_status_tracker_rd_ypos_f;
+    localparam  LOG2_PKTCHAIN_X_TILES = `CLOG2(`PKTCHAIN_X_TILES),
+                LOG2_PKTCHAIN_Y_TILES = `CLOG2(`PKTCHAIN_Y_TILES);
+    reg [LOG2_PKTCHAIN_X_TILES - 1:0]   tile_status_tracker_rd_xpos,
+                                        tile_status_tracker_rd_xpos_f;
+    reg [LOG2_PKTCHAIN_Y_TILES - 1:0]   tile_status_tracker_rd_ypos,
+                                        tile_status_tracker_rd_ypos_f;
     wire [`PKTCHAIN_Y_TILES * `PRGA_TILE_STATUS_TRACKER_WIDTH - 1:0] tile_status_tracker_col_dout;
     reg [`PKTCHAIN_Y_TILES * `PRGA_TILE_STATUS_TRACKER_WIDTH - 1:0] tile_status_tracker_col_din;
-    wire tile_status_tracker_col_we;
+    reg tile_status_tracker_col_we;
 
     prga_ram_1r1w #(
         .DATA_WIDTH                 (`PKTCHAIN_Y_TILES * `PRGA_TILE_STATUS_TRACKER_WIDTH)
-        ,.ADDR_WIDTH                (`CLOG2(`PKTCHAIN_X_TILES))
+        ,.ADDR_WIDTH                (LOG2_PKTCHAIN_X_TILES)
         ,.RAM_ROWS                  (`PKTCHAIN_X_TILES)
     ) tile_status_tracker (
         .clk                        (clk)
@@ -466,21 +459,13 @@ module {{ module.name }} (
     //      input creg_wreq_mask
     //      input creg_wreq_data
     //      output creg_wreq_op
-    //  CREG reads:
-    //      input creg_rreq_valid
-    //      input creg_rreq_addr
-    //      output creg_rreq_accept
     //  CREG-state
     //      input creg_state
     //      output creg_state_next
-    //  CREG-config
-    //      input creg_config
     //  CREG-err
-    //      input creg_err_fifo_full
-    //      output creg_err_op
+    //      output creg_err_clr
+    //      output creg_err_wr
     //      output creg_err
-    //  CREG-bitstream ID
-    //      input creg_bsid
     //  CREG-bitstream FIFO
     //      input bsframe
     //      input bsframe_valid
@@ -564,11 +549,8 @@ module {{ module.name }} (
         #}
     {%- macro handle_common_creg_writes(active) %}
     `PRGA_CREG_ADDR_ERR_COUNT: begin
-        // if no operation is chosen yet
-        if (creg_err_op == CREG_ERR_FIFO_OP_INVAL) begin
-            creg_wreq_op = OP_ACCEPT;
-            creg_err_op = CREG_ERR_FIFO_OP_CLEAR;
-        end
+        creg_wreq_op = OP_ACCEPT;
+        creg_err_clr = 'b1;
     end
     // Unconditional accept
     `PRGA_CREG_ADDR_CONFIG,
@@ -578,45 +560,12 @@ module {{ module.name }} (
     {%- if active %}
     // Unconditional reject (and error)
     default: begin
-        // if no operation is chosen yet
-        if (creg_err_op == CREG_ERR_FIFO_OP_INVAL) begin
-            creg_wreq_op = OP_REJECT;
-            creg_err_op = CREG_ERR_FIFO_OP_APPEND;
-            creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_INVAL_WR;
-            creg_err[0 +: `PRGA_AXI_ADDR_WIDTH] = creg_wreq_addr;
-        end
+        creg_wreq_op = OP_REJECT;
+        creg_err_wr = 'b1;
+        creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_INVAL_WR;
+        creg_err[0 +: `PRGA_AXI_ADDR_WIDTH] = creg_wreq_addr;
     end
     {%- endif %}
-    {%- endmacro %}
-
-    {%- macro handle_creg_reads() %}
-    if (creg_rreq_valid) begin
-        case (creg_rreq_addr)
-            `PRGA_CREG_ADDR_ERR_FIFO: begin
-                // if no operation is chosen yet
-                if (creg_err_op == CREG_ERR_FIFO_OP_INVAL) begin
-                    creg_rreq_accept = 'b1;
-                    creg_err_op = CREG_ERR_FIFO_OP_READ;
-                end
-            end
-            // Unconditional accept
-            `PRGA_CREG_ADDR_STATE,
-            `PRGA_CREG_ADDR_CONFIG,
-            `PRGA_CREG_ADDR_ERR_COUNT,
-            `PRGA_CREG_ADDR_BITSTREAM_ID: begin
-                creg_rreq_accept = 'b1;
-            end
-            // Unconditional reject (and error)
-            default: begin
-                if (creg_err_op == CREG_ERR_FIFO_OP_INVAL) begin
-                    creg_rreq_accept = 'b1;
-                    creg_err_op = CREG_ERR_FIFO_OP_APPEND;
-                    creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_INVAL_RD;
-                    creg_err[0 +: `PRGA_AXI_ADDR_WIDTH] = creg_rreq_addr;
-                end
-            end
-        endcase
-    end
     {%- endmacro %}
 
     {%- macro handle_creg_accesses(programming, handle_reset = false) %}
@@ -628,9 +577,9 @@ module {{ module.name }} (
                     `PRGA_STATE_RESET: begin
                         state_next = ST_RST_INIT;
                     end
-                    default: if (creg_err_op == CREG_ERR_FIFO_OP_INVAL) begin
+                    default: begin
                         creg_wreq_op = OP_REJECT;
-                        creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                        creg_err_wr = 'b1;
                         creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROTOCOL_VIOLATION;
                         creg_err[0 +: `PRGA_AXI_ADDR_WIDTH] = creg_wreq_addr;
                     end
@@ -647,14 +596,13 @@ module {{ module.name }} (
             {{- handle_common_creg_writes(handle_reset)|indent(8) }}
         endcase
     end
-    {{- handle_creg_reads() }}
     {%- endmacro %}
 
     {%- macro peek_bsresp_header(cur_state, ok_state, dump_state) %}
     // TEMPLATED-BEGIN: Generated with template: peek_bsresp_header({{ cur_state }}, {{ ok_state }}, {{ dump_state }})
     if (bsresp[`XPOS_INDEX] >= `PKTCHAIN_X_TILES || bsresp[`YPOS_INDEX] >= `PKTCHAIN_Y_TILES || bsresp[`PAYLOAD_INDEX] > 0) begin
         bsresp_fifo_rd = 'b1;
-        creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+        creg_err_wr = 'b1;
         creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROG_RESP;
         creg_err[0 +: `FRAME_SIZE] = bsresp;
 
@@ -688,7 +636,7 @@ module {{ module.name }} (
         end
 
         tile_status_tracker_din = `PRGA_TILE_STATUS_ERROR;
-        creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+        creg_err_wr = 'b1;
         creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROG_RESP;
         creg_err[0 +: `FRAME_SIZE] = bsresp;
     end
@@ -707,7 +655,7 @@ module {{ module.name }} (
         end
     end
     // TEMPLATED-END
-    {%- endmcaro %}
+    {%- endmacro %}
 
     {%- macro accept_bsframe_cond() %}
     if (~bsframe_fifo_full) begin
@@ -719,7 +667,7 @@ module {{ module.name }} (
     {%- macro reject_pkt_header(error) %}
     bsframe_op = OP_REJECT;
     bs_payload_next = bs_payload - 1;
-    creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+    creg_err_wr = 'b1;
     creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
     creg_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = {{ error }};
     creg_err[`XPOS_INDEX] = tile_status_tracker_rd_xpos_f;
@@ -729,9 +677,9 @@ module {{ module.name }} (
     always @* begin
         soft_rst = 'b0;
         creg_wreq_op = OP_INVAL;
-        creg_rreq_accept = 'b0;
         creg_state_next = creg_state;
-        creg_err_op = CREG_ERR_FIFO_OP_INVAL;
+        creg_err_clr = 'b0;
+        creg_err_wr = 'b0;
         creg_err = 'b0;
         bsframe_op = OP_INVAL;
         tile_status_tracker_wop_clean_col = 'b0;
@@ -755,7 +703,7 @@ module {{ module.name }} (
             ST_RST_INIT: begin
                 soft_rst = 'b1;
                 creg_state_next = `PRGA_STATE_RESET;
-                creg_err_op = CREG_ERR_FIFO_OP_CLEAR;
+                creg_err_clr = 'b1;
                 tile_status_tracker_rd_xpos = 'b0;
                 bs_payload_next = 'b0;
                 programming_tiles_next = 'b0;
@@ -765,7 +713,7 @@ module {{ module.name }} (
             end
             ST_RST_CLR_TILE_STATS_TRACKER: begin
                 soft_rst = 'b1;
-                creg_err_op = CREG_ERR_FIFO_OP_CLEAR;
+                creg_err_clr = 'b1;
                 bs_payload_next = 'b0;
                 programming_tiles_next = 'b0;
                 pending_tiles_next = 'b0;
@@ -794,7 +742,7 @@ module {{ module.name }} (
                                 end
                                 default: begin
                                     creg_wreq_op = OP_REJECT;
-                                    creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                                    creg_err_wr = 'b1;
                                     creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROTOCOL_VIOLATION;
                                     creg_err[0 +: `PRGA_AXI_ADDR_WIDTH] = creg_wreq_addr;
                                 end
@@ -802,19 +750,18 @@ module {{ module.name }} (
                         end
                         `PRGA_CREG_ADDR_BITSTREAM_FIFO: begin
                             creg_wreq_op = OP_REJECT;
-                            creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                            creg_err_wr = 'b1;
                             creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROTOCOL_VIOLATION;
                             creg_err[0 +: `PRGA_AXI_ADDR_WIDTH] = creg_wreq_addr;
                         end
                         {{- handle_common_creg_writes(true)|indent(20) }}
                     endcase
                 end
-                {{- handle_creg_reads()|indent(12) }}
             end
             ST_PROG_IDLE: begin
                 // First priority: handle bitstream loading response
                 if (~bsresp_fifo_empty) begin
-                    {{- peek_bsresp_header(ST_PROG_IDLE, ST_PROG_RESP_HDR, ST_PROG_DUMP_RESP_PLD)|indent(16) }}
+                    {{- peek_bsresp_header("ST_PROG_IDLE", "ST_PROG_RESP_HDR", "ST_PROG_DUMP_RESP_PLD")|indent(16) }}
                 end
 
                 // Second priority (conflicted w/ first priority): handle incoming bitstream packet
@@ -824,7 +771,7 @@ module {{ module.name }} (
                         bsframe[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_CHECKSUM || bsframe[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_INIT_CHECKSUM)
                     ) begin
                         bsframe_op = OP_REJECT;
-                        creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                        creg_err_wr = 'b1;
                         creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
                         creg_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_INVAL_HEADER;
                         creg_err[0 +: `FRAME_SIZE] = bsframe;
@@ -854,12 +801,12 @@ module {{ module.name }} (
                                     if (bsresp_fifo_empty && bsqword_fifo_empty && ~bsframe_valid) begin
                                         creg_wreq_op = OP_ACCEPT;
                                         if (programming_tiles > 0) begin
-                                            creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                                            creg_err_wr = 'b1;
                                             creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_INCOMPLETE_TILES;
                                             creg_err[`YPOS_BASE +: 2 * `POS_WIDTH] = programming_tiles;
                                             creg_state_next = `PRGA_STATE_PROG_ERR;
                                         end else if (err_tiles > 0) begin
-                                            creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                                            creg_err_wr = 'b1;
                                             creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_ERROR_TILES;
                                             creg_err[`YPOS_BASE +: 2 * `POS_WIDTH] = err_tiles;
                                             creg_state_next = `PRGA_STATE_PROG_ERR;
@@ -870,15 +817,15 @@ module {{ module.name }} (
                                         if (pending_tiles > 0) begin
                                             state_next = ST_STBLIZ_PENDING_TILES;
                                         end else if (programming_tiles > 0 || err_tiles > 0) begin
-                                            state_next = STATE_PROG_ERROR;
+                                            state_next = ST_ERROR;
                                         end else begin
-                                            state_next = ST_STBLIZ_STABLIZING;
+                                            state_next = ST_STBLIZ_TRANSIENT;
                                         end
                                     end
                                 end
-                                default: if (creg_err_op == CREG_ERR_FIFO_OP_INVAL) begin
+                                default: begin
                                     creg_wreq_op = OP_REJECT;
-                                    creg_err_op = CREG_ERR_FIFO_OP_APPEND;
+                                    creg_err_wr = 'b1;
                                     creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROTOCOL_VIOLATION;
                                     creg_err[0 +: `PRGA_AXI_ADDR_WIDTH] = creg_wreq_addr;
                                 end
@@ -893,9 +840,6 @@ module {{ module.name }} (
                         {{- handle_common_creg_writes(true)|indent(20) }}
                     endcase
                 end
-
-                // Fourth priority: (may conflict with higher priorities): handle CREG reads
-                {{- handle_creg_reads()|indent(12) }}
             end
             ST_PROG_RESP_HDR: begin
                 {{- handle_bsresp_header()|indent(12) }}
@@ -935,7 +879,7 @@ module {{ module.name }} (
                             end
                             default: begin
                                 // tile not initialized yet
-                                {{- reject_pkt_header(PRGA_ERR_BITSTREAM_SUBTYPE_UNINITIALIZED_TILE)|indent(28) }}
+                                {{- reject_pkt_header("`PRGA_ERR_BITSTREAM_SUBTYPE_UNINITIALIZED_TILE")|indent(28) }}
                             end
                         endcase
                     end
@@ -955,21 +899,21 @@ module {{ module.name }} (
                             end
                             default: begin
                                 // tile not initialized yet
-                                {{- reject_pkt_header(PRGA_ERR_BITSTREAM_SUBTYPE_UNINITIALIZED_TILE)|indent(28) }}
+                                {{- reject_pkt_header("`PRGA_ERR_BITSTREAM_SUBTYPE_UNINITIALIZED_TILE")|indent(28) }}
                             end
                         endcase
                     end
                     `PRGA_TILE_STATUS_DONE,
                     `PRGA_TILE_STATUS_PENDING: begin
                         // tile already programmed
-                        {{- reject_pkt_header(PRGA_ERR_BITSTREAM_SUBTYPE_COMPLETED_TILE)|indent(20) }}
+                        {{- reject_pkt_header("`PRGA_ERR_BITSTREAM_SUBTYPE_COMPLETED_TILE")|indent(20) }}
                     end
                     `PRGA_TILE_STATUS_PROGRAMMING: begin
                         case (bs_msg_type)
                             `MSG_TYPE_DATA_INIT,
                             `MSG_TYPE_DATA_INIT_CHECKSUM: begin
                                 // tile already initialized
-                                {{- reject_pkt_header(PRGA_ERR_BITSTREAM_SUBTYPE_REINITIALIZING_TILE)|indent(28) }}
+                                {{- reject_pkt_header("`PRGA_ERR_BITSTREAM_SUBTYPE_REINITIALIZING_TILE")|indent(28) }}
                             end
                             `MSG_TYPE_DATA: begin
                                 {{- accept_bsframe_cond()|indent(28) }}
@@ -1028,7 +972,7 @@ module {{ module.name }} (
             ST_STBLIZ_PENDING_TILES: begin
                 // First priority: handle bitstream loading response
                 if (~bsresp_fifo_empty) begin
-                    {{- peek_bsresp_header(ST_STBLIZ_PENDING_TILES, ST_STBLIZ_RESP_HDR, ST_STBLIZ_DUMP_RESP_PLD) }}
+                    {{- peek_bsresp_header("ST_STBLIZ_PENDING_TILES", "ST_STBLIZ_RESP_HDR", "ST_STBLIZ_DUMP_RESP_PLD") }}
                 end
 
                 // Second priority: handle CREG accesses
