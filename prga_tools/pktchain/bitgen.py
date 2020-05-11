@@ -7,6 +7,7 @@ from prga.core.context import Context
 from prga.core.common import ModuleView
 from prga.util import enable_stdout_logging
 from prga.exception import PRGAInternalError
+from prga.cfg.pktchain.protocol import PktchainProtocol
 
 import re
 import struct
@@ -100,7 +101,7 @@ class PktchainBitgen(object):
             else:
                 bits[x][y][base + int(segments[-1][1:])] = True
         # complete each tile
-        cfg_width = 2 ** summary.pktchain["protocol"]["cfg_width_log2"]
+        cfg_width = summary.scanchain["cfg_width"]
         for x, col in enumerate(bits):
             for y, tile in enumerate(col):
                 crc = [cls.crc(iter(b for i, b in enumerate(reversed(tile)) if i % (cfg_width) == idx))
@@ -131,16 +132,16 @@ class PktchainBitgen(object):
                     init = pkt == 0
                     checksum = (pkt + 1) * max_packet_frames >= total_frames
                     completed = completed and checksum
-                    msg_type = ("MSG_TYPE_DATA_INIT_CHECKSUM" if init and checksum else
-                            "MSG_TYPE_DATA_INIT" if init and not checksum else
-                            "MSG_TYPE_DATA_CHECKSUM" if not init and checksum else
-                            "MSG_TYPE_DATA")
+                    msg_type = (PktchainProtocol.Programming.MSGType.DATA_INIT_CHECKSUM if init and checksum else
+                            PktchainProtocol.Programming.MSGType.DATA_INIT if init and not checksum else
+                            PktchainProtocol.Programming.MSGType.DATA_CHECKSUM if not init and checksum else
+                            PktchainProtocol.Programming.MSGType.DATA)
                     payload = min(max_packet_frames, total_frames - pkt * max_packet_frames)
                     ostream.write("// {} packet to ({}, {}), {} frames\n"
-                            .format(msg_type[9:], x, y, payload).encode("ascii"))
-                    ostream.write("{:0>2x}{:0>2x}{:0>2x}{:0>2x}\n".format(
-                        summary.pktchain["protocol"]["msg_types"][msg_type],
-                        x, y, payload).encode("ascii"))
+                            .format(msg_type.name, x, y, payload).encode("ascii"))
+                    ostream.write("{:0>8x}\n"
+                            .format(PktchainProtocol.Programming.encode_msg_header(msg_type, x, y, payload))
+                            .encode("ascii"))
                     for i in range(payload):
                         i = total_frames - pkt * max_packet_frames - 1 - i
                         ostream.write("{:0>8x}\n".format(

@@ -107,33 +107,34 @@ class Pktchain(Scanchain):
             return ports
 
     @classmethod
-    def _create_axilite_intf(cls, module, addr_width, data_bytes):
+    def _create_axilite_intf(cls, module, prefix, addr_width, data_bytes):
         ports = {}
-        mcp = ModuleUtils.create_port
+        # aliases
+        p, mcp = prefix, ModuleUtils.create_port
         # write address channel
-        ports["m_AWVALID"]  = mcp(module,  "m_AWVALID", 1,              PortDirection.input_)
-        ports["m_AWREADY"]  = mcp(module,  "m_AWREADY", 1,              PortDirection.output)
-        ports["m_AWADDR"]   = mcp(module,  "m_AWADDR",  addr_width,     PortDirection.input_)
-        ports["m_AWPROT"]   = mcp(module,  "m_AWPROT",  3,              PortDirection.input_)
+        ports[p+"_AWVALID"]  = mcp(module,  p+"_AWVALID", 1,              PortDirection.input_)
+        ports[p+"_AWREADY"]  = mcp(module,  p+"_AWREADY", 1,              PortDirection.output)
+        ports[p+"_AWADDR"]   = mcp(module,  p+"_AWADDR",  addr_width,     PortDirection.input_)
+        ports[p+"_AWPROT"]   = mcp(module,  p+"_AWPROT",  3,              PortDirection.input_)
         # write data channel
-        ports["m_WVALID"]   = mcp(module,  "m_WVALID",  1,              PortDirection.input_)
-        ports["m_WREADY"]   = mcp(module,  "m_WREADY",  1,              PortDirection.output)
-        ports["m_WDATA"]    = mcp(module,  "m_WDATA",   data_bytes * 8, PortDirection.input_)
-        ports["m_WSTRB"]    = mcp(module,  "m_WSTRB",   data_bytes,     PortDirection.input_)
+        ports[p+"_WVALID"]   = mcp(module,  p+"_WVALID",  1,              PortDirection.input_)
+        ports[p+"_WREADY"]   = mcp(module,  p+"_WREADY",  1,              PortDirection.output)
+        ports[p+"_WDATA"]    = mcp(module,  p+"_WDATA",   data_bytes * 8, PortDirection.input_)
+        ports[p+"_WSTRB"]    = mcp(module,  p+"_WSTRB",   data_bytes,     PortDirection.input_)
         # write response channel
-        ports["m_BVALID"]   = mcp(module,  "m_BVALID",  1,              PortDirection.output)
-        ports["m_BREADY"]   = mcp(module,  "m_BREADY",  1,              PortDirection.input_)
-        ports["m_BRESP"]    = mcp(module,  "m_BRESP",   2,              PortDirection.output)
+        ports[p+"_BVALID"]   = mcp(module,  p+"_BVALID",  1,              PortDirection.output)
+        ports[p+"_BREADY"]   = mcp(module,  p+"_BREADY",  1,              PortDirection.input_)
+        ports[p+"_BRESP"]    = mcp(module,  p+"_BRESP",   2,              PortDirection.output)
         # read address channel
-        ports["m_ARVALID"]  = mcp(module,  "m_ARVALID", 1,              PortDirection.input_)
-        ports["m_ARREADY"]  = mcp(module,  "m_ARREADY", 1,              PortDirection.output)
-        ports["m_ARADDR"]   = mcp(module,  "m_ARADDR",  addr_width,     PortDirection.input_)
-        ports["m_ARPROT"]   = mcp(module,  "m_ARPROT",  3,              PortDirection.input_)
+        ports[p+"_ARVALID"]  = mcp(module,  p+"_ARVALID", 1,              PortDirection.input_)
+        ports[p+"_ARREADY"]  = mcp(module,  p+"_ARREADY", 1,              PortDirection.output)
+        ports[p+"_ARADDR"]   = mcp(module,  p+"_ARADDR",  addr_width,     PortDirection.input_)
+        ports[p+"_ARPROT"]   = mcp(module,  p+"_ARPROT",  3,              PortDirection.input_)
         # read response channel
-        ports["m_RVALID"]   = mcp(module,  "m_RVALID",  1,              PortDirection.output)
-        ports["m_RREADY"]   = mcp(module,  "m_RREADY",  1,              PortDirection.input_)
-        ports["m_RDATA"]    = mcp(module,  "m_RDATA",   data_bytes * 8, PortDirection.output)
-        ports["m_RRESP"]    = mcp(module,  "m_RRESP",   2,              PortDirection.output)
+        ports[p+"_RVALID"]   = mcp(module,  p+"_RVALID",  1,              PortDirection.output)
+        ports[p+"_RREADY"]   = mcp(module,  p+"_RREADY",  1,              PortDirection.input_)
+        ports[p+"_RDATA"]    = mcp(module,  p+"_RDATA",   data_bytes * 8, PortDirection.output)
+        ports[p+"_RRESP"]    = mcp(module,  p+"_RRESP",   2,              PortDirection.output)
         # return created ports
         return ports
 
@@ -325,7 +326,7 @@ class Pktchain(Scanchain):
                     mcp(mod, "cfg_phit_i",          phit_width,     PortDirection.input_),
                     )
             # create axilite interface
-            clocked_ports += tuple(itervalues(cls._create_axilite_intf(mod,
+            clocked_ports += tuple(itervalues(cls._create_axilite_intf(mod, "m",
                 _AXILITE_ADDR_WIDTH, _AXILITE_DATA_BYTES)))
             # sub-instances
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "axi_waddr_fifo")
@@ -692,7 +693,7 @@ class Pktchain(Scanchain):
         # create ports
         clk = ModuleUtils.create_port(system, "clk", 1, PortDirection.input_, is_clock = True)
         rst = ModuleUtils.create_port(system, "rst", 1, PortDirection.input_)
-        axilite = cls._create_axilite_intf(system, _AXILITE_ADDR_WIDTH, _AXILITE_DATA_BYTES)
+        axilite = cls._create_axilite_intf(system, "m", _AXILITE_ADDR_WIDTH, _AXILITE_DATA_BYTES)
         # create sub-instances
         fpga = ModuleUtils.instantiate(system, context.database[ModuleView.logical, context.top.key], "fabric")
         intf = ModuleUtils.instantiate(system, context.database[ModuleView.logical, "pktchain_axilite_intf"], "intf")

@@ -7,16 +7,16 @@ module pktchain_gatherer (
     // noc inputs
     output wire [0:0] phit_ix_full,
     input wire [0:0] phit_ix_wr,
-    input wire [`PHIT_WIDTH - 1:0] phit_ix,
+    input wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0] phit_ix,
 
     output wire [0:0] phit_iy_full,
     input wire [0:0] phit_iy_wr,
-    input wire [`PHIT_WIDTH - 1:0] phit_iy,
+    input wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0] phit_iy,
 
     // noc outputs
     input wire [0:0] phit_o_full,
     output wire [0:0] phit_o_wr,
-    output wire [`PHIT_WIDTH - 1:0] phit_o
+    output wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0] phit_o
     );
 
     // register reset signal
@@ -27,8 +27,8 @@ module pktchain_gatherer (
     end
 
     wire frame_ix_empty, frame_iy_empty, frame_o_full;
-    wire [`FRAME_SIZE - 1:0] frame_ix, frame_iy;
-    reg [`FRAME_SIZE - 1:0] frame_o;
+    wire [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] frame_ix, frame_iy;
+    reg [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] frame_o;
     reg frame_ix_rd, frame_iy_rd, frame_o_wr;
 
     pktchain_frame_assemble ix (
@@ -70,7 +70,7 @@ module pktchain_gatherer (
                 STATE_FORWARD_Y                     = 4'h3;
 
     reg [3:0] state, state_next;
-    reg [`PAYLOAD_WIDTH - 1:0] payload;
+    reg [`PRGA_PKTCHAIN_PAYLOAD_WIDTH - 1:0] payload;
     reg payload_rst;
 
     always @(posedge cfg_clk) begin
@@ -81,7 +81,7 @@ module pktchain_gatherer (
             state <= state_next;
 
             if (payload_rst) begin
-                payload <= frame_o[`PAYLOAD_INDEX];
+                payload <= frame_o[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
             end else if (!frame_o_full && frame_o_wr) begin
                 payload <= payload - 1;
             end
@@ -102,14 +102,14 @@ module pktchain_gatherer (
             end
             STATE_IDLE: begin
                 if (!frame_ix_empty) begin
-                    frame_o = frame_ix + (1 << `XPOS_BASE);
+                    frame_o = frame_ix + (1 << `PRGA_PKTCHAIN_XPOS_BASE);
                     frame_o_wr = 'b1;
                     payload_rst = 'b1;
                     
                     if (!frame_o_full) begin
                         frame_ix_rd = 'b1;
 
-                        if (frame_ix[`PAYLOAD_INDEX] > 0) begin
+                        if (frame_ix[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
                             state_next = STATE_FORWARD_X;
                         end
                     end
@@ -121,7 +121,7 @@ module pktchain_gatherer (
                     if (!frame_o_full) begin
                         frame_iy_rd = 'b1;
 
-                        if (frame_iy[`PAYLOAD_INDEX] > 0) begin
+                        if (frame_iy[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
                             state_next = STATE_FORWARD_Y;
                         end
                     end

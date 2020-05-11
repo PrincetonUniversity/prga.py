@@ -7,16 +7,16 @@ module pktchain_dispatcher (
     // noc inputs
     output wire [0:0] phit_i_full,
     input wire [0:0] phit_i_wr,
-    input wire [`PHIT_WIDTH - 1:0] phit_i,
+    input wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0] phit_i,
 
     // noc outputs
     input wire [0:0] phit_ox_full,
     output wire [0:0] phit_ox_wr,
-    output wire [`PHIT_WIDTH - 1:0] phit_ox,
+    output wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0] phit_ox,
 
     input wire [0:0] phit_oy_full,
     output wire [0:0] phit_oy_wr,
-    output wire [`PHIT_WIDTH - 1:0] phit_oy
+    output wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0] phit_oy
     );
 
     // register reset signal
@@ -27,8 +27,8 @@ module pktchain_dispatcher (
     end
 
     wire frame_i_empty, frame_ox_full, frame_oy_full;
-    wire [`FRAME_SIZE - 1:0] frame_i;
-    reg [`FRAME_SIZE - 1:0] frame_ox;
+    wire [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] frame_i;
+    reg [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] frame_ox;
     reg frame_i_rd, frame_ox_wr, frame_oy_wr;
 
     pktchain_frame_assemble ififo (
@@ -54,7 +54,7 @@ module pktchain_dispatcher (
         );
 
     pktchain_frame_disassemble #(
-        .DEPTH_LOG2     (9 - `PHIT_WIDTH_LOG2)  // increased Y-dimension buffering capability: 16 frames
+        .DEPTH_LOG2     (9 - `PRGA_PKTCHAIN_PHIT_WIDTH_LOG2)  // increased Y-dimension buffering capability: 16 frames
     ) oy (  
         .cfg_clk        (cfg_clk)
         ,.cfg_rst       (cfg_rst_f)
@@ -72,7 +72,7 @@ module pktchain_dispatcher (
                 STATE_FORWARD_Y                     = 4'h3;
 
     reg [3:0] state, state_next;
-    reg [`PAYLOAD_WIDTH - 1:0] payload;
+    reg [`PRGA_PKTCHAIN_PAYLOAD_WIDTH - 1:0] payload;
     reg payload_rst;
 
     always @(posedge cfg_clk) begin
@@ -83,7 +83,7 @@ module pktchain_dispatcher (
             state <= state_next;
 
             if (payload_rst) begin
-                payload <= frame_i[`PAYLOAD_INDEX];
+                payload <= frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
             end else if (!frame_i_empty && frame_i_rd) begin
                 payload <= payload - 1;
             end
@@ -104,26 +104,26 @@ module pktchain_dispatcher (
             end
             STATE_IDLE: begin
                 if (!frame_i_empty) begin
-                    if (frame_i[`XPOS_INDEX] == 0) begin
+                    if (frame_i[`PRGA_PKTCHAIN_XPOS_INDEX] == 0) begin
                         frame_oy_wr = 'b1;
                         payload_rst = 'b1;
 
                         if (!frame_oy_full) begin
                             frame_i_rd = 'b1;
 
-                            if (frame_i[`PAYLOAD_INDEX] > 0) begin
+                            if (frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
                                 state_next = STATE_FORWARD_Y;
                             end
                         end
                     end else begin
-                        frame_ox = frame_i - (1 << `XPOS_BASE);
+                        frame_ox = frame_i - (1 << `PRGA_PKTCHAIN_XPOS_BASE);
                         frame_ox_wr = 'b1;
                         payload_rst = 'b1;
 
                         if (!frame_ox_full) begin
                             frame_i_rd = 'b1;
 
-                            if (frame_i[`PAYLOAD_INDEX] > 0) begin
+                            if (frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
                                 state_next = STATE_FORWARD_X;
                             end
                         end

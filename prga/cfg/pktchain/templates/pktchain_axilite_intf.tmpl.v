@@ -42,12 +42,12 @@ module {{ module.name }} (
     // configuration output
     input wire [0:0] cfg_phit_o_full,
     output wire [0:0] cfg_phit_o_wr,
-    output wire [`PHIT_WIDTH - 1:0] cfg_phit_o,
+    output wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0] cfg_phit_o,
 
     // configuration input
     output wire [0:0] cfg_phit_i_full,
     input wire [0:0] cfg_phit_i_wr,
-    input wire [`PHIT_WIDTH - 1:0] cfg_phit_i
+    input wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0] cfg_phit_i
 
     // TODO: Supervising control over PRGA User-Register Interface
     // TODO: Supervising control over PRGA Coherent Memory Interface
@@ -85,7 +85,6 @@ module {{ module.name }} (
     prga_fifo #(
         .DATA_WIDTH                 (`PRGA_AXI_ADDR_WIDTH)
         ,.LOOKAHEAD                 (1)
-        ,.DEPTH_LOG2                (2)
     ) axi_waddr_fifo (
         .clk                        (clk)
         ,.rst                       (rst_f)
@@ -104,7 +103,6 @@ module {{ module.name }} (
     prga_fifo #(
         .DATA_WIDTH                 (`PRGA_BYTES_PER_AXI_DATA + `PRGA_AXI_DATA_WIDTH)
         ,.LOOKAHEAD                 (1)
-        ,.DEPTH_LOG2                (2)
     ) axi_wdata_fifo (
         .clk                        (clk)
         ,.rst                       (rst_f)
@@ -124,7 +122,6 @@ module {{ module.name }} (
     prga_fifo #(
         .DATA_WIDTH                 (2)
         ,.LOOKAHEAD                 (1)
-        ,.DEPTH_LOG2                (2)
     ) axi_wresp_fifo (
         .clk                        (clk)
         ,.rst                       (rst_f)
@@ -148,7 +145,6 @@ module {{ module.name }} (
     prga_fifo #(
         .DATA_WIDTH                 (`PRGA_AXI_ADDR_WIDTH)
         ,.LOOKAHEAD                 (1)
-        ,.DEPTH_LOG2                (2)
     ) axi_raddr_fifo (
         .clk                        (clk)
         ,.rst                       (rst_f)
@@ -163,7 +159,6 @@ module {{ module.name }} (
     prga_fifo #(
         .DATA_WIDTH                 (`PRGA_AXI_DATA_WIDTH)
         ,.LOOKAHEAD                 (1)
-        ,.DEPTH_LOG2                (2)
     ) axi_rdata_fifo (
         .clk                        (clk)
         ,.rst                       (rst_f)
@@ -272,12 +267,12 @@ module {{ module.name }} (
         );
 
     // BITSTREAM FIFO: frame-addressable (all byte enabling bits in a frame must be set), not readable
-    wire [`FRAME_SIZE - 1:0] bsframe;
+    wire [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] bsframe;
     wire bsframe_valid;
     reg [1:0] bsframe_op;
 
     wire [`PRGA_AXI_DATA_WIDTH + `PRGA_BYTES_PER_AXI_DATA - 1:0] bsqword_fifo_din, bsqword_fifo_dout;
-    wire [`FRAME_SIZE + `PRGA_BYTES_PER_FRAME - 1:0] bsframe_resizer_dout;
+    wire [`PRGA_PKTCHAIN_FRAME_SIZE + `PRGA_BYTES_PER_FRAME - 1:0] bsframe_resizer_dout;
     wire bsqword_fifo_full, bsqword_fifo_empty, bsqword_fifo_rd, bsframe_resizer_empty, bsframe_resizer_rd;
 
     // put byte enable close to each byte (so the resizer can grab those correctly)
@@ -317,7 +312,7 @@ module {{ module.name }} (
         );
 
     prga_fifo_resizer #(
-        .DATA_WIDTH                 (`FRAME_SIZE + `PRGA_BYTES_PER_FRAME)
+        .DATA_WIDTH                 (`PRGA_PKTCHAIN_FRAME_SIZE + `PRGA_BYTES_PER_FRAME)
         ,.INPUT_MULTIPLIER          (`PRGA_FRAMES_PER_AXI_DATA)
         ,.INPUT_LOOKAHEAD           (0)
         ,.OUTPUT_LOOKAHEAD          (1)
@@ -331,6 +326,9 @@ module {{ module.name }} (
         ,.rd                        (bsframe_resizer_rd)
         ,.dout                      (bsframe_resizer_dout)
         );
+
+    // User Ctrl State
+    reg [`PRGA_UAPP_STATE_WIDTH - 1:0] creg_uapp_state, creg_uapp_state_next;
 
     // =======================================================================
     // -- CREG Read Handling -------------------------------------------------
@@ -364,20 +362,20 @@ module {{ module.name }} (
     // =======================================================================
 
     // Tile status tracker
-    localparam  LOG2_PKTCHAIN_X_TILES = `CLOG2(`PKTCHAIN_X_TILES),
-                LOG2_PKTCHAIN_Y_TILES = `CLOG2(`PKTCHAIN_Y_TILES);
+    localparam  LOG2_PKTCHAIN_X_TILES = `CLOG2(`PRGA_PKTCHAIN_X_TILES),
+                LOG2_PKTCHAIN_Y_TILES = `CLOG2(`PRGA_PKTCHAIN_Y_TILES);
     reg [LOG2_PKTCHAIN_X_TILES - 1:0]   tile_status_tracker_rd_xpos,
                                         tile_status_tracker_rd_xpos_f;
     reg [LOG2_PKTCHAIN_Y_TILES - 1:0]   tile_status_tracker_rd_ypos,
                                         tile_status_tracker_rd_ypos_f;
-    wire [`PKTCHAIN_Y_TILES * `PRGA_TILE_STATUS_TRACKER_WIDTH - 1:0] tile_status_tracker_col_dout;
-    reg [`PKTCHAIN_Y_TILES * `PRGA_TILE_STATUS_TRACKER_WIDTH - 1:0] tile_status_tracker_col_din;
+    wire [`PRGA_PKTCHAIN_Y_TILES * `PRGA_TILE_STATUS_TRACKER_WIDTH - 1:0] tile_status_tracker_col_dout;
+    reg [`PRGA_PKTCHAIN_Y_TILES * `PRGA_TILE_STATUS_TRACKER_WIDTH - 1:0] tile_status_tracker_col_din;
     reg tile_status_tracker_col_we;
 
     prga_ram_1r1w #(
-        .DATA_WIDTH                 (`PKTCHAIN_Y_TILES * `PRGA_TILE_STATUS_TRACKER_WIDTH)
+        .DATA_WIDTH                 (`PRGA_PKTCHAIN_Y_TILES * `PRGA_TILE_STATUS_TRACKER_WIDTH)
         ,.ADDR_WIDTH                (LOG2_PKTCHAIN_X_TILES)
-        ,.RAM_ROWS                  (`PKTCHAIN_X_TILES)
+        ,.RAM_ROWS                  (`PRGA_PKTCHAIN_X_TILES)
     ) tile_status_tracker (
         .clk                        (clk)
         ,.raddr                     (tile_status_tracker_rd_xpos)
@@ -421,10 +419,10 @@ module {{ module.name }} (
 
     wire bsframe_fifo_full, bsresp_fifo_empty;
     reg bsresp_fifo_rd;
-    wire [`FRAME_SIZE - 1:0] bsresp;
+    wire [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] bsresp;
 
     pktchain_frame_disassemble #(
-        .DEPTH_LOG2                 (9 - `PHIT_WIDTH_LOG2)  // buffering capability: 16 frames
+        .DEPTH_LOG2                 (9 - `PRGA_PKTCHAIN_PHIT_WIDTH_LOG2)  // buffering capability: 16 frames
     ) bsframe_fifo (
         .cfg_clk                    (clk)
         ,.cfg_rst                   (cfg_rst)
@@ -510,11 +508,11 @@ module {{ module.name }} (
                 ST_ERROR                            = 8'hFF;
 
     reg [STATE_WIDTH - 1:0] state, state_next;
-    reg [`MSG_TYPE_WIDTH - 1:0] bs_msg_type, bs_msg_type_next;
-    reg [`PAYLOAD_WIDTH:0] bs_payload, bs_payload_next;
-    reg [`POS_WIDTH + `POS_WIDTH - 1:0] programming_tiles, programming_tiles_next;
-    reg [`POS_WIDTH + `POS_WIDTH - 1:0] pending_tiles, pending_tiles_next;
-    reg [`POS_WIDTH + `POS_WIDTH - 1:0] err_tiles, err_tiles_next;
+    reg [`PRGA_PKTCHAIN_MSG_TYPE_WIDTH - 1:0] bs_msg_type, bs_msg_type_next;
+    reg [`PRGA_PKTCHAIN_PAYLOAD_WIDTH:0] bs_payload, bs_payload_next;
+    reg [`PRGA_PKTCHAIN_POS_WIDTH + `PRGA_PKTCHAIN_POS_WIDTH - 1:0] programming_tiles, programming_tiles_next;
+    reg [`PRGA_PKTCHAIN_POS_WIDTH + `PRGA_PKTCHAIN_POS_WIDTH - 1:0] pending_tiles, pending_tiles_next;
+    reg [`PRGA_PKTCHAIN_POS_WIDTH + `PRGA_PKTCHAIN_POS_WIDTH - 1:0] err_tiles, err_tiles_next;
     reg [`PRGA_TIMER_WIDTH:0] timer;
     reg timer_rst;
 
@@ -600,21 +598,21 @@ module {{ module.name }} (
 
     {%- macro peek_bsresp_header(cur_state, ok_state, dump_state) %}
     // TEMPLATED-BEGIN: Generated with template: peek_bsresp_header({{ cur_state }}, {{ ok_state }}, {{ dump_state }})
-    if (bsresp[`XPOS_INDEX] >= `PKTCHAIN_X_TILES || bsresp[`YPOS_INDEX] >= `PKTCHAIN_Y_TILES || bsresp[`PAYLOAD_INDEX] > 0) begin
+    if (bsresp[`PRGA_PKTCHAIN_XPOS_INDEX] >= `PRGA_PKTCHAIN_X_TILES || bsresp[`PRGA_PKTCHAIN_YPOS_INDEX] >= `PRGA_PKTCHAIN_Y_TILES || bsresp[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
         bsresp_fifo_rd = 'b1;
         creg_err_wr = 'b1;
         creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROG_RESP;
-        creg_err[0 +: `FRAME_SIZE] = bsresp;
+        creg_err[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = bsresp;
 
-        if (bsresp[`PAYLOAD_INDEX] == 0) begin
+        if (bsresp[`PRGA_PKTCHAIN_PAYLOAD_INDEX] == 0) begin
             state_next = {{ cur_state }};
         end else begin
-            bs_payload_next = bsresp[`PAYLOAD_INDEX];
+            bs_payload_next = bsresp[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
             state_next = {{ dump_state }};
         end
     end else begin
-        tile_status_tracker_rd_xpos = `PKTCHAIN_X_TILES - 1 - bsresp[`XPOS_INDEX];
-        tile_status_tracker_rd_ypos = `PKTCHAIN_Y_TILES - 1 - bsresp[`YPOS_INDEX];
+        tile_status_tracker_rd_xpos = `PRGA_PKTCHAIN_X_TILES - 1 - bsresp[`PRGA_PKTCHAIN_XPOS_INDEX];
+        tile_status_tracker_rd_ypos = `PRGA_PKTCHAIN_Y_TILES - 1 - bsresp[`PRGA_PKTCHAIN_YPOS_INDEX];
         state_next = {{ ok_state }};
     end
     // TEMPLATED-END
@@ -624,7 +622,7 @@ module {{ module.name }} (
     bsresp_fifo_rd = 'b1;
     tile_status_tracker_wop_update = 'b1;
 
-    if (tile_status_tracker_dout == `PRGA_TILE_STATUS_PENDING && bsresp[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_ACK) begin
+    if (tile_status_tracker_dout == `PRGA_TILE_STATUS_PENDING && bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK) begin
         tile_status_tracker_din = `PRGA_TILE_STATUS_DONE;
     end else begin
         if (tile_status_tracker_dout == `PRGA_TILE_STATUS_PROGRAMMING) begin
@@ -638,7 +636,7 @@ module {{ module.name }} (
         tile_status_tracker_din = `PRGA_TILE_STATUS_ERROR;
         creg_err_wr = 'b1;
         creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_PROG_RESP;
-        creg_err[0 +: `FRAME_SIZE] = bsresp;
+        creg_err[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = bsresp;
     end
     {%- endmacro %}
 
@@ -670,8 +668,8 @@ module {{ module.name }} (
     creg_err_wr = 'b1;
     creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
     creg_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = {{ error }};
-    creg_err[`XPOS_INDEX] = tile_status_tracker_rd_xpos_f;
-    creg_err[`YPOS_INDEX] = tile_status_tracker_rd_ypos_f;
+    creg_err[`PRGA_PKTCHAIN_XPOS_INDEX] = tile_status_tracker_rd_xpos_f;
+    creg_err[`PRGA_PKTCHAIN_YPOS_INDEX] = tile_status_tracker_rd_ypos_f;
     {%- endmacro %}
 
     always @* begin
@@ -721,7 +719,7 @@ module {{ module.name }} (
                 tile_status_tracker_rd_xpos = tile_status_tracker_rd_xpos_f + 1;
                 tile_status_tracker_wop_clean_col = 'b1;
 
-                if (tile_status_tracker_rd_xpos_f == `PKTCHAIN_Y_TILES - 1) begin
+                if (tile_status_tracker_rd_xpos_f == `PRGA_PKTCHAIN_Y_TILES - 1) begin
                     state_next = ST_STDBY;
                 end
             end
@@ -766,24 +764,24 @@ module {{ module.name }} (
 
                 // Second priority (conflicted w/ first priority): handle incoming bitstream packet
                 else if (bsframe_valid) begin
-                    if (bsframe[`XPOS_INDEX] >= `PKTCHAIN_X_TILES || bsframe[`YPOS_INDEX] >= `PKTCHAIN_Y_TILES ||
-                        !(bsframe[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA || bsframe[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_INIT ||
-                        bsframe[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_CHECKSUM || bsframe[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_INIT_CHECKSUM)
+                    if (bsframe[`PRGA_PKTCHAIN_XPOS_INDEX] >= `PRGA_PKTCHAIN_X_TILES || bsframe[`PRGA_PKTCHAIN_YPOS_INDEX] >= `PRGA_PKTCHAIN_Y_TILES ||
+                        !(bsframe[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA || bsframe[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT ||
+                        bsframe[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_CHECKSUM || bsframe[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM)
                     ) begin
                         bsframe_op = OP_REJECT;
                         creg_err_wr = 'b1;
                         creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
                         creg_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_INVAL_HEADER;
-                        creg_err[0 +: `FRAME_SIZE] = bsframe;
+                        creg_err[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = bsframe;
 
-                        if (bsframe[`PAYLOAD_INDEX] > 0) begin
-                            bs_payload_next = bsframe[`PAYLOAD_INDEX];
+                        if (bsframe[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
+                            bs_payload_next = bsframe[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
                             state_next = ST_PROG_DUMP_PKT_PLD;
                         end
                     end else begin
-                        tile_status_tracker_rd_xpos = bsframe[`XPOS_INDEX];
-                        tile_status_tracker_rd_ypos = bsframe[`YPOS_INDEX];
-                        bs_payload_next = bsframe[`PAYLOAD_INDEX] + 1;  // because header is not sent to the pipe yet
+                        tile_status_tracker_rd_xpos = bsframe[`PRGA_PKTCHAIN_XPOS_INDEX];
+                        tile_status_tracker_rd_ypos = bsframe[`PRGA_PKTCHAIN_YPOS_INDEX];
+                        bs_payload_next = bsframe[`PRGA_PKTCHAIN_PAYLOAD_INDEX] + 1;  // because header is not sent to the pipe yet
                         state_next = ST_PROG_PKT_HDR;
                     end
                 end
@@ -803,12 +801,12 @@ module {{ module.name }} (
                                         if (programming_tiles > 0) begin
                                             creg_err_wr = 'b1;
                                             creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_INCOMPLETE_TILES;
-                                            creg_err[`YPOS_BASE +: 2 * `POS_WIDTH] = programming_tiles;
+                                            creg_err[`PRGA_PKTCHAIN_YPOS_BASE +: 2 * `PRGA_PKTCHAIN_POS_WIDTH] = programming_tiles;
                                             creg_state_next = `PRGA_STATE_PROG_ERR;
                                         end else if (err_tiles > 0) begin
                                             creg_err_wr = 'b1;
                                             creg_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_ERROR_TILES;
-                                            creg_err[`YPOS_BASE +: 2 * `POS_WIDTH] = err_tiles;
+                                            creg_err[`PRGA_PKTCHAIN_YPOS_BASE +: 2 * `PRGA_PKTCHAIN_POS_WIDTH] = err_tiles;
                                             creg_state_next = `PRGA_STATE_PROG_ERR;
                                         end else begin
                                             creg_state_next = `PRGA_STATE_PROG_STABILIZING;
@@ -867,12 +865,12 @@ module {{ module.name }} (
                 case (tile_status_tracker_dout)
                     `PRGA_TILE_STATUS_RESET: begin
                         case (bs_msg_type)
-                            `MSG_TYPE_DATA_INIT: begin
+                            `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT: begin
                                 {{- accept_bsframe_cond()|indent(28) }}
                                 programming_tiles_next = programming_tiles + 1;
                                 tile_status_tracker_dout = `PRGA_TILE_STATUS_PROGRAMMING;
                             end
-                            `MSG_TYPE_DATA_INIT_CHECKSUM: begin
+                            `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM: begin
                                 {{- accept_bsframe_cond()|indent(28) }}
                                 pending_tiles_next = pending_tiles + 1;
                                 tile_status_tracker_dout = `PRGA_TILE_STATUS_PENDING;
@@ -885,13 +883,13 @@ module {{ module.name }} (
                     end
                     `PRGA_TILE_STATUS_ERROR: begin
                         case (bs_msg_type)
-                            `MSG_TYPE_DATA_INIT: begin
+                            `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT: begin
                                 {{- accept_bsframe_cond()|indent(28) }}
                                 err_tiles_next = err_tiles - 1;
                                 programming_tiles_next = programming_tiles + 1;
                                 tile_status_tracker_dout = `PRGA_TILE_STATUS_PROGRAMMING;
                             end
-                            `MSG_TYPE_DATA_INIT_CHECKSUM: begin
+                            `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM: begin
                                 {{- accept_bsframe_cond()|indent(28) }}
                                 err_tiles_next = err_tiles - 1;
                                 pending_tiles_next = pending_tiles + 1;
@@ -910,15 +908,15 @@ module {{ module.name }} (
                     end
                     `PRGA_TILE_STATUS_PROGRAMMING: begin
                         case (bs_msg_type)
-                            `MSG_TYPE_DATA_INIT,
-                            `MSG_TYPE_DATA_INIT_CHECKSUM: begin
+                            `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT,
+                            `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM: begin
                                 // tile already initialized
                                 {{- reject_pkt_header("`PRGA_ERR_BITSTREAM_SUBTYPE_REINITIALIZING_TILE")|indent(28) }}
                             end
-                            `MSG_TYPE_DATA: begin
+                            `PRGA_PKTCHAIN_MSG_TYPE_DATA: begin
                                 {{- accept_bsframe_cond()|indent(28) }}
                             end
-                            `MSG_TYPE_DATA_CHECKSUM: begin
+                            `PRGA_PKTCHAIN_MSG_TYPE_DATA_CHECKSUM: begin
                                 {{- accept_bsframe_cond()|indent(28) }}
                                 programming_tiles_next = programming_tiles - 1;
                                 pending_tiles_next = pending_tiles_next + 1;

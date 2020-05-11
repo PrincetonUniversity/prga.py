@@ -10,70 +10,93 @@ __all__ = ["PktchainProtocol"]
 
 class PktchainProtocol(object):
 
-    class MSGType(Enum):
-        MSG_TYPE_DATA                       = 0x10
-        MSG_TYPE_DATA_INIT                  = 0x11
-        MSG_TYPE_DATA_CHECKSUM              = 0x12
-        MSG_TYPE_DATA_INIT_CHECKSUM         = 0x13
-        MSG_TYPE_DATA_ACK                   = 0x14
-        MSG_TYPE_TEST                       = 0x20
-        MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE     = 0x80
-        MSG_TYPE_ERROR_ECHO_MISMATCH        = 0x81
-        MSG_TYPE_ERROR_CHECKSUM_MISMATCH    = 0x82
+    # == Invariant protocol ==================================================
+    # -- Programming packets -------------------------------------------------
+    class Programming(object):
+        class MSGType(Enum):
+            DATA                        = 0x10
+            DATA_INIT                   = 0x11
+            DATA_CHECKSUM               = 0x12
+            DATA_INIT_CHECKSUM          = 0x13
+            DATA_ACK                    = 0x14
+            TEST                        = 0x20
+            ERROR_UNKNOWN_MSG_TYPE      = 0x80
+            ERROR_ECHO_MISMATCH         = 0x81
+            ERROR_CHECKSUM_MISMATCH     = 0x82
 
-    @classmethod
-    def encode_msg_header(cls, type_, x, y, payload):
-        if not isinstance(type_, cls.MSGType):
-            raise PRGAAPIError("Unknown message type: {:r}".format(type_))
-        elif not 0 <= x < (1 << 8):
-            raise PRGAAPIError("X position ({}) can not be represented with 8 bits".format(x))
-        elif not 0 <= y < (1 << 8):
-            raise PRGAAPIError("Y position ({}) can not be represented with 8 bits".format(y))
-        elif not 0 <= payload < (1 << 8):
-            raise PRGAAPIError("Payload ({}) can not be represented with 8 bits".format(payload))
-        return (type_ << 24) | (x << 16) | (y << 16) | payload
+        @classmethod
+        def encode_msg_header(cls, type_, x, y, payload):
+            if not isinstance(type_, cls.MSGType):
+                raise PRGAAPIError("Unknown message type: {:r}".format(type_))
+            elif not 0 <= x < (1 << cls.pos_width):
+                raise PRGAAPIError("X position ({}) can not be represented with 8 bits".format(x))
+            elif not 0 <= y < (1 << cls.pos_width):
+                raise PRGAAPIError("Y position ({}) can not be represented with 8 bits".format(y))
+            elif not 0 <= payload < (1 << cls.pos_width):
+                raise PRGAAPIError("Payload ({}) can not be represented with 8 bits".format(payload))
+            return (type_ << 24) | (x << 16) | (y << 8) | payload
 
-    @classmethod
-    def decode_msg_header(cls, frame):
-        raw_type = (frame >> 24) & 0xff
-        x = (frame >> 16) & 0xff
-        y = (frame >> 8) & 0xff
-        payload = frame & 0xff
-        try:
-            type_ = cls.MSGType(raw_type)
-        except ValueError:
-            raise PRGAAPIError("Unknown message type: {:r}".format(raw_type))
-        return type_, x, y, payload
+        @classmethod
+        def decode_msg_header(cls, frame):
+            raw_type = (frame >> 24) & 0xff
+            x = (frame >> 16) & 0xff
+            y = (frame >> 8) & 0xff
+            payload = frame & 0xff
+            try:
+                type_ = cls.MSGType(raw_type)
+            except ValueError:
+                raise PRGAAPIError("Unknown message type: {:r}".format(raw_type))
+            return type_, x, y, payload
 
-    class AXILiteAddr(Enum):
-        PRGA_CREG_ADDR_STATE                = 0x00 #: writing to this address triggers some state transition
-        PRGA_CREG_ADDR_CONFIG               = 0x01 #: configuration flags
-        PRGA_CREG_ADDR_ERR_COUNT            = 0x02 #: number of errors captured. writing ANY value clears all errors
-        PRGA_CREG_ADDR_ERR_FIFO             = 0x03 #: [RO] pop error fifo once at a time. Only valid if ERR_COUNT > 0
-        PRGA_CREG_ADDR_BITSTREAM_ID         = 0x08 #: ID of the current bitstream. Typically address of the bitstream
-        PRGA_CREG_ADDR_BITSTREAM_FIFO       = 0x09 #: [WO] bitstream data fifo
+    # -- AXILite Controller Interface ----------------------------------------
+    class AXILiteController(object):
+        DATA_WIDTH_LOG2 = 6
+        ADDR_WIDTH = 9
+        USER_ADDR_PREFIX = 1
 
-    class AXILiteState(Enum):
-        PRGA_STATE_RESET                    = 0x00 #: PRGA is just reset. Write this value to `STATE` to soft reset
-        PRGA_STATE_PROGRAMMING              = 0x01 #: Programming PRGA. Write this value to `STATE` to start programming
-        PRGA_STATE_PROG_STABILIZING         = 0x02 #: PRGA is programmed. Write this value to indicate end of bitstream
-        PRGA_STATE_PROG_ERR                 = 0x03 #: An error occured during programming
-        PRGA_STATE_APP_READY                = 0x04 #: PRGA is programmed and the application is ready
+        class ADDR(Enum):
+            STATE           = 0x00 #: writing to this address triggers some state transition
+            CONFIG          = 0x01 #: configuration flags
+            ERR_COUNT       = 0x02 #: number of errors captured. writing ANY value clears all errors
+            ERR_FIFO        = 0x03 #: [RO] pop error fifo once at a time. Only valid if ERR_COUNT > 0
+            BITSTREAM_ID    = 0x08 #: ID of the current bitstream. Typically address of the bitstream
+            BITSTREAM_FIFO  = 0x09 #: [WO] bitstream data fifo
+            UCLK_DIV        = 0x10 #: user clock divisor (uclk = clk / 2 / (divisor + 1))
+            UAPP_STATE      = 0x11 #: user application state. writing to this address triggers some state transition
+            UREG_TIMEOUT    = 0x12 #: user register timeout (in user clock cycles)
 
-    class AXILiteError(Enum):
-        PRGA_ERR_PROTOCOL_VIOLATION         = 0x01 #: protocol violated. Violated address: [0 +: ADDR_WIDTH]
-        PRGA_ERR_INVAL_WR                   = 0x02 #: invalid write. Violated address: [0 +: ADDR_WIDTH]
-        PRGA_ERR_INVAL_RD                   = 0x03 #: invalid read. Violated address: [0 +: ADDR_WIDTH]
-        PRGA_ERR_BITSTREAM                  = 0x04 #: bitstream error. Subtype: [-8 -: 8]
-        PRGA_ERR_PROG_RESP                  = 0x05 #: programming error. Error message: [0 +: FRAME_SIZE(32)]
+        class State(Enum):
+            RESET               = 0x00 #: PRGA is just reset. Write this value to `STATE` to soft reset
+            PROGRAMMING         = 0x01 #: Programming PRGA. Write this value to `STATE` to start programming
+            PROG_STABILIZING    = 0x02 #: PRGA is programmed. Write this value to indicate end of bitstream
+            PROG_ERR            = 0x03 #: An error occured during programming
+            APP_READY           = 0x04 #: PRGA is programmed and the application is ready
 
-    class AXILiteBitstreamError(Enum):
-        PRGA_ERR_BITSTREAM_SUBTYPE_INVAL_HEADER         = 0x00
-        PRGA_ERR_BITSTREAM_SUBTYPE_UNINITIALIZED_TILE   = 0x01
-        PRGA_ERR_BITSTREAM_SUBTYPE_COMPLETED_TILE       = 0x02
-        PRGA_ERR_BITSTREAM_SUBTYPE_REINITIALIZING_TILE  = 0x03
-        PRGA_ERR_BITSTREAM_SUBTYPE_INCOMPLETE_TILES     = 0x04 #: #tiles: [8 +: 16]
-        PRGA_ERR_BITSTREAM_SUBTYPE_ERROR_TILES          = 0x05 #: #tiles: [8 +: 16]
+        class Error(Enum):
+            PROTOCOL_VIOLATION  = 0x01 #: protocol violated. Violated address: [0 +: ADDR_WIDTH]
+            INVAL_WR            = 0x02 #: invalid write. Violated address: [0 +: ADDR_WIDTH]
+            INVAL_RD            = 0x03 #: invalid read. Violated address: [0 +: ADDR_WIDTH]
+            BITSTREAM           = 0x04 #: bitstream error. Subtype: [-8 -: 8]
+            PROG_RESP           = 0x05 #: programming error. Error message: [0 +: FRAME_SIZE(32)]
 
-    UserRegAddrWidth = 8
-    UserRegDataWidth = 64
+        class BitstreamError(Enum):
+            INVAL_HEADER            = 0x00
+            UNINITIALIZED_TILE      = 0x01
+            COMPLETED_TILE          = 0x02
+            REINITIALIZING_TILE     = 0x03
+            INCOMPLETE_TILES        = 0x04 #: #tiles: [8 +: 16]
+            ERROR_TILES             = 0x05 #: #tiles: [8 +: 16]
+
+        class UserState(Enum):
+            INVAL               = 0x00  #: PRGA is not programmed
+                                        #   Write this value to reset user controller (force pending requests to return)
+            IDLE                = 0x01  #: PRGA is programmed and the application is ready to accept a new request
+                                        #   Write this value to reset user application (force sent requests to return,
+                                        #   but pending requests will be sent after application is reset
+            TIMEOUT             = 0x02  #: A user register access just timed out
+            BUSY                = 0x03  #: Application is busy (implemented by the application)
+
+    # -- AXILite User Interface ---------------------------------------------
+    class AXILiteUser(object):
+        DATA_WIDTH_LOG2 = 6
+        ADDR_WIDTH = 8

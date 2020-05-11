@@ -161,12 +161,12 @@ module {{ behav.name }}_tb_wrapper;
     reg             disasm_wr, asm_rd;
     wire [31:0]     pkt, bsresp;
 
-    wire [`PHIT_WIDTH-1:0]      phit_i;
-    wire [`PHIT_WIDTH-1:0]      phit_o;
+    wire [`PRGA_PKTCHAIN_PHIT_WIDTH-1:0]      phit_i;
+    wire [`PRGA_PKTCHAIN_PHIT_WIDTH-1:0]      phit_o;
     wire            phit_i_wr, phit_o_full, phit_i_full, phit_o_wr;
 
-    reg [(1 << (`POS_WIDTH * 2)) - 1:0] pending_tiles;
-    reg [`POS_WIDTH * 2 - 1:0] pending_counter;
+    reg [(1 << (`PRGA_PKTCHAIN_POS_WIDTH * 2)) - 1:0] pending_tiles;
+    reg [`PRGA_PKTCHAIN_POS_WIDTH * 2 - 1:0] pending_counter;
     reg set_pending, unset_pending;
 
     integer         total_cfg_frames;
@@ -174,12 +174,12 @@ module {{ behav.name }}_tb_wrapper;
     reg [15:0]      payload;
     reg reset_payload, decrease_payload;
 
-    wire [`POS_WIDTH - 1:0]     pkt_x, pkt_y, bsresp_x, bsresp_y;
+    wire [`PRGA_PKTCHAIN_POS_WIDTH - 1:0]     pkt_x, pkt_y, bsresp_x, bsresp_y;
     assign pkt = cfg_m[cfg_progress];
-    assign pkt_x = pkt[`XPOS_INDEX];
-    assign pkt_y = pkt[`YPOS_INDEX];
-    assign bsresp_x = bsresp[`XPOS_INDEX];
-    assign bsresp_y = `PKTCHAIN_Y_TILES - 1 - bsresp[`YPOS_INDEX];
+    assign pkt_x = pkt[`PRGA_PKTCHAIN_XPOS_INDEX];
+    assign pkt_y = pkt[`PRGA_PKTCHAIN_YPOS_INDEX];
+    assign bsresp_x = bsresp[`PRGA_PKTCHAIN_XPOS_INDEX];
+    assign bsresp_y = `PRGA_PKTCHAIN_Y_TILES - 1 - bsresp[`PRGA_PKTCHAIN_YPOS_INDEX];
 
     pktchain_frame_disassemble disasm (
         .cfg_clk                (sys_clk)
@@ -222,7 +222,7 @@ module {{ behav.name }}_tb_wrapper;
             end
 
             if (reset_payload) begin
-                payload <= cfg_m[cfg_progress][`PAYLOAD_INDEX];
+                payload <= cfg_m[cfg_progress][`PRGA_PKTCHAIN_PAYLOAD_INDEX];
             end else if (decrease_payload) begin
                 payload <= payload - 1;
             end
@@ -263,7 +263,7 @@ module {{ behav.name }}_tb_wrapper;
 
         $readmemh(bs_file, cfg_m);
 
-        for (i = 0; i < (1 << (`POS_WIDTH * 2)); i = i + 1) begin
+        for (i = 0; i < (1 << (`PRGA_PKTCHAIN_POS_WIDTH * 2)); i = i + 1) begin
             pending_tiles[i] = 'b0;
         end
 
@@ -282,33 +282,33 @@ module {{ behav.name }}_tb_wrapper;
                 RESET: state <= PROGRAMMING_HDR;
                 PROGRAMMING_HDR: begin
                     if (~asm_empty) begin
-                        if (bsresp[`PAYLOAD_INDEX] != 0) begin
-                            $display("[ERROR] [Cycle %04d] Response payload (%d) > 0", cycle_count, bsresp[`PAYLOAD_INDEX]);
+                        if (bsresp[`PRGA_PKTCHAIN_PAYLOAD_INDEX] != 0) begin
+                            $display("[ERROR] [Cycle %04d] Response payload (%d) > 0", cycle_count, bsresp[`PRGA_PKTCHAIN_PAYLOAD_INDEX]);
                             $finish;
-                        end else if (bsresp[`XPOS_INDEX] >= `PKTCHAIN_X_TILES) begin
-                            $display("[ERROR] [Cycle %04d] Response XPOS (%d) > X_TILES (%d)", cycle_count, bsresp[`XPOS_INDEX], `PKTCHAIN_X_TILES);
+                        end else if (bsresp[`PRGA_PKTCHAIN_XPOS_INDEX] >= `PRGA_PKTCHAIN_X_TILES) begin
+                            $display("[ERROR] [Cycle %04d] Response XPOS (%d) > X_TILES (%d)", cycle_count, bsresp[`PRGA_PKTCHAIN_XPOS_INDEX], `PRGA_PKTCHAIN_X_TILES);
                             $finish;
-                        end else if (bsresp[`YPOS_INDEX] >= `PKTCHAIN_Y_TILES) begin
-                            $display("[ERROR] [Cycle %04d] Response YPOS (%d) > Y_TILES (%d)", cycle_count, bsresp[`YPOS_INDEX], `PKTCHAIN_Y_TILES);
+                        end else if (bsresp[`PRGA_PKTCHAIN_YPOS_INDEX] >= `PRGA_PKTCHAIN_Y_TILES) begin
+                            $display("[ERROR] [Cycle %04d] Response YPOS (%d) > Y_TILES (%d)", cycle_count, bsresp[`PRGA_PKTCHAIN_YPOS_INDEX], `PRGA_PKTCHAIN_Y_TILES);
                             $finish;
                         end else if (!pending_tiles[{bsresp_x, bsresp_y}]) begin
                             $display("[ERROR] [Cycle %04d] Not expecting response from (%d, %d)", cycle_count, bsresp_x, bsresp_y);
                             $finish;
                         end else begin
-                            case (bsresp[`MSG_TYPE_INDEX])
-                                `MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE: begin
+                            case (bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX])
+                                `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE: begin
                                     $display("[ERROR] [Cycle %04d] Unknown msg type error from (%d, %d)", cycle_count, bsresp_x, bsresp_y);
                                     $finish;
                                 end
-                                `MSG_TYPE_ERROR_ECHO_MISMATCH: begin
+                                `PRGA_PKTCHAIN_MSG_TYPE_ERROR_ECHO_MISMATCH: begin
                                     $display("[ERROR] [Cycle %04d] Echo mismatch error from (%d, %d)", cycle_count, bsresp_x, bsresp_y);
                                     $finish;
                                 end
-                                `MSG_TYPE_ERROR_CHECKSUM_MISMATCH: begin
+                                `PRGA_PKTCHAIN_MSG_TYPE_ERROR_CHECKSUM_MISMATCH: begin
                                     $display("[ERROR] [Cycle %04d] Checksum mismatch error from (%d, %d)", cycle_count, bsresp_x, bsresp_y);
                                     $finish;
                                 end
-                                `MSG_TYPE_DATA_ACK: begin
+                                `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK: begin
                                     $display("[INFO] [Cycle %04d] DATA_ACK received from (%d, %d)", cycle_count, bsresp_x, bsresp_y);
                                 end
                                 default: begin
@@ -321,28 +321,28 @@ module {{ behav.name }}_tb_wrapper;
                         $display("[INFO] [Cycle %04d] Bitstream loading complete", cycle_count);
                         state <= STABLIZING_RESP;
                     end else begin
-                        if (pkt_x >= `PKTCHAIN_X_TILES) begin
-                            $display("[ERROR] [Cycle %04d] Packet XPOS (%d) > X_TILES (%d)", cycle_count, pkt_x, `PKTCHAIN_X_TILES);
+                        if (pkt_x >= `PRGA_PKTCHAIN_X_TILES) begin
+                            $display("[ERROR] [Cycle %04d] Packet XPOS (%d) > X_TILES (%d)", cycle_count, pkt_x, `PRGA_PKTCHAIN_X_TILES);
                             $finish;
-                        end else if (pkt_y >= `PKTCHAIN_Y_TILES) begin
-                            $display("[ERROR] [Cycle %04d] Packet YPOS (%d) > Y_TILES (%d)", cycle_count, pkt_y, `PKTCHAIN_Y_TILES);
+                        end else if (pkt_y >= `PRGA_PKTCHAIN_Y_TILES) begin
+                            $display("[ERROR] [Cycle %04d] Packet YPOS (%d) > Y_TILES (%d)", cycle_count, pkt_y, `PRGA_PKTCHAIN_Y_TILES);
                             $finish;
                         end else if (pending_tiles[{pkt_x, pkt_y}]) begin
                             $display("[ERROR] [Cycle %04d] CHECKSUM already sent to (%d, %d)", cycle_count, pkt_x, pkt_y);
                             $finish;
                         end else begin
                             if (~disasm_full) begin
-                                case (pkt[`MSG_TYPE_INDEX])
-                                    `MSG_TYPE_DATA_INIT: begin
+                                case (pkt[`PRGA_PKTCHAIN_MSG_TYPE_INDEX])
+                                    `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT: begin
                                         $display("[INFO] [Cycle %04d] INIT sent to (%d, %d)", cycle_count, pkt_x, pkt_y);
                                     end
-                                    `MSG_TYPE_DATA: begin
+                                    `PRGA_PKTCHAIN_MSG_TYPE_DATA: begin
                                         $display("[INFO] [Cycle %04d] DATA sent to (%d, %d)", cycle_count, pkt_x, pkt_y);
                                     end
-                                    `MSG_TYPE_DATA_CHECKSUM: begin
+                                    `PRGA_PKTCHAIN_MSG_TYPE_DATA_CHECKSUM: begin
                                         $display("[INFO] [Cycle %04d] CHECKSUM sent to (%d, %d)", cycle_count, pkt_x, pkt_y);
                                     end
-                                    `MSG_TYPE_DATA_INIT_CHECKSUM: begin
+                                    `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM: begin
                                         $display("[INFO] [Cycle %04d] INIT_CHECKSUM sent to (%d, %d)", cycle_count, pkt_x, pkt_y);
                                     end
                                     default: begin
@@ -351,7 +351,7 @@ module {{ behav.name }}_tb_wrapper;
                                     end
                                 endcase
 
-                                if (pkt[`PAYLOAD_INDEX] > 0) begin
+                                if (pkt[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
                                     state <= PROGRAMMING_PLD;
                                 end
                             end
@@ -370,33 +370,33 @@ module {{ behav.name }}_tb_wrapper;
                     if (pending_counter == 0) begin
                         state <= PROG_DONE;
                     end else if (~asm_empty) begin
-                        if (bsresp[`PAYLOAD_INDEX] != 0) begin
-                            $display("[ERROR] [Cycle %04d] Response payload (%d) > 0", cycle_count, bsresp[`PAYLOAD_INDEX]);
+                        if (bsresp[`PRGA_PKTCHAIN_PAYLOAD_INDEX] != 0) begin
+                            $display("[ERROR] [Cycle %04d] Response payload (%d) > 0", cycle_count, bsresp[`PRGA_PKTCHAIN_PAYLOAD_INDEX]);
                             $finish;
-                        end else if (bsresp[`XPOS_INDEX] >= `PKTCHAIN_X_TILES) begin
-                            $display("[ERROR] [Cycle %04d] Response XPOS (%d) > X_TILES (%d)", cycle_count, bsresp[`XPOS_INDEX], `PKTCHAIN_X_TILES);
+                        end else if (bsresp[`PRGA_PKTCHAIN_XPOS_INDEX] >= `PRGA_PKTCHAIN_X_TILES) begin
+                            $display("[ERROR] [Cycle %04d] Response XPOS (%d) > X_TILES (%d)", cycle_count, bsresp[`PRGA_PKTCHAIN_XPOS_INDEX], `PRGA_PKTCHAIN_X_TILES);
                             $finish;
-                        end else if (bsresp[`YPOS_INDEX] >= `PKTCHAIN_Y_TILES) begin
-                            $display("[ERROR] [Cycle %04d] Response YPOS (%d) > Y_TILES (%d)", cycle_count, bsresp[`YPOS_INDEX], `PKTCHAIN_Y_TILES);
+                        end else if (bsresp[`PRGA_PKTCHAIN_YPOS_INDEX] >= `PRGA_PKTCHAIN_Y_TILES) begin
+                            $display("[ERROR] [Cycle %04d] Response YPOS (%d) > Y_TILES (%d)", cycle_count, bsresp[`PRGA_PKTCHAIN_YPOS_INDEX], `PRGA_PKTCHAIN_Y_TILES);
                             $finish;
                         end else if (!pending_tiles[{bsresp_x, bsresp_y}]) begin
                             $display("[ERROR] [Cycle %04d] Not expecting response from (%d, %d)", cycle_count, bsresp_x, bsresp_y);
                             $finish;
                         end else begin
-                            case (bsresp[`MSG_TYPE_INDEX])
-                                `MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE: begin
+                            case (bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX])
+                                `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE: begin
                                     $display("[ERROR] [Cycle %04d] Unknown msg type error from (%d, %d)", cycle_count, bsresp_x, bsresp_y);
                                     $finish;
                                 end
-                                `MSG_TYPE_ERROR_ECHO_MISMATCH: begin
+                                `PRGA_PKTCHAIN_MSG_TYPE_ERROR_ECHO_MISMATCH: begin
                                     $display("[ERROR] [Cycle %04d] Echo mismatch error from (%d, %d)", cycle_count, bsresp_x, bsresp_y);
                                     $finish;
                                 end
-                                `MSG_TYPE_ERROR_CHECKSUM_MISMATCH: begin
+                                `PRGA_PKTCHAIN_MSG_TYPE_ERROR_CHECKSUM_MISMATCH: begin
                                     $display("[ERROR] [Cycle %04d] Checksum mismatch error from (%d, %d)", cycle_count, bsresp_x, bsresp_y);
                                     $finish;
                                 end
-                                `MSG_TYPE_DATA_ACK: begin
+                                `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK: begin
                                     $display("[INFO] [Cycle %04d] DATA_ACK received from (%d, %d)", cycle_count, bsresp_x, bsresp_y);
                                 end
                                 default: begin
@@ -435,7 +435,7 @@ module {{ behav.name }}_tb_wrapper;
             PROGRAMMING_HDR: begin
                 cfg_e = 'b1;
                 if (~asm_empty) begin
-                    if (bsresp[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_ACK) begin
+                    if (bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK) begin
                         asm_rd = 'b1;
                         unset_pending = 'b1;
                     end
@@ -444,8 +444,8 @@ module {{ behav.name }}_tb_wrapper;
 
                     if (~disasm_full) begin
                         reset_payload = 'b1;
-                        set_pending = (pkt[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_CHECKSUM ||
-                                      pkt[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_INIT_CHECKSUM);
+                        set_pending = (pkt[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_CHECKSUM ||
+                                      pkt[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM);
                     end
                 end
             end
@@ -458,7 +458,7 @@ module {{ behav.name }}_tb_wrapper;
             STABLIZING_RESP: begin
                 cfg_e = 'b1;
 
-                if (~asm_empty && bsresp[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_ACK) begin
+                if (~asm_empty && bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK) begin
                     asm_rd = 'b1;
                     unset_pending = 'b1;
                 end

@@ -4,44 +4,44 @@
 
 `include "prga_utils.vh"
 
-`define FRAME_SIZE_LOG2 5
-`define PHIT_WIDTH_LOG2 {{ (context.summary.pktchain.settings.phit_width - 1).bit_length() }}
-`define CFG_WIDTH_LOG2 {{ (context.summary.scanchain.cfg_width - 1).bit_length() }}
+`define PRGA_PKTCHAIN_FRAME_SIZE_LOG2 5
+`define PRGA_PKTCHAIN_PHIT_WIDTH_LOG2 {{ (context.summary.pktchain.settings.phit_width - 1).bit_length() }}
+`define PRGA_PKTCHAIN_CFG_WIDTH_LOG2 {{ (context.summary.scanchain.cfg_width - 1).bit_length() }}
 
-`define FRAME_SIZE (1 << `FRAME_SIZE_LOG2)
-`define PHIT_WIDTH (1 << `PHIT_WIDTH_LOG2)
-`define CFG_WIDTH (1 << `CFG_WIDTH_LOG2)
+`define PRGA_PKTCHAIN_FRAME_SIZE (1 << `PRGA_PKTCHAIN_FRAME_SIZE_LOG2)
+`define PRGA_PKTCHAIN_PHIT_WIDTH (1 << `PRGA_PKTCHAIN_PHIT_WIDTH_LOG2)
+`define PRGA_PKTCHAIN_CFG_WIDTH (1 << `PRGA_PKTCHAIN_CFG_WIDTH_LOG2)
 
-`define LOG2_PHITS_PER_FRAME (`FRAME_SIZE_LOG2 - `PHIT_WIDTH_LOG2)
-`define NUM_PHITS_PER_FRAME (1 << `LOG2_PHITS_PER_FRAME)
+`define PRGA_PKTCHAIN_LOG2_PHITS_PER_FRAME (`PRGA_PKTCHAIN_FRAME_SIZE_LOG2 - `PRGA_PKTCHAIN_PHIT_WIDTH_LOG2)
+`define PRGA_PKTCHAIN_NUM_PHITS_PER_FRAME (1 << `PRGA_PKTCHAIN_LOG2_PHITS_PER_FRAME)
 
-`define LOG2_CFG_UNITS_PER_FRAME (`FRAME_SIZE_LOG2 - `CFG_WIDTH_LOG2)
-`define NUM_CFG_UNITS_PER_FRAME (1 << `LOG2_CFG_UNITS_PER_FRAME)
+`define PRGA_PKTCHAIN_LOG2_CFG_UNITS_PER_FRAME (`PRGA_PKTCHAIN_FRAME_SIZE_LOG2 - `PRGA_PKTCHAIN_CFG_WIDTH_LOG2)
+`define PRGA_PKTCHAIN_NUM_CFG_UNITS_PER_FRAME (1 << `PRGA_PKTCHAIN_LOG2_CFG_UNITS_PER_FRAME)
 
-`define MSG_TYPE_WIDTH 8
-`define POS_WIDTH 8
-`define PAYLOAD_WIDTH 8
+`define PRGA_PKTCHAIN_MSG_TYPE_WIDTH 8
+`define PRGA_PKTCHAIN_POS_WIDTH 8
+`define PRGA_PKTCHAIN_PAYLOAD_WIDTH 8
 
-`define PAYLOAD_BASE 0
-`define YPOS_BASE (`PAYLOAD_BASE + `PAYLOAD_WIDTH)
-`define XPOS_BASE (`YPOS_BASE + `POS_WIDTH)
-`define MSG_TYPE_BASE (`XPOS_BASE + `POS_WIDTH)
+`define PRGA_PKTCHAIN_PAYLOAD_BASE 0
+`define PRGA_PKTCHAIN_YPOS_BASE (`PRGA_PKTCHAIN_PAYLOAD_BASE + `PRGA_PKTCHAIN_PAYLOAD_WIDTH)
+`define PRGA_PKTCHAIN_XPOS_BASE (`PRGA_PKTCHAIN_YPOS_BASE + `PRGA_PKTCHAIN_POS_WIDTH)
+`define PRGA_PKTCHAIN_MSG_TYPE_BASE (`PRGA_PKTCHAIN_XPOS_BASE + `PRGA_PKTCHAIN_POS_WIDTH)
 
-`define PAYLOAD_INDEX `PAYLOAD_BASE+:`PAYLOAD_WIDTH
-`define YPOS_INDEX `YPOS_BASE+:`POS_WIDTH
-`define XPOS_INDEX `XPOS_BASE+:`POS_WIDTH
-`define MSG_TYPE_INDEX `MSG_TYPE_BASE+:`MSG_TYPE_WIDTH 
+`define PRGA_PKTCHAIN_PAYLOAD_INDEX `PRGA_PKTCHAIN_PAYLOAD_BASE+:`PRGA_PKTCHAIN_PAYLOAD_WIDTH
+`define PRGA_PKTCHAIN_YPOS_INDEX `PRGA_PKTCHAIN_YPOS_BASE+:`PRGA_PKTCHAIN_POS_WIDTH
+`define PRGA_PKTCHAIN_XPOS_INDEX `PRGA_PKTCHAIN_XPOS_BASE+:`PRGA_PKTCHAIN_POS_WIDTH
+`define PRGA_PKTCHAIN_MSG_TYPE_INDEX `PRGA_PKTCHAIN_MSG_TYPE_BASE+:`PRGA_PKTCHAIN_MSG_TYPE_WIDTH 
 
 // Message types
 // -- BEGIN AUTO-GENERATION (see prga.cfg.pktchain.protocol for more info)
-{%- for type_ in context.summary.pktchain.protocol.MSGType %}
-`define {{ type_.name }} `MSG_TYPE_WIDTH'h{{ "{:>02x}".format(type_.value) }}
+{%- for type_ in context.summary.pktchain.protocol.Programming.MSGType %}
+`define PRGA_PKTCHAIN_MSG_TYPE_{{ type_.name }} `PRGA_PKTCHAIN_MSG_TYPE_WIDTH'h{{ "{:>02x}".format(type_.value) }}
 {%- endfor %}
 // -- DONE AUTO-GENERATION
 
 // Fabric-specific
-`define PKTCHAIN_X_TILES                    {{ context.summary.pktchain.x_tiles }}
-`define PKTCHAIN_Y_TILES                    {{ context.summary.pktchain.y_tiles }}
-`define PKTCHAIN_ROUTER_FIFO_DEPTH_LOG2     {{ context.summary.pktchain.settings.router_fifo_depth_log2 }}
+`define PRGA_PKTCHAIN_X_TILES                    {{ context.summary.pktchain.x_tiles }}
+`define PRGA_PKTCHAIN_Y_TILES                    {{ context.summary.pktchain.y_tiles }}
+`define PRGA_PKTCHAIN_ROUTER_FIFO_DEPTH_LOG2     {{ context.summary.pktchain.settings.router_fifo_depth_log2 }}
 
 `endif

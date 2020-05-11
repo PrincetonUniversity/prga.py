@@ -8,19 +8,19 @@ module {{ module.name }} (
     // noc inputs
     output wire [0:0] phit_i_full,
     input wire [0:0] phit_i_wr,
-    input wire [`PHIT_WIDTH - 1:0] phit_i,
+    input wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0] phit_i,
 
     // noc outputs
     input wire [0:0] phit_o_full,
     output wire [0:0] phit_o_wr,
-    output wire [`PHIT_WIDTH - 1:0] phit_o,
+    output wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0] phit_o,
 
     // chain inputs & outputs
     input wire [0:0] cfg_we_i,
-    input wire [`CFG_WIDTH-1:0] cfg_i,
+    input wire [`PRGA_PKTCHAIN_CFG_WIDTH-1:0] cfg_i,
 
     output wire [0:0] cfg_we_o,
-    output wire [`CFG_WIDTH-1:0] cfg_o
+    output wire [`PRGA_PKTCHAIN_CFG_WIDTH-1:0] cfg_o
     );
 
     // register reset signal
@@ -31,10 +31,10 @@ module {{ module.name }} (
     end
 
     // Physical-level protocol:
-    //  phit size = PHIT_WIDTH
+    //  phit size = PRGA_PKTCHAIN_PHIT_WIDTH
     //
     // Link-level protocol:
-    //  frame size = 32b (e.g. 4 phits if PHIT_WIDTH == 8)
+    //  frame size = 32b (e.g. 4 phits if PRGA_PKTCHAIN_PHIT_WIDTH == 8)
     //
     // Data-level protocol:
     //  header frame:
@@ -49,14 +49,14 @@ module {{ module.name }} (
     {%- endif %}
 
     wire frame_i_empty, frame_o_full;
-    wire [`FRAME_SIZE - 1:0] frame_i;
-    reg [`FRAME_SIZE - 1:0] frame_o;
+    wire [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] frame_i;
+    reg [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] frame_o;
     reg frame_i_rd, frame_o_wr, frame_clasp_empty;
     reg clasp_init, clasp_checksum;
     wire clasp_programming, clasp_echo_mismatch, clasp_checksum_mismatch;
 
     pktchain_frame_assemble #(
-        .DEPTH_LOG2                 (`PKTCHAIN_ROUTER_FIFO_DEPTH_LOG2)
+        .DEPTH_LOG2                 (`PRGA_PKTCHAIN_ROUTER_FIFO_DEPTH_LOG2)
     ) ififo (
         .cfg_clk        (cfg_clk)
         ,.cfg_rst       (cfg_rst_f)
@@ -103,7 +103,7 @@ module {{ module.name }} (
                 STATE_DUMPING                   = 4'h4;
 
     reg [3:0] state, state_next;
-    reg [`PAYLOAD_WIDTH - 1:0] payload;
+    reg [`PRGA_PKTCHAIN_PAYLOAD_WIDTH - 1:0] payload;
     reg checksum_pending, checksum_checked;
     reg payload_rst, start_clasp_trx;
 
@@ -117,21 +117,21 @@ module {{ module.name }} (
             state <= state_next;
 
             if (payload_rst) begin
-                payload <= frame_i[`PAYLOAD_INDEX];
+                payload <= frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
             end else if (payload > 0 && !frame_i_empty && frame_i_rd) begin
                 payload <= payload - 1;
             end
 
             if (start_clasp_trx) begin
-                clasp_init <= (frame_i[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_INIT ||
-                              frame_i[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_INIT_CHECKSUM);
+                clasp_init <= (frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT ||
+                              frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM);
             end else if (!frame_clasp_empty && frame_clasp_rd) begin
                 clasp_init <= 'b0;
             end
 
             if (start_clasp_trx) begin
-                checksum_pending <= (frame_i[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_CHECKSUM ||
-                                    frame_i[`MSG_TYPE_INDEX] == `MSG_TYPE_DATA_INIT_CHECKSUM);
+                checksum_pending <= (frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_CHECKSUM ||
+                                    frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM);
             end else if (checksum_checked) begin
                 checksum_pending <= 'b0;
             end
@@ -156,17 +156,17 @@ module {{ module.name }} (
             STATE_IDLE: begin
                 if (checksum_pending && ~clasp_programming) begin
                     frame_o_wr = 'b1;
-                    frame_o = ( clasp_echo_mismatch ? `MSG_TYPE_ERROR_ECHO_MISMATCH :
-                            clasp_checksum_mismatch ? `MSG_TYPE_ERROR_CHECKSUM_MISMATCH :
-                                                      `MSG_TYPE_DATA_ACK ) << `MSG_TYPE_BASE;
+                    frame_o = ( clasp_echo_mismatch ? `PRGA_PKTCHAIN_MSG_TYPE_ERROR_ECHO_MISMATCH :
+                            clasp_checksum_mismatch ? `PRGA_PKTCHAIN_MSG_TYPE_ERROR_CHECKSUM_MISMATCH :
+                                                      `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK ) << `PRGA_PKTCHAIN_MSG_TYPE_BASE;
                     checksum_checked = ~frame_o_full;
                 end else if (~frame_i_empty) begin  // valid input frame
-                    case (frame_i[`MSG_TYPE_INDEX])
-                        `MSG_TYPE_DATA,
-                        `MSG_TYPE_DATA_INIT,
-                        `MSG_TYPE_DATA_CHECKSUM,
-                        `MSG_TYPE_DATA_INIT_CHECKSUM: begin
-                            if (frame_i[`YPOS_INDEX] == 0) begin    // this message is for me
+                    case (frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX])
+                        `PRGA_PKTCHAIN_MSG_TYPE_DATA,
+                        `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT,
+                        `PRGA_PKTCHAIN_MSG_TYPE_DATA_CHECKSUM,
+                        `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM: begin
+                            if (frame_i[`PRGA_PKTCHAIN_YPOS_INDEX] == 0) begin    // this message is for me
                                 if (~checksum_pending) begin        // only react if I'm not waiting for the checksum
                                     state_next = STATE_CLASP;
                                     frame_i_rd = 'b1;               // discard message header
@@ -180,33 +180,33 @@ module {{ module.name }} (
                                 end
 
                                 frame_o_wr = 'b1;
-                                frame_o = frame_i - (1 << `YPOS_BASE);
+                                frame_o = frame_i - (1 << `PRGA_PKTCHAIN_YPOS_BASE);
                                 payload_rst = 'b1;
                             end
                         end
-                        `MSG_TYPE_TEST,
-                        `MSG_TYPE_DATA_ACK,
-                        `MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE,
-                        `MSG_TYPE_ERROR_ECHO_MISMATCH,
-                        `MSG_TYPE_ERROR_CHECKSUM_MISMATCH: begin
+                        `PRGA_PKTCHAIN_MSG_TYPE_TEST,
+                        `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK,
+                        `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE,
+                        `PRGA_PKTCHAIN_MSG_TYPE_ERROR_ECHO_MISMATCH,
+                        `PRGA_PKTCHAIN_MSG_TYPE_ERROR_CHECKSUM_MISMATCH: begin
                             if (~frame_o_full) begin
                                 frame_i_rd = 'b1;
                             end
 
                             frame_o_wr = 'b1;
-                            frame_o = frame_i + (1 << `YPOS_BASE);
+                            frame_o = frame_i + (1 << `PRGA_PKTCHAIN_YPOS_BASE);
                         end
                         default: begin
                             if (~frame_o_full) begin
                                 frame_i_rd = 'b1;
 
-                                if (frame_i[`PAYLOAD_INDEX] > 0) begin
+                                if (frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
                                     state_next = STATE_DUMPING;
                                 end
                             end
 
                             frame_o_wr = 'b1;
-                            frame_o = `MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE << `MSG_TYPE_BASE;
+                            frame_o = `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE << `PRGA_PKTCHAIN_MSG_TYPE_BASE;
                             payload_rst = 'b1;
                         end
                     endcase

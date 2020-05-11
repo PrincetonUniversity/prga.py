@@ -2,7 +2,7 @@
 `include "pktchain.vh"
 module pktchain_frame_assemble #(
     parameter DEPTH_LOG2 = 1,   // depth in terms of phits
-    parameter DATA_WIDTH_LOG2 = `FRAME_SIZE_LOG2
+    parameter DATA_WIDTH_LOG2 = `PRGA_PKTCHAIN_FRAME_SIZE_LOG2
 ) (
     input wire [0:0] cfg_clk,
     input wire [0:0] cfg_rst,
@@ -10,7 +10,7 @@ module pktchain_frame_assemble #(
     // noc inputs (FIFO intf)
     output wire [0:0] phit_full,
     input wire [0:0] phit_wr,
-    input wire [`PHIT_WIDTH - 1:0] phit_i,
+    input wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0] phit_i,
 
     // frame buffer output (FIFO intf)
     output wire [0:0] frame_empty,
@@ -19,10 +19,10 @@ module pktchain_frame_assemble #(
     );
 
     wire fifo_empty, fifo_rd;
-    wire [`PHIT_WIDTH - 1:0] fifo_dout;
+    wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0] fifo_dout;
 
     prga_fifo #(
-        .DATA_WIDTH                 (`PHIT_WIDTH)
+        .DATA_WIDTH                 (`PRGA_PKTCHAIN_PHIT_WIDTH)
         ,.LOOKAHEAD                 (0)
         ,.DEPTH_LOG2                (DEPTH_LOG2)
     ) fifo (
@@ -37,8 +37,8 @@ module pktchain_frame_assemble #(
         );
 
     prga_fifo_resizer #(
-        .DATA_WIDTH                 (`PHIT_WIDTH)
-        ,.OUTPUT_MULTIPLIER         (1 << (DATA_WIDTH_LOG2 - `PHIT_WIDTH_LOG2))
+        .DATA_WIDTH                 (`PRGA_PKTCHAIN_PHIT_WIDTH)
+        ,.OUTPUT_MULTIPLIER         (1 << (DATA_WIDTH_LOG2 - `PRGA_PKTCHAIN_PHIT_WIDTH_LOG2))
         ,.INPUT_LOOKAHEAD           (0)
         ,.OUTPUT_LOOKAHEAD          (1)
     ) resizer (

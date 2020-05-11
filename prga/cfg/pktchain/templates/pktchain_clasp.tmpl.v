@@ -8,7 +8,7 @@ module pktchain_clasp (
     // frame inputs
     input wire [0:0] frame_empty,
     output reg [0:0] frame_rd,
-    input wire [`FRAME_SIZE - 1:0] frame_i,
+    input wire [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] frame_i,
 
     // extra control inputs
     input wire [0:0] ctrl_init,     // marks the input frame as the first frame
@@ -21,26 +21,26 @@ module pktchain_clasp (
 
     // chain inputs & outputs
     input wire [0:0] cfg_we_i,
-    input wire [`CFG_WIDTH-1:0] cfg_i,
+    input wire [`PRGA_PKTCHAIN_CFG_WIDTH-1:0] cfg_i,
 
     output reg [0:0] cfg_we_o,
-    output reg [`CFG_WIDTH-1:0] cfg_o
+    output reg [`PRGA_PKTCHAIN_CFG_WIDTH-1:0] cfg_o
     );
 
     // data registers
     // input buffering
-    reg [`FRAME_SIZE - 1:0] frame_buf;
+    reg [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] frame_buf;
     reg cfg_o_proceed;
 
     // checks
-    reg [8 * `CFG_WIDTH - 1:0] echo_collected;              // echo collected
-    reg [7:0] crc [`CFG_WIDTH - 1:0];                       // checksum
+    reg [8 * `PRGA_PKTCHAIN_CFG_WIDTH - 1:0] echo_collected;              // echo collected
+    reg [7:0] crc [`PRGA_PKTCHAIN_CFG_WIDTH - 1:0];                       // checksum
     
     always @(posedge cfg_clk) begin
         if (~frame_empty && frame_rd) begin
             frame_buf <= frame_i;
         end else if (cfg_o_proceed) begin
-            frame_buf <= frame_buf << `CFG_WIDTH;
+            frame_buf <= frame_buf << `PRGA_PKTCHAIN_CFG_WIDTH;
         end
     end
 
@@ -63,15 +63,15 @@ module pktchain_clasp (
     end
 
     always @* begin
-        cfg_o = frame_buf[`FRAME_SIZE - 1 -: `CFG_WIDTH];
+        cfg_o = frame_buf[`PRGA_PKTCHAIN_FRAME_SIZE - 1 -: `PRGA_PKTCHAIN_CFG_WIDTH];
     end
 
     {% if cfg_width not in (1, 2, 4) %}
     // The configuration chain width ({{ cfg_width }}) is unsupported (Accepted values: 1, 2, 4)
     __PRGA_RTLGEN_ERROR__ __PKTCHAIN_UNSUPPORTED_CFG_WIDTH__();
     {%- endif %}
-    localparam  NUM_CFG_UNITS_PER_FRAME = `FRAME_SIZE / `CFG_WIDTH;
-    localparam  UNIT_COUNTER_WIDTH = `CLOG2(NUM_CFG_UNITS_PER_FRAME);
+    localparam  PRGA_PKTCHAIN_NUM_CFG_UNITS_PER_FRAME = `PRGA_PKTCHAIN_FRAME_SIZE / `PRGA_PKTCHAIN_CFG_WIDTH;
+    localparam  UNIT_COUNTER_WIDTH = `CLOG2(PRGA_PKTCHAIN_NUM_CFG_UNITS_PER_FRAME);
 
     localparam  STATE_RESET     = 3'h0,
                 STATE_IDLE      = 3'h1,
@@ -79,7 +79,7 @@ module pktchain_clasp (
                 STATE_PAUSE     = 3'h3,
                 STATE_CHECKSUM  = 3'h4;
     {%- if cfg_width < 4 %}
-    localparam  STATE_PROG_LAST = 3'h7;     // this state is needed because NUM_CFG_UNITS_PER_FRAME > 8
+    localparam  STATE_PROG_LAST = 3'h7;     // this state is needed because PRGA_PKTCHAIN_NUM_CFG_UNITS_PER_FRAME > 8
     {%- endif %}
 
     reg [2:0] state, state_next;
@@ -140,7 +140,7 @@ module pktchain_clasp (
                 cfg_we_o = 'b1;
                 cfg_o_proceed = 'b1;
 
-                if (unit_counter == NUM_CFG_UNITS_PER_FRAME - 1) begin
+                if (unit_counter == PRGA_PKTCHAIN_NUM_CFG_UNITS_PER_FRAME - 1) begin
                     frame_rd = 'b1;
                     unit_counter_next = 'b0;
 
@@ -163,7 +163,7 @@ module pktchain_clasp (
                 cfg_o_proceed = 'b1;
                 unit_counter_next = unit_counter + 1;
 
-                if (unit_counter == NUM_CFG_UNITS_PER_FRAME - 9) begin
+                if (unit_counter == PRGA_PKTCHAIN_NUM_CFG_UNITS_PER_FRAME - 9) begin
                     state_next = STATE_CHECKSUM;
                 end
             end
@@ -179,7 +179,7 @@ module pktchain_clasp (
 
     always @* begin
         programming = !(state == STATE_RESET || state == STATE_IDLE);
-        echo_mismatch = echo_collected != frame_buf[`FRAME_SIZE - 1 -: 8 * `CFG_WIDTH];
+        echo_mismatch = echo_collected != frame_buf[`PRGA_PKTCHAIN_FRAME_SIZE - 1 -: 8 * `PRGA_PKTCHAIN_CFG_WIDTH];
         checksum_mismatch = |{
             {%- set crc_joiner = joiner(", ") -%}
             {%- for i in range(cfg_width) -%}
