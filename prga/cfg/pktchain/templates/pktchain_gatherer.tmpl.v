@@ -67,11 +67,11 @@ module pktchain_gatherer (
     localparam  STATE_RESET                         = 4'h0,
                 STATE_IDLE                          = 4'h1,
                 STATE_FORWARD_X                     = 4'h2,
-                STATE_FORWARD_Y                     = 4'h3;
+                STATE_FORWARD_Y                     = 4'h3,
+                STATE_DUMP_Y                        = 4'h4;
 
     reg [3:0] state, state_next;
-    reg [`PRGA_PKTCHAIN_PAYLOAD_WIDTH - 1:0] payload;
-    reg payload_rst;
+    reg [`PRGA_PKTCHAIN_PAYLOAD_WIDTH - 1:0] payload, payload_next;
 
     always @(posedge cfg_clk) begin
         if (cfg_rst_f) begin
@@ -79,12 +79,7 @@ module pktchain_gatherer (
             payload <= 'b0;
         end else begin
             state <= state_next;
-
-            if (payload_rst) begin
-                payload <= frame_o[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
-            end else if (!frame_o_full && frame_o_wr) begin
-                payload <= payload - 1;
-            end
+            payload <= payload_next;
         end
     end
 
@@ -94,7 +89,7 @@ module pktchain_gatherer (
         frame_iy_rd = 'b0;
         frame_o_wr = 'b0;
         state_next = state;
-        payload_rst = 'b0;
+        payload_next = 'b0;
 
         case (state)
             STATE_RESET: begin
@@ -104,7 +99,7 @@ module pktchain_gatherer (
                 if (!frame_ix_empty) begin
                     frame_o = frame_ix + (1 << `PRGA_PKTCHAIN_XPOS_BASE);
                     frame_o_wr = 'b1;
-                    payload_rst = 'b1;
+                    payload_next = frame_ix[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
                     
                     if (!frame_o_full) begin
                         frame_ix_rd = 'b1;
@@ -114,25 +109,68 @@ module pktchain_gatherer (
                         end
                     end
                 end else if (!frame_iy_empty) begin
-                    frame_o = frame_iy;
-                    frame_o_wr = 'b1;
-                    payload_rst = 'b1;
-                    
-                    if (!frame_o_full) begin
-                        frame_iy_rd = 'b1;
+                    case (frame_iy[`PRGA_PKTCHAIN_MSG_TYPE_INDEX])
+                        `PRGA_PKTCHAIN_MSG_TYPE_TEST,
+                        `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK,
+                        `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE,
+                        `PRGA_PKTCHAIN_MSG_TYPE_ERROR_ECHO_MISMATCH,
+                        `PRGA_PKTCHAIN_MSG_TYPE_ERROR_CHECKSUM_MISMATCH,
+                        `PRGA_PKTCHAIN_MSG_TYPE_ERROR_FEEDTHRU_PACKET: begin
+                            frame_o = frame_iy;
+                            frame_o_wr = 'b1;
+                            payload_next = frame_iy[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
 
-                        if (frame_iy[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
-                            state_next = STATE_FORWARD_Y;
+                            if (!frame_o_full) begin
+                                frame_iy_rd = 'b1;
+
+                                if (frame_iy[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
+                                    state_next = STATE_FORWARD_Y;
+                                end
+                            end
                         end
-                    end
+                        `PRGA_PKTCHAIN_MSG_TYPE_DATA,
+                        `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT,
+                        `PRGA_PKTCHAIN_MSG_TYPE_DATA_CHECKSUM,
+                        `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM: begin
+                            frame_o = `PRGA_PKTCHAIN_MSG_TYPE_ERROR_FEEDTHRU_PACKET << `PRGA_PKTCHAIN_MSG_TYPE_BASE;
+                            frame_o_wr = 'b1;
+                            payload_next = frame_iy[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
+
+                            if (!frame_o_full) begin
+                                frame_iy_rd = 'b1;
+
+                                if (frame_iy[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
+                                    state_next = STATE_DUMP_Y;
+                                end
+                            end
+                        end
+                        default: begin
+                            frame_o = `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE << `PRGA_PKTCHAIN_MSG_TYPE_BASE;
+                            frame_o_wr = 'b1;
+                            payload_next = frame_iy[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
+
+                            if (!frame_o_full) begin
+                                frame_iy_rd = 'b1;
+
+                                if (frame_iy[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
+                                    state_next = STATE_DUMP_Y;
+                                end
+                            end
+                        end
+                    endcase
                 end
             end
             STATE_FORWARD_X: begin
+                frame_o = frame_ix;
                 frame_ix_rd = !frame_o_full;
                 frame_o_wr = !frame_ix_empty;
 
-                if (payload == 1 && !frame_ix_empty && !frame_o_full) begin
-                    state_next = STATE_IDLE;
+                if (!frame_ix_empty && !frame_o_full) begin
+                    payload_next = payload - 1;
+
+                    if (payload == 1) begin
+                        state_next = STATE_IDLE;
+                    end
                 end
             end
             STATE_FORWARD_Y: begin
@@ -140,8 +178,23 @@ module pktchain_gatherer (
                 frame_iy_rd = !frame_o_full;
                 frame_o_wr = !frame_iy_empty;
 
-                if (payload == 1 && !frame_iy_empty && !frame_o_full) begin
-                    state_next = STATE_IDLE;
+                if (!frame_iy_empty && !frame_o_full) begin
+                    payload_next = payload - 1;
+
+                    if (payload == 1) begin
+                        state_next = STATE_IDLE;
+                    end
+                end
+            end
+            STATE_DUMP_Y: begin
+                frame_iy_rd = 'b1;
+
+                if (!frame_iy_empty) begin
+                    payload_next = payload - 1;
+
+                    if (payload == 1) begin
+                        state_next = STATE_IDLE;
+                    end
                 end
             end
         endcase

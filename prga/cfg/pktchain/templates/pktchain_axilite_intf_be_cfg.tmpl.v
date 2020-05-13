@@ -403,7 +403,8 @@ module {{ module.name }} (
                                 || ~(bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK
                                     || bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE
                                     || bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_ERROR_ECHO_MISMATCH
-                                    || bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_ERROR_CHECKSUM_MISMATCH)
+                                    || bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_ERROR_CHECKSUM_MISMATCH
+                                    || bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_ERROR_FEEDTHRU_PACKET)
                             ) begin
                                 // bad header
                                 errfifo_data_resp[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_TYPE_BITSTREAM;

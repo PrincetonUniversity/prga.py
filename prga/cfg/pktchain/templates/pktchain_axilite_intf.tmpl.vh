@@ -66,7 +66,7 @@
 `define PRGA_TRANSIENT_CYCLES               `PRGA_TIMER_WIDTH'd200
 
 // User register interface
-`define PRGA_USER_ADDR_WIDTH                {{ context.summary.pktchain.AXILiteUser.ADDR_WIDTH }}
+`define PRGA_USER_ADDR_WIDTH                {{ context.summary.pktchain.protocol.AXILiteUser.ADDR_WIDTH }}
 `define PRGA_BYTES_PER_USER_DATA            `PRGA_BYTES_PER_AXI_DATA
 `define PRGA_USER_DATA_WIDTH                (`PRGA_BYTES_PER_USER_DATA * 8)
 
