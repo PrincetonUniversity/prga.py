@@ -14,15 +14,20 @@ class PktchainProtocol(object):
     # -- Programming packets -------------------------------------------------
     class Programming(object):
         class MSGType(Enum):
-            DATA                        = 0x10
-            DATA_INIT                   = 0x11
-            DATA_CHECKSUM               = 0x12
-            DATA_INIT_CHECKSUM          = 0x13
-            DATA_ACK                    = 0x14
-            TEST                        = 0x20
-            ERROR_UNKNOWN_MSG_TYPE      = 0x80
-            ERROR_ECHO_MISMATCH         = 0x81
-            ERROR_CHECKSUM_MISMATCH     = 0x82
+            # control packets
+            SOB                         = 0x01  # start of bitstream
+            EOB                         = 0x02  # end of bitstream
+            # TEST                        = 0x20
+            # effective programming packets
+            DATA                        = 0x40
+            DATA_INIT                   = 0x41
+            DATA_CHECKSUM               = 0x42
+            DATA_INIT_CHECKSUM          = 0x43
+            # responses
+            DATA_ACK                    = 0x80
+            ERROR_UNKNOWN_MSG_TYPE      = 0x81
+            ERROR_ECHO_MISMATCH         = 0x82
+            ERROR_CHECKSUM_MISMATCH     = 0x83
 
         @classmethod
         def encode_msg_header(cls, type_, x, y, payload):
@@ -80,12 +85,17 @@ class PktchainProtocol(object):
             PROG_RESP           = 0x05 #: programming error. Error message: [0 +: FRAME_SIZE(32)]
 
         class BitstreamError(Enum):
-            INVAL_HEADER            = 0x00
-            UNINITIALIZED_TILE      = 0x01
-            COMPLETED_TILE          = 0x02
-            REINITIALIZING_TILE     = 0x03
-            INCOMPLETE_TILES        = 0x04 #: #tiles: [8 +: 16]
-            ERROR_TILES             = 0x05 #: #tiles: [8 +: 16]
+            EXPECTING_SOB           = 0x01 #: waiting for SOB packet but got something else
+            UNEXPECTED_SOB          = 0x02 #: not expecting an SOB packet
+
+            INVAL_RESP              = 0x03 #: invalid response
+            ERR_RESP                = 0x04 #: erroneous response
+
+            INVAL_PKT               = 0x05 #: invalid packet
+            ERR_PKT                 = 0x06 #: erroneous packet
+
+            INCOMPLETE_TILES        = 0x07 #: #tiles: [0 +: 2 * PRGA_PKTCHAIN_POS_WIDTH]
+            ERROR_TILES             = 0x08 #: #tiles: [0 +: 2 * PRGA_PKTCHAIN_POS_WIDTH]
 
         class UserState(Enum):
             INVAL               = 0x00  #: PRGA is not programmed
