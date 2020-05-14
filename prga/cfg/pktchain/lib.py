@@ -28,9 +28,6 @@ __all__ = ['Pktchain']
 
 ADDITIONAL_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
 
-_AXILITE_ADDR_WIDTH = 8
-_AXILITE_DATA_BYTES = 8
-
 # ----------------------------------------------------------------------------
 # -- FASM Delegate -----------------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -300,19 +297,12 @@ class Pktchain(Scanchain):
             context._database[ModuleView.logical, "pktchain_gatherer"] = mod
 
         # register pktchain AXILite interface-related stuff
-        if "pktchain_axilite_intf_mch_timer" not in dont_add_logical_primitive:
-            context._database[ModuleView.logical, "pktchain_axilite_intf_mch_timer"] = Module(
-                    "pktchain_axilite_intf_mch_timer",
-                    view = ModuleView.logical,
-                    is_cell = True,
-                    verilog_template = "pktchain_axilite_intf_mch_timer.tmpl.v")
-
-        if "pktchain_axilite_intf_sch_timer" not in dont_add_logical_primitive:
-            context._database[ModuleView.logical, "pktchain_axilite_intf_sch_timer"] = Module(
-                    "pktchain_axilite_intf_sch_timer",
-                    view = ModuleView.logical,
-                    is_cell = True,
-                    verilog_template = "pktchain_axilite_intf_sch_timer.tmpl.v")
+        for d in ("pktchain_axilite_intf_be_uw", ):
+            if d not in dont_add_logical_primitive:
+                context._database[ModuleView.logical, d] = Module(d,
+                        view = ModuleView.logical,
+                        is_cell = True,
+                        verilog_template = d + ".tmpl.v")
 
         # register pktchain AXILite interface
         if not ({"pktchain_frame_disassemble", "pktchain_frame_assemble", "pktchain_axilite_intf"} &
@@ -342,7 +332,8 @@ class Pktchain(Scanchain):
                     )
             # create axilite interface
             clocked_ports += tuple(itervalues(cls._create_axilite_intf(mod, "m",
-                _AXILITE_ADDR_WIDTH, _AXILITE_DATA_BYTES)))
+                PktchainProtocol.AXILiteController.ADDR_WIDTH,
+                2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3))))
             # sub-instances
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "axi_waddr_fifo")
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "axi_wdata_fifo")
@@ -708,7 +699,9 @@ class Pktchain(Scanchain):
         # create ports
         clk = ModuleUtils.create_port(system, "clk", 1, PortDirection.input_, is_clock = True)
         rst = ModuleUtils.create_port(system, "rst", 1, PortDirection.input_)
-        axilite = cls._create_axilite_intf(system, "m", _AXILITE_ADDR_WIDTH, _AXILITE_DATA_BYTES)
+        axilite = cls._create_axilite_intf(system, "m",
+                PktchainProtocol.AXILiteController.ADDR_WIDTH,
+                2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3))
         # create sub-instances
         fpga = ModuleUtils.instantiate(system, context.database[ModuleView.logical, context.top.key], "fabric")
         intf = ModuleUtils.instantiate(system, context.database[ModuleView.logical, "pktchain_axilite_intf"], "intf")
