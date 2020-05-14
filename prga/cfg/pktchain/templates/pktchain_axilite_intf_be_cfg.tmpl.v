@@ -11,6 +11,8 @@ module {{ module.name }} (
     input wire [`PRGA_BYTES_PER_AXI_DATA - 1:0] wstrb,
     input wire [`PRGA_AXI_DATA_WIDTH - 1:0] wdata,
 
+    output wire [0:0] wresp,
+
     output reg [0:0] success,       // end of programming
     output reg [0:0] fail,          // end of programming
 
@@ -33,6 +35,8 @@ module {{ module.name }} (
     input wire [0:0] cfg_phit_i_wr,
     input wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0] cfg_phit_i
     );
+
+    assign wresp = wval && wrdy;    // immediate responses to writes
 
     // =======================================================================
     // -- Bitstream Programming Output & Response Input ----------------------

@@ -299,6 +299,21 @@ class Pktchain(Scanchain):
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_disassemble"], "ofifo")
             context._database[ModuleView.logical, "pktchain_gatherer"] = mod
 
+        # register pktchain AXILite interface-related stuff
+        if "pktchain_axilite_intf_mch_timer" not in dont_add_logical_primitive:
+            context._database[ModuleView.logical, "pktchain_axilite_intf_mch_timer"] = Module(
+                    "pktchain_axilite_intf_mch_timer",
+                    view = ModuleView.logical,
+                    is_cell = True,
+                    verilog_template = "pktchain_axilite_intf_mch_timer.tmpl.v")
+
+        if "pktchain_axilite_intf_sch_timer" not in dont_add_logical_primitive:
+            context._database[ModuleView.logical, "pktchain_axilite_intf_sch_timer"] = Module(
+                    "pktchain_axilite_intf_sch_timer",
+                    view = ModuleView.logical,
+                    is_cell = True,
+                    verilog_template = "pktchain_axilite_intf_sch_timer.tmpl.v")
+
         # register pktchain AXILite interface
         if not ({"pktchain_frame_disassemble", "pktchain_frame_assemble", "pktchain_axilite_intf"} &
                 dont_add_logical_primitive):

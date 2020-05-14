@@ -35,16 +35,24 @@ module {{ module.name }} (
     output reg [1:0] m_RRESP,
 
     // == Buffered, Simplified Interface =====================================
+    // write request
     output reg [0:0] wval,
     input wire [0:0] wrdy,
     output wire [`PRGA_AXI_ADDR_WIDTH - 1:0] waddr,
     output wire [`PRGA_BYTES_PER_AXI_DATA - 1:0] wstrb,
     output wire [`PRGA_AXI_DATA_WIDTH - 1:0] wdata,
 
+    // write response (FIFO slot is pre-allocated)
+    input wire [0:0] wresp,
+
+    // read request
     output reg [0:0] rval,
     input wire [0:0] rrdy,
     output wire [`PRGA_AXI_ADDR_WIDTH - 1:0] raddr,
-    input wire [`PRGA_AXI_DATA_WIDTH - 1:0] rdata   // 1 cycle after rval && rrdy
+
+    // read response (FIFO slot is pre-allocated)
+    input wire [0:0] rresp,
+    input wire [`PRGA_AXI_DATA_WIDTH - 1:0] rdata
     );
     
     // register reset signal
@@ -114,7 +122,7 @@ module {{ module.name }} (
         .clk                        (clk)
         ,.rst                       (rst_f)
         ,.full                      (axi_wresp_fifo_full)
-        ,.wr                        (wval && wrdy)
+        ,.wr                        (wresp)
         ,.din                       (2'b0)  // AXI OKAY
         ,.empty                     (axi_wresp_fifo_empty)
         ,.rd                        (m_BREADY)
@@ -122,7 +130,6 @@ module {{ module.name }} (
         );
 
     // AXI read response FIFOs
-    reg axi_rresp_go_f;
     wire axi_rresp_fifo_full, axi_rresp_fifo_empty;
 
     prga_fifo #(
@@ -132,20 +139,12 @@ module {{ module.name }} (
         .clk                        (clk)
         ,.rst                       (rst_f)
         ,.full                      (axi_rresp_fifo_full)
-        ,.wr                        (axi_rresp_go_f)
+        ,.wr                        (rresp)
         ,.din                       (rdata)
         ,.empty                     (axi_rresp_fifo_empty)
         ,.rd                        (m_RREADY)
         ,.dout                      (m_RDATA)
         );
-
-    always @(posedge clk) begin
-        if (rst_f) begin
-            axi_rresp_go_f <= 'b0;
-        end else begin
-            axi_rresp_go_f <= rval && rrdy;
-        end
-    end
 
     always @* begin
         m_AWREADY = ~axi_waddr_fifo_full;
