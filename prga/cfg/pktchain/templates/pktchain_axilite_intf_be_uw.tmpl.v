@@ -43,7 +43,7 @@ module {{ module.name }} (
     assign u_AWPROT = 'b0;
 
     // == Stall Signal Declaration ===========================================
-    reg stall_req, stall_resp;
+    reg stall_resp;
 
     // == Request Posting Stage ==============================================
     reg [`PRGA_TIMER_WIDTH - 1:0] req_timer;
@@ -84,8 +84,7 @@ module {{ module.name }} (
         end
     end
 
-    assign wrdy = (~waddr_val || (~stall_resp && u_AWREADY)) && (~wdata_val || (~stall_resp && u_WREADY));
-    assign stall_req = rst || req_timeout || stall_resp || (waddr_val && ~u_AWREADY) || (wdata_val && ~u_WREADY);
+    assign wrdy = ~rst && (~waddr_val || (~stall_resp && u_AWREADY)) && (~wdata_val || (~stall_resp && u_WREADY));
     assign u_AWVALID = waddr_val && ~stall_resp;
     assign u_WVALID = wdata_val && ~stall_resp;
 

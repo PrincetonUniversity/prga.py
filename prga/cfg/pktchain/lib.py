@@ -297,7 +297,9 @@ class Pktchain(Scanchain):
             context._database[ModuleView.logical, "pktchain_gatherer"] = mod
 
         # register pktchain AXILite interface-related stuff
-        for d in ("pktchain_axilite_intf_be_uw", ):
+        for d in ("pktchain_axilite_intf_be_uw",
+                "pktchain_axilite_intf_be_ur",
+                ):
             if d not in dont_add_logical_primitive:
                 context._database[ModuleView.logical, d] = Module(d,
                         view = ModuleView.logical,
