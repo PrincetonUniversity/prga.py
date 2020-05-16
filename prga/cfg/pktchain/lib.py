@@ -297,14 +297,15 @@ class Pktchain(Scanchain):
             context._database[ModuleView.logical, "pktchain_gatherer"] = mod
 
         # register pktchain AXILite interface-related stuff
-        for d in ("pktchain_axilite_intf_be_uw",
-                "pktchain_axilite_intf_be_ur",
-                ):
-            if d not in dont_add_logical_primitive:
-                context._database[ModuleView.logical, d] = Module(d,
-                        view = ModuleView.logical,
-                        is_cell = True,
-                        verilog_template = d + ".tmpl.v")
+        if "pktchain_axilite_intf_be_uprot" not in dont_add_logical_primitive:
+            d = "pktchain_axilite_intf_be_uprot"
+            mod = context._database[ModuleView.logical, d] = Module(d,
+                    view = ModuleView.logical,
+                    verilog_template = d + ".tmpl.v")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"],
+                    "timeout_limit_reg")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
+                    "uerr_fifo")
 
         # register pktchain AXILite interface
         if not ({"pktchain_frame_disassemble", "pktchain_frame_assemble", "pktchain_axilite_intf"} &

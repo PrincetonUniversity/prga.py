@@ -13,11 +13,10 @@
 `define PRGA_BYTES_PER_FRAME        (1 << (`PRGA_PKTCHAIN_FRAME_SIZE_LOG2 - 3))
 
 `define PRGA_AXI_ADDR_WIDTH         {{ context.summary.pktchain.protocol.AXILiteController.ADDR_WIDTH }}
-`define PRGA_CTRL_ADDR_WIDTH        (`PRGA_AXI_ADDR_WIDTH - 1)
 
 // -- BEGIN AUTO-GENERATION (see prga.cfg.pktchain.protocol for more info)
 {%- for addr in context.summary.pktchain.protocol.AXILiteController.ADDR %}
-`define PRGA_AXI_ADDR_{{ addr.name }} `PRGA_CTRL_ADDR_WIDTH'h{{ "{:>02x}".format(addr.value) }}
+`define PRGA_AXI_ADDR_{{ addr.name }} `PRGA_AXI_ADDR_WIDTH'h{{ "{:>02x}".format(addr.value) }}
 {%- endfor %}
 // -- DONE AUTO-GENERATION
 
@@ -35,7 +34,7 @@
 // PRGA controller error messages
 `define PRGA_ERR_FIFO_DEPTH_LOG2            7
 `define PRGA_ERR_TYPE_WIDTH                 8                           // error message type field
-`define PRGA_ERR_TYPE_INDEX                 `PRGA_AXI_DATA_WIDTH-1-:`PRGA_ERR_TYPE_WIDTH
+`define PRGA_ERR_TYPE_INDEX                 (`PRGA_AXI_DATA_WIDTH - `PRGA_ERR_TYPE_WIDTH) +: `PRGA_ERR_TYPE_WIDTH
 // -- BEGIN AUTO-GENERATION (see prga.cfg.pktchain.protocol for more info)
 {%- for err in context.summary.pktchain.protocol.AXILiteController.Error %}
 `define PRGA_ERR_{{ err.name }} `PRGA_ERR_TYPE_WIDTH'h{{ "{:>02x}".format(err.value) }}
@@ -63,11 +62,18 @@
 
 // Other configurations
 `define PRGA_TIMER_WIDTH                    32
-`define PRGA_TRANSIENT_CYCLES               `PRGA_TIMER_WIDTH'd200
 
 // User register interface
-`define PRGA_USER_ADDR_WIDTH                {{ context.summary.pktchain.protocol.AXILiteUser.ADDR_WIDTH }}
-`define PRGA_BYTES_PER_USER_DATA            `PRGA_BYTES_PER_AXI_DATA
-`define PRGA_USER_DATA_WIDTH                (`PRGA_BYTES_PER_USER_DATA * 8)
+`define PRGA_USER_ADDR_WIDTH                {{ context.summary.pktchain.protocol.AXILiteController.USER_ADDR_WIDTH }}
+`define PRGA_USER_ADDR_PREFIX               {{ context.summary.pktchain.protocol.AXILiteController.USER_ADDR_PREFIX }}
+
+`define PRGA_USER_DATA_WIDTH_LOG2           {{ context.summary.pktchain.protocol.AXILiteController.USER_DATA_WIDTH_LOG2 }}
+`define PRGA_BYTES_PER_USER_DATA            (1 << (`PRGA_USER_DATA_WIDTH_LOG2 - 3))
+`define PRGA_USER_DATA_WIDTH                (1 << `PRGA_USER_DATA_WIDTH_LOG2)
+
+`define PRGA_UREG_RRESP_INDEX               `PRGA_USER_DATA_WIDTH +: 2
+`define PRGA_UREG_RRESP_TIMEOUT_INDEX       `PRGA_USER_DATA_WIDTH + 2
+`define PRGA_UREG_RREQ_TIMEOUT_INDEX        `PRGA_USER_DATA_WIDTH + 3
+`define PRGA_UREG_RREQ_REJECTED_INDEX       `PRGA_USER_DATA_WIDTH + 4
 
 `endif
