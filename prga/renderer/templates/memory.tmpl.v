@@ -35,6 +35,7 @@
     end
 {%- endmacro -%}
 {%- set dualport = "addr1" in module.ports %}
+`timescale 1ns/1ps
 module {{ module.name }} (
     input wire [0:0] clk
     {% if dualport -%}

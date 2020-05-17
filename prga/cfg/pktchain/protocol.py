@@ -130,10 +130,10 @@ class PktchainProtocol(object):
                     raise NotImplementedError("Unknown bitstream sub-error type: {:r}".format(sub_t))
             elif t.is_PROG_RESP:
                 return {"type": t, "packet": e & 0xffffffff}
-            elif t.is_UREG_WR_ERR:
+            elif t.is_UREG_WR:
                 return {"type": t, "addr": e & ((1 << cls.USER_ADDR_WIDTH) - 1),
                         "resp": e & ((1 << (cls.USER_ADDR_WIDTH + 2)) - (1 << (cls.USER_ADDR_WIDTH))),
                         "resp_timeout": bool(e & (1 << (cls.USER_ADDR_WIDTH + 2))),
-                        "req_timeout": bool(e & (1 << (cls.USER_ADDR_WIDTH + 2))),}
+                        "req_timeout": bool(e & (1 << (cls.USER_ADDR_WIDTH + 3))),}
             else:
                 raise NotImplementedError("Unknown error type: {:r}".format(t))
