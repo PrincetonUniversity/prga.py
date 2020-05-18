@@ -104,34 +104,37 @@ class Pktchain(Scanchain):
             return ports
 
     @classmethod
-    def _create_axilite_intf(cls, module, prefix, addr_width, data_bytes):
+    def _create_axilite_intf(cls, module, prefix, addr_width, data_bytes, is_master = False):
         ports = {}
         # aliases
         p, mcp = prefix, ModuleUtils.create_port
+        # master output, master input
+        mo, mi = ((PortDirection.output, PortDirection.input_) if is_master else
+                (PortDirection.input_, PortDirection.output))
         # write address channel
-        ports[p+"_AWVALID"]  = mcp(module,  p+"_AWVALID", 1,              PortDirection.input_)
-        ports[p+"_AWREADY"]  = mcp(module,  p+"_AWREADY", 1,              PortDirection.output)
-        ports[p+"_AWADDR"]   = mcp(module,  p+"_AWADDR",  addr_width,     PortDirection.input_)
-        ports[p+"_AWPROT"]   = mcp(module,  p+"_AWPROT",  3,              PortDirection.input_)
+        ports[p+"_AWVALID"]  = mcp(module,  p+"_AWVALID", 1,              mo)
+        ports[p+"_AWREADY"]  = mcp(module,  p+"_AWREADY", 1,              mi)
+        ports[p+"_AWADDR"]   = mcp(module,  p+"_AWADDR",  addr_width,     mo)
+        ports[p+"_AWPROT"]   = mcp(module,  p+"_AWPROT",  3,              mo)
         # write data channel
-        ports[p+"_WVALID"]   = mcp(module,  p+"_WVALID",  1,              PortDirection.input_)
-        ports[p+"_WREADY"]   = mcp(module,  p+"_WREADY",  1,              PortDirection.output)
-        ports[p+"_WDATA"]    = mcp(module,  p+"_WDATA",   data_bytes * 8, PortDirection.input_)
-        ports[p+"_WSTRB"]    = mcp(module,  p+"_WSTRB",   data_bytes,     PortDirection.input_)
+        ports[p+"_WVALID"]   = mcp(module,  p+"_WVALID",  1,              mo)
+        ports[p+"_WREADY"]   = mcp(module,  p+"_WREADY",  1,              mi)
+        ports[p+"_WDATA"]    = mcp(module,  p+"_WDATA",   data_bytes * 8, mo)
+        ports[p+"_WSTRB"]    = mcp(module,  p+"_WSTRB",   data_bytes,     mo)
         # write response channel
-        ports[p+"_BVALID"]   = mcp(module,  p+"_BVALID",  1,              PortDirection.output)
-        ports[p+"_BREADY"]   = mcp(module,  p+"_BREADY",  1,              PortDirection.input_)
-        ports[p+"_BRESP"]    = mcp(module,  p+"_BRESP",   2,              PortDirection.output)
+        ports[p+"_BVALID"]   = mcp(module,  p+"_BVALID",  1,              mi)
+        ports[p+"_BREADY"]   = mcp(module,  p+"_BREADY",  1,              mo)
+        ports[p+"_BRESP"]    = mcp(module,  p+"_BRESP",   2,              mi)
         # read address channel
-        ports[p+"_ARVALID"]  = mcp(module,  p+"_ARVALID", 1,              PortDirection.input_)
-        ports[p+"_ARREADY"]  = mcp(module,  p+"_ARREADY", 1,              PortDirection.output)
-        ports[p+"_ARADDR"]   = mcp(module,  p+"_ARADDR",  addr_width,     PortDirection.input_)
-        ports[p+"_ARPROT"]   = mcp(module,  p+"_ARPROT",  3,              PortDirection.input_)
+        ports[p+"_ARVALID"]  = mcp(module,  p+"_ARVALID", 1,              mo)
+        ports[p+"_ARREADY"]  = mcp(module,  p+"_ARREADY", 1,              mi)
+        ports[p+"_ARADDR"]   = mcp(module,  p+"_ARADDR",  addr_width,     mo)
+        ports[p+"_ARPROT"]   = mcp(module,  p+"_ARPROT",  3,              mo)
         # read response channel
-        ports[p+"_RVALID"]   = mcp(module,  p+"_RVALID",  1,              PortDirection.output)
-        ports[p+"_RREADY"]   = mcp(module,  p+"_RREADY",  1,              PortDirection.input_)
-        ports[p+"_RDATA"]    = mcp(module,  p+"_RDATA",   data_bytes * 8, PortDirection.output)
-        ports[p+"_RRESP"]    = mcp(module,  p+"_RRESP",   2,              PortDirection.output)
+        ports[p+"_RVALID"]   = mcp(module,  p+"_RVALID",  1,              mi)
+        ports[p+"_RREADY"]   = mcp(module,  p+"_RREADY",  1,              mo)
+        ports[p+"_RDATA"]    = mcp(module,  p+"_RDATA",   data_bytes * 8, mi)
+        ports[p+"_RRESP"]    = mcp(module,  p+"_RRESP",   2,              mi)
         # return created ports
         return ports
 
@@ -156,7 +159,7 @@ class Pktchain(Scanchain):
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
         context._fasm_delegate = PktchainFASMDelegate(context)
         context._add_verilog_header("pktchain.vh", "pktchain.tmpl.vh")
-        context._add_verilog_header("pktchain_axilite_intf.vh", "pktchain_axilite_intf.tmpl.vh")
+        context._add_verilog_header("pktchain_axilite_intf.vh", "axilite_intf/pktchain_axilite_intf.tmpl.vh")
         # define the programming protocol
         context.summary.pktchain["protocol"] = PktchainProtocol
         cls._register_primitives(context, phit_width, cfg_width, dont_add_primitive, dont_add_logical_primitive)
@@ -297,67 +300,85 @@ class Pktchain(Scanchain):
             context._database[ModuleView.logical, "pktchain_gatherer"] = mod
 
         # register pktchain AXILite interface-related stuff
+        if "pktchain_axilite_intf_fe" not in dont_add_logical_primitive:
+            d = "pktchain_axilite_intf_fe"
+            mod = context._database[ModuleView.logical, d] = Module(d,
+                    view = ModuleView.logical,
+                    verilog_template = "axilite_intf/" + d + ".tmpl.v")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
+                    "axi_waddr_fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
+                    "axi_wdata_fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
+                    "axi_raddr_fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
+                    "axi_wresp_fifo")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
+                    "axi_rresp_fifo")
+
         if "pktchain_axilite_intf_be_uprot" not in dont_add_logical_primitive:
             d = "pktchain_axilite_intf_be_uprot"
             mod = context._database[ModuleView.logical, d] = Module(d,
                     view = ModuleView.logical,
-                    verilog_template = d + ".tmpl.v")
+                    verilog_template = "axilite_intf/" + d + ".tmpl.v")
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"],
                     "timeout_limit_reg")
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
                     "uerr_fifo")
 
-        # register pktchain AXILite interface
-        if not ({"pktchain_frame_disassemble", "pktchain_frame_assemble", "pktchain_axilite_intf"} &
+        if not ({"pktchain_frame_disassemble", "pktchain_frame_assemble", "pktchain_axilite_intf_be_cfg"} &
                 dont_add_logical_primitive):
-            mod = Module("pktchain_axilite_intf",
+            d = "pktchain_axilite_intf_be_cfg"
+            mod = context._database[ModuleView.logical, d] = Module(d,
                     view = ModuleView.logical,
-                    verilog_template = "pktchain_axilite_intf.tmpl.v")
-            # create a short alias
-            mcp = ModuleUtils.create_port
-            clk = mcp(mod, "clk", 1, PortDirection.input_, is_clock = True)
-            clocked_ports = (
-                    mcp(mod, "rst",                 1,              PortDirection.input_),
-
-                    # configuration intf
-                    mcp(mod, "cfg_rst",             1,              PortDirection.output),
-                    mcp(mod, "cfg_e",               1,              PortDirection.output),
-
-                    # configuration output
-                    mcp(mod, "cfg_phit_o_full",     1,              PortDirection.input_),
-                    mcp(mod, "cfg_phit_o_wr",       1,              PortDirection.output),
-                    mcp(mod, "cfg_phit_o",          phit_width,     PortDirection.output),
-
-                    # configuration input
-                    mcp(mod, "cfg_phit_i_full",     1,              PortDirection.output),
-                    mcp(mod, "cfg_phit_i_wr",       1,              PortDirection.input_),
-                    mcp(mod, "cfg_phit_i",          phit_width,     PortDirection.input_),
-                    )
-            # create axilite interface
-            clocked_ports += tuple(itervalues(cls._create_axilite_intf(mod, "m",
-                PktchainProtocol.AXILiteController.ADDR_WIDTH,
-                2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3))))
-            # sub-instances
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "axi_waddr_fifo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "axi_wdata_fifo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "axi_wresp_fifo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "axi_raddr_fifo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "axi_rdata_fifo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"],
-                    "creg_config_reg")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "creg_err_fifo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"],
-                    "creg_bsid_reg")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "bsqword_fifo")
+                    verilog_template = "axilite_intf/" + d + ".tmpl.v")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
+                    "axififo")
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo_resizer"],
-                    "bsframe_resizer")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_ram_1r1w"],
-                    "tile_status_tracker")
+                    "axififo_resizer")
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_disassemble"],
                     "bsframe_fifo")
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_assemble"],
                     "bsresp_fifo")
-            context._database[ModuleView.logical, "pktchain_axilite_intf"] = mod
+
+        if not ({"pktchain_axilite_intf_fe", "pktchain_axilite_intf_be_uprot", "pktchain_axilite_intf_be_cfg"} &
+                dont_add_logical_primitive):
+            d = "pktchain_axilite_intf"
+            mod = context._database[ModuleView.logical, d] = Module(d,
+                    view = ModuleView.logical,
+                    verilog_template = "axilite_intf/" + d + ".tmpl.v")
+            # create a short alias
+            mcp = ModuleUtils.create_port
+            mit = ModuleUtils.instantiate
+            # ports
+            clk = mcp(mod, "clk", 1, PortDirection.input_, is_clock = True)
+            rst = mcp(mod, "rst", 1, PortDirection.input_)
+            mcp(mod, "uclk", 1, PortDirection.output, is_clock = True)
+            mcp(mod, "urst", 1, PortDirection.output)
+            mcp(mod, "cfg_rst",             1,              PortDirection.output),
+            mcp(mod, "cfg_e",               1,              PortDirection.output),
+            mcp(mod, "cfg_phit_o_full",     1,              PortDirection.input_),
+            mcp(mod, "cfg_phit_o_wr",       1,              PortDirection.output),
+            mcp(mod, "cfg_phit_o",          phit_width,     PortDirection.output),
+            mcp(mod, "cfg_phit_i_full",     1,              PortDirection.output),
+            mcp(mod, "cfg_phit_i_wr",       1,              PortDirection.input_),
+            mcp(mod, "cfg_phit_i",          phit_width,     PortDirection.input_),
+            cls._create_axilite_intf(mod, "m", PktchainProtocol.AXILiteController.ADDR_WIDTH,
+                    2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3))
+            cls._create_axilite_intf(mod, "u", PktchainProtocol.AXILiteController.USER_ADDR_WIDTH,
+                    2 ** (PktchainProtocol.AXILiteController.USER_DATA_WIDTH_LOG2 - 3), is_master = True)
+            # instances
+            mit(mod, context.database[ModuleView.logical, "pktchain_axilite_intf_fe"], "i_fe")
+            mit(mod, context.database[ModuleView.logical, "prga_async_fifo"], "i_cdcq_wreq")
+            mit(mod, context.database[ModuleView.logical, "prga_async_fifo"], "i_cdcq_rreq")
+            mit(mod, context.database[ModuleView.logical, "prga_async_fifo"], "i_cdcq_rresp")
+            mit(mod, context.database[ModuleView.logical, "pktchain_axilite_intf_be_uprot"], "i_uprot")
+            mit(mod, context.database[ModuleView.logical, "pktchain_axilite_intf_be_cfg"], "i_cfg")
+            mit(mod, context.database[ModuleView.logical, "prga_fifo"], "i_rresp_tokenq")
+            mit(mod, context.database[ModuleView.logical, "prga_fifo"], "i_rresp_dataq")
+            mit(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"], "i_ctrl_cfg")
+            mit(mod, context.database[ModuleView.logical, "prga_fifo"], "i_errq")
+            mit(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"], "i_bsid")
 
     @classmethod
     def new_renderer(cls, additional_template_search_paths = tuple()):

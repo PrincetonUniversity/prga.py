@@ -5,54 +5,40 @@ module prga_async_fifo #(
     parameter DATA_WIDTH = 32,
     parameter LOOKAHEAD = 0
 ) (
-    input wire [0:0] rst,   // synchronous reset
-
     input wire [0:0] wclk,
+    input wire [0:0] wrst,
     output wire [0:0] full,
     input wire [0:0] wr,
     input wire [DATA_WIDTH - 1:0] din,
 
     input wire [0:0] rclk,
+    input wire [0:0] rrst,
     output wire [0:0] empty,
     input wire [0:0] rd,
     output wire [DATA_WIDTH - 1:0] dout
     );
 
-    // register and sync reset signals
-    reg rst_wclk_s0, rst_wclk, rst_resync_wclk_s0, rst_resync_wclk, rst_lock_wclk,
-        rst_rclk_s0, rst_rclk, rst_resync_rclk_s0, rst_resync_rclk, rst_lock_rclk;
+    // sync wrst/rrst to the opposite clock domain
+    reg wrst_rclk_s0, wrst_rclk_s1, wrst_rclk, wrst_rclk_f, lockdown_rclk,
+        rrst_wclk_s0, rrst_wclk_s1, rrst_wclk, rrst_wclk_f, lockdown_wclk;
 
-    always @(posedge wclk) begin
-        // sample and sync rst to wclk domain
-        rst_wclk_s0 <= rst;
-        rst_wclk <= rst_wclk_s0;
+    always @(posedge rclk) begin
+        {wrst_rclk_f, wrst_rclk, wrst_rclk_s1, wrst_rclk_s0} <= {wrst_rclk, wrst_rclk_s1, wrst_rclk_s0, wrst};
 
-        // resync rst from rclk domain to wclk domain
-        rst_resync_wclk_s0 <= rst_rclk;
-        rst_resync_wclk <= rst_resync_wclk_s0;
-
-        // lock interface until we got resync'ed with the rclk domain
-        if (rst_resync_wclk) begin
-            rst_lock_wclk <= 'b0;
-        end else if (rst_wclk) begin
-            rst_lock_wclk <= 'b1;
+        if (rrst) begin
+            lockdown_rclk <= 'b1;
+        end else if (~rrst && {wrst_rclk, wrst_rclk_f} == 2'b01) begin
+            lockdown_rclk <= 'b0;
         end
     end
 
-    always @(posedge rclk) begin
-        // sample ans sync rst to rclk domain
-        rst_rclk_s0 <= rst;
-        rst_rclk <= rst_rclk_s0;
+    always @(posedge wclk) begin
+        {rrst_wclk_f, rrst_wclk, rrst_wclk_s1, rrst_wclk_s0} <= {rrst_wclk, rrst_wclk_s1, rrst_wclk_s0, rrst};
 
-        // resync rst from wclk domain to rclk domain
-        rst_resync_rclk_s0 <= rst_wclk;
-        rst_resync_rclk <= rst_resync_rclk_s0;
-
-        // lock interface until we got resync'ed with the wclk domain
-        if (rst_resync_rclk) begin
-            rst_lock_rclk <= 'b0;
-        end else if (rst_rclk) begin
-            rst_lock_rclk <= 'b1;
+        if (wrst) begin
+            lockdown_wclk <= 'b1;
+        end else if (~wrst && {rrst_wclk, rrst_wclk_f} == 2'b01) begin
+            lockdown_wclk <= 'b0;
         end
     end
 
@@ -92,7 +78,7 @@ module prga_async_fifo #(
 
     // write-domain
     always @(posedge wclk) begin
-        if (rst_wclk) begin
+        if (wrst) begin
             b_wptr_wclk <= 'b0;
             g_wptr_wclk <= 'b0;
             g_rptr_wclk_s0 <= 'b0;
@@ -112,7 +98,7 @@ module prga_async_fifo #(
 
     // read-domain
     always @(posedge rclk) begin
-        if (rst_rclk) begin
+        if (rrst) begin
             b_rptr_rclk <= 'b0;
             g_rptr_rclk <= 'b0;
             g_wptr_rclk_s0 <= 'b0;
@@ -130,8 +116,8 @@ module prga_async_fifo #(
         end
     end
 
-    assign full = rst_lock_wclk || b_rptr_wclk == {~b_wptr_wclk[DEPTH_LOG2], b_wptr_wclk[0 +: DEPTH_LOG2]};
-    assign empty_internal = rst_lock_rclk || b_rptr_rclk == b_wptr_rclk;
+    assign full = lockdown_wclk || b_rptr_wclk == {~b_wptr_wclk[DEPTH_LOG2], b_wptr_wclk[0 +: DEPTH_LOG2]};
+    assign empty_internal = lockdown_rclk || b_rptr_rclk == b_wptr_rclk;
 
     generate if (LOOKAHEAD) begin
         prga_fifo_lookahead_buffer #(
@@ -139,7 +125,7 @@ module prga_async_fifo #(
             ,.REVERSED              (0)
         ) buffer (
             .clk                    (rclk)
-            ,.rst                   (rst_rclk)
+            ,.rst                   (rrst)
             ,.empty_i               (empty_internal)
             ,.rd_i                  (rd_internal)
             ,.dout_i                (ram_dout)
@@ -151,6 +137,6 @@ module prga_async_fifo #(
         assign rd_internal = rd;
         assign dout = ram_dout;
         assign empty = empty_internal;
-    end
+    end endgenerate
 
 endmodule

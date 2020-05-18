@@ -61,9 +61,11 @@ class PktchainProtocol(object):
         USER_ADDR_WIDTH = 8
         USER_ADDR_PREFIX = 1
         USER_DATA_WIDTH_LOG2 = 5
+        UCLK_DIV_COUNTER_WIDTH = 4
+        UCLK_DIV_MAX = 15   #: maximum clock division: UCLK_DIV_MAX + 1
 
         class ADDR(Enum):
-            STATE           = 0x00 #: writing to this address triggers some state transition
+            STATE           = 0x00 #: writing to this address soft resets the controller
             CONFIG          = 0x01 #: configuration flags
             ERR_FIFO        = 0x02 #: pop error fifo once at a time. Write clears the FIFO
             BITSTREAM_ID    = 0x08 #: ID of the current bitstream. Typically address of the bitstream
@@ -75,10 +77,9 @@ class PktchainProtocol(object):
 
         class State(Enum):
             RESET               = 0x00 #: PRGA is just reset. Write this value to `STATE` to soft reset
-            PROGRAMMING         = 0x01 #: Programming PRGA. Write this value to `STATE` to start programming
-            PROG_STABILIZING    = 0x02 #: PRGA is programmed. Write this value to indicate end of bitstream
-            PROG_ERR            = 0x03 #: An error occured during programming
-            APP_READY           = 0x04 #: PRGA is programmed and the application is ready
+            PROGRAMMING         = 0x01 #: Programming PRGA
+            PROG_ERR            = 0x02 #: An error occured during programming
+            APP_READY           = 0x03 #: PRGA is programmed and the application is ready
 
         class Error(Enum):
             NONE                = 0x00 #: invalid error (default return value when err fifo is empty)
