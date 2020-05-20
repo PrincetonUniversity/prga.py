@@ -54,7 +54,7 @@ module {{ module.name }} (
     // == User Backend Interface ============================================
     // user clock domain ctrl signals
     output reg [0:0] uclk,
-    output wire [0:0] urst,
+    output wire [0:0] urst_n,
 
     // AXI4-Lite Interface
     output wire [0:0] u_AWVALID,
@@ -251,7 +251,7 @@ module {{ module.name }} (
         ,.rresp_full                    (i_cdcq_rresp_full)
         ,.rresp_wr                      (i_cdcq_rresp_wr)
         ,.rresp_data                    (i_cdcq_rresp_din)
-        ,.urst                          (urst)
+        ,.urst_n                        (urst_n)
         ,.u_AWVALID                     (u_AWVALID)
         ,.u_AWREADY                     (u_AWREADY)
         ,.u_AWADDR                      (u_AWADDR)

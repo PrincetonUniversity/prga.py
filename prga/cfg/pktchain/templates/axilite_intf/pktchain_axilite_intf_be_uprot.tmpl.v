@@ -25,7 +25,7 @@ module pktchain_axilite_intf_be_uprot (
     output reg [`PRGA_AXI_DATA_WIDTH - 1:0] rresp_data,
 
     // == AXI4-Lite User Interface ===========================================
-    output reg [0:0] urst,
+    output reg [0:0] urst_n,
 
     output reg [0:0] u_AWVALID,
     input wire [0:0] u_AWREADY,
@@ -98,17 +98,17 @@ module pktchain_axilite_intf_be_uprot (
 
     always @(posedge clk) begin
         if (rst) begin
-            urst <= 'b1;
+            urst_n <= 'b0;
             urst_countdown <= 'b0;
         end else begin
             if (urst_countdown_update > 0) begin
-                urst <= 'b1;
+                urst_n <= 'b0;
                 urst_countdown <= urst_countdown_update;
             end else if (urst_countdown > 0) begin
                 urst_countdown <= urst_countdown - 1;
 
                 if (urst_countdown == 1) begin
-                    urst <= 'b0;
+                    urst_n <= 'b1;
                 end
             end
         end
@@ -119,7 +119,7 @@ module pktchain_axilite_intf_be_uprot (
     reg wreq_timeout, wresp_timeout, rreq_timeout, rresp_timeout;
 
     always @(posedge clk) begin
-        if (urst) begin
+        if (urst_n) begin
             utimeout_f <= 'b0;
         end else if (wreq_timeout || wresp_timeout || rreq_timeout || rresp_timeout) begin
             utimeout_f <= 'b1;

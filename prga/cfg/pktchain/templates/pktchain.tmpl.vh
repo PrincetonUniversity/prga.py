@@ -5,7 +5,7 @@
 `include "prga_utils.vh"
 
 `define PRGA_PKTCHAIN_FRAME_SIZE_LOG2 5
-`define PRGA_PKTCHAIN_PHIT_WIDTH_LOG2 {{ (context.summary.pktchain.settings.phit_width - 1).bit_length() }}
+`define PRGA_PKTCHAIN_PHIT_WIDTH_LOG2 {{ (context.summary.pktchain.fabric.phit_width - 1).bit_length() }}
 `define PRGA_PKTCHAIN_CFG_WIDTH_LOG2 {{ (context.summary.scanchain.cfg_width - 1).bit_length() }}
 
 `define PRGA_PKTCHAIN_FRAME_SIZE (1 << `PRGA_PKTCHAIN_FRAME_SIZE_LOG2)
@@ -40,8 +40,8 @@
 // -- DONE AUTO-GENERATION
 
 // Fabric-specific
-`define PRGA_PKTCHAIN_X_TILES                    {{ context.summary.pktchain.x_tiles }}
-`define PRGA_PKTCHAIN_Y_TILES                    {{ context.summary.pktchain.y_tiles }}
-`define PRGA_PKTCHAIN_ROUTER_FIFO_DEPTH_LOG2     {{ context.summary.pktchain.settings.router_fifo_depth_log2 }}
+`define PRGA_PKTCHAIN_X_TILES                    {{ context.summary.pktchain.fabric.x_tiles }}
+`define PRGA_PKTCHAIN_Y_TILES                    {{ context.summary.pktchain.fabric.y_tiles }}
+`define PRGA_PKTCHAIN_ROUTER_FIFO_DEPTH_LOG2     {{ context.summary.pktchain.fabric.router_fifo_depth_log2 }}
 
 `endif

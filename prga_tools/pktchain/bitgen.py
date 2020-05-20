@@ -65,7 +65,7 @@ class PktchainBitgen(object):
         ostream (file-like object):
         """
         bits = [[bitarray('0', endian='little') * bitcount
-            for y, bitcount in enumerate(col)] for x, col in enumerate(summary.pktchain["chains"])]
+            for y, bitcount in enumerate(col)] for x, col in enumerate(summary.pktchain["fabric"]["chains"])]
         # process features
         for lineno, line in enumerate(istream):
             segments = line.strip().split(".")

@@ -293,6 +293,17 @@ class IOType(Enum):
     opin = 1                #: output 
     oe = 2                  #: output enable 
 
+    @property
+    def opposite(self):
+        """`IOType`: Opposite type of the IO."""
+        if self is IOType.ipin:
+            return IOType.opin
+        elif self is IOType.opin:
+            return IOType.ipin
+        else:
+            raise PRGAInternalError("{} does not have an opposite IO type"
+                    .format(self))
+
 # ----------------------------------------------------------------------------
 # -- Module Class ------------------------------------------------------------
 # ----------------------------------------------------------------------------

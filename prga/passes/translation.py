@@ -18,6 +18,9 @@ from collections import OrderedDict
 from itertools import chain
 from networkx.exception import NetworkXError
 
+import logging
+_logger = logging.getLogger(__name__)
+
 __all__ = ['AbstractSwitchDatabase', 'TranslationPass']
 
 # ----------------------------------------------------------------------------
@@ -256,6 +259,7 @@ class TranslationPass(Object, AbstractPass):
                                 NetUtils._reference(switch_input))
                     logical._conn_graph.add_edge(NetUtils._reference(switch.pins['o']), logical_sink)
         context._database[ModuleView.logical, module.key] = logical
+        _logger.info("Translated: {}".format(module))
         return logical
 
     def run(self, context):
