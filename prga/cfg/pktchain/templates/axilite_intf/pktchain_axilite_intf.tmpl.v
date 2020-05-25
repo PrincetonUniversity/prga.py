@@ -59,14 +59,14 @@ module {{ module.name }} (
     // AXI4-Lite Interface
     output wire [0:0] u_AWVALID,
     input wire [0:0] u_AWREADY,
-    output wire [`PRGA_USER_ADDR_WIDTH - 1:0] u_AWADDR,
+    output wire [`PRGA_AXI_ADDR_WIDTH - 1:0] u_AWADDR,
     output wire [2:0] u_AWPROT,
 
     // write data channel
     output wire [0:0] u_WVALID,
     input wire [0:0] u_WREADY,
-    output wire [`PRGA_USER_DATA_WIDTH - 1:0] u_WDATA,
-    output wire [`PRGA_BYTES_PER_USER_DATA - 1:0] u_WSTRB,
+    output wire [`PRGA_AXI_DATA_WIDTH - 1:0] u_WDATA,
+    output wire [`PRGA_BYTES_PER_AXI_DATA - 1:0] u_WSTRB,
 
     // write response channel
     input wire [0:0] u_BVALID,
@@ -76,13 +76,13 @@ module {{ module.name }} (
     // read address channel
     output wire [0:0] u_ARVALID,
     input wire [0:0] u_ARREADY,
-    output wire [`PRGA_USER_ADDR_WIDTH - 1:0] u_ARADDR,
+    output wire [`PRGA_AXI_ADDR_WIDTH - 1:0] u_ARADDR,
     output wire [2:0] u_ARPROT,
 
     // read data channel
     input wire [0:0] u_RVALID,
     output wire [0:0] u_RREADY,
-    input wire [`PRGA_USER_DATA_WIDTH - 1:0] u_RDATA,
+    input wire [`PRGA_AXI_DATA_WIDTH - 1:0] u_RDATA,
     input wire [1:0] u_RRESP
     );
 
@@ -98,7 +98,7 @@ module {{ module.name }} (
     end
 
     // generate user clock
-    reg [`PRGA_UCLK_DIV_COUNTER_WIDTH - 1:0] uclk_div, uclk_div_cnt;
+    reg [7:0] uclk_div, uclk_div_cnt;
 
     // synopsys translate_off
     initial begin
@@ -382,22 +382,25 @@ module {{ module.name }} (
     // =======================================================================
     // -- Registers ----------------------------------------------------------
     // =======================================================================
+    reg [`PRGA_BYTES_PER_AXI_DATA - 1:0] wstrb_aligned;
+    reg [`PRGA_AXI_DATA_WIDTH - 1:0] wdata_aligned;
+
     // Controller State
-    reg [`PRGA_STATE_WIDTH - 1:0] state;
+    reg [`PRGA_CTRL_STATE_WIDTH - 1:0] state;
 
     always @(posedge clk) begin
         if (rst_f || soft_rst) begin
-            state <= `PRGA_STATE_RESET;
+            state <= `PRGA_CTRL_STATE_RESET;
         end else begin
             case (state)
-                `PRGA_STATE_RESET: if (i_cfg_programming) begin
-                    state <= `PRGA_STATE_PROGRAMMING;
+                `PRGA_CTRL_STATE_RESET: if (i_cfg_programming) begin
+                    state <= `PRGA_CTRL_STATE_PROGRAMMING;
                 end
-                `PRGA_STATE_PROGRAMMING: if (~i_cfg_programming) begin
+                `PRGA_CTRL_STATE_PROGRAMMING: if (~i_cfg_programming) begin
                     if (i_cfg_success) begin
-                        state <= `PRGA_STATE_APP_READY;
+                        state <= `PRGA_CTRL_STATE_APP_READY;
                     end else begin
-                        state <= `PRGA_STATE_PROG_ERR;
+                        state <= `PRGA_CTRL_STATE_PROG_ERR;
                     end
                 end
             endcase
@@ -414,8 +417,8 @@ module {{ module.name }} (
         .clk                            (clk)
         ,.rst                           (rst_f)
         ,.wr                            (i_ctrl_cfg_wr)
-        ,.mask                          (i_fe_wreq_strb)
-        ,.din                           (i_fe_wreq_data)
+        ,.mask                          (wstrb_aligned)
+        ,.din                           (wdata_aligned)
         ,.dout                          (ctrl_cfg)
         );
 
@@ -450,8 +453,8 @@ module {{ module.name }} (
         .clk                            (clk)
         ,.rst                           (rst_f)
         ,.wr                            (i_bsid_wr)
-        ,.mask                          (i_fe_wreq_strb)
-        ,.din                           (i_fe_wreq_data)
+        ,.mask                          (wstrb_aligned)
+        ,.din                           (wdata_aligned)
         ,.dout                          (bsid)
         );
 
@@ -484,6 +487,8 @@ module {{ module.name }} (
         e_wx = 'b0;
 
         soft_rst = 'b0;
+        wstrb_aligned = i_fe_wreq_strb;
+        wdata_aligned = i_fe_wreq_data;
         i_bsid_wr = 'b0;
         i_ctrl_cfg_wr = 'b0;
         i_cfg_wval = 'b0;
@@ -494,33 +499,51 @@ module {{ module.name }} (
         if (stall_we) begin
             stall_wx = stall_we;
         end else if (i_fe_wreq_val && i_fe_wresp_rdy) begin
-            if (i_fe_wreq_addr[`PRGA_AXI_ADDR_WIDTH - 1:`PRGA_USER_ADDR_WIDTH] == `PRGA_USER_ADDR_PREFIX) begin
+            if (i_fe_wreq_addr[`PRGA_AXI_ADDR_WIDTH - 1:`PRGA_CTRL_ADDR_WIDTH] != `PRGA_CTRL_ADDR_PREFIX) begin
                 i_cdcq_wreq_wr = 'b1;
                 stall_wx = i_cdcq_wreq_full;
             end else begin
-                case (i_fe_wreq_addr)
-                    `PRGA_AXI_ADDR_STATE: begin
+                case (i_fe_wreq_addr[0 +: `PRGA_CTRL_ADDR_WIDTH])
+                    `PRGA_CTRL_ADDR_STATE: begin
                         soft_rst = 'b1;
                     end
-                    `PRGA_AXI_ADDR_BITSTREAM_ID: begin
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 1,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 2,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 3,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 4,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 5,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 6,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 7: begin
                         i_bsid_wr = 'b1;
+                        wstrb_aligned = i_fe_wreq_strb << (i_fe_wreq_addr - `PRGA_CTRL_ADDR_BITSTREAM_ID);
+                        wdata_aligned = i_fe_wreq_data << {(i_fe_wreq_addr - `PRGA_CTRL_ADDR_BITSTREAM_ID), 3'h0};
                     end
-                    `PRGA_AXI_ADDR_BITSTREAM_FIFO: begin
+                    `PRGA_CTRL_ADDR_BITSTREAM_FIFO: begin
                         i_cfg_wval = 'b1;
                         stall_wx = ~i_cfg_wrdy;
                     end
-                    `PRGA_AXI_ADDR_CONFIG: begin
+                    `PRGA_CTRL_ADDR_CONFIG,
+                    `PRGA_CTRL_ADDR_CONFIG + 1,
+                    `PRGA_CTRL_ADDR_CONFIG + 2,
+                    `PRGA_CTRL_ADDR_CONFIG + 3,
+                    `PRGA_CTRL_ADDR_CONFIG + 4,
+                    `PRGA_CTRL_ADDR_CONFIG + 5,
+                    `PRGA_CTRL_ADDR_CONFIG + 6,
+                    `PRGA_CTRL_ADDR_CONFIG + 7: begin
                         i_ctrl_cfg_wr = 'b1;
+                        wstrb_aligned = i_fe_wreq_strb << (i_fe_wreq_addr - `PRGA_CTRL_ADDR_CONFIG);
+                        wdata_aligned = i_fe_wreq_data << {i_fe_wreq_addr - `PRGA_CTRL_ADDR_CONFIG, 3'h0};
                     end
-                    `PRGA_AXI_ADDR_ERR_FIFO: begin
+                    `PRGA_CTRL_ADDR_ERR_FIFO: begin
                         i_errq_clr = 'b1;
                     end
-                    `PRGA_AXI_ADDR_UCLK_DIV: begin
+                    `PRGA_CTRL_ADDR_UCLK_DIV: begin
                         uclk_div_next = i_fe_wreq_data;
                     end
-                    `PRGA_AXI_ADDR_UREG_TIMEOUT,
-                    `PRGA_AXI_ADDR_URST,
-                    `PRGA_AXI_ADDR_UERR_FIFO: begin
+                    `PRGA_CTRL_ADDR_UREG_TIMEOUT,
+                    `PRGA_CTRL_ADDR_URST,
+                    `PRGA_CTRL_ADDR_UERR_FIFO: begin
                         i_cdcq_wreq_wr = 'b1;
                         stall_wx = i_cdcq_wreq_full;
                     end
@@ -562,19 +585,33 @@ module {{ module.name }} (
             i_rresp_tokenq_wr = 'b1;
             stall_rt = i_rresp_tokenq_full;
 
-            if (i_fe_rreq_addr[`PRGA_AXI_ADDR_WIDTH - 1:`PRGA_USER_ADDR_WIDTH] == `PRGA_USER_ADDR_PREFIX) begin
+            if (i_fe_rreq_addr[`PRGA_AXI_ADDR_WIDTH - 1:`PRGA_CTRL_ADDR_WIDTH] != `PRGA_CTRL_ADDR_PREFIX) begin
                 i_rresp_tokenq_din = RRESP_TOKEN_CDCQ;
             end else begin
                 case (i_fe_rreq_addr)
-                    `PRGA_AXI_ADDR_STATE,
-                    `PRGA_AXI_ADDR_CONFIG,
-                    `PRGA_AXI_ADDR_ERR_FIFO,
-                    `PRGA_AXI_ADDR_BITSTREAM_ID,
-                    `PRGA_AXI_ADDR_UCLK_DIV: begin
+                    `PRGA_CTRL_ADDR_STATE,
+                    `PRGA_CTRL_ADDR_CONFIG,
+                    `PRGA_CTRL_ADDR_CONFIG + 1,
+                    `PRGA_CTRL_ADDR_CONFIG + 2,
+                    `PRGA_CTRL_ADDR_CONFIG + 3,
+                    `PRGA_CTRL_ADDR_CONFIG + 4,
+                    `PRGA_CTRL_ADDR_CONFIG + 5,
+                    `PRGA_CTRL_ADDR_CONFIG + 6,
+                    `PRGA_CTRL_ADDR_CONFIG + 7,
+                    `PRGA_CTRL_ADDR_ERR_FIFO,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 1,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 2,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 3,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 4,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 5,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 6,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 7,
+                    `PRGA_CTRL_ADDR_UCLK_DIV: begin
                         i_rresp_tokenq_din = RRESP_TOKEN_DATAQ;
                     end
-                    `PRGA_AXI_ADDR_UREG_TIMEOUT,
-                    `PRGA_AXI_ADDR_UERR_FIFO: begin
+                    `PRGA_CTRL_ADDR_UREG_TIMEOUT,
+                    `PRGA_CTRL_ADDR_UERR_FIFO: begin
                         i_rresp_tokenq_din = RRESP_TOKEN_CDCQ;
                     end
                     default: begin
@@ -622,22 +659,29 @@ module {{ module.name }} (
         if (stall_re) begin
             stall_rx = 'b1;
         end else if (val_rx) begin
-            if (addr_rx[`PRGA_AXI_ADDR_WIDTH - 1:`PRGA_USER_ADDR_WIDTH] == `PRGA_USER_ADDR_PREFIX) begin
+            if (addr_rx[`PRGA_AXI_ADDR_WIDTH - 1:`PRGA_CTRL_ADDR_WIDTH] != `PRGA_CTRL_ADDR_PREFIX) begin
                 i_cdcq_rreq_wr = 'b1;
                 stall_rx = i_cdcq_rreq_full;
             end else begin
                 case (addr_rx)
-                    `PRGA_AXI_ADDR_STATE: begin
+                    `PRGA_CTRL_ADDR_STATE: begin
                         stall_rx = i_rresp_dataq_full;
                         i_rresp_dataq_wr = 'b1;
-                        i_rresp_dataq_din = state;
+                        i_rresp_dataq_din[0 +: `PRGA_CTRL_STATE_WIDTH] = state;
                     end
-                    `PRGA_AXI_ADDR_CONFIG: begin
+                    `PRGA_CTRL_ADDR_CONFIG,
+                    `PRGA_CTRL_ADDR_CONFIG + 1,
+                    `PRGA_CTRL_ADDR_CONFIG + 2,
+                    `PRGA_CTRL_ADDR_CONFIG + 3,
+                    `PRGA_CTRL_ADDR_CONFIG + 4,
+                    `PRGA_CTRL_ADDR_CONFIG + 5,
+                    `PRGA_CTRL_ADDR_CONFIG + 6,
+                    `PRGA_CTRL_ADDR_CONFIG + 7: begin
                         stall_rx = i_rresp_dataq_full;
                         i_rresp_dataq_wr = 'b1;
-                        i_rresp_dataq_din = ctrl_cfg;
+                        i_rresp_dataq_din = ctrl_cfg >> {addr_rx - `PRGA_CTRL_ADDR_CONFIG, 3'h0};
                     end
-                    `PRGA_AXI_ADDR_ERR_FIFO: begin
+                    `PRGA_CTRL_ADDR_ERR_FIFO: begin
                         stall_rx = i_rresp_dataq_full;
                         i_rresp_dataq_wr = 'b1;
                         i_errq_rd = ~i_rresp_dataq_full;
@@ -648,18 +692,25 @@ module {{ module.name }} (
                             i_rresp_dataq_din = i_errq_dout;
                         end
                     end
-                    `PRGA_AXI_ADDR_BITSTREAM_ID: begin
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 1,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 2,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 3,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 4,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 5,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 6,
+                    `PRGA_CTRL_ADDR_BITSTREAM_ID + 7: begin
                         stall_rx = i_rresp_dataq_full;
                         i_rresp_dataq_wr = 'b1;
-                        i_rresp_dataq_din = bsid;
+                        i_rresp_dataq_din = bsid >> {addr_rx - `PRGA_CTRL_ADDR_BITSTREAM_ID, 3'h0};
                     end
-                    `PRGA_AXI_ADDR_UCLK_DIV: begin
+                    `PRGA_CTRL_ADDR_UCLK_DIV: begin
                         stall_rx = i_rresp_dataq_full;
                         i_rresp_dataq_wr = 'b1;
-                        i_rresp_dataq_din = uclk_div;
+                        i_rresp_dataq_din[0 +: 8] = uclk_div;
                     end
-                    `PRGA_AXI_ADDR_UREG_TIMEOUT,
-                    `PRGA_AXI_ADDR_UERR_FIFO: begin
+                    `PRGA_CTRL_ADDR_UREG_TIMEOUT,
+                    `PRGA_CTRL_ADDR_UERR_FIFO: begin
                         stall_rx = i_cdcq_rreq_full;
                         i_cdcq_rreq_wr = 'b1;
                     end

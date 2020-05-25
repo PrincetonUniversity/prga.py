@@ -410,8 +410,8 @@ class Scanchain(object):
                 mode.connect(mode.ports["clk"], ff.pins["clk"])
                 mode.connect(mode.ports["in"], lut.pins["in"])
                 mode.connect(lut.pins["out"], ff.pins["D"], pack_patterns = ["lut6_dff"])
-                mode.connect(lut.pins["out"], mode.ports["out"][0])
-                mode.connect(ff.pins["Q"], mode.ports["out"][0], cfg_bits = (64, ))
+                mode.connect(lut.pins["out"], mode.ports["out"][0], cfg_bits = (64, ))
+                mode.connect(ff.pins["Q"], mode.ports["out"][0])
                 mode.commit()
 
             if True:
@@ -423,8 +423,8 @@ class Scanchain(object):
                     mode.connect(mode.ports["clk"], ff.pins["clk"])
                     mode.connect(mode.ports["in"][0:5], lut.pins["in"])
                     mode.connect(lut.pins["out"], ff.pins["D"], pack_patterns = ["lut5_i" + str(i) + "_dff"])
-                    mode.connect(lut.pins["out"], mode.ports["out"][i])
-                    mode.connect(ff.pins["Q"], mode.ports["out"][i], cfg_bits = (64 + i, ))
+                    mode.connect(lut.pins["out"], mode.ports["out"][i], cfg_bits = (64 + i, ))
+                    mode.connect(ff.pins["Q"], mode.ports["out"][i])
                 mode.commit()
 
             if True:
@@ -441,8 +441,8 @@ class Scanchain(object):
                 for i, (p, ff) in enumerate(zip(["s", "cout_fabric"], ffs)):
                     mode.connect(mode.ports["clk"], ff.pins["clk"])
                     mode.connect(adder.pins[p], ff.pins["D"], pack_patterns = ["carrychain"])
-                    mode.connect(adder.pins[p], mode.ports["out"][i])
-                    mode.connect(ff.pins["Q"], mode.ports["out"][i], cfg_bits = (64 + i, ))
+                    mode.connect(adder.pins[p], mode.ports["out"][i], cfg_bits = (64 + i, ))
+                    mode.connect(ff.pins["Q"], mode.ports["out"][i])
                 mode.connect(adder.pins["cout"], mode.ports["cout"], pack_patterns = ["carrychain"])
                 mode.commit()
 

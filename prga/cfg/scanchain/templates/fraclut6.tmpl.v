@@ -40,7 +40,7 @@ module fraclut6 (
     end
 
     always @* begin
-        if (cfg_e) begin    // avoid pre-programming oscillation
+        if (cfg_e) begin    // avoid program-time oscillation
             o5 = 1'b0;
             lut5A_out = 1'b0;
             o6 = 1'b0;

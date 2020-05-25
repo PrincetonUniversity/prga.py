@@ -50,7 +50,7 @@ def iobind(summary, mod_top, fixed = None):
         elif port.direction is not direction:
             raise PRGAAPIError("Direction mismatch: port '{}' is {} in behavioral model but {} in IO bindings"
                     .format(port_name, port.direction.name, direction))
-        elif index is None and port.low is not None:
+        elif index is None and (port.low is not None and port.high - port.low > 1):
             raise PRGAAPIError("Port '{}' is a bus and requires an index"
                     .format(port_name))
         elif index is not None and (port.low is None or index < port.low or index >= port.high):
@@ -65,7 +65,7 @@ def iobind(summary, mod_top, fixed = None):
     # assign IOs
     for port_name, port in iteritems(mod_top.ports):
         key = port.direction.case("", "out:") + port_name
-        if port.low is None:
+        if port.low is None or port.high - port.low == 1:
             if key in assigned:
                 continue
             try:

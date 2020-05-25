@@ -16,6 +16,8 @@ from ...util import uno
 import logging
 _logger = logging.getLogger(__name__)
 
+from copy import deepcopy
+
 __all__ = ["PktchainSystem"]
 
 # ----------------------------------------------------------------------------
@@ -76,8 +78,8 @@ class PktchainSystem(object):
             :obj:`Mapping` [:obj:`str`, :obj:`Sequence` [:obj:`tuple` [:obj:`int`, :obj:`int`, :obj:`int`]]]: Mapping
             from AXI4-Lite standard port names to list of positions for each pin of that port.
         """
-        addr_width = uno(addr_width, PktchainProtocol.AXILiteController.USER_ADDR_WIDTH)
-        data_bytes = uno(data_bytes, 2 ** (PktchainProtocol.AXILiteController.USER_DATA_WIDTH_LOG2 - 3))
+        addr_width = uno(addr_width, PktchainProtocol.AXILiteController.ADDR_WIDTH)
+        data_bytes = uno(data_bytes, 2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3))
         assignments = {}
         # 1. get all IOs
         available = {IOType.ipin: set(), IOType.opin: set()}
@@ -189,3 +191,34 @@ class PktchainSystem(object):
                 else:
                     for i, io in enumerate(ios):
                         NetUtils.connect(ip[i], fabric.pins[io])
+
+    @classmethod
+    def generate_axilite_io_assignment_constraint(cls, context, renderer, f, *,
+            addr_width = 8, data_bytes = 4):
+        """Add a rendering task for the IO assignment constraint file.
+
+        Args:
+            context (`Context`):
+            renderer (`FileRenderer`):
+            f (:obj:`str` or File-like Object):
+
+        Keyword Args:
+            addr_width (:obj:`int`):
+            data_bytes (:obj:`int`):
+        """
+        try:
+            if context.summary.pktchain["intf"]["type"] != "axilite":
+                raise PRGAAPIError("The fabric does not support AXILite interface")
+        except KeyError:
+            raise PRGAAPIError("No interface has been added to the fabric yet")
+        assignments = deepcopy(context.summary.pktchain["intf"]["iobind"])
+        if addr_width <= 0 or addr_width > len(assignments["AWADDR"]):
+            raise PRGAAPIError("Invalid address width. Valid range: (0, {}]".format(len(assignments["AWADDR"])))
+        if data_bytes <= 0 or data_bytes > len(assignments["WSTRB"]):
+            raise PRGAAPIError("Invalid data width (in bytes). Valid range: (0, {}]".format(len(assignments["WSTRB"])))
+        assignments["AWADDR"] = assignments["AWADDR"][0:addr_width]
+        assignments["ARADDR"] = assignments["ARADDR"][0:addr_width]
+        assignments["WSTRB"] = assignments["WSTRB"][0:data_bytes]
+        assignments["WDATA"] = assignments["WDATA"][0:data_bytes * 8]
+        assignments["RDATA"] = assignments["RDATA"][0:data_bytes * 8]
+        renderer.add_generic(f, "io.tmpl.pads", assignments = assignments)

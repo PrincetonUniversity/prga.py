@@ -25,7 +25,7 @@ module adder (
     reg [0:0] cfg_d;
 
     always @* begin
-        if (cfg_e) begin    // avoid pre-programming oscillation
+        if (cfg_e) begin    // avoid program-time oscillation
             s = 1'b0;
             cout = 1'b0;
         end else begin

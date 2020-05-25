@@ -262,12 +262,14 @@ class _VPRArchGeneration(Object, AbstractPass):
         return True
 
     @classmethod
-    def _net2vpr(cls, net, parent_name = None):
+    def _net2vpr(cls, net, parent_name = None, bitwise = False):
         if net.bus_type.is_concat:
-            return " ".join(cls._net2vpr(i, parent_name) for i in net.items)
+            return " ".join(cls._net2vpr(i, parent_name, bitwise) for i in net.items)
         elif net.net_type.is_const:
             raise PRGAInternalError("Cannot express constant nets in VPR")
-        prefix, suffix = None, ''
+        elif bitwise and len(net) > 1:
+            return " ".join(cls._net2vpr(i, parent_name) for i in net)
+        prefix, suffix = None, ""
         if net.net_type.is_port:
             prefix = '{}.{}'.format(parent_name or net.parent.name, net.bus.name)
         elif hasattr(net.bus.instance.hierarchy[0], "vpr_num_pb"):
@@ -349,10 +351,9 @@ class _VPRArchGeneration(Object, AbstractPass):
         fasm_muxes = {}
         with self.xml.element(type_, {
             "name": "_".join(name),
-            "input": self._net2vpr(sources, parent_name),
-            "output": self._net2vpr(sink, parent_name),
+            "input": self._net2vpr(sources, parent_name, bitwise = True),
+            "output": (sink_vpr := self._net2vpr(sink, parent_name)),
             }):
-            sink_vpr = self._net2vpr(sink, parent_name)
             for src in sources:
                 src_vpr = self._net2vpr(src, parent_name)
                 # FASM mux

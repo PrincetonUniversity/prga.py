@@ -32,9 +32,9 @@ module fle6 (
 
     localparam LUT5A_DATA = 0;
     localparam LUT5B_DATA = LUT5A_DATA + LUT5A_DATA_WIDTH;
-    localparam ENABLE_FFA = LUT5B_DATA + LUT5B_DATA_WIDTH;
-    localparam ENABLE_FFB = ENABLE_FFA + 1;
-    localparam MODE = ENABLE_FFB + 1;
+    localparam DISABLE_FFA = LUT5B_DATA + LUT5B_DATA_WIDTH;
+    localparam DISABLE_FFB = DISABLE_FFA + 1;
+    localparam MODE = DISABLE_FFB + 1;
     localparam CIN_FABRIC = MODE + MODE_WIDTH;
     localparam CFG_BITCOUNT = CIN_FABRIC + 1;
     
@@ -83,7 +83,7 @@ module fle6 (
     end
 
     always @* begin
-        if (cfg_e) begin    // avoid pre-programming oscillating
+        if (cfg_e) begin    // avoid program-time oscillating
             internal_lut = 2'b0;
         end else begin
             case (internal_in[4:0])     // synopsys infer_mux
@@ -98,48 +98,48 @@ module fle6 (
     end
 
     always @* begin
-        if (cfg_e) begin    // avoid pre-programming oscillating
+        if (cfg_e) begin    // avoid program-time oscillating
             out = 2'b0;
             cout = 1'b0;
         end else begin
-            out = 2'b0;
-            cout = 1'b0;
+            if (mode == MODE_ARITH) begin
+                cout = internal_sum[1];
+            end else begin
+                cout = 1'b0;
+            end
 
-            case (mode)
-                MODE_LUT6X1: begin
-                    if (cfg_d[ENABLE_FFA]) begin
-                        out[0] = internal_ff[0];
-                    end else begin
+            if (cfg_d[DISABLE_FFA]) begin
+                out[0] = 'b0;
+
+                case (mode)
+                    MODE_LUT6X1: begin
                         out[0] = internal_in[5] ? internal_lut[1] : internal_lut[0];
                     end
-                end
-                MODE_LUT5X2: begin
-                    if (cfg_d[ENABLE_FFA]) begin
-                        out[0] = internal_ff[0];
-                    end else begin
+                    MODE_LUT5X2: begin
                         out[0] = internal_lut[0];
                     end
-                    if (cfg_d[ENABLE_FFB]) begin
-                        out[1] = internal_ff[1];
-                    end else begin
-                        out[1] = internal_lut[1];
-                    end
-                end
-                MODE_ARITH: begin
-                    if (cfg_d[ENABLE_FFA]) begin
-                        out[0] = internal_ff[0];
-                    end else begin
+                    MODE_ARITH: begin
                         out[0] = internal_sum[0];
                     end
-                    if (cfg_d[ENABLE_FFB]) begin
-                        out[1] = internal_ff[1];
-                    end else begin
+                endcase
+            end else begin
+                out[0] = internal_ff[0];
+            end
+
+            if (cfg_d[DISABLE_FFB]) begin
+                out[1] = 'b0;
+
+                case (mode)
+                    MODE_LUT5X2: begin
+                        out[1] = internal_lut[1];
+                    end
+                    MODE_ARITH: begin
                         out[1] = internal_sum[1];
                     end
-
-                    cout = internal_sum[1];
-                end
-            endcase
+                endcase
+            end else begin
+                out[1] = internal_ff[1];
+            end
         end
     end
 

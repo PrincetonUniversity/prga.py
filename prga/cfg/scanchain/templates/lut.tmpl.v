@@ -37,7 +37,7 @@ module {{ module.name }} (
     end
 
     always @* begin
-        if (cfg_e) begin        // avoid pre-programming oscillating
+        if (cfg_e) begin        // avoid program-time oscillating
             out = 1'b0;
         end else begin
             case (internal_in)  // synopsys infer_mux

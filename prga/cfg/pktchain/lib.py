@@ -365,8 +365,8 @@ class Pktchain(Scanchain):
             mcp(mod, "cfg_phit_i",          phit_width,     PortDirection.input_),
             cls._create_axilite_intf(mod, "m", PktchainProtocol.AXILiteController.ADDR_WIDTH,
                     2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3))
-            cls._create_axilite_intf(mod, "u", PktchainProtocol.AXILiteController.USER_ADDR_WIDTH,
-                    2 ** (PktchainProtocol.AXILiteController.USER_DATA_WIDTH_LOG2 - 3), is_master = True)
+            cls._create_axilite_intf(mod, "u", PktchainProtocol.AXILiteController.ADDR_WIDTH,
+                    2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3), is_master = True)
             # instances
             mit(mod, context.database[ModuleView.logical, "pktchain_axilite_intf_fe"], "i_fe")
             mit(mod, context.database[ModuleView.logical, "prga_async_fifo"], "i_cdcq_wreq")

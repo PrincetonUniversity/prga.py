@@ -61,7 +61,7 @@ class PktchainTbgen(object):
             elif behav_port.direction is not direction:
                 raise PRGAAPIError("Direction mismatch: port '{}' is {} in behavioral model but {} in IO bindings"
                         .format(port_name, behav_port.direction.name, direction))
-            elif index is None and behav_port.low is not None:
+            elif index is None and (behav_port.low is not None and behav_port.high - behav_port.low > 1):
                 raise PRGAAPIError("Port '{}' is a bus and requires an index"
                         .format(port_name))
             elif index is not None and (behav_port.low is None or index < behav_port.low or index >= behav_port.high):

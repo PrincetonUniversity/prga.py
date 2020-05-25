@@ -16,22 +16,22 @@
 `define PRGA_UCLK_DIV_COUNTER_WIDTH {{ context.summary.pktchain.protocol.AXILiteController.UCLK_DIV_COUNTER_WIDTH }}
 `define PRGA_UCLK_DIV_MAX           {{ context.summary.pktchain.protocol.AXILiteController.UCLK_DIV_MAX }}
 
+`define PRGA_CTRL_ADDR_WIDTH        {{ context.summary.pktchain.protocol.AXILiteController.CTRL_ADDR_WIDTH }}
+`define PRGA_CTRL_ADDR_PREFIX       {{ context.summary.pktchain.protocol.AXILiteController.ADDR_WIDTH - context.summary.pktchain.protocol.AXILiteController.CTRL_ADDR_WIDTH }}'h{{ "{:x}".format(context.summary.pktchain.protocol.AXILiteController.CTRL_ADDR_PREFIX) }}
+
 // -- BEGIN AUTO-GENERATION (see prga.cfg.pktchain.protocol for more info)
-{%- for addr in context.summary.pktchain.protocol.AXILiteController.ADDR %}
-`define PRGA_AXI_ADDR_{{ addr.name }} `PRGA_AXI_ADDR_WIDTH'h{{ "{:>02x}".format(addr.value) }}
+{%- for addr in context.summary.pktchain.protocol.AXILiteController.CtrlAddr %}
+`define PRGA_CTRL_ADDR_{{ addr.name }} `PRGA_CTRL_ADDR_WIDTH'h{{ "{:>02x}".format(addr.value) }}
 {%- endfor %}
 // -- DONE AUTO-GENERATION
 
 // PRGA controller states
-`define PRGA_STATE_WIDTH                    8
+`define PRGA_CTRL_STATE_WIDTH               8
 // -- BEGIN AUTO-GENERATION (see prga.cfg.pktchain.protocol for more info)
-{%- for state in context.summary.pktchain.protocol.AXILiteController.State %}
-`define PRGA_STATE_{{ state.name }} `PRGA_STATE_WIDTH'h{{ "{:>02x}".format(state.value) }}
+{%- for state in context.summary.pktchain.protocol.AXILiteController.CtrlState %}
+`define PRGA_CTRL_STATE_{{ state.name }} `PRGA_CTRL_STATE_WIDTH'h{{ "{:>02x}".format(state.value) }}
 {%- endfor %}
 // -- DONE AUTO-GENERATION
-
-// PRGA Config Flags
-`define PRGA_CONFIG_UNPROGRAMMED_TILES_OK                           0   // if set, not all PRGA tiles must be programmed
 
 // PRGA controller error messages
 `define PRGA_ERR_FIFO_DEPTH_LOG2            7
@@ -64,18 +64,5 @@
 
 // Other configurations
 `define PRGA_TIMER_WIDTH                    32
-
-// User register interface
-`define PRGA_USER_ADDR_WIDTH                {{ context.summary.pktchain.protocol.AXILiteController.USER_ADDR_WIDTH }}
-`define PRGA_USER_ADDR_PREFIX               {{ context.summary.pktchain.protocol.AXILiteController.USER_ADDR_PREFIX }}
-
-`define PRGA_USER_DATA_WIDTH_LOG2           {{ context.summary.pktchain.protocol.AXILiteController.USER_DATA_WIDTH_LOG2 }}
-`define PRGA_BYTES_PER_USER_DATA            (1 << (`PRGA_USER_DATA_WIDTH_LOG2 - 3))
-`define PRGA_USER_DATA_WIDTH                (1 << `PRGA_USER_DATA_WIDTH_LOG2)
-
-`define PRGA_UREG_RRESP_INDEX               `PRGA_USER_DATA_WIDTH +: 2
-`define PRGA_UREG_RRESP_TIMEOUT_INDEX       `PRGA_USER_DATA_WIDTH + 2
-`define PRGA_UREG_RREQ_TIMEOUT_INDEX        `PRGA_USER_DATA_WIDTH + 3
-`define PRGA_UREG_RREQ_REJECTED_INDEX       `PRGA_USER_DATA_WIDTH + 4
 
 `endif
