@@ -13,8 +13,6 @@
 `define PRGA_BYTES_PER_FRAME        (1 << (`PRGA_PKTCHAIN_FRAME_SIZE_LOG2 - 3))
 
 `define PRGA_AXI_ADDR_WIDTH         {{ context.summary.pktchain.protocol.AXILiteController.ADDR_WIDTH }}
-`define PRGA_UCLK_DIV_COUNTER_WIDTH {{ context.summary.pktchain.protocol.AXILiteController.UCLK_DIV_COUNTER_WIDTH }}
-`define PRGA_UCLK_DIV_MAX           {{ context.summary.pktchain.protocol.AXILiteController.UCLK_DIV_MAX }}
 
 `define PRGA_CTRL_ADDR_WIDTH        {{ context.summary.pktchain.protocol.AXILiteController.CTRL_ADDR_WIDTH }}
 `define PRGA_CTRL_ADDR_PREFIX       {{ context.summary.pktchain.protocol.AXILiteController.ADDR_WIDTH - context.summary.pktchain.protocol.AXILiteController.CTRL_ADDR_WIDTH }}'h{{ "{:x}".format(context.summary.pktchain.protocol.AXILiteController.CTRL_ADDR_PREFIX) }}

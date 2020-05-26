@@ -152,7 +152,7 @@ module pktchain_axilite_intf_be_uprot (
         if (rst) begin
             addr_wf <= 'b0;
             strb_wf <= 'b0;
-            data_wf <= 'b0;
+            data_wf <= {`PRGA_AXI_DATA_WIDTH{1'b0}};
             addr_val_wf <= 'b0;
             data_val_wf <= 'b0;
             wreq_timer <= 'b0;
@@ -248,7 +248,7 @@ module pktchain_axilite_intf_be_uprot (
     always @(posedge clk) begin
         if (rst) begin
             addr_wx <= 'b0;
-            op_wx_i <= 'b0;
+            op_wx_i <= WF_OP_INVAL;
             wresp_timer <= 'b0;
         end else begin
             if (op_wf != WF_OP_INVAL && ~stall_wf_addr && ~stall_wf_data) begin
@@ -407,7 +407,7 @@ module pktchain_axilite_intf_be_uprot (
         stall_rx = 'b0;
         u_RREADY = 'b0;
         uerr_fifo_rd = 'b0;
-        data_rx = 'b0;
+        data_rx = {`PRGA_AXI_DATA_WIDTH{1'b0}};
         op_rx_o = RX_OP_INVAL;
 
         if (stall_rr) begin
@@ -481,7 +481,7 @@ module pktchain_axilite_intf_be_uprot (
 
     always @(posedge clk) begin
         if (rst) begin
-            data_rr <= 'b0;
+            data_rr <= {`PRGA_AXI_DATA_WIDTH{1'b0}};
             op_rr_i <= RX_OP_INVAL;
         end else begin
             if (op_rx_o != RX_OP_INVAL && ~stall_rx) begin
@@ -495,7 +495,7 @@ module pktchain_axilite_intf_be_uprot (
 
     always @* begin
         rresp_wr = 'b0;
-        rresp_data = 'b0;
+        rresp_data = {`PRGA_AXI_DATA_WIDTH{1'b0}};
         stall_rr = 'b0;
         val_rr = 'b0;
 
@@ -527,9 +527,9 @@ module pktchain_axilite_intf_be_uprot (
     always @(posedge clk) begin
         if (rst) begin
             addr_we <= 'b0;
-            op_we <= 'b0;
+            op_we <= WX_OP_INVAL;
             uresp_we <= 'b0;
-            err_re <= 'b0;
+            err_re <= {`PRGA_AXI_DATA_WIDTH{1'b0}};
             val_re <= 'b0;
         end else begin
             if (op_wx_o != WX_OP_INVAL && ~stall_wx) begin
@@ -551,7 +551,7 @@ module pktchain_axilite_intf_be_uprot (
 
     always @* begin
         uerr_fifo_wr = 'b0;
-        uerr_fifo_din = 'b0;
+        uerr_fifo_din = {`PRGA_AXI_DATA_WIDTH{1'b0}};
         stall_we = 'b0;
         stall_re = 'b0;
 

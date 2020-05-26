@@ -86,15 +86,18 @@ module {{ module.name }} (
     input wire [1:0] u_RRESP
     );
 
-    reg rst_f, soft_rst;
-    reg rst_uclk, rst_uclk_s0, rst_uclk_s1;
+    reg rst_f, soft_rst, rst_uclk;
 
     always @(posedge clk) begin
         rst_f <= rst;
     end
 
-    always @(posedge uclk) begin
-        {rst_uclk, rst_uclk_s1, rst_uclk_s0} <= {rst_uclk_s1, rst_uclk_s0, rst_f};
+    always @(posedge uclk or posedge rst) begin
+        if (rst) begin
+            rst_uclk <= 'b1;
+        end else begin
+            rst_uclk <= 'b0;
+        end
     end
 
     // generate user clock
@@ -174,7 +177,7 @@ module {{ module.name }} (
 
     // Cross-clock-domain FIFOs
     wire i_cdcq_wreq_full, i_cdcq_wreq_empty, i_cdcq_wreq_rd;
-    wire [`PRGA_AXI_DATA_WIDTH + `PRGA_BYTES_PER_AXI_DATA + `PRGA_AXI_ADDR_WIDTH] i_cdcq_wreq_din, i_cdcq_wreq_dout;    // {addr, strb, data}
+    wire [`PRGA_AXI_DATA_WIDTH + `PRGA_BYTES_PER_AXI_DATA + `PRGA_AXI_ADDR_WIDTH - 1:0] i_cdcq_wreq_din, i_cdcq_wreq_dout;    // {addr, strb, data}
     reg i_cdcq_wreq_wr;
 
     prga_async_fifo #(
@@ -276,16 +279,15 @@ module {{ module.name }} (
     // configuration backend
     wire i_cfg_wrdy, i_cfg_programming, i_cfg_success, i_cfg_eq_wr;
     reg i_cfg_wval, i_cfg_eq_full;
-    wire [`PRGA_BYTES_PER_AXI_DATA - 1:0] i_cfg_wstrb;
-    wire [`PRGA_AXI_DATA_WIDTH - 1:0] i_cfg_wdata, i_cfg_eq_data;
+    wire [`PRGA_AXI_DATA_WIDTH - 1:0] i_cfg_eq_data;
 
     pktchain_axilite_intf_be_cfg i_cfg (
         .clk                            (clk)
         ,.rst                           (rst_f || soft_rst)
         ,.wval                          (i_cfg_wval)
         ,.wrdy                          (i_cfg_wrdy)
-        ,.wstrb                         (i_cfg_wstrb)
-        ,.wdata                         (i_cfg_wdata)
+        ,.wstrb                         (i_fe_wreq_strb)
+        ,.wdata                         (i_fe_wreq_data)
         ,.programming                   (i_cfg_programming)
         ,.success                       (i_cfg_success)
         ,.errfifo_full                  (i_cfg_eq_full)
@@ -345,7 +347,7 @@ module {{ module.name }} (
 
     always @* begin
         i_fe_rresp_val = 'b0;
-        i_fe_rresp_data = 'b0;
+        i_fe_rresp_data = {`PRGA_AXI_DATA_WIDTH{1'b0}};
         i_rresp_tokenq_rd = 'b0;
         i_rresp_dataq_rd = 'b0;
         i_cdcq_rresp_rd = 'b0;
@@ -354,7 +356,6 @@ module {{ module.name }} (
             case (i_rresp_tokenq_dout)
                 RRESP_TOKEN_DUMMY: begin
                     i_fe_rresp_val = 'b1;
-                    i_fe_rresp_data = 'b0;
                     i_rresp_tokenq_rd = 'b1;
                 end
                 RRESP_TOKEN_DATAQ: begin
@@ -459,7 +460,7 @@ module {{ module.name }} (
         );
 
     // Clock divider
-    reg [`PRGA_UCLK_DIV_COUNTER_WIDTH - 1:0] uclk_div_next;
+    reg [7:0] uclk_div_next;
 
     always @(posedge clk) begin
         if (rst_f) begin
@@ -484,7 +485,7 @@ module {{ module.name }} (
     always @* begin
         stall_wx = 'b0;
         op_wx = WX_OP_INVAL;
-        e_wx = 'b0;
+        e_wx = {`PRGA_AXI_DATA_WIDTH{1'b0}};
 
         soft_rst = 'b0;
         wstrb_aligned = i_fe_wreq_strb;
@@ -498,8 +499,10 @@ module {{ module.name }} (
 
         if (stall_we) begin
             stall_wx = stall_we;
-        end else if (i_fe_wreq_val && i_fe_wresp_rdy) begin
-            if (i_fe_wreq_addr[`PRGA_AXI_ADDR_WIDTH - 1:`PRGA_CTRL_ADDR_WIDTH] != `PRGA_CTRL_ADDR_PREFIX) begin
+        end else if (i_fe_wreq_val) begin
+            if (~i_fe_wresp_rdy) begin
+                stall_wx = 'b1;
+            end else if (i_fe_wreq_addr[`PRGA_AXI_ADDR_WIDTH - 1:`PRGA_CTRL_ADDR_WIDTH] != `PRGA_CTRL_ADDR_PREFIX) begin
                 i_cdcq_wreq_wr = 'b1;
                 stall_wx = i_cdcq_wreq_full;
             end else begin
@@ -649,11 +652,11 @@ module {{ module.name }} (
     always @* begin
         stall_rx = 'b0;
         op_rx = RX_OP_INVAL;
-        e_rx = 'b0;
+        e_rx = {`PRGA_AXI_DATA_WIDTH{1'b0}};
 
         i_cdcq_rreq_wr = 'b0;
         i_rresp_dataq_wr = 'b0;
-        i_rresp_dataq_din = 'b0;
+        i_rresp_dataq_din = {`PRGA_AXI_DATA_WIDTH{1'b0}};
         i_errq_rd = 'b0;
 
         if (stall_re) begin
@@ -686,9 +689,7 @@ module {{ module.name }} (
                         i_rresp_dataq_wr = 'b1;
                         i_errq_rd = ~i_rresp_dataq_full;
 
-                        if (i_errq_empty) begin
-                            i_rresp_dataq_din = 'b0;
-                        end else begin
+                        if (~i_errq_empty) begin
                             i_rresp_dataq_din = i_errq_dout;
                         end
                     end
@@ -736,8 +737,8 @@ module {{ module.name }} (
         if (rst_f) begin
             op_we <= WX_OP_INVAL;
             op_re <= RX_OP_INVAL;
-            e_we <= 'b0;
-            e_re <= 'b0;
+            e_we <= {`PRGA_AXI_DATA_WIDTH{1'b0}};
+            e_re <= {`PRGA_AXI_DATA_WIDTH{1'b0}};
         end else begin
             if (~stall_wx) begin
                 op_we <= op_wx;
@@ -761,7 +762,7 @@ module {{ module.name }} (
 
         i_cfg_eq_full = 'b0;
         i_errq_wr = 'b0;
-        i_errq_din = 'b0;
+        i_errq_din = {`PRGA_AXI_DATA_WIDTH{1'b0}};
 
         // Arbitration: configuration backend has first priority on err fifo
         if (i_cfg_eq_wr) begin

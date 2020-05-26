@@ -49,7 +49,7 @@ module {{ module.name }} (
     __PRGA_RTLGEN_ERROR__ __PKTCHAIN_UNSUPPORTED_PHIT_WIDTH__();
     {%- endif %}
 
-    wire frame_i_empty, frame_o_full;
+    wire frame_i_empty, frame_o_full, frame_clasp_rd;
     wire [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] frame_i;
     reg [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] frame_o;
     reg frame_i_rd, frame_o_wr, frame_clasp_empty;
@@ -157,9 +157,11 @@ module {{ module.name }} (
             STATE_IDLE: begin
                 if (checksum_pending && ~clasp_programming) begin
                     frame_o_wr = 'b1;
-                    frame_o = ( clasp_echo_mismatch ? `PRGA_PKTCHAIN_MSG_TYPE_ERROR_ECHO_MISMATCH :
-                            clasp_checksum_mismatch ? `PRGA_PKTCHAIN_MSG_TYPE_ERROR_CHECKSUM_MISMATCH :
-                                                      `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK ) << `PRGA_PKTCHAIN_MSG_TYPE_BASE;
+                    frame_o = 'b0;
+                    frame_o[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] = (
+                            clasp_echo_mismatch ? `PRGA_PKTCHAIN_MSG_TYPE_ERROR_ECHO_MISMATCH :
+                        clasp_checksum_mismatch ? `PRGA_PKTCHAIN_MSG_TYPE_ERROR_CHECKSUM_MISMATCH :
+                                                  `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK );
                     checksum_checked = ~frame_o_full;
                 end else if (~frame_i_empty) begin  // valid input frame
                     case (frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX])
@@ -207,7 +209,8 @@ module {{ module.name }} (
                             end
 
                             frame_o_wr = 'b1;
-                            frame_o = `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE << `PRGA_PKTCHAIN_MSG_TYPE_BASE;
+                            frame_o = 'b0;
+                            frame_o[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] = `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE;
                             payload_rst = 'b1;
                         end
                     endcase

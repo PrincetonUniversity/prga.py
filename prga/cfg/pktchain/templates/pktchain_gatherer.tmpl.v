@@ -133,7 +133,8 @@ module pktchain_gatherer (
                         `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT,
                         `PRGA_PKTCHAIN_MSG_TYPE_DATA_CHECKSUM,
                         `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM: begin
-                            frame_o = `PRGA_PKTCHAIN_MSG_TYPE_ERROR_FEEDTHRU_PACKET << `PRGA_PKTCHAIN_MSG_TYPE_BASE;
+                            frame_o = 'b0;
+                            frame_o[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] = `PRGA_PKTCHAIN_MSG_TYPE_ERROR_FEEDTHRU_PACKET;
                             frame_o_wr = 'b1;
                             payload_next = frame_iy[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
 
@@ -146,7 +147,8 @@ module pktchain_gatherer (
                             end
                         end
                         default: begin
-                            frame_o = `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE << `PRGA_PKTCHAIN_MSG_TYPE_BASE;
+                            frame_o = 'b0;
+                            frame_o[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] = `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE;
                             frame_o_wr = 'b1;
                             payload_next = frame_iy[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
 

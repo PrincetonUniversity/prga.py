@@ -139,6 +139,72 @@ class Pktchain(Scanchain):
         return ports
 
     @classmethod
+    def _build_pktchain_backbone(cls, context, xpos = None, ypos = None, *, top = "backbone"):
+        # top-level
+        phit_width = context.summary.pktchain["fabric"]["phit_width"]
+        module = Module(top)
+        ports = {
+                "clk": ModuleUtils.create_port(module, "clk", 1, PortDirection.input_, is_clock = True),
+                "rst": ModuleUtils.create_port(module, "rst", 1, PortDirection.input_),
+                "phit_i_full": ModuleUtils.create_port(module, "phit_i_full", 1, PortDirection.output),
+                "phit_i_wr": ModuleUtils.create_port(module, "phit_i_wr", 1, PortDirection.input_),
+                "phit_i": ModuleUtils.create_port(module, "phit_i", phit_width, PortDirection.input_),
+                "phit_o_full": ModuleUtils.create_port(module, "phit_o_full", 1, PortDirection.input_),
+                "phit_o_wr": ModuleUtils.create_port(module, "phit_o_wr", 1, PortDirection.output),
+                "phit_o": ModuleUtils.create_port(module, "phit_o", phit_width, PortDirection.output),
+                }
+        for x in range(uno(xpos, context.summary.pktchain["fabric"]["x_tiles"])):
+            i = ModuleUtils.instantiate(module,
+                    context.database[ModuleView.logical, "pktchain_dispatcher"],
+                    "i_cfg_dispatcher_x{}".format(x))
+            NetUtils.connect(ports["clk"], i.pins["cfg_clk"])
+            NetUtils.connect(ports["rst"], i.pins["cfg_rst"])
+            NetUtils.connect(i.pins["phit_i_full"], ports["phit_i_full"])
+            NetUtils.connect(ports["phit_i_wr"], i.pins["phit_i_wr"])
+            NetUtils.connect(ports["phit_i"], i.pins["phit_i"])
+            ports.update({
+                "phit_i_full": i.pins["phit_ox_full"],
+                "phit_i_wr": i.pins["phit_ox_wr"],
+                "phit_i": i.pins["phit_ox"],
+                })
+            chain = {
+                    "full": i.pins["phit_oy_full"],
+                    "wr": i.pins["phit_oy_wr"],
+                    "phit": i.pins["phit_oy"],
+                    }
+            for y in range(uno(ypos, context.summary.pktchain["fabric"]["y_tiles"])):
+                i = ModuleUtils.instantiate(module,
+                        context.database[ModuleView.logical, "pktchain_router"],
+                        "i_cfg_router_x{}y{}".format(x, y))
+                NetUtils.connect(ports["clk"], i.pins["cfg_clk"])
+                NetUtils.connect(ports["rst"], i.pins["cfg_rst"])
+                NetUtils.connect(i.pins["phit_i_full"], chain["full"])
+                NetUtils.connect(chain["wr"], i.pins["phit_i_wr"])
+                NetUtils.connect(chain["phit"], i.pins["phit_i"])
+                NetUtils.connect(i.pins["cfg_we_o"], i.pins["cfg_we_i"])
+                NetUtils.connect(i.pins["cfg_o"], i.pins["cfg_i"])
+                chain.update({ "full": i.pins["phit_o_full"],
+                    "wr": i.pins["phit_o_wr"],
+                    "phit": i.pins["phit_o"], })
+            i = ModuleUtils.instantiate(module,
+                    context.database[ModuleView.logical, "pktchain_gatherer"],
+                    "i_cfg_gatherer_x{}".format(x))
+            NetUtils.connect(ports["clk"], i.pins["cfg_clk"])
+            NetUtils.connect(ports["rst"], i.pins["cfg_rst"])
+            NetUtils.connect(ports["phit_o_full"], i.pins["phit_o_full"])
+            NetUtils.connect(i.pins["phit_o_wr"], ports["phit_o_wr"])
+            NetUtils.connect(i.pins["phit_o"], ports["phit_o"])
+            NetUtils.connect(i.pins["phit_iy_full"], chain["full"])
+            NetUtils.connect(chain["wr"], i.pins["phit_iy_wr"])
+            NetUtils.connect(chain["phit"], i.pins["phit_iy"])
+            ports.update({
+                "phit_o_full": i.pins["phit_ix_full"],
+                "phit_o_wr": i.pins["phit_ix_wr"],
+                "phit_o": i.pins["phit_ix"],
+                })
+        return module
+
+    @classmethod
     def new_context(cls, phit_width = 8, cfg_width = 1, *,
             router_fifo_depth_log2 = 4,
             dont_add_primitive = tuple(), dont_add_logical_primitive = tuple()):

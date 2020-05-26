@@ -20,7 +20,7 @@
         end
         {% for i in range(addr_width) %}
         if (addr{{ portsuffix }}[{{ i }}] === 1'bx || addr{{ portsuffix }}[{{ i }}] === 1'bz) begin
-            internal_addr{{ portsuffix }} = 1'b0;
+            internal_addr{{ portsuffix }}[{{ i }}] = 1'b0;
         end
         {%- endfor %}
         // synopsys translate_on

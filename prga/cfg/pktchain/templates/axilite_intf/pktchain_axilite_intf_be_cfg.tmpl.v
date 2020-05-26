@@ -239,8 +239,8 @@ module pktchain_axilite_intf_be_cfg (
             init_tiles <= 'b0;
             pending_tiles <= 'b0;
             err_tiles <= 'b0;
-            errfifo_data_pkt_f <= 'b0;
-            errfifo_data_resp_f <= 'b0;
+            errfifo_data_pkt_f <= {`PRGA_AXI_DATA_WIDTH{1'b0}};
+            errfifo_data_resp_f <= {`PRGA_AXI_DATA_WIDTH{1'b0}};
         end else begin
             phase <= phase_next;
             pkt_st <= pkt_st_next;
@@ -294,7 +294,7 @@ module pktchain_axilite_intf_be_cfg (
         programming = 'b0;
         success = 'b0;
         errfifo_wr = 'b0;
-        errfifo_data = 'b0;
+        errfifo_data = {`PRGA_AXI_DATA_WIDTH{1'b0}};
         cfg_rst = 'b0;
         cfg_e = 'b0;
         
@@ -330,7 +330,7 @@ module pktchain_axilite_intf_be_cfg (
                 end
             end
             PHASE_STANDBY: begin
-                wrdy = 'b1;
+                wrdy = ~axififo_full;
                 cfg_rst = 'b1;
                 cfg_e = 'b1;
 
@@ -341,7 +341,7 @@ module pktchain_axilite_intf_be_cfg (
                 end
             end
             PHASE_PROG: begin
-                wrdy = 'b1;
+                wrdy = ~axififo_full;
                 cfg_e = 'b1;
                 programming = 'b1;
 
@@ -392,7 +392,7 @@ module pktchain_axilite_intf_be_cfg (
         resp_st_next = resp_st;
         resp_payload_next = resp_payload;
         bsresp_op = OP_INVAL;
-        errfifo_data_resp = 'b0;
+        errfifo_data_resp = {`PRGA_AXI_DATA_WIDTH{1'b0}};
 
         case (resp_st)
             ST_IDLE: begin
@@ -488,7 +488,7 @@ module pktchain_axilite_intf_be_cfg (
         pkt_st_next = pkt_st;
         pkt_payload_next = pkt_payload;
         bsframe_op = OP_INVAL;
-        errfifo_data_pkt = 'b0;
+        errfifo_data_pkt = {`PRGA_AXI_DATA_WIDTH{1'b0}};
 
         case (pkt_st)
             ST_IDLE: begin

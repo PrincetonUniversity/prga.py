@@ -18,29 +18,8 @@ module prga_async_fifo #(
     output wire [DATA_WIDTH - 1:0] dout
     );
 
-    // sync wrst/rrst to the opposite clock domain
-    reg wrst_rclk_s0, wrst_rclk_s1, wrst_rclk, wrst_rclk_f, lockdown_rclk,
-        rrst_wclk_s0, rrst_wclk_s1, rrst_wclk, rrst_wclk_f, lockdown_wclk;
-
-    always @(posedge rclk) begin
-        {wrst_rclk_f, wrst_rclk, wrst_rclk_s1, wrst_rclk_s0} <= {wrst_rclk, wrst_rclk_s1, wrst_rclk_s0, wrst};
-
-        if (rrst) begin
-            lockdown_rclk <= 'b1;
-        end else if (~rrst && {wrst_rclk, wrst_rclk_f} == 2'b01) begin
-            lockdown_rclk <= 'b0;
-        end
-    end
-
-    always @(posedge wclk) begin
-        {rrst_wclk_f, rrst_wclk, rrst_wclk_s1, rrst_wclk_s0} <= {rrst_wclk, rrst_wclk_s1, rrst_wclk_s0, rrst};
-
-        if (wrst) begin
-            lockdown_wclk <= 'b1;
-        end else if (~wrst && {rrst_wclk, rrst_wclk_f} == 2'b01) begin
-            lockdown_wclk <= 'b0;
-        end
-    end
+    // Assumption: wrst and rrst are "async assertion, sync deassertion" in both
+    // clock domains
 
     // counters
     reg [DEPTH_LOG2:0]  b_wptr_wclk, g_wptr_wclk, g_wptr_rclk_s0, g_wptr_rclk_s1, b_wptr_rclk,
@@ -116,8 +95,8 @@ module prga_async_fifo #(
         end
     end
 
-    assign full = lockdown_wclk || b_rptr_wclk == {~b_wptr_wclk[DEPTH_LOG2], b_wptr_wclk[0 +: DEPTH_LOG2]};
-    assign empty_internal = lockdown_rclk || b_rptr_rclk == b_wptr_rclk;
+    assign full = wrst || b_rptr_wclk == {~b_wptr_wclk[DEPTH_LOG2], b_wptr_wclk[0 +: DEPTH_LOG2]};
+    assign empty_internal = rrst || b_rptr_rclk == b_wptr_rclk;
 
     generate if (LOOKAHEAD) begin
         prga_fifo_lookahead_buffer #(

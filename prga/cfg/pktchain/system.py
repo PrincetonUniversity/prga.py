@@ -169,6 +169,7 @@ class PktchainSystem(object):
             else:
                 NetUtils.connect(intf.pins[port.key], port)
         # configuration intf
+        NetUtils.connect(clk,                           fabric.pins["cfg_clk"])
         NetUtils.connect(intf.pins["cfg_rst"],          fabric.pins["cfg_rst"])
         NetUtils.connect(intf.pins["cfg_e"],            fabric.pins["cfg_e"])
         NetUtils.connect(fabric.pins["phit_i_full"],    intf.pins["cfg_phit_o_full"])
