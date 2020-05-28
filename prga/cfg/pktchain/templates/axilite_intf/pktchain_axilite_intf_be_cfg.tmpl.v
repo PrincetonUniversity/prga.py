@@ -36,115 +36,8 @@ module pktchain_axilite_intf_be_cfg (
     );
 
     // =======================================================================
-    // -- Bitstream Programming Output & Response Input ----------------------
+    // -- Shared Resources ---------------------------------------------------
     // =======================================================================
-
-    // AXI data FIFO
-    wire [`PRGA_AXI_DATA_WIDTH + `PRGA_BYTES_PER_AXI_DATA - 1:0] axififo_din, axififo_dout;
-    wire axififo_full, axififo_empty, axififo_rd;
-
-    // put byte enable close to each byte (so the resizer can grab those correctly)
-    genvar axi_disasm_i;
-    generate
-        for (axi_disasm_i = 0; axi_disasm_i < `PRGA_BYTES_PER_AXI_DATA; axi_disasm_i = axi_disasm_i + 1) begin: axi_disasm
-            assign axififo_din[axi_disasm_i * 9 +: 9] = {wstrb[axi_disasm_i], wdata[axi_disasm_i * 8 +: 8]};
-        end
-    endgenerate
-
-    prga_fifo #(
-        .DATA_WIDTH             (`PRGA_AXI_DATA_WIDTH + `PRGA_BYTES_PER_AXI_DATA)
-        ,.LOOKAHEAD             (0)
-    ) axififo (
-        .clk                    (clk)
-        ,.rst                   (rst)
-        ,.full                  (axififo_full)
-        ,.wr                    (wval && wrdy)
-        ,.din                   (axififo_din)
-        ,.empty                 (axififo_empty)
-        ,.rd                    (axififo_rd)
-        ,.dout                  (axififo_dout)
-        );
-
-    // AXI data resizer
-    wire [`PRGA_PKTCHAIN_FRAME_SIZE + `PRGA_BYTES_PER_FRAME - 1:0] axififo_resizer_dout;
-    wire axififo_resizer_empty, axififo_resizer_rd;
-
-    prga_fifo_resizer #(
-        .DATA_WIDTH             (`PRGA_PKTCHAIN_FRAME_SIZE + `PRGA_BYTES_PER_FRAME)
-        ,.INPUT_MULTIPLIER      (`PRGA_FRAMES_PER_AXI_DATA)
-        ,.INPUT_LOOKAHEAD       (0)
-        ,.OUTPUT_LOOKAHEAD      (1)
-    ) axififo_resizer (
-        .clk                    (clk)
-        ,.rst                   (rst)
-        ,.empty_i               (axififo_empty)
-        ,.rd_i                  (axififo_rd)
-        ,.dout_i                (axififo_dout)
-        ,.empty                 (axififo_resizer_empty)
-        ,.rd                    (axififo_resizer_rd)
-        ,.dout                  (axififo_resizer_dout)
-        );
-
-    // re-assemble 
-    wire [`PRGA_BYTES_PER_FRAME - 1:0] bsframe_mask;
-    wire [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] bsframe;
-
-    genvar bsframe_asm_i;
-    generate
-        for (bsframe_asm_i = 0; bsframe_asm_i < `PRGA_BYTES_PER_FRAME; bsframe_asm_i = bsframe_asm_i + 1) begin: bsframe_asm
-            assign {bsframe_mask[bsframe_asm_i], bsframe[bsframe_asm_i * 8 +: 8]} = axififo_resizer_dout[bsframe_asm_i * 9 +: 9];
-        end
-    endgenerate
-
-    localparam  OP_INVAL    = 2'b00,
-                OP_ACCEPT   = 2'b01,
-                OP_DROP     = 2'b10;
-
-    wire bsframe_val, bsresp_val;
-    reg [1:0] bsframe_op, bsresp_op;
-
-    // frame disassembler
-    wire bsframe_fifo_full;
-
-    pktchain_frame_disassemble #(
-        .DEPTH_LOG2             (11 - `PRGA_PKTCHAIN_PHIT_WIDTH_LOG2)   // buffer capacity: 64 frames
-    ) bsframe_fifo (
-        .cfg_clk                    (clk)
-        ,.cfg_rst                   (cfg_rst)
-        ,.frame_full                (bsframe_fifo_full)
-        ,.frame_wr                  (bsframe_val && bsframe_op == OP_ACCEPT)
-        ,.frame_i                   (bsframe)
-        ,.phit_wr                   (cfg_phit_o_wr)
-        ,.phit_full                 (cfg_phit_o_full)
-        ,.phit_o                    (cfg_phit_o)
-        );
-
-    assign bsframe_val = ~axififo_resizer_empty && (&bsframe_mask);
-    assign axififo_resizer_rd = ~bsframe_val || (bsframe_op == OP_ACCEPT && ~bsframe_fifo_full) || bsframe_op == OP_DROP;
-
-    // response assembler
-    wire bsresp_fifo_empty;
-    wire [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] bsresp;
-
-    pktchain_frame_assemble #(
-        .DEPTH_LOG2             (2)                                     // buffer capacity: 4 frames
-    ) bsresp_fifo (
-        .cfg_clk                    (clk)
-        ,.cfg_rst                   (cfg_rst)
-        ,.phit_full                 (cfg_phit_i_full)
-        ,.phit_wr                   (cfg_phit_i_wr)
-        ,.phit_i                    (cfg_phit_i)
-        ,.frame_empty               (bsresp_fifo_empty)
-        ,.frame_rd                  (bsresp_op == OP_ACCEPT || bsresp_op == OP_DROP)
-        ,.frame_o                   (bsresp)
-        );
-
-    assign bsresp_val = ~bsresp_fifo_empty;
-
-    // =======================================================================
-    // -- Tile Status Tracker ------------------------------------------------
-    // =======================================================================
-
     // Tile status tracker
     localparam  LOG2_PKTCHAIN_X_TILES = `CLOG2(`PRGA_PKTCHAIN_X_TILES),
                 LOG2_PKTCHAIN_Y_TILES = `CLOG2(`PRGA_PKTCHAIN_Y_TILES);
@@ -181,27 +74,156 @@ module pktchain_axilite_intf_be_cfg (
 
     reg [`PRGA_TILE_STATUS_TRACKER_WIDTH - 1:0] tile_status_tracker_dout;
     reg [`PRGA_TILE_STATUS_TRACKER_WIDTH - 1:0] tile_status_tracker_din;
-    reg tile_status_tracker_wop_clean_col, tile_status_tracker_wop_update;
+
+    localparam  TILE_STATUS_TRACKER_OP_INVAL        = 2'b00,
+                TILE_STATUS_TRACKER_OP_CLEAR        = 2'b10,
+                TILE_STATUS_TRACKER_OP_UPDATE       = 2'b11;
+    reg [1:0] tile_status_tracker_op;
 
     always @* begin
-        tile_status_tracker_col_we = tile_status_tracker_wop_clean_col || tile_status_tracker_wop_update;
+        tile_status_tracker_col_we = 'b0;
         tile_status_tracker_dout = tile_status_tracker_col_dout[tile_status_tracker_rd_ypos_f * `PRGA_TILE_STATUS_TRACKER_WIDTH +:
                                    `PRGA_TILE_STATUS_TRACKER_WIDTH];
         tile_status_tracker_col_din = tile_status_tracker_col_dout;
-        
-        if (tile_status_tracker_wop_clean_col) begin
-            tile_status_tracker_col_din = 'b0;
-        end else if (tile_status_tracker_wop_update) begin
-            tile_status_tracker_col_din[tile_status_tracker_rd_ypos_f * `PRGA_TILE_STATUS_TRACKER_WIDTH +:
-                `PRGA_TILE_STATUS_TRACKER_WIDTH] = tile_status_tracker_din;
+
+        case (tile_status_tracker_op)
+            TILE_STATUS_TRACKER_OP_CLEAR: begin
+                tile_status_tracker_col_we = 'b1;
+                tile_status_tracker_col_din = 'b0;
+            end
+            TILE_STATUS_TRACKER_OP_UPDATE: begin
+                tile_status_tracker_col_we = 'b1;
+                tile_status_tracker_col_din[tile_status_tracker_rd_ypos_f * `PRGA_TILE_STATUS_TRACKER_WIDTH +:
+                    `PRGA_TILE_STATUS_TRACKER_WIDTH] = tile_status_tracker_din;
+            end
+        endcase
+    end
+
+    // =======================================================================
+    // -- Bitstream Frame Input ----------------------------------------------
+    // =======================================================================
+    // Raw data fifo
+    wire [`PRGA_AXI_DATA_WIDTH + `PRGA_BYTES_PER_AXI_DATA - 1:0] rawq_din, rawq_dout;
+    wire rawq_full, rawq_empty, rawq_rd;
+
+    // put byte enable close to each byte (so the resizer can grab those correctly)
+    genvar disasm_i;
+    generate
+        for (disasm_i = 0; disasm_i < `PRGA_BYTES_PER_AXI_DATA; disasm_i = disasm_i + 1) begin: raw_disasm
+            assign rawq_din[disasm_i * 9 +: 9] = {wstrb[disasm_i], wdata[disasm_i * 8 +: 8]};
+        end
+    endgenerate
+
+    prga_fifo #(
+        .DATA_WIDTH             (`PRGA_AXI_DATA_WIDTH + `PRGA_BYTES_PER_AXI_DATA)
+        ,.LOOKAHEAD             (0)
+    ) i_rawq (
+        .clk                    (clk)
+        ,.rst                   (rst)
+        ,.full                  (rawq_full)
+        ,.wr                    (wval && wrdy)
+        ,.din                   (rawq_din)
+        ,.empty                 (rawq_empty)
+        ,.rd                    (rawq_rd)
+        ,.dout                  (rawq_dout)
+        );
+
+    // Resizer
+    wire [`PRGA_PKTCHAIN_FRAME_SIZE + `PRGA_BYTES_PER_FRAME - 1:0] resizer_dout;
+    wire resizer_empty, resizer_rd;
+
+    prga_fifo_resizer #(
+        .DATA_WIDTH             (`PRGA_PKTCHAIN_FRAME_SIZE + `PRGA_BYTES_PER_FRAME)
+        ,.INPUT_MULTIPLIER      (`PRGA_FRAMES_PER_AXI_DATA)
+        ,.INPUT_LOOKAHEAD       (0)
+        ,.OUTPUT_LOOKAHEAD      (1)
+    ) i_resizer (
+        .clk                    (clk)
+        ,.rst                   (rst)
+        ,.empty_i               (rawq_empty)
+        ,.rd_i                  (rawq_rd)
+        ,.dout_i                (rawq_dout)
+        ,.empty                 (resizer_empty)
+        ,.rd                    (resizer_rd)
+        ,.dout                  (resizer_dout)
+        );
+
+    // re-assemble bitstream frame
+    wire [`PRGA_BYTES_PER_FRAME - 1:0] frame_tmp_mask;
+    wire [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] frame_tmp;
+
+    genvar asm_i;
+    generate
+        for (asm_i = 0; asm_i < `PRGA_BYTES_PER_FRAME; asm_i = asm_i + 1) begin: bsframe_asm
+            assign {frame_tmp_mask[asm_i], frame_tmp[asm_i * 8 +: 8]} = resizer_dout[asm_i * 9 +: 9];
+        end
+    endgenerate
+
+    // register frame
+    reg [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] frame_i;
+    reg frame_i_val, frame_i_stall;
+
+    always @(posedge clk) begin
+        if (rst) begin
+            frame_i_val <= 'b0;
+            frame_i <= 'b0;
+        end else if (~frame_i_stall) begin
+            if (~resizer_empty && (&frame_tmp_mask)) begin
+                frame_i_val <= 'b1;
+                frame_i <= frame_tmp;
+            end else begin
+                frame_i_val <= 'b0;
+            end
         end
     end
+
+    assign resizer_rd = ~( (&frame_tmp_mask) && frame_i_stall );
+
+    // =======================================================================
+    // -- Bitstream Frame output ---------------------------------------------
+    // =======================================================================
+    wire frame_o_stall;
+    reg frame_o_val;
+
+    pktchain_frame_disassemble #(
+        .DEPTH_LOG2             (11 - `PRGA_PKTCHAIN_PHIT_WIDTH_LOG2)   // buffer capacity: 64 frames
+    ) i_frameq (
+        .cfg_clk                (clk)
+        ,.cfg_rst               (cfg_rst)
+        ,.frame_full            (frame_o_stall)
+        ,.frame_wr              (frame_o_val)
+        ,.frame_i               (frame_i)
+        ,.phit_wr               (cfg_phit_o_wr)
+        ,.phit_full             (cfg_phit_o_full)
+        ,.phit_o                (cfg_phit_o)
+        );
+
+    // =======================================================================
+    // -- Bitstream Response Input -------------------------------------------
+    // =======================================================================
+    wire respq_empty, resp_val;
+    reg resp_stall;
+    wire [`PRGA_PKTCHAIN_FRAME_SIZE - 1:0] resp;
+
+    pktchain_frame_assemble #(
+        .DEPTH_LOG2             (2)
+    ) i_respq (
+        .cfg_clk                (clk)
+        ,.cfg_rst               (cfg_rst)
+        ,.phit_full             (cfg_phit_i_full)
+        ,.phit_wr               (cfg_phit_i_wr)
+        ,.phit_i                (cfg_phit_i)
+        ,.frame_empty           (respq_empty)
+        ,.frame_rd              (~resp_stall)
+        ,.frame_o               (resp)
+        );
+
+    assign resp_val = ~respq_empty;
 
     // =======================================================================
     // -- Main FSM -----------------------------------------------------------
     // =======================================================================
-
-    // PHASE (or, big state)
+    // PHASE (state of this configuration backend)
     localparam  PHASE_RST                   = 4'h0,     // system is just reset
                 PHASE_CLR_TILE_STAT_TRCKERS = 4'h1,     // clearing tile status trackers
                 PHASE_STANDBY               = 4'h2,     // waiting for the SOB packet
@@ -210,449 +232,490 @@ module pktchain_axilite_intf_be_cfg (
                 PHASE_SUCCESS               = 4'h5,     // programming completed successfully
                 PHASE_FAIL                  = 4'h6;     // programming failed
 
-    // STATE (or, small state)
-    localparam  ST_IDLE                     = 4'h0,     // waiting for a header frame
-                ST_HDR                      = 4'h1,     // processing a valid header
-                ST_FWD_PLD                  = 4'h2,     // forwarding valid payload frames
-                ST_DUMP_PLD                 = 4'h3,     // dumping invalid frames
-                ST_ERR                      = 4'h4;     // an error is pending
-
     reg [3:0] phase, phase_next;
-    reg [3:0] pkt_st, pkt_st_next, resp_st, resp_st_next;
-    reg [`PRGA_PKTCHAIN_PAYLOAD_WIDTH - 1:0] pkt_payload, pkt_payload_next, resp_payload, resp_payload_next;
+
     reg [`PRGA_PKTCHAIN_POS_WIDTH * 2 - 1:0] init_tiles, init_tiles_next;
     reg [`PRGA_PKTCHAIN_POS_WIDTH * 2 - 1:0] pending_tiles, pending_tiles_next;
     reg [`PRGA_PKTCHAIN_POS_WIDTH * 2 - 1:0] err_tiles, err_tiles_next;
-    reg [`PRGA_AXI_DATA_WIDTH - 1:0] errfifo_data_pkt, errfifo_data_pkt_f;
-    reg [`PRGA_AXI_DATA_WIDTH - 1:0] errfifo_data_resp, errfifo_data_resp_f;
+
+    always @(posedge clk) begin
+        if (rst) begin
+            phase <= PHASE_RST;
+            init_tiles <= 'b0;
+            pending_tiles <= 'b0;
+            err_tiles <= 'b0;
+        end else begin
+            phase <= phase_next;
+            init_tiles <= init_tiles_next;
+            pending_tiles <= pending_tiles_next;
+            err_tiles <= err_tiles_next;
+        end
+    end
+
+    always @* begin
+        wrdy = 'b0;
+        programming = 'b0;
+        success = 'b0;
+        cfg_rst = 'b0;
+        cfg_e = 'b0;
+
+        case (phase)
+            PHASE_RST,
+            PHASE_CLR_TILE_STAT_TRCKERS: begin
+                cfg_rst = 'b1;
+                cfg_e = 'b1;
+            end
+            PHASE_STANDBY: begin
+                wrdy = ~rawq_full;
+                cfg_rst = 'b1;
+                cfg_e = 'b1;
+            end
+            PHASE_PROG: begin
+                wrdy = ~rawq_full;
+                programming = 'b1;
+                cfg_e = 'b1;
+            end
+            PHASE_STBLIZ: begin
+                programming = 'b1;
+                cfg_e = 'b1;
+            end
+            PHASE_SUCCESS: begin
+                success = 'b1;
+            end
+        endcase
+    end
+    
+    // =======================================================================
+    // -- Error FIFO Arbitration ---------------------------------------------
+    // =======================================================================
+    reg phase_err_val, phase_err_val_f, phase_err_stall;
+    reg resp_err_val, resp_err_val_f, resp_err_stall;
+    reg bl_err_val, bl_err_val_f, bl_err_stall;
+    reg [`PRGA_AXI_DATA_WIDTH - 1:0] phase_err, phase_err_f, resp_err, resp_err_f, bl_err, bl_err_f;
+
+    always @(posedge clk) begin
+        if (rst) begin
+            phase_err_val_f <= 'b0;
+            phase_err_f <= {`PRGA_AXI_DATA_WIDTH{1'b0}};
+            resp_err_val_f <= 'b0;
+            resp_err_f <= {`PRGA_AXI_DATA_WIDTH{1'b0}};
+            bl_err_val_f <= 'b0;
+            bl_err_f <= {`PRGA_AXI_DATA_WIDTH{1'b0}};
+        end else begin
+            if (~phase_err_stall) begin
+                if (phase_err_val) begin
+                    phase_err_val_f <= 'b1;
+                    phase_err_f <= phase_err;
+                end else begin
+                    phase_err_val_f <= 'b0;
+                end
+            end
+
+            if (~resp_err_stall) begin
+                if (resp_err_val) begin
+                    resp_err_val_f <= 'b1;
+                    resp_err_f <= resp_err;
+                end else begin
+                    resp_err_val_f <= 'b0;
+                end
+            end
+
+            if (~bl_err_stall) begin
+                if (bl_err_val) begin
+                    bl_err_val_f <= 'b1;
+                    bl_err_f <= bl_err;
+                end else begin
+                    bl_err_val_f <= 'b0;
+                end
+            end
+        end
+    end
+
+    always @* begin
+        if (phase_err_val_f) begin
+            errfifo_wr = 'b1;
+            errfifo_data = phase_err_f;
+            phase_err_stall = errfifo_full;
+            resp_err_stall = resp_err_val_f;
+            bl_err_stall = bl_err_val_f;
+        end else if (resp_err_val_f) begin
+            errfifo_wr = 'b1;
+            errfifo_data = resp_err_f;
+            phase_err_stall = 'b0;
+            resp_err_stall = errfifo_full;
+            bl_err_stall = bl_err_val_f;
+        end else begin
+            errfifo_wr = bl_err_val_f;
+            errfifo_data = bl_err_f;
+            phase_err_stall = 'b0;
+            resp_err_stall = 'b0;
+            bl_err_stall = bl_err_val_f && errfifo_full;
+        end
+    end
+
+    // =======================================================================
+    // -- Frame Pipeline -----------------------------------------------------
+    // =======================================================================
+    localparam  ST_IDLE             = 2'h0,
+                ST_HDR              = 2'h1,
+                ST_PLD_DUMP         = 2'h2,
+                ST_PLD_FWD          = 2'h3;
+
+    reg [1:0] bl_st, bl_st_next, resp_st, resp_st_next;
+    reg [`PRGA_PKTCHAIN_PAYLOAD_WIDTH - 1:0] bl_pldcnt, bl_pldcnt_next, resp_pldcnt, resp_pldcnt_next;
 
     // resource management helpers
     reg tile_status_tracker_busy;
 
     always @(posedge clk) begin
         if (rst) begin
-            phase <= PHASE_RST;
-            pkt_st <= ST_IDLE;
+            bl_st <= ST_IDLE;
             resp_st <= ST_IDLE;
-            pkt_payload <= 'b0;
-            resp_payload <= 'b0;
-            init_tiles <= 'b0;
-            pending_tiles <= 'b0;
-            err_tiles <= 'b0;
-            errfifo_data_pkt_f <= {`PRGA_AXI_DATA_WIDTH{1'b0}};
-            errfifo_data_resp_f <= {`PRGA_AXI_DATA_WIDTH{1'b0}};
+            bl_pldcnt <= 'b0;
+            resp_pldcnt <= 'b0;
         end else begin
-            phase <= phase_next;
-            pkt_st <= pkt_st_next;
+            bl_st <= bl_st_next;
             resp_st <= resp_st_next;
-            pkt_payload <= pkt_payload_next;
-            resp_payload <= resp_payload_next;
-            init_tiles <= init_tiles_next;
-            pending_tiles <= pending_tiles_next;
-            err_tiles <= err_tiles_next;
-            errfifo_data_pkt_f <= errfifo_data_pkt;
-            errfifo_data_resp_f <= errfifo_data_resp;
+            bl_pldcnt <= bl_pldcnt_next;
+            resp_pldcnt <= resp_pldcnt_next;
         end
     end
-    {#
-        // ===================================================================
-        // -- Define Text Macros (Jinja2) ------------------------------------
-        // ===================================================================
-        #}
-    {%- macro try_send_error(is_resp) %}
-        {%- set v0 = "resp" if is_resp else "pkt" %}
-        {%- set v1 = "resp" if is_resp else "frame" %}
-        if (~errfifo_wr) begin
-            errfifo_wr = 'b1;
-            errfifo_data = errfifo_data_{{ v0 }};
-
-            if (~errfifo_full) begin
-                bs{{ v1 }}_op = OP_DROP;
-                {{ v0 }}_payload_next = bs{{ v1 }}[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
-
-                if (bs{{ v1 }}[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
-                    {{ v0 }}_st_next = ST_DUMP_PLD;
-                end else begin
-                    {{ v0 }}_st_next = ST_IDLE;
-                end
-            end else begin
-                {{ v0 }}_st_next = ST_ERR;
-            end
-        end else begin
-            {{ v0 }}_st_next = ST_ERR;
-        end
-    {%- endmacro %}
 
     always @* begin
-        phase_next = phase;
-
         init_tiles_next = init_tiles;
         pending_tiles_next = pending_tiles;
         err_tiles_next = err_tiles;
-
-        wrdy = 'b0;
-        programming = 'b0;
-        success = 'b0;
-        errfifo_wr = 'b0;
-        errfifo_data = {`PRGA_AXI_DATA_WIDTH{1'b0}};
-        cfg_rst = 'b0;
-        cfg_e = 'b0;
         
         tile_status_tracker_rd_xpos = 'b0;
         tile_status_tracker_rd_ypos = 'b0;
         tile_status_tracker_din = tile_status_tracker_dout;
-        tile_status_tracker_wop_clean_col = 'b0;
-        tile_status_tracker_wop_update = 'b0;
+        tile_status_tracker_op = TILE_STATUS_TRACKER_OP_INVAL;
         tile_status_tracker_busy = 'b0;
 
-        // BIG state
+        // Phase FSM
+        phase_next = phase;
+        phase_err_val = 'b0;
+        phase_err = {`PRGA_AXI_DATA_WIDTH{1'b0}};
+
         case (phase)
             PHASE_RST: begin
                 phase_next = PHASE_CLR_TILE_STAT_TRCKERS;
                 init_tiles_next = 'b0;
                 pending_tiles_next = 'b0;
                 err_tiles_next = 'b0;
-                cfg_rst = 'b1;
-                cfg_e = 'b1;
                 tile_status_tracker_rd_xpos = 'b0;
             end
             PHASE_CLR_TILE_STAT_TRCKERS: begin
                 init_tiles_next = 'b0;
                 pending_tiles_next = 'b0;
                 err_tiles_next = 'b0;
-                cfg_rst = 'b1;
-                cfg_e = 'b1;
                 tile_status_tracker_rd_xpos = tile_status_tracker_rd_xpos_f + 1;
-                tile_status_tracker_wop_clean_col = 'b1;
+                tile_status_tracker_op = TILE_STATUS_TRACKER_OP_CLEAR;
 
                 if (tile_status_tracker_rd_xpos_f == `PRGA_PKTCHAIN_X_TILES - 1) begin
                     phase_next = PHASE_STANDBY;
                 end
             end
             PHASE_STANDBY: begin
-                wrdy = ~axififo_full;
-                cfg_rst = 'b1;
-                cfg_e = 'b1;
-
-                if (pkt_st == ST_IDLE && bsframe_val && bsframe == {`PRGA_PKTCHAIN_MSG_TYPE_SOB,
+                if (bl_st == ST_IDLE && frame_i_val && frame_i == {`PRGA_PKTCHAIN_MSG_TYPE_SOB,
                     {`PRGA_PKTCHAIN_POS_WIDTH{1'b0}}, {`PRGA_PKTCHAIN_POS_WIDTH{1'b0}}, {`PRGA_PKTCHAIN_PAYLOAD_WIDTH{1'b0}}}
                 ) begin
                     phase_next = PHASE_PROG;
                 end
             end
             PHASE_PROG: begin
-                wrdy = ~axififo_full;
-                cfg_e = 'b1;
-                programming = 'b1;
-
-                if (pkt_st == ST_IDLE && bsframe_val && bsframe == {`PRGA_PKTCHAIN_MSG_TYPE_EOB,
+                if (bl_st == ST_IDLE && frame_i_val && frame_i == {`PRGA_PKTCHAIN_MSG_TYPE_EOB,
                     {`PRGA_PKTCHAIN_POS_WIDTH{1'b0}}, {`PRGA_PKTCHAIN_POS_WIDTH{1'b0}}, {`PRGA_PKTCHAIN_PAYLOAD_WIDTH{1'b0}}}
                 ) begin
                     phase_next = PHASE_STBLIZ;
                 end
             end
             PHASE_STBLIZ: begin
-                programming = 'b1;
-
                 if (pending_tiles == 0) begin
-                    if (init_tiles) begin   // initialized yet not completed tiles
-                        errfifo_wr = 'b1;
-                        errfifo_data[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
-                        errfifo_data[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_INCOMPLETE_TILES;
-                        errfifo_data[0 +: `PRGA_PKTCHAIN_POS_WIDTH * 2] = init_tiles;
-                        
-                        if (~errfifo_full) begin
+                    if (init_tiles) begin
+                        phase_err_val = 'b1;
+                        phase_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
+                        phase_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_INCOMPLETE_TILES;
+                        phase_err[0 +: `PRGA_PKTCHAIN_POS_WIDTH * 2] = init_tiles;
+
+                        if (~phase_err_stall) begin
                             phase_next = PHASE_FAIL;
                         end
-                    end else if (err_tiles) begin   // some tiles had errors
-                        errfifo_wr = 'b1;
-                        errfifo_data[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
-                        errfifo_data[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_ERROR_TILES;
-                        errfifo_data[0 +: `PRGA_PKTCHAIN_POS_WIDTH * 2] = err_tiles;
-                        
-                        if (~errfifo_full) begin
+                    end else if (err_tiles) begin
+                        phase_err_val = 'b1;
+                        phase_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
+                        phase_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_ERROR_TILES;
+                        phase_err[0 +: `PRGA_PKTCHAIN_POS_WIDTH * 2] = err_tiles;
+
+                        if (~phase_err_stall) begin
                             phase_next = PHASE_FAIL;
                         end
                     end else begin
                         phase_next = PHASE_SUCCESS;
                     end
-                end else begin
-                    cfg_e = 'b1;
                 end
-            end
-            PHASE_SUCCESS: begin
-                success = 'b1;
-            end
-            PHASE_FAIL: begin
             end
         endcase
 
-        // put this before pkt_st so resources are allocated to response
-        // handling first
+        // Prioritize response handling
         resp_st_next = resp_st;
-        resp_payload_next = resp_payload;
-        bsresp_op = OP_INVAL;
-        errfifo_data_resp = {`PRGA_AXI_DATA_WIDTH{1'b0}};
+        resp_pldcnt_next = resp_pldcnt;
+        resp_stall = 'b0;
+        resp_err_val = 'b0;
+        resp_err = {`PRGA_AXI_DATA_WIDTH{1'b0}};
 
         case (resp_st)
-            ST_IDLE: begin
-                case (phase)    // we only accept response in certain phases
-                    PHASE_PROG,
-                    PHASE_STBLIZ: begin
-                        if (bsresp_val) begin   // response header
-                            if (bsresp[`PRGA_PKTCHAIN_XPOS_INDEX] >= `PRGA_PKTCHAIN_X_TILES
-                                || bsresp[`PRGA_PKTCHAIN_YPOS_INDEX] >= `PRGA_PKTCHAIN_Y_TILES
-                                || bsresp[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0
-                                || ~(bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK
-                                    || bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE
-                                    || bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_ERROR_ECHO_MISMATCH
-                                    || bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_ERROR_CHECKSUM_MISMATCH
-                                    || bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_ERROR_FEEDTHRU_PACKET)
-                            ) begin
-                                // bad header
-                                errfifo_data_resp[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
-                                errfifo_data_resp[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_INVAL_RESP;
-                                errfifo_data_resp[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = bsresp;
-
-                                {{ try_send_error(true)|indent(24) }}
-                            end else begin
-                                // good header
-                                if (~tile_status_tracker_busy) begin
-                                    tile_status_tracker_busy = 'b1;
-                                    tile_status_tracker_rd_xpos = bsresp[`PRGA_PKTCHAIN_XPOS_INDEX];
-                                    tile_status_tracker_rd_ypos = bsresp[`PRGA_PKTCHAIN_YPOS_INDEX];
-                                    resp_st_next = ST_HDR;
-                                end
+            ST_IDLE: if (resp_err_stall || ~(phase == PHASE_PROG || phase == PHASE_STBLIZ)) begin
+                resp_stall = 'b1;
+            end else if (resp_val) begin
+                // validate header
+                if (resp[`PRGA_PKTCHAIN_XPOS_INDEX] < `PRGA_PKTCHAIN_X_TILES &&
+                    resp[`PRGA_PKTCHAIN_YPOS_INDEX] < `PRGA_PKTCHAIN_Y_TILES &&
+                    resp[`PRGA_PKTCHAIN_PAYLOAD_INDEX] == 0
+                ) begin
+                    case (resp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX])
+                        `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK,
+                        `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE,
+                        `PRGA_PKTCHAIN_MSG_TYPE_ERROR_ECHO_MISMATCH,
+                        `PRGA_PKTCHAIN_MSG_TYPE_ERROR_CHECKSUM_MISMATCH,
+                        `PRGA_PKTCHAIN_MSG_TYPE_ERROR_FEEDTHRU_PACKET: begin
+                            // good header. but let's make sure there's no
+                            // conflict on the shared resources
+                            if (~tile_status_tracker_busy) begin
+                                tile_status_tracker_busy = 'b1;     // grab this resource!
+                                tile_status_tracker_rd_xpos = resp[`PRGA_PKTCHAIN_XPOS_INDEX];
+                                tile_status_tracker_rd_ypos = `PRGA_PKTCHAIN_Y_TILES - 1 - resp[`PRGA_PKTCHAIN_YPOS_INDEX];
+                                resp_st_next = ST_HDR;
                             end
+
+                            resp_stall = 'b1;
                         end
+                        default: begin
+                            // bad header. Unknown message type
+                            resp_err_val = 'b1;
+                            resp_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
+                            resp_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_INVAL_RESP;
+                            resp_err[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = resp;
+                        end
+                    endcase
+                end else begin
+                    // bad header
+                    resp_err_val = 'b1;
+                    resp_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
+                    resp_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_INVAL_RESP;
+                    resp_err[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = resp;
+
+                    if (resp[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
+                        resp_st_next = ST_PLD_DUMP;
+                        resp_pldcnt_next = resp[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
                     end
-                endcase
+                end
             end
             ST_HDR: begin
-                errfifo_data_resp[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
-                errfifo_data_resp[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_ERR_RESP;
-                errfifo_data_resp[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = bsresp;
-                errfifo_data_resp[`PRGA_PKTCHAIN_FRAME_SIZE +: `PRGA_TILE_STATUS_TRACKER_WIDTH] = tile_status_tracker_dout;
+                resp_st_next = ST_IDLE;
+
+                // pre-build error (we might not need it)
+                resp_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
+                resp_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_ERR_RESP;
+                resp_err[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = resp;
+                resp_err[`PRGA_PKTCHAIN_FRAME_SIZE +: `PRGA_TILE_STATUS_TRACKER_WIDTH] = tile_status_tracker_dout;
 
                 case (tile_status_tracker_dout)
-                    `PRGA_TILE_STATUS_PENDING: begin
-                        if (bsresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK) begin
-                            tile_status_tracker_wop_update = 'b1;
-                            tile_status_tracker_din = `PRGA_TILE_STATUS_DONE;
-                            pending_tiles_next = pending_tiles - 1;
-                            resp_st_next = ST_IDLE;
-                            bsresp_op = OP_DROP;
-                        end else begin
-                            tile_status_tracker_wop_update = 'b1;
-                            tile_status_tracker_din = `PRGA_TILE_STATUS_ERROR;
-                            pending_tiles_next = pending_tiles - 1;
-                            err_tiles_next = err_tiles + 1;
-
-                            {{ try_send_error(true)|indent(20) }}
-                        end
+                    `PRGA_TILE_STATUS_PENDING: if (resp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK) begin
+                        tile_status_tracker_op = TILE_STATUS_TRACKER_OP_UPDATE;
+                        tile_status_tracker_din = `PRGA_TILE_STATUS_DONE;
+                        pending_tiles_next = pending_tiles - 1;
+                    end else begin
+                        tile_status_tracker_op = TILE_STATUS_TRACKER_OP_UPDATE;
+                        tile_status_tracker_din = `PRGA_TILE_STATUS_ERROR;
+                        pending_tiles_next = pending_tiles - 1;
+                        err_tiles_next = err_tiles + 1;
+                        resp_err_val = 'b1;
                     end
                     `PRGA_TILE_STATUS_ERROR: begin
-                        resp_st_next = ST_IDLE;
-                        bsresp_op = OP_DROP;
+                        resp_err_val = 'b1;
                     end
                     default: begin
-                        tile_status_tracker_wop_update = 'b1;
+                        tile_status_tracker_op = TILE_STATUS_TRACKER_OP_UPDATE;
                         tile_status_tracker_din = `PRGA_TILE_STATUS_ERROR;
                         err_tiles_next = err_tiles + 1;
+                        resp_err_val = 'b1;
 
                         if (tile_status_tracker_dout == `PRGA_TILE_STATUS_PROGRAMMING) begin
                             init_tiles_next = init_tiles - 1;
                         end
-
-                        {{ try_send_error(true)|indent(16) }}
                     end
                 endcase
             end
-            ST_DUMP_PLD: begin
-                if (bsresp_val) begin
-                    bsresp_op = OP_DROP;
-                    resp_payload_next = resp_payload - 1;
-
-                    if (resp_payload == 1) begin
-                        resp_st_next = ST_IDLE;
-                    end
+            ST_PLD_DUMP: if (resp_val) begin
+                if (resp_pldcnt == 1) begin
+                    resp_st_next = ST_IDLE;
+                end else begin
+                    resp_pldcnt_next = resp_pldcnt - 1;
                 end
-            end
-            ST_ERR: begin
-                errfifo_data_resp = errfifo_data_resp_f;
-
-                {{ try_send_error(true)|indent(8) }}
             end
         endcase
 
-        pkt_st_next = pkt_st;
-        pkt_payload_next = pkt_payload;
-        bsframe_op = OP_INVAL;
-        errfifo_data_pkt = {`PRGA_AXI_DATA_WIDTH{1'b0}};
+        // Frame input handling
+        bl_st_next = bl_st;
+        bl_pldcnt_next = bl_pldcnt;
+        frame_i_stall = 'b0;
+        frame_o_val = 'b0;
+        bl_err_val = 'b0;
+        bl_err = {`PRGA_AXI_DATA_WIDTH{1'b0}};
 
-        case (pkt_st)
-            ST_IDLE: begin
-                case (phase)    // we only accept incoming bitstream frames in certain phases
-                    PHASE_STANDBY: begin    // expecting SOB packet
-                        if (bsframe_val) begin
-                            if (bsframe == {`PRGA_PKTCHAIN_MSG_TYPE_SOB,
-                                {`PRGA_PKTCHAIN_POS_WIDTH{1'b0}},
-                                {`PRGA_PKTCHAIN_POS_WIDTH{1'b0}},
-                                {`PRGA_PKTCHAIN_PAYLOAD_WIDTH{1'b0}}}
-                            ) begin         // start of bitstream
-                                bsframe_op = OP_DROP;
-                            end else begin
-                                errfifo_data[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
-                                errfifo_data[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_EXPECTING_SOB;
-                                errfifo_data[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = bsframe;
+        case (bl_st)
+            ST_IDLE: if (frame_i_val) begin
+                case (phase)
+                    PHASE_STANDBY: if (frame_i != {
+                        `PRGA_PKTCHAIN_MSG_TYPE_SOB,
+                        {`PRGA_PKTCHAIN_POS_WIDTH{1'b0}},
+                        {`PRGA_PKTCHAIN_POS_WIDTH{1'b0}},
+                        {`PRGA_PKTCHAIN_PAYLOAD_WIDTH{1'b0}}
+                    }) begin
+                        bl_err_val = 'b1;
+                        bl_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
+                        bl_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_EXPECTING_SOB;
+                        bl_err[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = frame_i;
 
-                                {{ try_send_error(false)|indent(24) }}
-                            end
+                        if (bl_err_stall) begin
+                            frame_i_stall = 'b1;
+                        end else if (frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
+                            bl_st_next = ST_PLD_DUMP;
+                            bl_pldcnt_next = frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
                         end
                     end
-                    PHASE_PROG: begin       // expecting non-SOB packet
-                        if (bsframe_val) begin
-                            if (bsframe == {`PRGA_PKTCHAIN_MSG_TYPE_EOB,
-                                {`PRGA_PKTCHAIN_POS_WIDTH{1'b0}},
-                                {`PRGA_PKTCHAIN_POS_WIDTH{1'b0}},
-                                {`PRGA_PKTCHAIN_PAYLOAD_WIDTH{1'b0}}}
-                            ) begin         // end of bitstream
-                                bsframe_op = OP_DROP;
-                            end else if (bsframe[`PRGA_PKTCHAIN_XPOS_INDEX] >= `PRGA_PKTCHAIN_X_TILES
-                                || bsframe[`PRGA_PKTCHAIN_YPOS_INDEX] >= `PRGA_PKTCHAIN_Y_TILES
-                                || ~(bsframe[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA
-                                    || bsframe[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT
-                                    || bsframe[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_CHECKSUM
-                                    || bsframe[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM)
-                            ) begin
-                                // bad header
-                                errfifo_data_pkt[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
-                                errfifo_data_pkt[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_INVAL_PKT;
-                                errfifo_data_pkt[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = bsframe;
-
-                                {{ try_send_error(false)|indent(24) }}
-                            end else begin
-                                // good header
-                                if (~tile_status_tracker_busy) begin
-                                    tile_status_tracker_busy = 'b1;
-                                    tile_status_tracker_rd_xpos = bsframe[`PRGA_PKTCHAIN_XPOS_INDEX];
-                                    tile_status_tracker_rd_ypos = bsframe[`PRGA_PKTCHAIN_YPOS_INDEX];
-                                    pkt_st_next = ST_HDR;
-                                end
-                            end
+                    PHASE_PROG: if (frame_i == {
+                        `PRGA_PKTCHAIN_MSG_TYPE_EOB,
+                        {`PRGA_PKTCHAIN_POS_WIDTH{1'b0}},
+                        {`PRGA_PKTCHAIN_POS_WIDTH{1'b0}},
+                        {`PRGA_PKTCHAIN_PAYLOAD_WIDTH{1'b0}}
+                    }) begin
+                        frame_i_stall = 'b0;
+                    end else if (frame_i[`PRGA_PKTCHAIN_XPOS_INDEX] < `PRGA_PKTCHAIN_X_TILES &&
+                        frame_i[`PRGA_PKTCHAIN_YPOS_INDEX] < `PRGA_PKTCHAIN_Y_TILES && (
+                            frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA ||
+                            frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT ||
+                            frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM ||
+                            frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_CHECKSUM)
+                    ) begin
+                        if (~bl_err_stall && ~tile_status_tracker_busy) begin
+                            tile_status_tracker_busy = 'b1;
+                            tile_status_tracker_rd_xpos = frame_i[`PRGA_PKTCHAIN_XPOS_INDEX];
+                            tile_status_tracker_rd_ypos = frame_i[`PRGA_PKTCHAIN_YPOS_INDEX];
+                            bl_st_next = ST_HDR;
                         end
+
+                        frame_i_stall = 'b1;
+                    end else begin
+                        bl_err_val = 'b1;
+                        bl_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
+                        bl_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_INVAL_PKT;
+                        bl_err[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = frame_i;
+
+                        if (bl_err_stall) begin
+                            frame_i_stall = 'b1;
+                        end else if (frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
+                            bl_st_next = ST_PLD_DUMP;
+                            bl_pldcnt_next = frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
+                        end
+                    end
+                    PHASE_FAIL: begin
+                        frame_i_stall = 'b0;
+                    end
+                    default: begin
+                        frame_i_stall = 'b1;
                     end
                 endcase
             end
             ST_HDR: begin
-                errfifo_data_pkt[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
-                errfifo_data_pkt[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_ERR_PKT;
-                errfifo_data_pkt[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = bsframe;
-                errfifo_data_pkt[`PRGA_PKTCHAIN_FRAME_SIZE +: `PRGA_TILE_STATUS_TRACKER_WIDTH] = tile_status_tracker_dout;
+                // pre-build error
+                bl_err[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_BITSTREAM;
+                bl_err[`PRGA_ERR_BITSTREAM_SUBTYPE_INDEX] = `PRGA_ERR_BITSTREAM_SUBTYPE_ERR_PKT;
+                bl_err[0 +: `PRGA_PKTCHAIN_FRAME_SIZE] = frame_i;
+                bl_err[`PRGA_PKTCHAIN_FRAME_SIZE +: `PRGA_TILE_STATUS_TRACKER_WIDTH] = tile_status_tracker_dout;
 
                 case (tile_status_tracker_dout)
                     `PRGA_TILE_STATUS_RESET: begin
-                        case (bsframe[`PRGA_PKTCHAIN_MSG_TYPE_INDEX])
-                            `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT,
+                        case (frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX])
+                            `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT: begin
+                                init_tiles_next = init_tiles + 1;
+                                tile_status_tracker_din = `PRGA_TILE_STATUS_PROGRAMMING;
+                                tile_status_tracker_op = TILE_STATUS_TRACKER_OP_UPDATE;
+                                frame_o_val = 'b1;
+                            end
                             `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM: begin
-                                // good. tile initialized
-                                if (bsframe[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT) begin
-                                    init_tiles_next = init_tiles + 1;
-                                    tile_status_tracker_din = `PRGA_TILE_STATUS_PROGRAMMING;
-                                end else begin
-                                    pending_tiles_next = pending_tiles + 1;
-                                    tile_status_tracker_din = `PRGA_TILE_STATUS_PENDING;
-                                end
-                                tile_status_tracker_wop_update = 'b1;
-
-                                bsframe_op = OP_ACCEPT;
+                                pending_tiles_next = pending_tiles + 1;
+                                tile_status_tracker_din = `PRGA_TILE_STATUS_PENDING;
+                                tile_status_tracker_op = TILE_STATUS_TRACKER_OP_UPDATE;
+                                frame_o_val = 'b1;
                             end
                             `PRGA_PKTCHAIN_MSG_TYPE_DATA,
                             `PRGA_PKTCHAIN_MSG_TYPE_DATA_CHECKSUM: begin
-                                // bad. tile not initialized yet
                                 err_tiles_next = err_tiles + 1;
                                 tile_status_tracker_din = `PRGA_TILE_STATUS_ERROR;
-                                tile_status_tracker_wop_update = 'b1;
-
-                                {{ try_send_error(false)|indent(24) }}
+                                tile_status_tracker_op = TILE_STATUS_TRACKER_OP_UPDATE;
                             end
                         endcase
                     end
                     `PRGA_TILE_STATUS_PROGRAMMING: begin
-                        case (bsframe[`PRGA_PKTCHAIN_MSG_TYPE_INDEX])
+                        case (frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX])
                             `PRGA_PKTCHAIN_MSG_TYPE_DATA: begin
-                                // good.
-                                bsframe_op = OP_ACCEPT;
+                                frame_o_val = 'b1;
                             end
                             `PRGA_PKTCHAIN_MSG_TYPE_DATA_CHECKSUM: begin
-                                // good.
                                 init_tiles_next = init_tiles - 1;
                                 pending_tiles_next = pending_tiles + 1;
                                 tile_status_tracker_din = `PRGA_TILE_STATUS_PENDING;
-                                tile_status_tracker_wop_update = 'b1;
-
-                                bsframe_op = OP_ACCEPT;
+                                tile_status_tracker_op = TILE_STATUS_TRACKER_OP_UPDATE;
+                                frame_o_val = 'b1;
                             end
                             `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT,
                             `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT_CHECKSUM: begin
-                                // bad. tile already initialized
+                                init_tiles_next = init_tiles - 1;
                                 err_tiles_next = err_tiles + 1;
                                 tile_status_tracker_din = `PRGA_TILE_STATUS_ERROR;
-                                tile_status_tracker_wop_update = 'b1;
-
-                                {{ try_send_error(false)|indent(24) }}
+                                tile_status_tracker_op = TILE_STATUS_TRACKER_OP_UPDATE;
                             end
                         endcase
                     end
-                    `PRGA_TILE_STATUS_PENDING,
-                    `PRGA_TILE_STATUS_ERROR,
-                    `PRGA_TILE_STATUS_DONE: begin
-                        // bad.
-                        {{ try_send_error(false)|indent(16) }}
-                    end
                 endcase
 
-                if (bsframe_op == OP_ACCEPT) begin
-                    if (~bsframe_fifo_full) begin
-                        pkt_payload_next = bsframe[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
+                if (frame_o_val) begin
+                    if (frame_o_stall) begin
+                        frame_i_stall = 'b1;
+                        bl_pldcnt_next = frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] + 1;
                     end else begin
-                        pkt_payload_next = bsframe[`PRGA_PKTCHAIN_PAYLOAD_INDEX] + 1;
+                        bl_pldcnt_next = frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
                     end
 
-                    if (pkt_payload_next > 0) begin
-                        pkt_st_next = ST_FWD_PLD;
+                    if (bl_pldcnt_next > 0) begin
+                        bl_st_next = ST_PLD_FWD;
                     end else begin
-                        pkt_st_next = ST_IDLE;
+                        bl_st_next = ST_IDLE;
                     end
+                end else begin
+                    bl_err_val = 'b1;
+                    bl_st_next = ST_IDLE;
                 end
             end
-            ST_FWD_PLD: begin
-                if (bsframe_val) begin
-                    bsframe_op = OP_ACCEPT;
-
-                    if (~bsframe_fifo_full) begin
-                        pkt_payload_next = pkt_payload - 1;
-
-                        if (pkt_payload == 1) begin
-                            pkt_st_next = ST_IDLE;
-                        end
-                    end
+            ST_PLD_DUMP: if (frame_i_val) begin
+                if (bl_pldcnt == 1) begin
+                    bl_st_next = ST_IDLE;
+                end else begin
+                    bl_pldcnt_next = bl_pldcnt - 1;
                 end
             end
-            ST_DUMP_PLD: begin
-                if (bsframe_val) begin
-                    bsframe_op = OP_DROP;
-                    pkt_payload_next = pkt_payload - 1;
+            ST_PLD_FWD: if (frame_i_val) begin
+                frame_o_val = 'b1;
 
-                    if (pkt_payload == 1) begin
-                        pkt_st_next = ST_IDLE;
-                    end
+                if (frame_o_stall) begin
+                    frame_i_stall = 'b1;
+                end else if (bl_pldcnt == 1) begin
+                    bl_st_next = ST_IDLE;
+                end else begin
+                    bl_pldcnt_next = bl_pldcnt - 1;
                 end
-            end
-            ST_ERR: begin
-                errfifo_data_pkt = errfifo_data_pkt_f;
-
-                {{ try_send_error(false)|indent(8) }}
             end
         endcase
     end

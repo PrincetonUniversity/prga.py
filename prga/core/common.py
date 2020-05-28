@@ -639,20 +639,18 @@ class BlockPortFCValue(namedtuple('BlockPortFCValue', 'default overrides')):
             all_sections (:obj:`bool`): if all sections of a segment longer than 1 should be taken into consideration
 
         Returns:
-            :obj:`float`: FC value as a ratio
+            :obj:`int`: Number of tracks connected per port bit
         """
-        # multiplier = segment.length if all_sections else 1
+        multiplier = segment.length if all_sections else 1
         fc = self.overrides.get(segment.name, self.default)
         if isinstance(fc, int):
-            return max(0., min(1., fc / ((segment.width * segment.length) if all_sections else segment.width)))
-            # if fc < 0 or fc >= segment.width:
-            #     raise PRGAInternalError("Invalid FC value ({}) for segment '{}'".format(fc, segment.name))
-            # return fc * multiplier
+            if fc < 0 or fc >= segment.width * multiplier:
+                raise PRGAInternalError("Invalid FC value ({}) for segment '{}'".format(fc, segment.name))
+            return fc
         elif isinstance(fc, float):
-            return max(0., min(1., fc))
-            # if fc < 0 or fc > 1:
-            #     raise PRGAInternalError("Invalid FC value ({}) for segment '{}'".format(fc, segment.name))
-            # return int(ceil(fc * segment.width * multiplier))
+            if fc < 0 or fc > 1:
+                raise PRGAInternalError("Invalid FC value ({}) for segment '{}'".format(fc, segment.name))
+            return int(ceil(fc * segment.width * multiplier))
         else:
             raise PRGAInternalError("Invalid FC value ({}) for segment '{}'".format(fc, segment.name))
 
@@ -697,7 +695,7 @@ class BlockFCValue(namedtuple('BlockFCValue', 'default_in default_out overrides'
             all_sections (:obj:`bool`): if all sections of a segment longer than 1 should be taken into consideration
 
         Returns:
-            :obj:`float`: FC value as a ratio
+            :obj:`int`: Number of tracks connected per port bit
         """
         return self.overrides.get(port.key, port.direction.case(self.default_in, self.default_out)).segment_fc(
                 segment, all_sections)

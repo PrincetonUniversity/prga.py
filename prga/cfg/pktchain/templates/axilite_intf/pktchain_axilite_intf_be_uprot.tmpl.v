@@ -63,7 +63,7 @@ module pktchain_axilite_intf_be_uprot (
 
     always @(posedge clk) begin
         if (rst) begin
-            timeout_limit <= 'b0;
+            timeout_limit <= 'd0;
         end else if (timeout_limit_update) begin
             timeout_limit <= timeout_limit_next;
         end
@@ -116,7 +116,7 @@ module pktchain_axilite_intf_be_uprot (
     reg wreq_timeout, wresp_timeout, rreq_timeout, rresp_timeout;
 
     always @(posedge clk) begin
-        if (urst_n) begin
+        if (~urst_n) begin
             utimeout_f <= 'b0;
         end else if (wreq_timeout || wresp_timeout || rreq_timeout || rresp_timeout) begin
             utimeout_f <= 'b1;
@@ -138,11 +138,12 @@ module pktchain_axilite_intf_be_uprot (
     reg [`PRGA_AXI_DATA_WIDTH - 1:0] data_wf;
     reg addr_val_wf, data_val_wf;
     
+    localparam  WF_OP_WIDTH         = 2;
     localparam  WF_OP_INVAL         = 2'h0,
                 WF_OP_UREG          = 2'h1,
                 WF_OP_CERR          = 2'h2,
                 WF_OP_UREQ_TIMEOUT  = 2'h3;
-    reg [1:0] op_wf;
+    reg [WF_OP_WIDTH - 1:0] op_wf;
 
     always @* begin
         val_wf = addr_val_wf || data_val_wf;
@@ -199,11 +200,16 @@ module pktchain_axilite_intf_be_uprot (
         u_WVALID = 'b0;
 
         if (stall_wx) begin
-            stall_wf_addr = 'b1;
-            stall_wf_data = 'b1;
+            stall_wf_addr = addr_val_wf;
+            stall_wf_data = data_val_wf;
         end else if (val_wf) begin
             if (addr_wf[`PRGA_AXI_ADDR_WIDTH - 1:`PRGA_CTRL_ADDR_WIDTH] != `PRGA_CTRL_ADDR_PREFIX) begin    // user register
-                if (utimeout_f) begin                   // user application has timed out before
+                if (urst_countdown > 0) begin           // user application is reset just now. hold until the reset finishes
+                    stall_wf_addr = 'b1;
+                    stall_wf_data = 'b1;
+                end else if (~urst_n) begin             // user application is still in reset state and it won't come out
+                    op_wf = WF_OP_INVAL;
+                end else if (utimeout_f) begin          // user application has timed out before
                     op_wf = WF_OP_INVAL;
                 end else if (wreq_timer == 0) begin     // user application just timed out
                     wreq_timeout = 'b1;
@@ -216,7 +222,7 @@ module pktchain_axilite_intf_be_uprot (
                     op_wf = WF_OP_UREG;
                 end
             end else begin                                                                                  // ctrl register
-                case (addr_wf[`PRGA_CTRL_ADDR_WIDTH])
+                case (addr_wf[0 +: `PRGA_CTRL_ADDR_WIDTH])
                     `PRGA_CTRL_ADDR_URST: begin
                         op_wf = WF_OP_INVAL;
                         urst_countdown_update = data_wf;
@@ -237,13 +243,14 @@ module pktchain_axilite_intf_be_uprot (
     reg [`PRGA_TIMER_WIDTH - 1:0] wresp_timer;
     reg [`PRGA_AXI_ADDR_WIDTH - 1:0] addr_wx;
 
+    localparam  WX_OP_WIDTH             = 3;
     localparam  WX_OP_INVAL             = 3'h0,
                 WX_OP_UREG              = 3'h1,
                 WX_OP_CERR              = 3'h2,
                 WX_OP_UREQ_TIMEOUT      = 3'h3,
                 WX_OP_URESP_TIMEOUT     = 3'h4;
-    reg [1:0] op_wx_i;
-    reg [2:0] op_wx_o;
+    reg [WF_OP_WIDTH - 1:0] op_wx_i;
+    reg [WX_OP_WIDTH - 1:0] op_wx_o;
 
     always @(posedge clk) begin
         if (rst) begin
@@ -273,7 +280,7 @@ module pktchain_axilite_intf_be_uprot (
         op_wx_o = WX_OP_INVAL;
 
         if (stall_we) begin
-            stall_wx = 'b1;
+            stall_wx = op_wx_i != WF_OP_INVAL;
         end else begin
             case (op_wx_i)
                 WF_OP_UREG: begin
@@ -310,11 +317,13 @@ module pktchain_axilite_intf_be_uprot (
     reg [`PRGA_TIMER_WIDTH - 1:0] rreq_timer;
     reg [`PRGA_AXI_ADDR_WIDTH - 1:0] addr_rf;
 
-    localparam  RF_OP_CREG          = 2'h0,
-                RF_OP_UREG          = 2'h1,
-                RF_OP_UAPP_TIMEOUT  = 2'h2,
-                RF_OP_UREQ_TIMEOUT  = 2'h3;
-    reg [1:0] op_rf;
+    localparam  RF_OP_WIDTH         = 3;
+    localparam  RF_OP_INVAL         = 3'h0,
+                RF_OP_CREG          = 3'h1,
+                RF_OP_UREG          = 3'h2,
+                RF_OP_UREQ_TIMEOUT  = 3'h3,
+                RF_OP_IGNORE        = 3'h4;
+    reg [RF_OP_WIDTH - 1:0] op_rf;
 
     always @(posedge clk) begin
         if (rst) begin
@@ -344,16 +353,20 @@ module pktchain_axilite_intf_be_uprot (
 
     always @* begin
         rreq_timeout = 'b0;
-        op_rf = RF_OP_CREG;
+        op_rf = RF_OP_INVAL;
         stall_rf = 'b0;
         u_ARVALID = 'b0;
 
         if (stall_rx) begin
-            stall_rf = 'b1;
+            stall_rf = val_rf;
         end else if (val_rf) begin
             if (addr_rf[`PRGA_AXI_ADDR_WIDTH - 1:`PRGA_CTRL_ADDR_WIDTH] != `PRGA_CTRL_ADDR_PREFIX) begin    // user register
-                if (utimeout_f) begin
-                    op_rf = RF_OP_UAPP_TIMEOUT;
+                if (urst_countdown > 0) begin
+                    stall_rf = 'b1;
+                end else if (~urst_n) begin
+                    op_rf = RF_OP_IGNORE;
+                end else if (utimeout_f) begin
+                    op_rf = RF_OP_IGNORE;
                 end else if (rreq_timer == 0) begin     // user application just timed out
                     rreq_timeout = 'b1;
                     op_rf = RF_OP_UREQ_TIMEOUT;
@@ -373,28 +386,27 @@ module pktchain_axilite_intf_be_uprot (
     reg [`PRGA_AXI_ADDR_WIDTH - 1:0] addr_rx;
     reg [`PRGA_AXI_DATA_WIDTH - 1:0] data_rx;
 
+    localparam  RX_OP_WIDTH         = 2;
     localparam  RX_OP_INVAL         = 2'h0,
                 RX_OP_PLAIN         = 2'h1,
                 RX_OP_ERR           = 2'h2;
-    reg [1:0] op_rx_i;
-    reg [1:0] op_rx_o;
+    reg [RF_OP_WIDTH - 1:0] op_rx_i;
+    reg [RX_OP_WIDTH - 1:0] op_rx_o;
 
     always @(posedge clk) begin
         if (rst) begin
             addr_rx <= 'b0;
-            val_rx <= 'b0;
-            op_rx_i <= 'b0;
+            op_rx_i <= RF_OP_INVAL;
             rresp_timer <= 'b0;
         end else begin
-            if (val_rf && ~stall_rf) begin
+            if (op_rf != RF_OP_INVAL && ~stall_rf) begin
                 addr_rx <= addr_rf;
-                val_rx <= 'b1;
                 op_rx_i <= op_rf;
             end else if (~stall_rx) begin
-                val_rx <= 'b0;
+                op_rx_i <= RF_OP_INVAL;
             end
 
-            if (val_rf && op_rf == RF_OP_UREG && ~stall_rf) begin
+            if (op_rf == RF_OP_UREG && ~stall_rf) begin
                 rresp_timer <= timeout_limit;
             end else if (u_RREADY && rresp_timer > 0) begin
                 rresp_timer <= rresp_timer - 1;
@@ -411,11 +423,11 @@ module pktchain_axilite_intf_be_uprot (
         op_rx_o = RX_OP_INVAL;
 
         if (stall_rr) begin
-            stall_rx = 'b1;
-        end else if (val_rx) begin
+            stall_rx = op_rx_i != RF_OP_INVAL;
+        end else begin
             case (op_rx_i)
                 RF_OP_CREG: begin
-                    case (addr_rx)
+                    case (addr_rx[0 +: `PRGA_CTRL_ADDR_WIDTH])
                         `PRGA_CTRL_ADDR_UREG_TIMEOUT: begin
                             data_rx[0 +: `PRGA_TIMER_WIDTH] = timeout_limit;
                             op_rx_o = RX_OP_PLAIN;
@@ -468,7 +480,7 @@ module pktchain_axilite_intf_be_uprot (
                     data_rx[`PRGA_AXI_ADDR_WIDTH +: 4] = 4'b1000;
                     op_rx_o = RX_OP_ERR;
                 end
-                RF_OP_UAPP_TIMEOUT: begin
+                RF_OP_IGNORE: begin
                     op_rx_o = RX_OP_PLAIN;
                 end
             endcase

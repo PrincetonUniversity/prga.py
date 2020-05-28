@@ -11,6 +11,7 @@ from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
 from ...netlist.module.module import Module
 from ...netlist.module.util import ModuleUtils
+from ...algorithm.interconnect import InterconnectAlgorithms
 from ...exception import PRGAAPIError, PRGAInternalError
 from ...util import uno
 
@@ -228,42 +229,52 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
             for port in (tunnel.source, tunnel.sink):
                 if port.parent is block:
                     fc.overrides[port.key] = BlockPortFCValue(0)
-        # segments
+        # iterate through segment types
         if segments is None:
             segments = tuple(itervalues(self._context.segments))
         elif isinstance(segments, Mapping):
             segments = tuple(itervalues(segments))
-        # start generation
-        energy = 0.
-        for subblock, port in product(range(block.capacity), itervalues(block.ports)):
-            if not (port.position == position and port.orientation in (orientation, None)):
-                continue
-            elif hasattr(port, 'global_'):
-                continue
-            port_bus = self.get_blockpin(port.name, subblock, dont_create = dont_create)
-            for pin, sgmt_dir, sgmt in product(range(len(port)), Direction, segments):
-                cur_fc = fc.port_fc(port, sgmt, port.direction.is_input)
-                if port.direction.is_input:
-                    for section in range(sgmt.length):
+        for sgmt in segments:
+            # tracks -> input pins
+            tracks = tuple(product(range(sgmt.width), range(sgmt.length)))
+            n_selected = [0] * len(tracks)
+            for subblock, port in product(range(block.capacity), itervalues(block.ports)):
+                if hasattr(port, "global_"):
+                    continue
+                elif not (port.position == position and port.orientation in (orientation, None) and
+                        port.direction.is_input):
+                    continue
+                fc = fc.port_fc(port, sgmt, True)
+                port_bus = self.get_blockpin(port.name, subblock, dont_create = dont_create)
+                for itrack, port_idx in InterconnectAlgorithms.crossbar(
+                        len(tracks), len(port), fc, n_selected = n_selected):
+                    idx, section = tracks[itrack]
+                    for sgmt_dir in Direction:
                         sgmt_bus = self.get_segment_input(sgmt,
                                 Orientation.compose(orientation.dimension.perpendicular, sgmt_dir),
                                 section, dont_create = dont_create)
-                        for idx in range(sgmt.width):
-                            energy += cur_fc
-                            if energy >= 1.:
-                                energy -= 1.
-                                if port_bus is not None and sgmt_bus is not None:
-                                    self.connect(sgmt_bus[idx], port_bus[pin])
-                else:
-                    sgmt_bus = self.get_segment_output(sgmt,
-                            Orientation.compose(orientation.dimension.perpendicular, sgmt_dir),
-                            dont_create = dont_create)
-                    for idx in range(sgmt.width):
-                        energy += cur_fc
-                        if energy >= 1.:
-                            energy -= 1.
-                            if port_bus is not None and sgmt_bus is not None:
-                                self.connect(port_bus[pin], sgmt_bus[idx])
+                        if port_bus is not None and sgmt_bus is not None:
+                            self.connect(sgmt_bus[idx], port_bus[port_idx])
+            # output pins -> tracks
+            tracks = tuple(range(sgmt.width))
+            n_selected = [0] * len(tracks)
+            for subblock, port in product(range(block.capacity), itervalues(block.ports)):
+                if hasattr(port, "global_"):
+                    continue
+                elif not (port.position == position and port.orientation in (orientation, None) and
+                        port.direction.is_output):
+                    continue
+                fc = fc.port_fc(port, sgmt, False)
+                port_bus = self.get_blockpin(port.name, subblock, dont_create = dont_create)
+                for itrack, port_idx in InterconnectAlgorithms.crossbar(
+                        len(tracks), len(port), fc, n_selected = n_selected):
+                    idx = tracks[itrack]
+                    for sgmt_dir in Direction:
+                        sgmt_bus = self.get_segment_output(sgmt,
+                                Orientation.compose(orientation.dimension.perpendicular, sgmt_dir),
+                                dont_create = dont_create)
+                        if port_bus is not None and sgmt_bus is not None:
+                            self.connect(port_bus[port_idx], sgmt_bus[idx])
  
     @classmethod
     def new(cls, block, orientation, position = None, *, identifier = None, name = None):

@@ -18,8 +18,7 @@ module prga_async_fifo #(
     output wire [DATA_WIDTH - 1:0] dout
     );
 
-    // Assumption: wrst and rrst are "async assertion, sync deassertion" in both
-    // clock domains
+    // Assumption: wrst and rrst are both "async assertion, sync deassertion"
 
     // counters
     reg [DEPTH_LOG2:0]  b_wptr_wclk, g_wptr_wclk, g_wptr_rclk_s0, g_wptr_rclk_s1, b_wptr_rclk,

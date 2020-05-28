@@ -591,7 +591,7 @@ module {{ module.name }} (
             if (i_fe_rreq_addr[`PRGA_AXI_ADDR_WIDTH - 1:`PRGA_CTRL_ADDR_WIDTH] != `PRGA_CTRL_ADDR_PREFIX) begin
                 i_rresp_tokenq_din = RRESP_TOKEN_CDCQ;
             end else begin
-                case (i_fe_rreq_addr)
+                case (i_fe_rreq_addr[0 +: `PRGA_CTRL_ADDR_WIDTH])
                     `PRGA_CTRL_ADDR_STATE,
                     `PRGA_CTRL_ADDR_CONFIG,
                     `PRGA_CTRL_ADDR_CONFIG + 1,
@@ -666,7 +666,7 @@ module {{ module.name }} (
                 i_cdcq_rreq_wr = 'b1;
                 stall_rx = i_cdcq_rreq_full;
             end else begin
-                case (addr_rx)
+                case (addr_rx[0 +: `PRGA_CTRL_ADDR_WIDTH])
                     `PRGA_CTRL_ADDR_STATE: begin
                         stall_rx = i_rresp_dataq_full;
                         i_rresp_dataq_wr = 'b1;
