@@ -244,10 +244,10 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                 elif not (port.position == position and port.orientation in (orientation, None) and
                         port.direction.is_input):
                     continue
-                fc = fc.port_fc(port, sgmt, True)
+                port_fc = fc.port_fc(port, sgmt, True)
                 port_bus = self.get_blockpin(port.name, subblock, dont_create = dont_create)
                 for itrack, port_idx in InterconnectAlgorithms.crossbar(
-                        len(tracks), len(port), fc, n_selected = n_selected):
+                        len(tracks), len(port), port_fc, n_selected = n_selected):
                     idx, section = tracks[itrack]
                     for sgmt_dir in Direction:
                         sgmt_bus = self.get_segment_input(sgmt,
@@ -264,10 +264,10 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                 elif not (port.position == position and port.orientation in (orientation, None) and
                         port.direction.is_output):
                     continue
-                fc = fc.port_fc(port, sgmt, False)
+                port_fc = fc.port_fc(port, sgmt, False)
                 port_bus = self.get_blockpin(port.name, subblock, dont_create = dont_create)
                 for itrack, port_idx in InterconnectAlgorithms.crossbar(
-                        len(tracks), len(port), fc, n_selected = n_selected):
+                        len(tracks), len(port), port_fc, n_selected = n_selected):
                     idx = tracks[itrack]
                     for sgmt_dir in Direction:
                         sgmt_bus = self.get_segment_output(sgmt,

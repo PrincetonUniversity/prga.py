@@ -14,6 +14,10 @@ module pktchain_axilite_intf_be_uprot (
     input wire [`PRGA_BYTES_PER_AXI_DATA - 1:0] wreq_strb,
     input wire [`PRGA_AXI_DATA_WIDTH - 1:0] wreq_data,
 
+    // write response
+    input wire [0:0] wresp_full,
+    output reg [0:0] wresp_wr,
+
     // read request
     input wire [0:0] rreq_empty,
     output wire [0:0] rreq_rd,
@@ -56,22 +60,31 @@ module pktchain_axilite_intf_be_uprot (
     input wire [1:0] u_RRESP
     );
 
+    // APP Data Width
+    reg [1:0] udata_width, udata_width_next;
+
+    always @(posedge clk) begin
+        if (rst) begin
+            udata_width <= 'b0;
+        end else begin
+            udata_width <= udata_width_next;
+        end
+    end
+
     // Timeout limit
-    reg [`PRGA_TIMER_WIDTH - 1:0] timeout_limit;
-    wire [`PRGA_TIMER_WIDTH - 1:0] timeout_limit_next;
-    wire timeout_limit_update;
+    reg [`PRGA_TIMER_WIDTH - 1:0] timeout_limit, timeout_limit_next;
 
     always @(posedge clk) begin
         if (rst) begin
             timeout_limit <= 'd0;
-        end else if (timeout_limit_update) begin
+        end else begin
             timeout_limit <= timeout_limit_next;
         end
     end
 
     // User Error FIFO
-    wire uerr_fifo_clr, uerr_fifo_empty, uerr_fifo_full;
-    reg uerr_fifo_rd, uerr_fifo_wr;
+    wire uerr_fifo_empty, uerr_fifo_full;
+    reg uerr_fifo_rd, uerr_fifo_wr, uerr_fifo_clr;
     wire [`PRGA_AXI_DATA_WIDTH - 1:0] uerr_fifo_dout;
     reg [`PRGA_AXI_DATA_WIDTH - 1:0] uerr_fifo_din;
 
@@ -127,8 +140,8 @@ module pktchain_axilite_intf_be_uprot (
     // -- Write Pipeline -----------------------------------------------------
     // =======================================================================
     // Forward declaration of valid/stall signals
-    //  fetch,                        execute,  error
-    reg stall_wf_addr, stall_wf_data, stall_wx, stall_we;
+    //  fetch,                        execute,  response, error
+    reg stall_wf_addr, stall_wf_data, stall_wx, stall_wr, stall_we;
     reg val_wf;
 
     // -- Fetch/post stage ---------------------------------------------------
@@ -164,7 +177,7 @@ module pktchain_axilite_intf_be_uprot (
                 data_wf <= wreq_data;
                 addr_val_wf <= 'b1;
                 data_val_wf <= 'b1;
-                wreq_timer <= timeout_limit;
+                wreq_timer <= timeout_limit_next;
             end else begin
                 if (~stall_wf_addr) begin
                     addr_val_wf <= 'b0;
@@ -186,9 +199,6 @@ module pktchain_axilite_intf_be_uprot (
     assign u_AWPROT = 'b0;
     assign u_WDATA = data_wf;
     assign u_WSTRB = strb_wf;
-    assign timeout_limit_next = data_wf[0 +: `PRGA_TIMER_WIDTH];
-    assign timeout_limit_update = val_wf && ~(stall_wf_addr || stall_wf_data) && addr_wf == {`PRGA_CTRL_ADDR_PREFIX, `PRGA_CTRL_ADDR_UREG_TIMEOUT};
-    assign uerr_fifo_clr = val_wf && ~(stall_wf_addr || stall_wf_data) && addr_wf == {`PRGA_CTRL_ADDR_PREFIX, `PRGA_CTRL_ADDR_UERR_FIFO};
 
     always @* begin
         urst_countdown_update = 'b0;
@@ -198,6 +208,10 @@ module pktchain_axilite_intf_be_uprot (
         stall_wf_data = 'b0;
         u_AWVALID = 'b0;
         u_WVALID = 'b0;
+
+        udata_width_next = udata_width;
+        timeout_limit_next = timeout_limit;
+        uerr_fifo_clr = 'b0;
 
         if (stall_wx) begin
             stall_wf_addr = addr_val_wf;
@@ -222,14 +236,20 @@ module pktchain_axilite_intf_be_uprot (
                     op_wf = WF_OP_UREG;
                 end
             end else begin                                                                                  // ctrl register
+                op_wf = WF_OP_INVAL;
+
                 case (addr_wf[0 +: `PRGA_CTRL_ADDR_WIDTH])
                     `PRGA_CTRL_ADDR_URST: begin
-                        op_wf = WF_OP_INVAL;
                         urst_countdown_update = data_wf;
                     end
-                    `PRGA_CTRL_ADDR_UREG_TIMEOUT,
+                    `PRGA_CTRL_ADDR_UDATA_WIDTH: begin
+                        udata_width_next = data_wf[0 +: 2];
+                    end
+                    `PRGA_CTRL_ADDR_UREG_TIMEOUT: begin
+                        timeout_limit_next = data_wf[0 +: `PRGA_TIMER_WIDTH];
+                    end
                     `PRGA_CTRL_ADDR_UERR_FIFO: begin
-                        op_wf = WF_OP_INVAL;
+                        uerr_fifo_clr = 'b1;
                     end
                     default: begin
                         op_wf = WF_OP_CERR;
@@ -266,7 +286,7 @@ module pktchain_axilite_intf_be_uprot (
             end
 
             if (op_wf == WF_OP_UREG && ~stall_wf_addr && ~stall_wf_data) begin
-                wresp_timer <= timeout_limit;
+                wresp_timer <= timeout_limit_next;
             end else if (u_BREADY && wresp_timer > 0) begin
                 wresp_timer <= wresp_timer - 1;
             end
@@ -279,7 +299,7 @@ module pktchain_axilite_intf_be_uprot (
         u_BREADY = 'b0;
         op_wx_o = WX_OP_INVAL;
 
-        if (stall_we) begin
+        if (stall_wr) begin
             stall_wx = op_wx_i != WF_OP_INVAL;
         end else begin
             case (op_wx_i)
@@ -302,6 +322,39 @@ module pktchain_axilite_intf_be_uprot (
                     op_wx_o = WX_OP_UREQ_TIMEOUT;
                 end
             endcase
+        end
+    end
+
+    // -- Response stage -----------------------------------------------------
+    reg [`PRGA_AXI_ADDR_WIDTH - 1:0] addr_wr;
+    reg [WX_OP_WIDTH - 1:0] op_wr;
+    reg [1:0] uresp_wr;
+
+    always @(posedge clk) begin
+        if (rst) begin
+            addr_wr <= 'b0;
+            op_wr <= WX_OP_INVAL;
+            uresp_wr <= 'b0;
+        end else begin
+            if (op_wx_o != WX_OP_INVAL && ~stall_wx) begin
+                addr_wr <= addr_wx;
+                op_wr <= op_wx_o;
+                uresp_wr <= u_BRESP;
+            end else if (~stall_wr) begin
+                op_wr <= WX_OP_INVAL;
+            end
+        end
+    end
+
+    always @* begin
+        wresp_wr = 'b0;
+        stall_wr = 'b0;
+
+        if (stall_we) begin
+            stall_wr = 'b1;
+        end else if (op_wr != WX_OP_INVAL) begin
+            wresp_wr = 'b1;
+            stall_wr = wresp_full;
         end
     end
 
@@ -334,7 +387,7 @@ module pktchain_axilite_intf_be_uprot (
             if (~rreq_empty && rreq_rd) begin
                 addr_rf <= rreq_addr;
                 val_rf <= 'b1;
-                rreq_timer <= timeout_limit;
+                rreq_timer <= timeout_limit_next;
             end else begin
                 if (~stall_rf) begin
                     val_rf <= 'b0;
@@ -407,7 +460,7 @@ module pktchain_axilite_intf_be_uprot (
             end
 
             if (op_rf == RF_OP_UREG && ~stall_rf) begin
-                rresp_timer <= timeout_limit;
+                rresp_timer <= timeout_limit_next;
             end else if (u_RREADY && rresp_timer > 0) begin
                 rresp_timer <= rresp_timer - 1;
             end
@@ -428,6 +481,10 @@ module pktchain_axilite_intf_be_uprot (
             case (op_rx_i)
                 RF_OP_CREG: begin
                     case (addr_rx[0 +: `PRGA_CTRL_ADDR_WIDTH])
+                        `PRGA_CTRL_ADDR_UDATA_WIDTH: begin
+                            data_rx[0 +: 2] = udata_width;
+                            op_rx_o = RX_OP_PLAIN;
+                        end
                         `PRGA_CTRL_ADDR_UREG_TIMEOUT: begin
                             data_rx[0 +: `PRGA_TIMER_WIDTH] = timeout_limit;
                             op_rx_o = RX_OP_PLAIN;
@@ -461,7 +518,12 @@ module pktchain_axilite_intf_be_uprot (
                         
                         if (u_RVALID) begin
                             if (u_RRESP == 2'h0) begin
-                                data_rx = u_RDATA;
+                                case (udata_width)
+                                    2'd0: data_rx = u_RDATA;
+                                    2'd1: data_rx = {32'b0, u_RDATA[0 +: 32]};
+                                    2'd2: data_rx = {48'b0, u_RDATA[0 +: 16]};
+                                    2'd3: data_rx = {56'b0, u_RDATA[0 +: 8]};
+                                endcase
                                 op_rx_o = RX_OP_PLAIN;
                             end else begin
                                 data_rx[`PRGA_ERR_TYPE_INDEX] = `PRGA_ERR_UREG_RD;
@@ -511,18 +573,22 @@ module pktchain_axilite_intf_be_uprot (
         stall_rr = 'b0;
         val_rr = 'b0;
 
-        case (op_rr_i)
-            RX_OP_PLAIN: begin
-                rresp_wr = 'b1;
-                rresp_data = data_rr;
-                stall_rr = rresp_full;
-            end
-            RX_OP_ERR: begin
-                rresp_wr = 'b1;
-                stall_rr = rresp_full;
-                val_rr = 'b1;
-            end
-        endcase
+        if (stall_re) begin
+            stall_rr = 'b1;
+        end else begin
+            case (op_rr_i)
+                RX_OP_PLAIN: begin
+                    rresp_wr = 'b1;
+                    rresp_data = data_rr;
+                    stall_rr = rresp_full;
+                end
+                RX_OP_ERR: begin
+                    rresp_wr = 'b1;
+                    stall_rr = rresp_full;
+                    val_rr = 'b1;
+                end
+            endcase
+        end
     end
 
     // =======================================================================
@@ -530,7 +596,7 @@ module pktchain_axilite_intf_be_uprot (
     // =======================================================================
     // write error
     reg [`PRGA_AXI_ADDR_WIDTH - 1:0] addr_we;
-    reg [2:0] op_we;
+    reg [WX_OP_WIDTH - 1:0] op_we;
     reg [1:0] uresp_we;
 
     // read error
@@ -544,10 +610,10 @@ module pktchain_axilite_intf_be_uprot (
             err_re <= {`PRGA_AXI_DATA_WIDTH{1'b0}};
             val_re <= 'b0;
         end else begin
-            if (op_wx_o != WX_OP_INVAL && ~stall_wx) begin
-                addr_we <= addr_wx;
-                op_we <= op_wx_o;
-                uresp_we <= u_BRESP;
+            if (op_wr != WX_OP_INVAL && ~stall_wr) begin
+                addr_we <= addr_wr;
+                op_we <= op_wr;
+                uresp_we <= uresp_wr;
             end else if (~stall_we) begin
                 op_we <= WX_OP_INVAL;
             end
@@ -583,7 +649,7 @@ module pktchain_axilite_intf_be_uprot (
                     uerr_fifo_din[`PRGA_AXI_ADDR_WIDTH +: 4] = {2'b0, uresp_we};
                     // don't stall on uerr_fifo_full
                 end else begin
-                    stall_we = 'b1;
+                    stall_we = ~uerr_fifo_full;
                 end
             end
             WX_OP_CERR: if (~uerr_fifo_wr) begin
@@ -592,7 +658,7 @@ module pktchain_axilite_intf_be_uprot (
                 uerr_fifo_din[0 +: `PRGA_AXI_ADDR_WIDTH] = addr_we;
                 // don't stall on uerr_fifo_full
             end else begin
-                stall_we = 'b1;
+                stall_we = ~uerr_fifo_full;
             end
             WX_OP_UREQ_TIMEOUT: if (~uerr_fifo_wr) begin
                 uerr_fifo_wr = 'b1;
@@ -601,7 +667,7 @@ module pktchain_axilite_intf_be_uprot (
                 uerr_fifo_din[`PRGA_AXI_ADDR_WIDTH +: 4] = 4'b1000;
                 // don't stall on uerr_fifo_full
             end else begin
-                stall_we = 'b1;
+                stall_we = ~uerr_fifo_full;
             end
             WX_OP_URESP_TIMEOUT: if (~uerr_fifo_wr) begin
                 uerr_fifo_wr = 'b1;
@@ -610,7 +676,7 @@ module pktchain_axilite_intf_be_uprot (
                 uerr_fifo_din[`PRGA_AXI_ADDR_WIDTH +: 4] = 4'b0100;
                 // don't stall on uerr_fifo_full
             end else begin
-                stall_we = 'b1;
+                stall_we = ~uerr_fifo_full;
             end
         endcase
     end

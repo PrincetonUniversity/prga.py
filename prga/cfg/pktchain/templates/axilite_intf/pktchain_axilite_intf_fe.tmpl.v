@@ -21,7 +21,7 @@ module pktchain_axilite_intf_fe (
     // write response channel
     output reg [0:0] m_BVALID,
     input wire [0:0] m_BREADY,
-    output wire [1:0] m_BRESP,
+    output reg [1:0] m_BRESP,
 
     // read address channel
     input wire [0:0] m_ARVALID,
@@ -111,18 +111,13 @@ module pktchain_axilite_intf_fe (
     // AXI write response FIFOs
     wire axi_wresp_fifo_full, axi_wresp_fifo_empty;
 
-    prga_fifo #(
-        .DATA_WIDTH                 (2)
-        ,.LOOKAHEAD                 (1)
-    ) axi_wresp_fifo (
+    prga_tokenfifo axi_wresp_fifo (
         .clk                        (clk)
         ,.rst                       (rst)
         ,.full                      (axi_wresp_fifo_full)
         ,.wr                        (wresp_val && wresp_rdy)
-        ,.din                       (2'b0)  // AXI OKAY
         ,.empty                     (axi_wresp_fifo_empty)
         ,.rd                        (m_BREADY)
-        ,.dout                      (m_BRESP)
         );
 
     // AXI read response FIFOs
@@ -146,6 +141,7 @@ module pktchain_axilite_intf_fe (
         m_AWREADY = ~axi_waddr_fifo_full;
         m_WREADY = ~axi_wdata_fifo_full;
         m_BVALID = ~axi_wresp_fifo_empty;
+        m_BRESP = 2'b0;         // AXI OKAY
         m_ARREADY = ~axi_raddr_fifo_full;
         m_RVALID = ~axi_rresp_fifo_empty;
         m_RRESP = 2'b0;         // AXI OKAY

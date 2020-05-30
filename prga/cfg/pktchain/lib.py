@@ -377,7 +377,7 @@ class Pktchain(Scanchain):
                     "axi_wdata_fifo")
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
                     "axi_raddr_fifo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_tokenfifo"],
                     "axi_wresp_fifo")
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
                     "axi_rresp_fifo")
@@ -435,11 +435,14 @@ class Pktchain(Scanchain):
                     2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3), is_master = True)
             # instances
             mit(mod, context.database[ModuleView.logical, "pktchain_axilite_intf_fe"], "i_fe")
+            mit(mod, context.database[ModuleView.logical, "prga_async_tokenfifo"], "i_cdcq_wresp")
+            mit(mod, context.database[ModuleView.logical, "prga_clkdiv"], "i_clkdiv")
             mit(mod, context.database[ModuleView.logical, "prga_async_fifo"], "i_cdcq_wreq")
             mit(mod, context.database[ModuleView.logical, "prga_async_fifo"], "i_cdcq_rreq")
             mit(mod, context.database[ModuleView.logical, "prga_async_fifo"], "i_cdcq_rresp")
             mit(mod, context.database[ModuleView.logical, "pktchain_axilite_intf_be_uprot"], "i_uprot")
             mit(mod, context.database[ModuleView.logical, "pktchain_axilite_intf_be_cfg"], "i_cfg")
+            mit(mod, context.database[ModuleView.logical, "prga_fifo"], "i_wresp_tokenq")
             mit(mod, context.database[ModuleView.logical, "prga_fifo"], "i_rresp_tokenq")
             mit(mod, context.database[ModuleView.logical, "prga_fifo"], "i_rresp_dataq")
             mit(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"], "i_ctrl_cfg")

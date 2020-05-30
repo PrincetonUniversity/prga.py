@@ -18,13 +18,6 @@ module prga_fifo #(
     output wire [DATA_WIDTH - 1:0] dout
     );
 
-    // register reset signal for timing purpose
-    reg rst_f;
-
-    always @(posedge clk) begin
-        rst_f <= rst;
-    end
-
     localparam FIFO_DEPTH = 1 << DEPTH_LOG2;
 
     reg [DEPTH_LOG2:0] wr_ptr, rd_ptr;
@@ -60,8 +53,8 @@ module prga_fifo #(
         end
     end
 
-    assign full = rst_f || rd_ptr == {~wr_ptr[DEPTH_LOG2], wr_ptr[0 +: DEPTH_LOG2]};
-    assign empty_internal = rst_f || rd_ptr == wr_ptr;
+    assign full = rst || rd_ptr == {~wr_ptr[DEPTH_LOG2], wr_ptr[0 +: DEPTH_LOG2]};
+    assign empty_internal = rst || rd_ptr == wr_ptr;
 
     generate if (LOOKAHEAD && !ALLOW_RAM_UNREGISTERED_OUTPUT) begin
         prga_fifo_lookahead_buffer #(

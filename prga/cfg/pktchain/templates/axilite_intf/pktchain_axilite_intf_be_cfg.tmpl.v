@@ -362,7 +362,7 @@ module pktchain_axilite_intf_be_cfg (
                 ST_PLD_FWD          = 2'h3;
 
     reg [1:0] bl_st, bl_st_next, resp_st, resp_st_next;
-    reg [`PRGA_PKTCHAIN_PAYLOAD_WIDTH - 1:0] bl_pldcnt, bl_pldcnt_next, resp_pldcnt, resp_pldcnt_next;
+    reg [`PRGA_PKTCHAIN_PAYLOAD_WIDTH:0] bl_pldcnt, bl_pldcnt_next, resp_pldcnt, resp_pldcnt_next;
 
     // resource management helpers
     reg tile_status_tracker_busy;

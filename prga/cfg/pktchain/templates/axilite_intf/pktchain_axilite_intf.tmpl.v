@@ -53,7 +53,7 @@ module {{ module.name }} (
 
     // == User Backend Interface ============================================
     // user clock domain ctrl signals
-    output reg [0:0] uclk,
+    output wire [0:0] uclk,
     output wire [0:0] urst_n,
 
     // AXI4-Lite Interface
@@ -88,8 +88,12 @@ module {{ module.name }} (
 
     reg rst_f, soft_rst, rst_uclk;
 
-    always @(posedge clk) begin
-        rst_f <= rst;
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            rst_f <= 'b1;
+        end else begin
+            rst_f <= 'b0;
+        end
     end
 
     always @(posedge uclk or posedge rst) begin
@@ -100,39 +104,13 @@ module {{ module.name }} (
         end
     end
 
-    // generate user clock
-    reg [7:0] uclk_div, uclk_div_cnt;
-
-    // synopsys translate_off
-    initial begin
-        uclk = 'b0;
-    end
-    // synopsys translate_on
-
-    always @(posedge clk) begin
-        if (uclk_div_cnt == 0) begin    // this makes sure uclk runs during rst
-            uclk <= ~uclk;
-        end
-    end
-
-    always @(posedge clk) begin
-        if (rst_f) begin
-            uclk_div_cnt <= 'b0;
-        end else if (uclk_div_cnt == 0) begin
-            uclk_div_cnt <= uclk_div;
-        end else begin
-            uclk_div_cnt <= uclk_div_cnt - 1;
-        end
-    end
-
     // =======================================================================
     // -- Instances ----------------------------------------------------------
     // =======================================================================
     // Frontend
     wire i_fe_wreq_val, i_fe_wresp_rdy, i_fe_rreq_val, i_fe_rresp_rdy;
     wire i_fe_wreq_rdy, i_fe_rreq_rdy;
-    wire i_fe_wresp_val;
-    reg i_fe_rresp_val;
+    reg i_fe_wresp_val, i_fe_rresp_val;
     wire [`PRGA_AXI_ADDR_WIDTH - 1:0] i_fe_wreq_addr, i_fe_rreq_addr;
     wire [`PRGA_BYTES_PER_AXI_DATA - 1:0] i_fe_wreq_strb;
     wire [`PRGA_AXI_DATA_WIDTH - 1:0] i_fe_wreq_data;
@@ -175,6 +153,19 @@ module {{ module.name }} (
         ,.rresp_data                    (i_fe_rresp_data)
         );
 
+    // Clock divider
+    reg [7:0] uclk_div_next;
+    wire [7:0] uclk_div;
+
+    prga_clkdiv i_clkdiv (
+        .clk                            (clk)
+        ,.rst                           (rst_f)
+        ,.div_factor_i                  (uclk_div_next)
+        ,.div_factor_we_i               ('b1)
+        ,.div_factor_o                  (uclk_div)
+        ,.divclk                        (uclk)
+        );
+
     // Cross-clock-domain FIFOs
     wire i_cdcq_wreq_full, i_cdcq_wreq_empty, i_cdcq_wreq_rd;
     wire [`PRGA_AXI_DATA_WIDTH + `PRGA_BYTES_PER_AXI_DATA + `PRGA_AXI_ADDR_WIDTH - 1:0] i_cdcq_wreq_din, i_cdcq_wreq_dout;    // {addr, strb, data}
@@ -195,6 +186,22 @@ module {{ module.name }} (
         ,.empty                         (i_cdcq_wreq_empty)
         ,.rd                            (i_cdcq_wreq_rd)
         ,.dout                          (i_cdcq_wreq_dout)
+        );
+
+    wire i_cdcq_wresp_full, i_cdcq_wresp_empty, i_cdcq_wresp_wr;
+    reg i_cdcq_wresp_rd;
+
+    prga_async_tokenfifo #(
+        .DEPTH_LOG2                     (4)
+    ) i_cdcq_wresp (
+        .wclk                           (uclk)
+        ,.wrst                          (rst_uclk)
+        ,.full                          (i_cdcq_wresp_full)
+        ,.wr                            (i_cdcq_wresp_wr)
+        ,.rclk                          (clk)
+        ,.rrst                          (rst_f)
+        ,.empty                         (i_cdcq_wresp_empty)
+        ,.rd                            (i_cdcq_wresp_rd)
         );
 
     wire i_cdcq_rreq_full, i_cdcq_rreq_empty, i_cdcq_rreq_rd;
@@ -248,6 +255,8 @@ module {{ module.name }} (
         ,.wreq_addr                     (i_cdcq_wreq_dout[`PRGA_AXI_DATA_WIDTH + `PRGA_BYTES_PER_AXI_DATA +: `PRGA_AXI_ADDR_WIDTH])
         ,.wreq_strb                     (i_cdcq_wreq_dout[`PRGA_AXI_DATA_WIDTH +: `PRGA_BYTES_PER_AXI_DATA])
         ,.wreq_data                     (i_cdcq_wreq_dout[0 +: `PRGA_AXI_DATA_WIDTH])
+        ,.wresp_full                    (i_cdcq_wresp_full)
+        ,.wresp_wr                      (i_cdcq_wresp_wr)
         ,.rreq_empty                    (i_cdcq_rreq_empty)
         ,.rreq_rd                       (i_cdcq_rreq_rd)
         ,.rreq_addr                     (i_cdcq_rreq_dout)
@@ -302,6 +311,51 @@ module {{ module.name }} (
         ,.cfg_phit_i_wr                 (cfg_phit_i_wr)
         ,.cfg_phit_i                    (cfg_phit_i)
         );
+
+    // write response reordering
+    localparam  WRESP_TOKEN_DATAQ   = 1'b0,
+                WRESP_TOKEN_CDCQ    = 1'b1;
+
+    wire i_wresp_tokenq_full, i_wresp_tokenq_empty, i_wresp_tokenq_dout;
+    reg i_wresp_tokenq_wr, i_wresp_tokenq_rd, i_wresp_tokenq_din;
+
+    prga_fifo #(
+        .DATA_WIDTH                     (1)
+        ,.LOOKAHEAD                     (1)
+        ,.DEPTH_LOG2                    (6)
+    ) i_wresp_tokenq (
+        .clk                            (clk)
+        ,.rst                           (rst_f)
+        ,.full                          (i_wresp_tokenq_full)
+        ,.wr                            (i_wresp_tokenq_wr)
+        ,.din                           (i_wresp_tokenq_din)
+        ,.empty                         (i_wresp_tokenq_empty)
+        ,.rd                            (i_wresp_tokenq_rd)
+        ,.dout                          (i_wresp_tokenq_dout)
+        );
+
+    always @* begin
+        i_fe_wresp_val = 'b0;
+        i_wresp_tokenq_rd = 'b0;
+        i_cdcq_wresp_rd = 'b0;
+
+        if (~i_wresp_tokenq_empty && i_fe_wresp_rdy) begin
+            case (i_wresp_tokenq_dout)
+                WRESP_TOKEN_DATAQ: begin
+                    i_fe_wresp_val = 'b1;
+                    i_wresp_tokenq_rd = 'b1;
+                end
+                WRESP_TOKEN_CDCQ: begin
+                    i_cdcq_wresp_rd = 'b1;
+
+                    if (~i_cdcq_wresp_empty) begin
+                        i_fe_wresp_val = 'b1;
+                        i_wresp_tokenq_rd = 'b1;
+                    end
+                end
+            endcase
+        end
+    end
 
     // read response reordering
     localparam  RRESP_TOKEN_DUMMY   = 2'h0,
@@ -459,17 +513,6 @@ module {{ module.name }} (
         ,.dout                          (bsid)
         );
 
-    // Clock divider
-    reg [7:0] uclk_div_next;
-
-    always @(posedge clk) begin
-        if (rst_f) begin
-            uclk_div <= 'b0;
-        end else begin
-            uclk_div <= uclk_div_next;
-        end
-    end
-
     // =======================================================================
     // -- Register Write Pipeline --------------------------------------------
     // =======================================================================
@@ -496,16 +539,21 @@ module {{ module.name }} (
         i_errq_clr = 'b0;
         uclk_div_next = uclk_div;
         i_cdcq_wreq_wr = 'b0;
+        i_wresp_tokenq_din = WRESP_TOKEN_DATAQ;
+        i_wresp_tokenq_wr = 'b0;
 
         if (stall_we) begin
             stall_wx = stall_we;
         end else if (i_fe_wreq_val) begin
-            if (~i_fe_wresp_rdy) begin
+            if (i_wresp_tokenq_full) begin
                 stall_wx = 'b1;
             end else if (i_fe_wreq_addr[`PRGA_AXI_ADDR_WIDTH - 1:`PRGA_CTRL_ADDR_WIDTH] != `PRGA_CTRL_ADDR_PREFIX) begin
+                i_wresp_tokenq_din = WRESP_TOKEN_CDCQ;
                 i_cdcq_wreq_wr = 'b1;
                 stall_wx = i_cdcq_wreq_full;
             end else begin
+                i_wresp_tokenq_din = WRESP_TOKEN_DATAQ;
+
                 case (i_fe_wreq_addr[0 +: `PRGA_CTRL_ADDR_WIDTH])
                     `PRGA_CTRL_ADDR_STATE: begin
                         soft_rst = 'b1;
@@ -542,8 +590,9 @@ module {{ module.name }} (
                         i_errq_clr = 'b1;
                     end
                     `PRGA_CTRL_ADDR_UCLK_DIV: begin
-                        uclk_div_next = i_fe_wreq_data;
+                        uclk_div_next = i_fe_wreq_data[0 +: 8];
                     end
+                    `PRGA_CTRL_ADDR_UDATA_WIDTH,
                     `PRGA_CTRL_ADDR_UREG_TIMEOUT,
                     `PRGA_CTRL_ADDR_URST,
                     `PRGA_CTRL_ADDR_UERR_FIFO: begin
@@ -557,12 +606,13 @@ module {{ module.name }} (
                     end
                 endcase
             end
+
+            i_wresp_tokenq_wr = ~stall_wx;
         end
     end
 
     assign i_cdcq_wreq_din = {i_fe_wreq_addr, i_fe_wreq_strb, i_fe_wreq_data};
     assign i_fe_wreq_rdy = ~stall_wx;
-    assign i_fe_wresp_val = i_fe_wreq_val && ~stall_wx;
 
     // =======================================================================
     // -- Register Read Pipeline ---------------------------------------------
@@ -613,6 +663,7 @@ module {{ module.name }} (
                     `PRGA_CTRL_ADDR_UCLK_DIV: begin
                         i_rresp_tokenq_din = RRESP_TOKEN_DATAQ;
                     end
+                    `PRGA_CTRL_ADDR_UDATA_WIDTH,
                     `PRGA_CTRL_ADDR_UREG_TIMEOUT,
                     `PRGA_CTRL_ADDR_UERR_FIFO: begin
                         i_rresp_tokenq_din = RRESP_TOKEN_CDCQ;
@@ -710,6 +761,7 @@ module {{ module.name }} (
                         i_rresp_dataq_wr = 'b1;
                         i_rresp_dataq_din[0 +: 8] = uclk_div;
                     end
+                    `PRGA_CTRL_ADDR_UDATA_WIDTH,
                     `PRGA_CTRL_ADDR_UREG_TIMEOUT,
                     `PRGA_CTRL_ADDR_UERR_FIFO: begin
                         stall_rx = i_cdcq_rreq_full;

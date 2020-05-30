@@ -69,7 +69,8 @@ class PktchainProtocol(object):
             BITSTREAM_ID    = 0x18 #: 64b: ID of the current bitstream. Typically address of the bitstream
             BITSTREAM_FIFO  = 0x20 #: 64b: [WO] bitstream data fifo
             UCLK_DIV        = 0x40 #: 8b: user clock divisor (uclk = clk / 2 / (divisor + 1))
-            URST            = 0x48 #: 32b: [WO] reset user application (and recover from previous timeout errors)
+            UDATA_WIDTH     = 0x44 #: 2b: user data width: 0:64b, 1:32b, 2:16b, 3:8b
+            URST            = 0x48 #: 8b: [WO] hold user reset for the given user cycles (and recover from previous timeout errors)
             UREG_TIMEOUT    = 0x4C #: 32b: user register timeout (in user clock cycles)
             UERR_FIFO       = 0x50 #: pop user error fifo once at a time. Write clears the FIFO
 
