@@ -739,6 +739,12 @@ class SwitchBoxPattern(Object):
         def fill_corners(self):
             return self._fill_corners
 
+    class _subset(_pattern):
+        pass
+
+    class _universal(_pattern):
+        pass
+
     class _wilton(_pattern):
         pass
 
@@ -767,6 +773,8 @@ class SwitchBoxPattern(Object):
         def max_turn(self):
             return self._max_turn
 
+SwitchBoxPattern.subset = SwitchBoxPattern._subset()
+SwitchBoxPattern.universal = SwitchBoxPattern._universal()
 SwitchBoxPattern.wilton = SwitchBoxPattern._wilton()
 SwitchBoxPattern.cycle_free = SwitchBoxPattern._cycle_free()
 SwitchBoxPattern.span_limited = SwitchBoxPattern._span_limited()

@@ -211,15 +211,13 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                 return ModuleUtils.create_port(self._module, self._node_name(node),
                         len(port), port.direction.opposite, key = node)
 
-    def fill(self, fc, *, segments = None, dont_create = False):
+    def fill(self, fc, *, dont_create = False):
         """Add port-segment connections using FC values.
 
         Args:
             fc (`BlockFCValue`): A `BlockFCValue` or arguments that can be used to construct a `BlockFCValue`, for
                 example, an :obj:`int`, or a :obj:`tuple` of :obj:`int` and overrides. Refer to `BlockFCValue` for
                 more details
-            segments (:obj:`Sequence` [:obj:`Segment` ] or :obj:`Mapping` [:obj:`Hashable`, :obj:`Segment` ]): If not
-                set, segments from the context is used
             dont_create (:obj:`bool`): If set, connections are made only between already created nodes
         """
         block, orientation, position, _ = self._module.key
@@ -230,11 +228,7 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                 if port.parent is block:
                     fc.overrides[port.key] = BlockPortFCValue(0)
         # iterate through segment types
-        if segments is None:
-            segments = tuple(itervalues(self._context.segments))
-        elif isinstance(segments, Mapping):
-            segments = tuple(itervalues(segments))
-        for sgmt in segments:
+        for sgmt in itervalues(self._context.segments):
             # tracks -> input pins
             tracks = tuple(product(range(sgmt.width), range(sgmt.length)))
             n_selected = [0] * len(tracks)
@@ -373,8 +367,53 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
         if input_ is not None and output is not None:
             self.connect(input_[idx], output[odx])
 
-    def _fill_wilton(self, output_orientation, segments,
+    def _fill_subset(self, output_orientation,
             drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create):
+        oori = output_orientation
+        for sgmt, iori in product(itervalues(self._context.segments), Orientation):
+            if iori is output_orientation.opposite or iori in exclude_input_orientations:
+                continue
+            sections = (range(1) if not drive_at_crosspoints else
+                    range(1, sgmt.length) if crosspoints_only else range(sgmt.length))
+            for osec in sections:
+                isec = (sgmt.length - osec) if iori.direction is oori.direction else osec + 1
+                input_ = self.get_segment_input(sgmt, iori, isec, dont_create = dont_create)
+                output = self.get_segment_output(sgmt, oori, osec, dont_create = dont_create)
+                if input_ is not None and output is not None:
+                    self.connect(input_, output)
+
+    def _fill_universal(self, output_orientation,
+            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create):
+        oori = output_orientation
+        otracks = tuple( (sgmt, sec, idx) for sgmt in itervalues(self._context.segments)
+                for sec in oori.direction.case(range(sgmt.length), reversed(range(sgmt.length)))
+                for idx in range(sgmt.width) )
+        for iori in Orientation:
+            if iori is oori.opposite or iori in exclude_input_orientations:
+                continue
+            elif iori is oori:                      # straight connections
+                for sgmt in itervalues(self._context.segments):
+                    input_ = self.get_segment_input(sgmt, iori, sgmt.length, dont_create = dont_create)
+                    output = self.get_segment_output(sgmt, output_orientation, 0, dont_create = dont_create)
+                    if input_ is not None and output is not None:
+                        self.connect(input_, output)
+                continue
+            itracks = tuple( (sgmt, sec, idx) for sgmt in itervalues(self._context.segments)
+                    for sec in iori.direction.case(range(sgmt.length), reversed(range(sgmt.length)))
+                    for idx in range(sgmt.width) )
+            for i, (isgmt, isec, idx) in enumerate(itracks):
+                o = (len(itracks) - 1 - i) if iori.direction is oori.direction else i
+                osgmt, osec, odx = otracks[o]
+                if not drive_at_crosspoints and osec > 0:
+                    continue
+                elif drive_at_crosspoints and crosspoints_only and osec == 0:
+                    continue
+                self._connect_tracks(isgmt, iori, isec + 1, idx,
+                        osgmt, oori, osec, odx, dont_create = dont_create)
+
+    def _fill_wilton(self, output_orientation,
+            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create):
+        segments = tuple(itervalues(self._context.segments))
         # 1. normal output tracks
         if not crosspoints_only:
             # output tracks
@@ -452,10 +491,10 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                         self._connect_tracks(isgmt, iori, isec, idx,
                                 osgmt, output_orientation, osec, odx, dont_create)
 
-    def _fill_cycle_free(self, output_orientation, segments, 
+    def _fill_cycle_free(self, output_orientation, 
             drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create):
         # tracks
-        tracks = tuple( (sgmt, i) for sgmt in segments for i in range(sgmt.width) )
+        tracks = tuple( (sgmt, i) for sgmt in itervalues(self._context.segments) for i in range(sgmt.width) )
         # logical class offsets
         lco = {
                 Orientation.east: 0,
@@ -470,7 +509,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
             elif iori in exclude_input_orientations:                        # exclude some orientations manually
                 continue
             elif iori is output_orientation:                                # straight connections
-                for sgmt in segments:
+                for sgmt in itervalues(self._context.segments):
                     input_ = self.get_segment_input(sgmt, iori, sgmt.length, dont_create = dont_create)
                     output = self.get_segment_output(sgmt, output_orientation, 0, dont_create = dont_create)
                     if input_ is not None and output is not None:
@@ -501,16 +540,14 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                         self.connect(input_[isi], output[osi])
                     olc = (olc + 1) % len(tracks)
 
-    def _fill_span_limited(self, output_orientation, segments,
-            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create, max_span,
-            tracks = None):
+    def _fill_span_limited(self, output_orientation,
+            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create, max_span):
         _logger.info("Filling switch box '{}' with pattern: span_limited. max_span = {}"
                 .format(self._module, max_span))
         oori = output_orientation       # short alias
         # tracks: sgmt, i, section
-        if tracks is None:
-            tracks = [(sgmt, i, section) for sgmt in segments
-                    for i, section in product(range(sgmt.width), range(sgmt.length))]
+        tracks = [(sgmt, i, section) for sgmt in itervalues(self._context.segments)
+                for i, section in product(range(sgmt.width), range(sgmt.length))]
         channel_width = len(tracks)
         # generate connections
         for iori in iter(Orientation):  # input orientation
@@ -536,15 +573,13 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                 self._connect_tracks(isgmt, iori, isection + 1, idx,
                         osgmt, oori, osection, odx, dont_create)
 
-    def _fill_turn_limited(self, output_orientation, segments,
-            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create, max_turn, 
-            tracks = None):
+    def _fill_turn_limited(self, output_orientation,
+            drive_at_crosspoints, crosspoints_only, exclude_input_orientations, dont_create, max_turn):
         _logger.info("Filling switch box '{}' with pattern: turn_limited. max_turn = {}"
                 .format(self._module, max_turn))
         oori = output_orientation       # short alias
         # tracks: sgmt, i
-        if tracks is None:
-            tracks = [ (sgmt, i) for sgmt in segments for i in range(sgmt.width) ]
+        tracks = [ (sgmt, i) for sgmt in itervalues(self._context.segments) for i in range(sgmt.width) ]
         channel_width = len(tracks)
         # generate connections
         for iori in iter(Orientation):  # input orientation
@@ -553,7 +588,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
             elif iori in exclude_input_orientations:                        # exclude user-chosen input orientations
                 continue
             elif iori is output_orientation:                                # straight connections
-                for sgmt in segments:
+                for sgmt in itervalues(self._context.segments):
                     input_ = self.get_segment_input(sgmt, iori, sgmt.length, dont_create = dont_create)
                     output = self.get_segment_output(sgmt, output_orientation, 0, dont_create = dont_create)
                     if input_ is not None and output is not None:
@@ -622,18 +657,15 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                 return ModuleUtils.create_port(self._module, self._node_name(node),
                         segment.width, PortDirection.output, key = node)
 
-    def fill(self, output_orientation, *,
-            segments = None, drive_at_crosspoints = False, crosspoints_only = False,
+    def fill(self, output_orientation, *, drive_at_crosspoints = False, crosspoints_only = False,
             exclude_input_orientations = tuple(), dont_create = False,
-            pattern = SwitchBoxPattern.span_limited, **kwargs):
+            pattern = SwitchBoxPattern.span_limited):
         """Create switches implementing a cycle-free variation of the Wilton switch box.
 
         Args:
             output_orientation (`Orientation`):
 
         Keyword Arguments:
-            segments (:obj:`Sequence` [:obj:`Segment` ] or :obj:`Mapping` [:obj:`Hashable`, :obj:`Segment` ]): If not
-                set, segments from the context are used
             drive_at_crosspoints (:obj:`bool`): If set, outputs are generated driving non-zero sections of long
                 segments
             crosspoints_only (:obj:`bool`): If set, outputs driving the first section of segments are not generated
@@ -641,20 +673,21 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
             dont_create (:obj:`bool`): If set, connections are made only between already created nodes
             pattern (`SwitchBoxPattern`): Switch box pattern
         """
-        # sort by length (descending order)
-        if segments is None:
-            segments = tuple(itervalues(self._context.segments))
-        elif isinstance(segments, Mapping):
-            segments = tuple(itervalues(segments))
         # implement switch box pattern
-        if pattern.is_wilton:
-            self._fill_wilton(output_orientation, segments, drive_at_crosspoints, crosspoints_only,
+        if pattern.is_subset:
+            self._fill_subset(output_orientation, drive_at_crosspoints, crosspoints_only,
+                    exclude_input_orientations, dont_create)
+        elif pattern.is_universal:
+            self._fill_universal(output_orientation, drive_at_crosspoints, crosspoints_only,
+                    exclude_input_orientations, dont_create)
+        elif pattern.is_wilton:
+            self._fill_wilton(output_orientation, drive_at_crosspoints, crosspoints_only,
                     exclude_input_orientations, dont_create)
         elif pattern.is_cycle_free:
-            self._fill_cycle_free(output_orientation, segments, drive_at_crosspoints, crosspoints_only,
+            self._fill_cycle_free(output_orientation, drive_at_crosspoints, crosspoints_only,
                     exclude_input_orientations, dont_create)
         elif pattern.is_span_limited:
-            channel_width = sum(sgmt.width * sgmt.length for sgmt in segments)
+            channel_width = sum(sgmt.width * sgmt.length for sgmt in itervalues(self._context.segments))
             max_span = pattern.max_span
             if max_span is None:
                 max_span = channel_width
@@ -662,10 +695,10 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                 _logger.warning("Overriding invalid max span ({}) with channel width: {}"
                         .format(max_span, channel_width))
                 max_span = channel_width
-            self._fill_span_limited(output_orientation, segments, drive_at_crosspoints, crosspoints_only,
-                    exclude_input_orientations, dont_create, max_span, **kwargs) 
+            self._fill_span_limited(output_orientation, drive_at_crosspoints, crosspoints_only,
+                    exclude_input_orientations, dont_create, max_span)
         elif pattern.is_turn_limited:
-            channel_width = sum(sgmt.width * sgmt.length for sgmt in segments)
+            channel_width = sum(sgmt.width * sgmt.length for sgmt in itervalues(self._context.segments))
             max_turn = pattern.max_turn
             if max_turn is None:
                 max_turn = channel_width
@@ -673,8 +706,8 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                 _logger.warning("Overriding invalid max turn ({}) with channel width: {}"
                         .format(max_turn, channel_width))
                 max_turn = channel_width
-            self._fill_turn_limited(output_orientation, segments, drive_at_crosspoints, crosspoints_only,
-                    exclude_input_orientations, dont_create, max_turn, **kwargs)
+            self._fill_turn_limited(output_orientation, drive_at_crosspoints, crosspoints_only,
+                    exclude_input_orientations, dont_create, max_turn)
         else:
             raise NotImplementedError("Unsupported/Unimplemented switch box pattern: {}".format(pattern))
 

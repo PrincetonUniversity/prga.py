@@ -387,7 +387,8 @@ class Context(Object):
         return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_io_block,
                 lambda k: (ModuleView.user, k), lambda k: k[1])
 
-    def create_io_block(self, name, capacity = 1, *, no_input = False, no_output = False):
+    def create_io_block(self, name, capacity = 1, *, no_input = False, no_output = False,
+            disallow_segments_passthru = False):
         """`IOBlockBuilder`: Create an IO block builder."""
         if (ModuleView.user, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
@@ -400,7 +401,8 @@ class Context(Object):
             io_primitive = self.primitives['outpad']
         else:
             raise PRGAAPIError("At least one of 'no_input' and 'no_output' must be False.")
-        iob = self._database[ModuleView.user, name] = IOBlockBuilder.new(name, capacity)
+        iob = self._database[ModuleView.user, name] = IOBlockBuilder.new(name, capacity,
+                disallow_segments_passthru = disallow_segments_passthru)
         builder = IOBlockBuilder(self, iob)
         builder.instantiate(io_primitive, 'io')
         return builder
@@ -412,11 +414,12 @@ class Context(Object):
         return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_logic_block,
                 lambda k: (ModuleView.user, k), lambda k: k[1])
 
-    def create_logic_block(self, name, width = 1, height = 1):
+    def create_logic_block(self, name, width = 1, height = 1, *, disallow_segments_passthru = False):
         """`LogicBlockBuilder`: Create a logic block builder."""
         if (ModuleView.user, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        clb = self._database[ModuleView.user, name] = LogicBlockBuilder.new(name, width, height)
+        clb = self._database[ModuleView.user, name] = LogicBlockBuilder.new(name, width, height,
+                disallow_segments_passthru = disallow_segments_passthru)
         return LogicBlockBuilder(self, clb)
 
     # -- Connection Boxes ----------------------------------------------------
