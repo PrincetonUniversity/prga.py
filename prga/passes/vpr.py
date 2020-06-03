@@ -1262,7 +1262,7 @@ class VPR_RRG_Generation(Object, AbstractPass):
                     "block_type_id": 0, "x": x, "y": y, "width_offset": 0, "height_offset": 0})
             else:
                 rootpos = NonLeafArrayBuilder._instance_position(instance)
-                if rootpos == pos:
+                if rootpos == pos and instance.model.disallow_segments_passthru:
                     for xx, yy in product(range(instance.model.width), range(instance.model.height - 1)):
                         self.chanx[x + xx][y + yy] = False
                     for xx, yy in product(range(instance.model.width - 1), range(instance.model.height)):

@@ -53,9 +53,10 @@ class AbstractSwitchDatabase(Abstract):
 class TranslationPass(Object, AbstractPass):
     """Translate user-defined modules to logical modules."""
 
-    __slots__ = ['top']
-    def __init__(self, top = None):
+    __slots__ = ['top', 'create_blackbox_for_undefined_primitives']
+    def __init__(self, top = None, *, create_blackbox_for_undefined_primitives = False):
         self.top = top
+        self.create_blackbox_for_undefined_primitives = create_blackbox_for_undefined_primitives
 
     @classmethod
     def _u2l(cls, logical_model, user_ref):
@@ -104,8 +105,11 @@ class TranslationPass(Object, AbstractPass):
         # make sure the user module is tranlatible
         if module.module_class not in (ModuleClass.cluster, ModuleClass.io_block, ModuleClass.logic_block,
                 ModuleClass.switch_box, ModuleClass.connection_box, ModuleClass.leaf_array, ModuleClass.nonleaf_array):
-            raise PRGAInternalError("Cannot translate module '{}'. Its module class is {}"
-                    .format(module, module.module_class.name))
+            if self.create_blackbox_for_undefined_primitives and module.module_class.is_primitive:
+                pass
+            else:
+                raise PRGAInternalError("Cannot translate module '{}'. Its module class is {}"
+                        .format(module, module.module_class.name))
         # prepare the arguments for creating a new module
         kwargs = {
                 'view': ModuleView.logical,
@@ -161,6 +165,8 @@ class TranslationPass(Object, AbstractPass):
                     net_class = NetClass.segment
                 elif isinstance(port.key, BlockPinID):
                     net_class = NetClass.blockpin
+            elif module.module_class.is_primitive:
+                net_class = NetClass.primitive
             if net_class is None:
                 raise NotImplementedError("Unsupport net class '{}' of port '{}' in module '{}'"
                         .format(net_class.name, port.name, module.name))

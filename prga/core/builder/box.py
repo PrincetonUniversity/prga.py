@@ -231,7 +231,7 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
         for sgmt in itervalues(self._context.segments):
             # tracks -> input pins
             tracks = tuple(product(range(sgmt.width), range(sgmt.length)))
-            n_selected = [0] * len(tracks)
+            n_util = [0] * len(tracks)
             for subblock, port in product(range(block.capacity), itervalues(block.ports)):
                 if hasattr(port, "global_"):
                     continue
@@ -241,7 +241,7 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                 port_fc = fc.port_fc(port, sgmt, True)
                 port_bus = self.get_blockpin(port.name, subblock, dont_create = dont_create)
                 for itrack, port_idx in InterconnectAlgorithms.crossbar(
-                        len(tracks), len(port), port_fc, n_selected = n_selected):
+                        len(tracks), len(port), port_fc, n_util = n_util):
                     idx, section = tracks[itrack]
                     for sgmt_dir in Direction:
                         sgmt_bus = self.get_segment_input(sgmt,
@@ -251,7 +251,7 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                             self.connect(sgmt_bus[idx], port_bus[port_idx])
             # output pins -> tracks
             tracks = tuple(range(sgmt.width))
-            n_selected = [0] * len(tracks)
+            n_util = [0] * len(tracks)
             for subblock, port in product(range(block.capacity), itervalues(block.ports)):
                 if hasattr(port, "global_"):
                     continue
@@ -261,7 +261,7 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                 port_fc = fc.port_fc(port, sgmt, False)
                 port_bus = self.get_blockpin(port.name, subblock, dont_create = dont_create)
                 for itrack, port_idx in InterconnectAlgorithms.crossbar(
-                        len(tracks), len(port), port_fc, n_selected = n_selected):
+                        len(tracks), len(port), port_fc, n_util = n_util):
                     idx = tracks[itrack]
                     for sgmt_dir in Direction:
                         sgmt_bus = self.get_segment_output(sgmt,

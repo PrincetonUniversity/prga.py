@@ -3,8 +3,8 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from itertools import product
-import math
+from itertools import product, count, cycle, islice
+from bitarray.util import zeros
 
 __all__ = ["InterconnectAlgorithms"]
 
@@ -15,7 +15,7 @@ class InterconnectAlgorithms(object):
     """Wrapper class for all interconnect-related algorithms."""
 
     @classmethod
-    def crossbar(cls, N, M, connectivity, *, n_selected = None):
+    def crossbar(cls, N, M, connectivity, *, n_util = None):
         """Generate ``(n, m)`` pairs so that each ``m`` is paired with ``connectivity`` ``n``s. The goal is
         that each ``n`` is paired with about the same number of ``m``s \(fairness\), while each ``m`` is paired
         with a different composition of ``n``s \(diversity\).
@@ -26,7 +26,7 @@ class InterconnectAlgorithms(object):
             connectivity (:obj:`int`):
 
         Keyword Args:
-            n_selected (:obj:`Sequence` [:obj:`int` ]): carry-over state
+            n_util (:obj:`Sequence` [:obj:`int` ]): carry-over state
         """
         # special cases
         if connectivity == 0:
@@ -36,24 +36,64 @@ class InterconnectAlgorithms(object):
                 yield p
             return
         # general cases
-        step = float(N) / float(connectivity)
-        n_selected = n_selected or ([0] * N)
+        period_step = 1 / float(connectivity)
 
+        # utilization of elements in N 
+        n_util = n_util or [0 for _ in range(N)]
+
+        # period & phase combo search iterator
+        ppit = cycle(product(reversed(range(N - connectivity + 1)), range(N)))
+
+        # for each element in M
         for m in range(M):
-            offset = 0
-            max_unassigned = 0
+            unassigned_left = sum(1 if util == 0 else 0 for util in n_util)
 
-            for i in range(0, int(step)):
-                if ((unassigned := sum(1 if n_selected[int(i + j * step) % N] == 0 else 0 for j in
-                    range(connectivity))) > max_unassigned):
-                    offset = i
-                    max_unassigned = unassigned
+            # if the number of unused tracks happens to be equal to the tracks needed, we don't need to search
+            #   ATTENTION: this might affect our period-phase search.e.g. when N = 4, connectivity = 2, we would
+            #       expect the pattern to be alternating between 1010 and 0101. But if this short path is enabled, we
+            #       would get 1010, 0101, 0101, 1010, 1010 instead
+            # if unassigned_left == connectivity:
+            #     # apply pattern
+            #     for n in range(len(n_util)):
+            #         if n_util[n] > 0:
+            #             n_util[n] -= 1
+            #         else:
+            #             yield n, m
+            #     continue
 
-            for j in range(connectivity):
-                n = int(offset + j * step) % N
-                yield n, m
-                n_selected[n] += 1
+            # search the best phase & period combo that maximizes the utilization of previously unused elements in N
+            pat, max_unassigned = None, 0
+            unassigned_left = min(unassigned_left, connectivity)
 
-            while all(n_selected):
-                for n in range(len(n_selected)):
-                    n_selected[n] -= 1
+            for period, phase in islice(ppit, (N - connectivity + 1) * N):
+                pat_tmp = zeros(N)
+                period_f = 1 + period * period_step
+
+                fails = 0
+                for i in count(phase):
+                    idx = round(i * period_f) % N
+                    if pat_tmp[idx]:
+                        fails += 1
+                        if fails == N:
+                            break
+                    else:
+                        pat_tmp[idx] = True
+                        if pat_tmp.count() == connectivity:
+                            break
+
+                unassigned = sum(1 if n_util[i] == 0 and pat_tmp[i] else 0 for i in range(N))
+                if unassigned > max_unassigned:
+                    pat, max_unassigned = pat_tmp, unassigned
+                    if max_unassigned == unassigned_left:
+                        break
+
+            # apply pattern
+            for n, flag in enumerate(pat):
+                if flag:
+                    yield n, m
+                    n_util[n] += 1
+
+            # update n_util
+            while all(n_util):
+                for n in range(len(n_util)):
+                    n_util[n] -= 1

@@ -6,6 +6,7 @@ from prga.compatible import *
 from .base import AbstractPass
 from ..core.common import ModuleView
 from ..util import Object, uno
+from ..exception import PRGAInternalError
 
 import os
 

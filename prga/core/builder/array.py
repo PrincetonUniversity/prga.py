@@ -221,8 +221,11 @@ class _BaseArrayBuilder(BaseBuilder):
     def _no_channel(cls, model, position, ori):
         x, y = position
         if model.module_class.is_logic_block:
-            return ori.dimension.case(0 <= x < model.width and 0 <= y < model.height - 1,
-                    0 <= x < model.width - 1 and 0 <= y < model.height)
+            if model.disallow_segments_passthru:
+                return ori.dimension.case(0 <= x < model.width and 0 <= y < model.height - 1,
+                        0 <= x < model.width - 1 and 0 <= y < model.height)
+            else:
+                return False
         elif model.module_class.is_array:
             if ori.dimension.is_x:
                 if ((x <= 0 and model.edge.west) or
@@ -790,18 +793,18 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                         # 3.1.2 if found, connect them
                         if source is not None:
                             self.connect(source, pin)
+                            continue
+                        elif is_top:
+                            continue
                         # 3.1.3 if no pin is found, check if we need to expose the pin to the outside world
-                        elif (not is_top and
-                                node.orientation.case(
-                                    north = node.position.y <= 0,
-                                    east = node.position.x <= 0,
-                                    south = node.position.y >= self._module.height - 1,
-                                    west = node.position.x >= self._module.width - 1,
-                                    ) and
-                                node.orientation.dimension.case(
-                                    x = -1 <= node.position.y < self._module.height,
-                                    y = -1 <= node.position.x < self._module.width,
-                                    )):
+                        xx, yy = node.position
+                        w, h = self._module.width, self._module.height
+                        if node.orientation.case(
+                                north = (xx + 1) in (0, w) or (0 < xx + 1 < w and yy <= 0),
+                                 east = (yy + 1) in (0, h) or (0 < yy + 1 < h and xx <= 0),
+                                south = (xx + 1) in (0, w) or (0 < xx + 1 < w and yy >= h - 1),
+                                 west = (yy + 1) in (0, h) or (0 < yy + 1 < h and xx >= w - 1),
+                                 ):
                             self._expose_routable_pin(pin, create_port = True)
                     elif key.segment_type.is_cboxout:
                         # 3.2 find the segment source so we can find the sbox to be connected
@@ -1048,17 +1051,17 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
                                 break
                         if source is not None:
                             self.connect(source, pin)
-                        elif (not is_top and
-                                node.orientation.case(
-                                    north = node.position.y <= 0,
-                                    east = node.position.x <= 0,
-                                    south = node.position.y >= self.height - 1,
-                                    west = node.position.x >= self.width - 1,
-                                    ) and
-                                node.orientation.dimension.case(
-                                    x = -1 <= node.position.y < self.height,
-                                    y = -1 <= node.position.x < self.width,
-                                    )):
+                            continue
+                        elif is_top:
+                            continue
+                        xx, yy = node.position
+                        w, h = self._module.width, self._module.height
+                        if node.orientation.case(
+                                north = (xx + 1) in (0, w) or (0 < xx + 1 < w and yy <= 0),
+                                 east = (yy + 1) in (0, h) or (0 < yy + 1 < h and xx <= 0),
+                                south = (xx + 1) in (0, w) or (0 < xx + 1 < w and yy >= h - 1),
+                                 west = (yy + 1) in (0, h) or (0 < yy + 1 < h and xx >= w - 1),
+                                 ):
                             self._expose_routable_pin(pin, create_port = True)
                     elif (key.segment_type in (SegmentType.array_cboxout, SegmentType.array_cboxout2) and
                             pin.model.direction.is_output):     # try to find the segment driven by this

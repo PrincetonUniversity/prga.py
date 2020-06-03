@@ -160,7 +160,7 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
                 position = Position(0, 0), orientation = orientation, **kwargs)
 
     @classmethod
-    def new(cls, name, capacity, **kwargs):
+    def new(cls, name, capacity, *, disallow_segments_passthru = False, **kwargs):
         """Create a new module for building."""
         return Module(name,
                 view = ModuleView.user,
@@ -171,6 +171,7 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
                 capacity = capacity,
                 width = 1,
                 height = 1,
+                disallow_segments_passthru = disallow_segments_passthru,
                 **kwargs)
 
 # ----------------------------------------------------------------------------
@@ -267,7 +268,7 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
                 orientation = orientation, position = position, **kwargs)
 
     @classmethod
-    def new(cls, name, width, height, **kwargs):
+    def new(cls, name, width, height, *, disallow_segments_passthru = False, **kwargs):
         """Create a new module for building."""
         return Module(name,
                 view = ModuleView.user,
@@ -278,4 +279,5 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
                 capacity = 1,
                 width = width,
                 height = height,
+                disallow_segments_passthru = disallow_segments_passthru,
                 **kwargs)
