@@ -1,5 +1,7 @@
 # -*- encoding: ascii -*-
 # Python 2 and 3 compatible
+"""Unitility methods for accessing modules and instances."""
+
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
@@ -37,10 +39,14 @@ class ModuleUtils(object):
             direction (`PortDirection`): Direction of the port
 
         Keyword Args:
-            key (:obj:`Hashable`): A hashable key used to index the port in the parent module. If not given
-                \(default argument: ``None``\), ``name`` is used by default
+            key (:obj:`Hashable`): A hashable key used to index the port in the ``ports`` mapping the parent module.
+                If not set \(default argument: ``None``\), ``name`` is used by default
             is_clock (:obj:`bool`): Mark this as a clock
-            **kwargs: Arbitrary attributes assigned to the created port
+            **kwargs: Custom key-value arguments. These attributes are added to ``__dict__`` of the created port
+                and accessible as dynamic attributes
+
+        Returns:
+            `Port`: The created port
         """
         if is_clock and width != 1:
             raise PRGAInternalError("Clock port must be 1-bit wide")
@@ -58,7 +64,7 @@ class ModuleUtils(object):
 
     @classmethod
     def instantiate(cls, module, model, name, *, key = None, **kwargs):
-        """Instantiate ``model`` in ``parent``.
+        """Instantiate ``model`` and add it as a sub-module in ``parent``.
 
         Args:
             module (`AbstractModule`):
@@ -66,9 +72,13 @@ class ModuleUtils(object):
             name (:obj:`str`): Name of the instance
 
         Keyword Args:
-            key (:obj:`Hashable`): A hashable key used to index the instance in the parent module. If not given
-                \(default argument: ``None``\), ``name`` is used by default
-            **kwargs: Arbitrary attributes assigned to the instantiated instance
+            key (:obj:`Hashable`): A hashable key used to index the instance in the ``instances`` mapping in the
+                parent module. If not set \(default argument: ``None``\), ``name`` is used by default
+            **kwargs: Custom key-value arguments. These attributes are added to ``__dict__`` of the created port
+                and accessible as dynamic attributes
+
+        Returns:
+            `Instance`: The created instance
         """
         if module.is_cell:
             raise PRGAInternalError("Cannot instantiate {} in {}".format(model, module))
@@ -151,7 +161,7 @@ class ModuleUtils(object):
             create_edge = lambda m, path: {"path": path[1:-1]},
             coalesce_connections = False,
             ):
-        """`networkx.DiGraph`_: Create a timing graph for ``module``.
+        """`networkx.DiGraph`_: Create a full timing graph for ``module``.
 
         Args:
             module (:obj:`AbstractModule`): The module to be processed
@@ -162,8 +172,7 @@ class ModuleUtils(object):
                 instance should be blackboxed during elaboration. If ``True`` is returned, everything inside the
                 instance will be ignored. Only the pins of the instance will be kept.
             create_node (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`Mapping`): A function that
-                returns a node attribute mapping. Return ``None`` if the node should be discarded (will be kept in the
-                path if ``drop_path`` is not set
+                returns a node attribute mapping. Return ``None`` if the node should be discarded
             create_path (:obj:`Function` [`AbstractModule`, :obj:`Sequence` [:obj:`Hashable` ] -> :obj:`Mapping`): A
                 function that returns an edge attribute mapping
             coalesce_connections (:obj:`bool`): If set, the reduced timing graph coalesce bus connections

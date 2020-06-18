@@ -76,7 +76,7 @@ class PktchainSystem(object):
 
         Returns:
             :obj:`Mapping` [:obj:`str`, :obj:`Sequence` [:obj:`tuple` [:obj:`int`, :obj:`int`, :obj:`int`]]]: Mapping
-            from AXI4-Lite standard port names to list of positions for each pin of that port.
+                from AXI4-Lite standard port names to list of positions for each pin of that port.
         """
         addr_width = uno(addr_width, PktchainProtocol.AXILiteController.ADDR_WIDTH)
         data_bytes = uno(data_bytes, 2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3))

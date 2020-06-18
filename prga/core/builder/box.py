@@ -63,7 +63,17 @@ class _BaseRoutingBoxBuilder(BaseBuilder):
 
     # == high-level API ======================================================
     def connect(self, sources, sinks, *, fully = False):
-        """Connect ``sources`` to ``sinks``."""
+        """Connect ``sources`` to ``sinks``.
+        
+        Args:
+            sources: Source nets, i.e., an input port, a subset of an input port, or a list of a combination of the
+                above
+            sinks: Sink nets, i.e., an output port, a subset of an output port, or a list of a combination of the
+                above
+
+        Keyword Args:
+            fully (:obj:`bool`): If set to ``True``, connections are made between every source and every sink
+        """
         NetUtils.connect(sources, sinks, fully = fully)
 
 # ----------------------------------------------------------------------------
@@ -141,14 +151,19 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
 
     # == high-level API ======================================================
     def get_segment_input(self, segment, orientation, section = 0, *, dont_create = False):
-        """Get the segment input to this connection box.
+        """Get or create a segment input port in this connection box.
 
         Args:
             segment (`Segment`): Prototype of the segment
             orientation (`Orientation`): Orientation of the segment
             section (:obj:`int`): Section of the segment
+
+        Keyword Args:
             dont_create (:obj:`bool`): If set, return ``None`` when the requested segment input is not already created
                 instead of create it
+
+        Returns:
+            `Port`:
         """
         node = SegmentID(self._segment_relative_position(self._module.key.orientation, segment, orientation, section),
                 segment, orientation, SegmentType.cboxin)
@@ -162,13 +177,18 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                         segment.width, PortDirection.input_, key = node)
 
     def get_segment_output(self, segment, orientation, *, dont_create = False):
-        """Get or create the segment output from this connection box.
+        """Get or create a segment output port in this connection box.
 
         Args:
             segment (`Segment`): Prototype of the segment
             orientation (`Orientation`): Orientation of the segment
+
+        Keyword Args:
             dont_create (:obj:`bool`): If set, return ``None`` when the requested segment output is not already created
                 instead of create it
+
+        Returns:
+            `Port`:
         """
         node = SegmentID(self._segment_relative_position(self._module.key.orientation, segment, orientation, 0),
                 segment, orientation, SegmentType.cboxout)
@@ -182,13 +202,18 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                         segment.width, PortDirection.output, key = node)
 
     def get_blockpin(self, port, subblock = 0, *, dont_create = False):
-        """Get or create the blockpin input/output in this connection box.
+        """Get or create a blockpin input/output port in this connection box.
 
         Args:
             port (:obj:`str`): Name of the block port to be connected to this blockpin
             subblock (:obj:`int`): sub-block in a tile
+
+        Keyword Args:
             dont_create (:obj:`bool`): If set, return ``None`` when the requested block pin is not already created
                 instead of create it
+
+        Returns:
+            `Port`:
         """
         block, orientation, position, _1 = self._module.key
         try:
@@ -212,12 +237,14 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                         len(port), port.direction.opposite, key = node)
 
     def fill(self, fc, *, dont_create = False):
-        """Add port-segment connections using FC values.
+        """Automatically create port-segment connections using FC values.
 
         Args:
             fc (`BlockFCValue`): A `BlockFCValue` or arguments that can be used to construct a `BlockFCValue`, for
                 example, an :obj:`int`, or a :obj:`tuple` of :obj:`int` and overrides. Refer to `BlockFCValue` for
                 more details
+
+        Keyword Args:
             dont_create (:obj:`bool`): If set, connections are made only between already created nodes
         """
         block, orientation, position, _ = self._module.key
@@ -271,8 +298,25 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                             self.connect(port_bus[port_idx], sgmt_bus[idx])
  
     @classmethod
-    def new(cls, block, orientation, position = None, *, identifier = None, name = None):
-        """Create a new module for building."""
+    def new(cls, block, orientation, position = None, *, identifier = None, name = None, **kwargs):
+        """Create a new connection box in user view at a specific location near ``block``.
+        
+        Args:
+            block (`Module`): A logic/io block
+            orientation (`Orientation`): On which side of the block is the connection box
+            position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): At which position relative to the block is the
+                connection box
+
+        Keyword Args:
+            identifier (:obj:`str`): If different connection boxes are needed for the same location near ``block``,
+                use identifier to differentiate them
+            name (:obj:`str`): Name of the connection box. Auto-generated by default
+            **kwargs: Additional attributes to be associated with the connection box. Beware that these
+                attributes are **NOT** carried over to the logical view automatically generated by `TranslationPass`
+
+        Return:
+            `Module`:
+        """
         key = cls._cbox_key(block, orientation, position, identifier)
         _0, orientation, position, _1 = key
         name = name or 'cbox_{}_x{}y{}{}{}'.format(block.name, position.x, position.y, orientation.name[0],
@@ -282,13 +326,14 @@ class ConnectionBoxBuilder(_BaseRoutingBoxBuilder):
                 is_cell = True,
                 conn_graph = MemOptUserConnGraph(),
                 module_class = ModuleClass.connection_box,
-                key = key)
+                key = key,
+                **kwargs)
 
 # ----------------------------------------------------------------------------
 # -- Switch Box Key ----------------------------------------------------------
 # ----------------------------------------------------------------------------
 class _SwitchBoxKey(namedtuple('_SwitchBoxKey', 'corner identifier')):
-    """Connection box key.
+    """Switch box key.
 
     Args:
         corner (`Corner`): 
@@ -612,21 +657,24 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                                 osgmt, oori, osec, odx, dont_create)
 
     # == high-level API ======================================================
-    def get_segment_input(self, segment, orientation, section = None, *,
-            dont_create = False, segment_type = SegmentType.sboxin_regular):
-        """Get the segment input to this switch box.
+    def get_segment_input(self, segment, orientation, section = None, *, dont_create = False):
+        """Get or create a segment input port in this switch box.
 
         Args:
             segment (`Segment`): Prototype of the segment
             orientation (`Orientation`): Orientation of the segment
             section (:obj:`int`): Section of the segment
+
+        Keyword Args:
             dont_create (:obj:`bool`): If set, return ``None`` when the requested segment input is not already created
                 instead of create it
-            segment_type (`SegmentType`): For internal use only
+
+        Returns:
+            `Port`:
         """
         section = uno(section, segment.length)
         node = SegmentID(self._segment_relative_position(self._module.key.corner, segment, orientation, section),
-                segment, orientation, segment_type)
+                segment, orientation, SegmentType.sboxin_regular)
         try:
             return self.ports[node]
         except KeyError:
@@ -637,14 +685,19 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                         segment.width, PortDirection.input_, key = node)
 
     def get_segment_output(self, segment, orientation, section = 0, *, dont_create = False):
-        """Get or create the segment output from this switch box.
+        """Get or create a segment output port in this switch box.
 
         Args:
             segment (`Segment`): Prototype of the segment
             orientation (`Orientation`): Orientation of the segment
             section (:obj:`int`): Section of the segment
+
+        Keyword Args:
             dont_create (:obj:`bool`): If set, return ``None`` when the requested segment output is not already created
                 instead of create it
+
+        Returns:
+            `Port`:
         """
         node = SegmentID(self._segment_relative_position(self._module.key.corner, segment, orientation, section),
                 segment, orientation, SegmentType.sboxout)
@@ -660,7 +713,7 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
     def fill(self, output_orientation, *, drive_at_crosspoints = False, crosspoints_only = False,
             exclude_input_orientations = tuple(), dont_create = False,
             pattern = SwitchBoxPattern.span_limited):
-        """Create switches implementing a cycle-free variation of the Wilton switch box.
+        """Automatically generate connections implementing the specified pattern.
 
         Args:
             output_orientation (`Orientation`):
@@ -712,8 +765,23 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
             raise NotImplementedError("Unsupported/Unimplemented switch box pattern: {}".format(pattern))
 
     @classmethod
-    def new(cls, corner, identifier = None, name = None):
-        """Create a new module for building."""
+    def new(cls, corner, *, identifier = None, name = None, **kwargs):
+        """Create a new switch box.
+
+        Args:
+            corner (`Corner`): On which corner of a tile is the switch box
+
+        Keyword Args:
+            identifier (:obj:`str`): If different switches boxes are needed for the same corner of a tile,
+                use identifier to differentiate them
+            dont_create (:obj:`bool`): If set to ``True``, return ``None`` when the requested switch box is not
+                already created instead of create it
+            **kwargs: Additional attributes to be associated with the switch box. Beware that these
+                attributes are **NOT** carried over to the logical view automatically generated by `TranslationPass`
+
+        Returns:
+            `Module`:
+        """
         key = cls._sbox_key(corner, identifier)
         name = name or 'sbox_{}{}'.format(corner.case("ne", "nw", "se", "sw"),
                 ('_' + identifier) if identifier is not None else '')
@@ -722,4 +790,5 @@ class SwitchBoxBuilder(_BaseRoutingBoxBuilder):
                 is_cell = True,
                 conn_graph = MemOptUserConnGraph(),
                 module_class = ModuleClass.switch_box,
-                key = key)
+                key = key,
+                **kwargs)

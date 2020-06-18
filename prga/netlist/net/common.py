@@ -1,5 +1,7 @@
 # -*- encoding: ascii -*-
 # Python 2 and 3 compatible
+"""Common enums and abstract base class for nets."""
+
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
@@ -240,10 +242,10 @@ class AbstractPin(AbstractGenericNet):
 # -- Constant Nets -----------------------------------------------------------
 # ----------------------------------------------------------------------------
 class Const(Object, AbstractGenericNet):
-    """A constant net used as a driver of other nets, connecting those nets to constant low/high wires.
+    """A constant net used as tie-high/low or unconnected status marker for sinks.
 
     Args:
-        value (:obj:`int`): Value of this constant in little-endian. Use ``None`` to represent "unconnected" state
+        value (:obj:`int`): Value of this constant in little-endian. Use ``None`` to represent "unconnected"
         width (:obj:`int`): Number of bits in this net
     """
 
@@ -349,7 +351,7 @@ class Slice(Object, AbstractGenericNet):
         bus (`AbstractGenericBus`): The referred bus
         index (:obj:`slice`): Index of the bit(s) in the bus.
 
-    Direct instantiation of this class is not recommended.
+    Do not directly instantiate this class. Index into the bus instead, e.g. ``module.ports[0:4]``
     """
 
     __slots__ = ['bus', 'index']

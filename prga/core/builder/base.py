@@ -29,7 +29,7 @@ class BaseBuilder(Object):
 
     Args:
         context (`Context`): The context of the builder
-        module (`AbstractModule`): The module to be built
+        module (`Module`): The module to be built
     """
 
     __slots__ = ['_context', '_module']
@@ -39,7 +39,7 @@ class BaseBuilder(Object):
 
     @property
     def module(self):
-        """`AbstractModule`: The module being built."""
+        """`Module`: The module being built."""
         return self._module
 
     @property
@@ -48,5 +48,9 @@ class BaseBuilder(Object):
         return self._module.ports
 
     def commit(self):
-        """Commit the module."""
+        """Commit and return the module.
+        
+        Returns:
+            `Module`:
+        """
         return self._module

@@ -1,5 +1,7 @@
 # -*- encoding: ascii -*-
 # Python 2 and 3 compatible
+"""Modules."""
+
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
@@ -23,22 +25,21 @@ class Module(Object, AbstractModule):
         name (:obj:`str`): Name of the module
 
     Keyword Args:
-        key (:obj:`Hashable`): A hashable key used to index this module in the database. If not given \(default
+        key (:obj:`Hashable`): A hashable key used to index this module in the database. If not set \(default
             argument: ``None``\), ``name`` is used by default
-        is_cell (:obj:`bool`): A quick argument for ``instances`` and ``allow_multisource`` and
-            ``coalesce_connections``. If set, ``instances`` will be set to ``False``, ``allow_multisource`` will be
-            set to ``True`` and ``coalesce_connections`` will be set to False. Takes precedence over corresponding
-            arguments
-        instances (:obj:`MutableMapping`): If ``None`` is given, no instance mapping is created, marking this module
-            as a leaf cell; By default, an ``OrderedDict`` object will be used
-        conn_graph (`networkx.DiGraph`_): Connection & Timing Graph. It's strongly recommended to subclass
-            `networkx.DiGraph`_ to optimize memory usage
-        allow_multisource (:obj:`bool`): If set, a sink net may be driven by multiple source nets. Incompatible with
-            ``coalesce_connections``
-        coalesce_connections (:obj:`bool`): If set, all connections are made at the granularity of buses.
+        is_cell (:obj:`bool`): If set to ``True``, the following arguments are overwritten: ``instances`` is set to
+            ``False``, ``allow_multisource`` is set to ``True``, ``coalesce_connections`` is set to ``False``
+        instances (:obj:`MutableMapping` or :obj:`bool`): If set to ``False``, no instance mapping is created,
+            marking this module as a leaf cell which contains no sub-modules; If set to ``True``, an ``OrderedDict``
+            object is created for the instance mapping; Otherwise, the given argument is used for the instance
+            mapping.
+        conn_graph (`networkx.DiGraph`_): Connection & Timing Graph
+        allow_multisource (:obj:`bool`): If set to ``True``, a sink net may be driven by multiple source nets.
+            Incompatible with ``coalesce_connections``
+        coalesce_connections (:obj:`bool`): If set to ``True``, bit-wise connections are not allowed.
             Incompatible with ``allow_multisource``.
-        **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
-            is executed at the BEGINNING of ``__init__``
+        **kwargs: Custom key-value arguments. These attributes are added to ``__dict__`` of this object
+            and accessible as dynamic attributes
 
     .. _networkx.DiGraph: https://networkx.github.io/documentation/stable/reference/classes/digraph.html#networkx.DiGraph
     """
@@ -66,7 +67,10 @@ class Module(Object, AbstractModule):
                 self._instances = OrderedDict()
             self._allow_multisource = allow_multisource
             self._coalesce_connections = coalesce_connections
-        self._conn_graph = uno(conn_graph, nx.DiGraph())
+        if conn_graph is not None:
+            self._conn_graph = conn_graph
+        else:
+            self._conn_graph = nx.DiGraph()
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
 

@@ -24,11 +24,17 @@ class _BaseClusterLikeBuilder(BaseBuilder):
 
     Args:
         context (`Context`): The context of the builder
-        module (`AbstractModule`): The module to be built
+        module (`Module`): The module to be built
     """
 
     def _set_clock(self, port):
-        """Set ``port`` as the clock of the module."""
+        """Set ``port`` as the clock of the module.
+
+        Args:
+            `Port`: Clock port in this module
+        
+        At the moment only one clock is supported in the module.
+        """
         if self._module.clock is not None:
             raise PRGAAPIError("Cluster '{}' already has a clock ('{}')"
                     .format(self._module, self._module.clock))
@@ -45,20 +51,52 @@ class _BaseClusterLikeBuilder(BaseBuilder):
         """:obj:`Mapping` [:obj:`Hashable`, `AbstractInstances` ]: Proxy to ``module.instances``."""
         return self._module.instances
 
-    def connect(self, sources, sinks, *, fully = False, pack_patterns = None, **kwargs):
-        """Connect ``sources`` to ``sinks``."""
-        if not pack_patterns:
+    def connect(self, sources, sinks, *, fully = False, vpr_pack_patterns = None, **kwargs):
+        """Connect ``sources`` to ``sinks``.
+        
+        Args:
+            sources: Source nets, i.e., an input port, an output pin of an instance, a subset of the above, or a list
+                of a combination of the above
+            sinks: Sink nets, i.e., an output port, an input pin of an instance, a subset of the above, or a list
+                of a combination of the above
+
+        Keyword Args:
+            fully (:obj:`bool`): If set to ``True``, connections are made between every source and every sink
+            vpr_pack_patterns (:obj:`Sequence` [:obj:`str`]): Add `pack_pattern`_ tags to the connections
+            **kwargs: Additional attibutes to be associated with all connections
+
+        .. pack_pattern:
+            https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Cportname=
+        """
+        if not vpr_pack_patterns:
             NetUtils.connect(sources, sinks, fully = fully, **kwargs)
         else:
-            NetUtils.connect(sources, sinks, fully = fully, pack_patterns = pack_patterns, **kwargs)
+            NetUtils.connect(sources, sinks, fully = fully, vpr_pack_patterns = vpr_pack_patterns, **kwargs)
 
-    def instantiate(self, model, name, *, vpr_num_pb = 1, **kwargs):
-        """Instantiate ``model`` and add it into the module."""
-        if vpr_num_pb == 1:
+    def instantiate(self, model, name, reps = None, **kwargs):
+        """Instantiate ``model`` in the module.
+
+        Args:
+            model (`Module`): User view of the module to be instantiated
+            name (:obj:`str`): Name of the instance. If ``reps`` is specified, each instance is named
+                ``"{name}_i{index}"``
+            reps (:obj:`int`): If set to a positive int, the specified number of instances are created, added to
+                the mode, and returned. This affects the `num_pb`_ attribute in the output VPR specs
+
+        Keyword Args:
+            **kwargs: Additional attributes to be associated with the instance\(s\)
+
+        Returns:
+            `Instance` or :obj:`tuple` [`Instance`]:
+
+        .. num_pb:
+            https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Cportname=
+        """
+        if reps is None:
             return ModuleUtils.instantiate(self._module, model, name, **kwargs)
         else:
             return tuple(ModuleUtils.instantiate(self._module, model, '{}_i{}'.format(name, i),
-                key = (name, i), vpr_num_pb = vpr_num_pb, **kwargs) for i in range(vpr_num_pb))
+                key = (name, i), vpr_num_pb = reps, **kwargs) for i in range(reps))
 
 # ----------------------------------------------------------------------------
 # -- ClusterBuilder ----------------------------------------------------------
@@ -68,7 +106,7 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
 
     Args:
         context (`Context`): The context of the builder
-        module (`AbstractModule`): The module to be built
+        module (`Module`): The module to be built
     """
 
     def create_clock(self, name, **kwargs):
@@ -76,6 +114,12 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
 
         Args:
             name (:obj:`str`): Name of this clock
+
+        Keyword Args:
+            **kwargs: Additional attributes to be associated with the port
+
+        Returns:
+            `Port`: The created clock port
         """
         return self._set_clock(ModuleUtils.create_port(self._module, name, 1, PortDirection.input_, is_clock = True,
             **kwargs))
@@ -86,6 +130,12 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
         Args:
             name (:obj:`str`): Name of this port
             width (:obj:`int`): Number of bits in the port
+
+        Keyword Args:
+            **kwargs: Additional attributes to be associated with the port
+
+        Returns:
+            `Port`: The created input port
         """
         return ModuleUtils.create_port(self._module, name, width, PortDirection.input_, **kwargs)
 
@@ -95,12 +145,28 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
         Args:
             name (:obj:`str`): Name of this port
             width (:obj:`int`): Number of bits in the port
+
+        Keyword Args:
+            **kwargs: Additional attributes to be associated with the port
+
+        Returns:
+            `Port`: The created output port
         """
         return ModuleUtils.create_port(self._module, name, width, PortDirection.output, **kwargs)
 
     @classmethod
     def new(cls, name, **kwargs):
-        """Create a new module for building."""
+        """Create a new module for building.
+        
+        Args:
+            name (:obj:`str`): Name of the module
+
+        Keyword Args:
+            **kwargs: Additional attributes to be associated with the cluster
+
+        Returns:
+            `Module`: The created module
+        """
         return Module(name,
                 view = ModuleView.user,
                 conn_graph = MemOptUserConnGraph(),
@@ -117,11 +183,11 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
 
     Args:
         context (`Context`): The context of the builder
-        module (`AbstractModule`): The module to be built
+        module (`Module`): The module to be built
     """
 
     def create_global(self, global_, orientation = None, *, name = None, **kwargs):
-        """Create and add an input port that is connected to a global wire ``global_``.
+        """Create and add an input port that is connected to the global wire ``global_``.
 
         Args:
             global_ (`Global`): The global wire this port is connected to
@@ -129,6 +195,10 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
 
         Keyword Args:
             name (:obj:`str`): Name of this port. If not given, the name of the global wire is used
+            **kwargs: Additional attributes to be associated with the port
+
+        Returns:
+            `Port`: The created port
         """
         port = ModuleUtils.create_port(self._module, name or global_.name, global_.width, PortDirection.input_,
                 is_clock = global_.is_clock, orientation = orientation, position = Position(0, 0), global_ = global_,
@@ -144,6 +214,12 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
             name (:obj:`str`): name of the created port
             width (:obj:`int`): width of the created port
             orientation (`Orientation`): orientation of this port
+
+        Keyword Args:
+            **kwargs: Additional attributes to be associated with the port
+
+        Returns:
+            `Port`: The created port
         """
         return ModuleUtils.create_port(self._module, name, width, PortDirection.input_,
                 position = Position(0, 0), orientation = orientation, **kwargs)
@@ -155,13 +231,32 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
             name (:obj:`str`): name of the created port
             width (:obj:`int`): width of the created port
             orientation (`Orientation`): orientation of this port
+
+        Keyword Args:
+            **kwargs: Additional attributes to be associated with the port
+
+        Returns:
+            `Port`: The created port
         """
         return ModuleUtils.create_port(self._module, name, width, PortDirection.output,
                 position = Position(0, 0), orientation = orientation, **kwargs)
 
     @classmethod
     def new(cls, name, capacity, *, disallow_segments_passthru = False, **kwargs):
-        """Create a new module for building."""
+        """Create a new block for building.
+        
+        Args:
+            name (:obj:`str`): Name of the block
+            capacity (:obj:`int`): Number of IO blocks in one tile
+
+        Keyword Args:
+            disallow_segments_passthru (:obj:`bool`): If set to ``True``, no routing tracks are allowed to run over
+                the block
+            **kwargs: Additional attributes to be associated with the block
+
+        Returns:
+            `Module`: The created block
+        """
         return Module(name,
                 view = ModuleView.user,
                 conn_graph = MemOptUserConnGraph(),
@@ -182,7 +277,7 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
 
     Args:
         context (`Context`): The context of the builder
-        module (`AbstractModule`): The module to be built
+        module (`Module`): The module to be built
     """
 
     @classmethod
@@ -228,6 +323,10 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
 
         Keyword Args:
             name (:obj:`str`): Name of this port. If not given, the name of the global wire is used
+            **kwargs: Additional attributes to be associated with the port
+
+        Returns:
+            `Port`: The created port
         """
         orientation, position = self._resolve_orientation_and_position(self._module, orientation, position)
         port = ModuleUtils.create_port(self._module, name or global_.name, global_.width, PortDirection.input_,
@@ -245,6 +344,16 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
             width (:obj:`int`): width of the created port
             orientation (`Orientation`): orientation of this port
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this port
+
+        Keyword Args:
+            vpr_equivalent_pins (:obj:`bool`): Add `equivalent`_ tag for this port in the output VPR specs
+            **kwargs: Additional attributes to be associated with the port
+
+        Returns:
+            `Port`: The created port
+
+        .. _equivalent:
+            https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Cinputname=
         """
         orientation, position = self._resolve_orientation_and_position(self._module, orientation, position)
         if vpr_equivalent_pins:
@@ -262,6 +371,12 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
             width (:obj:`int`): width of the created port
             orientation (`Orientation`): orientation of this port
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this port
+
+        Keyword Args:
+            **kwargs: Additional attributes to be associated with the port
+
+        Returns:
+            `Port`: The created output port
         """
         orientation, position = self._resolve_orientation_and_position(self._module, orientation, position)
         return ModuleUtils.create_port(self._module, name, width, PortDirection.output,
@@ -269,7 +384,21 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
 
     @classmethod
     def new(cls, name, width, height, *, disallow_segments_passthru = False, **kwargs):
-        """Create a new module for building."""
+        """Create a new block for building.
+        
+        Args:
+            name (:obj:`str`): Name of the block
+            width (:obj:`int`): Width of the block
+            height (:obj:`int`): Height of the block
+
+        Keyword Args:
+            disallow_segments_passthru (:obj:`bool`): If set to ``True``, no routing tracks are allowed to run over
+                the block
+            **kwargs: Additional attributes to be associated with the block
+
+        Returns:
+            `Module`: The created block
+        """
         return Module(name,
                 view = ModuleView.user,
                 conn_graph = MemOptUserConnGraph(),

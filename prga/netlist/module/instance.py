@@ -1,5 +1,7 @@
 # -*- encoding: ascii -*-
 # Python 2 and 3 compatible
+"""Module instances, i.e. sub-modules."""
+
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
@@ -50,10 +52,9 @@ class Instance(Object, AbstractInstance):
         name (:obj:`str`): Name of the instance
 
     Keyword Args:
-        key (:obj:`Hashable`): A hashable key used to index this instance in the parent module. If not given
-            \(default argument: ``None``\), ``name`` is used by default
-        **kwargs: Custom key-value arguments. For each key-value pair ``key: value``, ``setattr(self, key, value)``
-            is executed at the BEGINNING of ``__init__``
+        key (:obj:`Hashable`): A hashable key used to index this instance in the instances mapping in the parent
+            module. If not set \(default argument: ``None``\), ``name`` is used by default
+        **kwargs: Custom attributes associated with this instance
     """
 
     __slots__ = ['_parent', '_model', '_name', '_key', '__dict__']

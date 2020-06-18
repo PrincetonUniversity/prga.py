@@ -15,7 +15,12 @@ __all__ = ['YosysScriptsCollection']
 # -- Yosys Scripts Collection ------------------------------------------------
 # ----------------------------------------------------------------------------
 class YosysScriptsCollection(AbstractPass):
-    """Collecting Yosys script rendering tasks."""
+    """Collecting Yosys script rendering tasks.
+
+    Args:
+        renderer (`FileRenderer`):
+        output_dir (:obj:`str`): Directory for all output files. Current working directory is used by default
+    """
 
     __slots__ = ['renderer', 'output_dir']
     def __init__(self, renderer, output_dir = "."):

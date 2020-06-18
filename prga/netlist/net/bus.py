@@ -1,5 +1,7 @@
 # -*- encoding: ascii -*-
 # Python 2 and 3 compatible
+"""Port & Pin classes."""
+
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
@@ -23,10 +25,10 @@ class Port(Object, AbstractPort):
         direction (`PortDirection`): Direction of the port
 
     Keyword Args:
-        key (:obj:`Hashable`): A hashable key used to index this net in the parent module. If not given
-            \(default argument: ``None``\), ``name`` is used by default
+        key (:obj:`Hashable`): A hashable key used to index this port in the ports mapping in the parent module.
+            If not set \(default argument: ``None``\), ``name`` is used by default
         is_clock (:obj:`bool`): Mark this port as a clock port
-        **kwargs: Custom key-value arguments. These attributes are to be added to the ``__dict__`` of this port object
+        **kwargs: Custom key-value arguments. These attributes are added to ``__dict__`` of this object
             and accessible as dynamic attributes
     """
 
@@ -96,7 +98,7 @@ class Pin(Object, AbstractPin):
     Args:
         model (`Port`): Model of this pin
         instance (`AbstractInstance`): Hierarchy of instances down to the pin in bottom-up order.
-            See `Pin.hierarchy` for more information
+            See `Pin.instance` for more information
     """
 
     __slots__ = ['_model', '_instance']

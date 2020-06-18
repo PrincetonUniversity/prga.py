@@ -37,10 +37,10 @@ class AbstractSwitchDatabase(Abstract):
 
         Args:
             width (:obj:`int`): Number of inputs needed
-            module (`AbstractModule`): The module to which the switch is going to be added
+            module (`Module`): The module in which the switch is going to be added
 
         Returns:
-            `AbstractModule`: Switch module found
+            `Module`: Switch module found
 
         Note:
             The returned switch could have more than ``width`` input bits
@@ -51,7 +51,17 @@ class AbstractSwitchDatabase(Abstract):
 # -- Translation Pass --------------------------------------------------------
 # ----------------------------------------------------------------------------
 class TranslationPass(Object, AbstractPass):
-    """Translate user-defined modules to logical modules."""
+    """Translate modules in user view to logical view.
+
+    Args:
+        top (`Module`): Top-level array in user view. The top array from the context is selected by default
+
+    Keyword Args:
+        create_blackbox_for_undefined_primitives (:obj:`bool`): `TranslationPass` does not know how to translate
+            primitives. By default, if the logical view is not defined for a primitive, an error is raised.
+            If ``create_blackbox_for_undefined_primitives`` is set to ``True``, an empty logical view is created in
+            this case.
+    """
 
     __slots__ = ['top', 'create_blackbox_for_undefined_primitives']
     def __init__(self, top = None, *, create_blackbox_for_undefined_primitives = False):

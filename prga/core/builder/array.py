@@ -191,7 +191,7 @@ class _BaseArrayBuilder(BaseBuilder):
 
     Args:
         context (`Context`): The context of the builder
-        module (`AbstractModule`): The module to be built
+        module (`Module`): The module to be built
     """
 
     # == low-level API =======================================================
@@ -480,7 +480,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
 
     Args:
         context (`Context`): The context of the builder
-        module (`AbstractModule`): The module to be built
+        module (`Module`): The module to be built
     """
 
     # == low-level API =======================================================
@@ -511,7 +511,7 @@ class LeafArrayBuilder(_BaseArrayBuilder):
 
     # == high-level API ======================================================
     @classmethod
-    def new(cls, name, width, height, *, edge = OrientationTuple(False)):
+    def new(cls, name, width, height, *, edge = OrientationTuple(False), **kwargs):
         """Create a new module for building."""
         return Module(name,
                 view = ModuleView.user,
@@ -520,13 +520,14 @@ class LeafArrayBuilder(_BaseArrayBuilder):
                 module_class = ModuleClass.leaf_array,
                 width = width,
                 height = height,
-                edge = edge)
+                edge = edge,
+                **kwargs)
 
     def instantiate(self, model, position, *, name = None):
         """Instantiate ``model`` at the speicified position in the array.
 
         Args:
-            model (`AbstractModule`): A logic/IO block, or connection/switch box
+            model (`Module`): A logic/IO block, or connection/switch box
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position in the array
 
         Keyword Args:
@@ -640,7 +641,19 @@ class LeafArrayBuilder(_BaseArrayBuilder):
             fc_override = None,
             sbox_pattern = SwitchBoxPattern.wilton,
             identifier = None):
-        """Fill routing boxes into the array being built."""
+        """Fill routing boxes into the array.
+        
+        Args:
+            default_fc: Default FC value for all blocks whose FC value is not defined. If one single :obj:`int` or
+                :obj:`float` is given, this FC value applies to all ports of all blocks. If a :obj:`tuple` of two
+                :obj:`int`s or :obj:`float`s are given, the first one applies to all input ports while the second one
+                applies to all output ports. Use `BlockFCValue` for more custom options.
+
+        Keyword Args:
+            fc_override (:obj:`Mapping`): Override the FC settings for specific blocks. Indexed by name.
+            sbox_pattern (`SwitchBoxPattern`): The switch block pattern to be applied to all switch blocks
+            identifier (:obj:`str`): Identifiers assigned to all routing boxes
+        """
         fc_override = uno(fc_override, {})
         for tunnel in itervalues(self._context.tunnels):
             for port in (tunnel.source, tunnel.sink):
@@ -927,7 +940,7 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
 
     Args:
         context (`Context`): The context of the builder
-        module (`AbstractModule`): The module to be built
+        module (`Module`): The module to be built
     """
 
     # == low-level API =======================================================
@@ -948,7 +961,7 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
 
     # == high-level API ======================================================
     @classmethod
-    def new(cls, name, width, height, *, edge = OrientationTuple(False)):
+    def new(cls, name, width, height, *, edge = OrientationTuple(False), **kwargs):
         """Create a new module for building."""
         return Module(name,
                 view = ModuleView.user,
@@ -957,13 +970,14 @@ class NonLeafArrayBuilder(_BaseArrayBuilder):
                 module_class = ModuleClass.nonleaf_array,
                 width = width,
                 height = height, 
-                edge = edge)
+                edge = edge,
+                **kwargs)
 
     def instantiate(self, model, position, *, name = None):
         """Instantiate ``model`` at the speicified position in the array.
 
         Args:
-            model (`AbstractModule`): An array
+            model (`Module`): The sub-array to be instantiated
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position in the array
 
         Keyword Args:

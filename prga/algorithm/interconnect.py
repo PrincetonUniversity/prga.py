@@ -1,5 +1,7 @@
 # -*- encoding: ascii -*-
 # Python 2 and 3 compatible
+"""Algorithms for building interconnects."""
+
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
@@ -27,6 +29,9 @@ class InterconnectAlgorithms(object):
 
         Keyword Args:
             n_util (:obj:`Sequence` [:obj:`int` ]): carry-over state
+
+        Yields:
+            :obj:`tuple` (:obj:`int`, :obj:`int`):
         """
         # special cases
         if connectivity == 0:

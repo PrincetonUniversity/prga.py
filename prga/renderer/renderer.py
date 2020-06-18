@@ -3,7 +3,10 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
+from ..core.common import ModuleView
 from ..netlist.net.util import NetUtils
+from ..netlist.module.module import Module
+from ..netlist.module.util import ModuleUtils
 from ..util import Object, uno
 from ..exception import PRGAInternalError
 
@@ -68,11 +71,44 @@ class FileRenderer(Object):
             raise PRGAInternalError("Main synthesis script is produced by multiple templates")
         return script_task
 
+    @classmethod
+    def _register_lib(cls, context):
+        """Register designs shipped with PRGA into ``context`` database.
+
+        Args:
+            context (`Context`):
+        """
+        # register designs
+        for d in ("prga_ram_1r1w", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer",
+                "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo"):
+            context._database[ModuleView.logical, d] = Module(d,
+                    view = ModuleView.logical,
+                    verilog_template = "stdlib/{}.v".format(d))
+        for d in ("prga_ram_1r1w_dc", "prga_async_fifo", "prga_async_tokenfifo", "prga_clkdiv"):
+            context._database[ModuleView.logical, d] = Module(d,
+                    view = ModuleView.logical,
+                    verilog_template = "cdclib/{}.v".format(d))
+        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo"],
+                context._database[ModuleView.logical, "prga_ram_1r1w"], "ram")
+        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo"],
+                context._database[ModuleView.logical, "prga_fifo_lookahead_buffer"], "buffer")
+        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo_resizer"],
+                context._database[ModuleView.logical, "prga_fifo_lookahead_buffer"], "buffer")
+        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo_adapter"],
+                context._database[ModuleView.logical, "prga_fifo_lookahead_buffer"], "buffer")
+        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_async_fifo"],
+                context._database[ModuleView.logical, "prga_ram_1r1w_dc"], "ram")
+        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_async_fifo"],
+                context._database[ModuleView.logical, "prga_fifo_lookahead_buffer"], "buffer")
+
+        # add headers
+        context._add_verilog_header("prga_utils.vh", "stdlib/include/prga_utils.tmpl.vh")
+
     def add_verilog(self, module, file_, template = 'module.tmpl.v', **kwargs):
         """Add a Verilog rendering task.
 
         Args:
-            module (`AbstractModule`): The module to be rendered
+            module (`Abstractg`): The module to be rendered
             file_ (:obj:`str` of file-like object): The output file
             template (:obj:`str`): The template to be used
             **kwargs: Additional key-value parameters to be passed into the template when rendering
@@ -127,7 +163,7 @@ class FileRenderer(Object):
 
         Args:
             file_ (:obj:`str` of file-like object): The output file
-            module (:obj:`AbstractModule`): The blackbox module
+            module (:obj:`Abstractg`): The blackbox module
 
         Keyword Args:
             template (:obj:`str`): The template to be used
@@ -186,7 +222,7 @@ class FileRenderer(Object):
 
         Args:
             file_ (:obj:`str` of file-like object): The output file
-            module (:obj:`AbstractModule`): The memory module
+            module (:obj:`Abstractg`): The memory module
             template (:obj:`str`): The template to be used
 
         Keyword Args:
@@ -209,7 +245,7 @@ class FileRenderer(Object):
 
         Args:
             file_ (:obj:`str` or file-like object): The output file
-            module (:obj:`AbstractModule`): The memory module
+            module (:obj:`Abstractg`): The memory module
 
         Keyword Args:
             template (:obj:`str`): The template to be used

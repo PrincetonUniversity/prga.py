@@ -1,6 +1,9 @@
 # -*- encoding: ascii -*-
 # mypy: ignore-errors
-"""Stuff for Python 2.7+ and 3.3+ compatibility."""
+"""Stuff for Python 2.7+ and 3.3+ compatibility.
+
+This module will be deprecated later when porting to 3.8 is done.
+"""
 
 from __future__ import division, absolute_import, print_function
 
@@ -25,7 +28,7 @@ except ImportError:
     from collections import Sequence, MutableSequence, Mapping, MutableMapping, Hashable, Iterable, Container
 
 try:
-    from io import BytesIO as StringIO
+    from io import StringIO
 except ImportError:
     try:
         from cStringIO import StringIO

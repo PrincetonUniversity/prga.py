@@ -205,33 +205,6 @@ class Pktchain(Scanchain):
         return module
 
     @classmethod
-    def new_context(cls, phit_width = 8, cfg_width = 1, *,
-            router_fifo_depth_log2 = 4,
-            dont_add_primitive = tuple(), dont_add_logical_primitive = tuple()):
-        if phit_width not in (1, 2, 4, 8, 16, 32):
-            raise PRGAAPIError("Unsupported configuration phit width: {}. Supported values are: [1, 2, 4, 8, 16]"
-                    .format(phit_width))
-        if cfg_width not in (1, 2, 4):
-            raise PRGAAPIError("Unsupported configuration chain width: {}. Supported values are: [1, 2, 4]"
-                    .format(cfg_width))
-        context = Context("pktchain")
-        context.summary.scanchain = {"cfg_width": cfg_width}
-        context.summary.pktchain = {
-                "fabric": {
-                    "phit_width": phit_width,
-                    "router_fifo_depth_log2": router_fifo_depth_log2,
-                    }
-                }
-        context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
-        context._fasm_delegate = PktchainFASMDelegate(context)
-        context._add_verilog_header("pktchain.vh", "pktchain.tmpl.vh")
-        context._add_verilog_header("pktchain_axilite_intf.vh", "axilite_intf/pktchain_axilite_intf.tmpl.vh")
-        # define the programming protocol
-        context.summary.pktchain["protocol"] = PktchainProtocol
-        cls._register_primitives(context, phit_width, cfg_width, dont_add_primitive, dont_add_logical_primitive)
-        return context
-
-    @classmethod
     def _register_primitives(cls, context, phit_width, cfg_width, dont_add_primitive, dont_add_logical_primitive):
         if not isinstance(dont_add_primitive, set):
             dont_add_primitive = set(iter(dont_add_primitive))
@@ -450,13 +423,79 @@ class Pktchain(Scanchain):
             mit(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"], "i_bsid")
 
     @classmethod
+    def new_context(cls, phit_width = 8, cfg_width = 1, *,
+            router_fifo_depth_log2 = 4,
+            dont_add_primitive = tuple(), dont_add_logical_primitive = tuple()):
+        """Create a new context.
+
+        Args:
+            phit_width (:obj:`int`): Data width of the packet-switch network
+            cfg_width (:obj:`int`): Width of the scanchain
+
+        Keyword Args:
+            router_fifo_depth_log2 (:obj:`int`): Depth of the FIFO of packet-switch network routers
+            dont_add_primitive (:obj:`Sequence` [:obj:`str` ]): A list of primitives (user view) and all primitives
+                depending on them that are excluded when creating the context
+            dont_add_logical_primitive (:obj:`Sequence` [:obj:`str` ]): A list of primitives (logical view) and all
+                primitives depending on them that are excluded when creating the context
+
+        Returns:
+            `Context`:
+        """
+        if phit_width not in (1, 2, 4, 8, 16, 32):
+            raise PRGAAPIError("Unsupported configuration phit width: {}. Supported values are: [1, 2, 4, 8, 16]"
+                    .format(phit_width))
+        if cfg_width not in (1, 2, 4):
+            raise PRGAAPIError("Unsupported configuration chain width: {}. Supported values are: [1, 2, 4]"
+                    .format(cfg_width))
+        context = Context("pktchain")
+        context.summary.scanchain = {"cfg_width": cfg_width}
+        context.summary.pktchain = {
+                "fabric": {
+                    "phit_width": phit_width,
+                    "router_fifo_depth_log2": router_fifo_depth_log2,
+                    }
+                }
+        context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
+        context._fasm_delegate = PktchainFASMDelegate(context)
+        context._add_verilog_header("pktchain.vh", "pktchain.tmpl.vh")
+        context._add_verilog_header("pktchain_axilite_intf.vh", "axilite_intf/pktchain_axilite_intf.tmpl.vh")
+        # define the programming protocol
+        context.summary.pktchain["protocol"] = PktchainProtocol
+        cls._register_primitives(context, phit_width, cfg_width, dont_add_primitive, dont_add_logical_primitive)
+        return context
+
+    @classmethod
     def new_renderer(cls, additional_template_search_paths = tuple()):
+        """Create a new file renderer.
+
+        Args:
+            additional_template_search_paths (:obj:`Sequence` [:obj:`str` ]): Additional paths where the renderer
+                should search for template files
+
+        Returns:
+            `FileRenderer`:
+        """
         r = super(Pktchain, cls).new_renderer(additional_template_search_paths)
         r.template_search_paths.insert(0, ADDITIONAL_TEMPLATE_SEARCH_PATH)
         return r
 
     @classmethod
     def complete_pktchain_leaf(cls, context, logical_module, *, iter_instances = lambda m: itervalues(m.instances)):
+        """Inject leaf pktchain in ``logical_module``.
+        
+        Args:
+            context (`Context`):
+            logical_module (`Module`): The module (logical view) in which leaf pktchain is injected.
+
+        Keyword Args:
+            iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
+                the instances in a module
+
+        Thie method calls itself recursively to process all the instances (sub-modules). This method calls
+        `Scanchain.complete_scanchain` under the hood, because within each terminal in the packet-switch network, the
+        bitstream is still loaded through a scanchain.
+        """
         # short alias
         module = logical_module
         cfg_width = context.summary.scanchain["cfg_width"]
@@ -534,6 +573,21 @@ class Pktchain(Scanchain):
 
     @classmethod
     def complete_pktchain_network(cls, context, logical_module, *, iter_instances = lambda m: itervalues(m.instances)):
+        """Inject pktchain network and routers in ``logical_module``.
+        
+        Args:
+            context (`Context`):
+            logical_module (`Module`): The module (logical view) in which pktchain network and routers are injected.
+
+        Keyword Args:
+            iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
+                the instances in a module. Whenever ``None`` is yielded, the current secondary packet-switch network
+                is terminated and attached to the primary packet-switch network, then a new secondary packet-switch
+                network is started.
+
+        Thie method calls itself recursively to process all the instances (sub-modules). This method calls
+        `Pktchain.complete_pktchain_leaf` on `LeafArray`s in the hierarchy.
+        """
         # short alias
         module = logical_module
         # make sure this is a non-leaf array
@@ -632,6 +686,22 @@ class Pktchain(Scanchain):
 
     @classmethod
     def complete_pktchain(cls, context, logical_module = None, *, iter_instances = lambda m: itervalues(m.instances)):
+        """Inject pktchain network and routers in ``logical_module``. This method should be called on the top-level
+        array.
+        
+        Args:
+            context (`Context`):
+            logical_module (`Module`): The module (logical view) in which pktchain network and routers are injected. If
+                not specified, the top-level array in ``context`` is selected
+
+        Keyword Args:
+            iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
+                the instances in a module. Whenever ``None`` is yielded, the current secondary packet-switch network
+                is terminated and attached to the primary packet-switch network, then a new secondary packet-switch
+                network is started.
+
+        This method calls `Pktchain.complete_pktchain_network` and `Pktchain.complete_pktchain_leaf`.
+        """
         # short alias
         module = uno(logical_module, context.database[ModuleView.logical, context.top.key])
         # make sure this is a non-leaf array
@@ -780,6 +850,18 @@ class Pktchain(Scanchain):
 
     @classmethod
     def annotate_user_view(cls, context, user_module = None, *, _annotated = None):
+        """Annotate configuration data back to the user view.
+        
+        Args:
+            context (`Context`):
+            user_module (`Module`): User view of the module to be annotated
+
+        Keyword Args:
+            _annotated (:obj:`set` [:obj:`Hashable` ]): A scratchpad used to track processed modules across recursive
+                calls
+
+        This method calls itself recursively to process all instances (sub-modules).
+        """
         module = uno(user_module, context.top)
         _annotated = uno(_annotated, set())
         if module.module_class.is_nonleaf_array:

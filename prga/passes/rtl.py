@@ -16,7 +16,16 @@ __all__ = ['VerilogCollection']
 # -- Verilog Collection ------------------------------------------------------
 # ----------------------------------------------------------------------------
 class VerilogCollection(Object, AbstractPass):
-    """Collecting Verilog rendering tasks."""
+    """Collecting Verilog rendering tasks.
+    
+    Args:
+        renderer (`FileRenderer`): File generation tasks are added to the specified renderer
+        src_output_dir (:obj:`str`): Verilog source files are generated in the specified directory. Default value is
+            the current working directory.
+        header_output_dir (:obj:`str`): Verilog header files are generated in the specified directory. Default value
+            is "{src_output_dir}/include"
+        view (`ModuleView`): Generate Verilog source files with the specified view
+    """
 
     __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'view', 'visited']
     def __init__(self, renderer, src_output_dir = ".", header_output_dir = None, view = ModuleView.logical):

@@ -1,5 +1,7 @@
 # -*- encoding: ascii -*-
 # Python 2 and 3 compatible
+"""Common enums for FPGA builders."""
+
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
@@ -340,9 +342,13 @@ class ModuleClass(Enum):
 # -- Primitive Class ---------------------------------------------------------
 # ----------------------------------------------------------------------------
 class PrimitiveClass(Enum):
-    """Enum types for VPR's 'class' attribute of leaf 'pb_type's.
+    """Enum types for VPR's `class`_ attribute of leaf `pb_type`_ .
 
-    These 'class'es are only used for VPR inputs generation.
+    .. _class:
+        https://docs.verilogtorouting.org/en/latest/arch/reference/#arch-classes
+
+    .. _pb_type:
+        https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Cpb_typename=
     """
     # built-in primitives
     lut         = 0     #: look-up table
@@ -358,9 +364,10 @@ class PrimitiveClass(Enum):
 # -- Primitive Port Class ----------------------------------------------------
 # ----------------------------------------------------------------------------
 class PrimitivePortClass(Enum):
-    """Enum types for VPR's 'port_class' attribute of ports.
+    """Enum types for VPR's `port_class`_ attribute of leaf ports.
 
-    These 'port_class'es are only used for VPR inputs generation.
+    .. _port_class:
+        https://docs.verilogtorouting.org/en/latest/arch/reference/#classes
     """
     clock       = 0     #: clock for flipflop and memory
     lut_in      = 1     #: lut input
@@ -384,7 +391,10 @@ class PrimitivePortClass(Enum):
 # -- Module View -------------------------------------------------------------
 # ----------------------------------------------------------------------------
 class ModuleView(Enum):
-    """A specific view of a module."""
+    """A specific view of a module.
+    
+    Currently PRGA only uses the ``user`` view and the ``logical`` view.
+    """
 
     user = 0        #: user view of a module
     logical = 1     #: logical view of a module
@@ -555,7 +565,7 @@ class SegmentID(namedtuple('SegmentID', 'position prototype orientation segment_
 
         Args:
             segment_type (`SegmentType`): convert to another segment type
-            override_position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): override the position of this segment ID
+            position_adjustment (:obj:`tuple` [:obj:`int`, :obj:`int` ]): adjust the position of this segment ID
         """
         return type(self)(self.position + position_adjustment, self.prototype, self.orientation, uno(segment_type,
             self.segment_type))

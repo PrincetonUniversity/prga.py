@@ -30,7 +30,13 @@ ADDITIONAL_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(_
 # -- Switch Database ---------------------------------------------------------
 # ----------------------------------------------------------------------------
 class ScanchainSwitchDatabase(Object, AbstractSwitchDatabase):
-    """Switch database for scanchain configuration circuitry."""
+    """Switch database for scanchain configuration circuitry.
+    
+    Args:
+        context (`Context`):
+        cfg_width (:obj:`int`): Width of the scanchain
+        entry (`Scanchain` or `Pktchain`): Provided by the caller of the constructor
+    """
 
     __slots__ = ["context", "cfg_width", "entry"]
     def __init__(self, context, cfg_width, entry):
@@ -200,15 +206,6 @@ class Scanchain(object):
                 return ports
 
     @classmethod
-    def new_context(cls, cfg_width = 1, *, dont_add_primitive = tuple(), dont_add_logical_primitive = tuple()):
-        context = Context("scanchain")
-        context.summary.scanchain = {"cfg_width": cfg_width}
-        context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
-        context._fasm_delegate = ScanchainFASMDelegate(context)
-        cls._register_primitives(context, cfg_width, dont_add_primitive, dont_add_logical_primitive)
-        return context
-
-    @classmethod
     def _register_primitives(cls, context, cfg_width, dont_add_primitive, dont_add_logical_primitive):
         if not isinstance(dont_add_primitive, set):
             dont_add_primitive = set(iter(dont_add_primitive))
@@ -303,18 +300,18 @@ class Scanchain(object):
                 mode = fraclut6.create_mode("lut6x1", cfg_mode_selection = (64, ))
                 inst = mode.instantiate(context.primitives["lut6"], "LUT6A", cfg_bitoffset = 0)
                 mode.connect(mode.ports["in"], inst.pins["in"])
-                mode.connect(inst.pins["out"], mode.ports["o6"], pack_patterns = ("lut6_dff", ))
+                mode.connect(inst.pins["out"], mode.ports["o6"], vpr_pack_patterns = ("lut6_dff", ))
                 mode.commit()
 
             if True:
                 mode = fraclut6.create_mode("lut5x2", cfg_mode_selection = tuple())
-                insts = mode.instantiate(context.primitives["lut5"], "LUT5", vpr_num_pb = 2)
+                insts = mode.instantiate(context.primitives["lut5"], "LUT5", 2)
                 insts[0].cfg_bitoffset = 0
                 insts[1].cfg_bitoffset = 32
                 mode.connect(mode.ports["in"][:5], insts[0].pins["in"])
                 mode.connect(mode.ports["in"][:5], insts[1].pins["in"])
-                mode.connect(insts[0].pins["out"], mode.ports["o6"], pack_patterns = ("lut5A_dff", ))
-                mode.connect(insts[1].pins["out"], mode.ports["o5"], pack_patterns = ("lut5B_dff", ))
+                mode.connect(insts[0].pins["out"], mode.ports["o6"], vpr_pack_patterns = ("lut5A_dff", ))
+                mode.connect(insts[1].pins["out"], mode.ports["o5"], vpr_pack_patterns = ("lut5B_dff", ))
                 mode.commit()
 
             # logical view
@@ -409,41 +406,41 @@ class Scanchain(object):
                 ff = mode.instantiate(context.primitives["flipflop"], "ff")
                 mode.connect(mode.ports["clk"], ff.pins["clk"])
                 mode.connect(mode.ports["in"], lut.pins["in"])
-                mode.connect(lut.pins["out"], ff.pins["D"], pack_patterns = ["lut6_dff"])
+                mode.connect(lut.pins["out"], ff.pins["D"], vpr_pack_patterns = ["lut6_dff"])
                 mode.connect(lut.pins["out"], mode.ports["out"][0], cfg_bits = (64, ))
                 mode.connect(ff.pins["Q"], mode.ports["out"][0])
                 mode.commit()
 
             if True:
                 mode = fle6.create_mode("lut5x2", cfg_mode_selection = (66, ))
-                luts = mode.instantiate(context.primitives["lut5"], "lut", vpr_num_pb = 2)
-                ffs = mode.instantiate(context.primitives["flipflop"], "ff", vpr_num_pb = 2)
+                luts = mode.instantiate(context.primitives["lut5"], "lut", 2)
+                ffs = mode.instantiate(context.primitives["flipflop"], "ff", 2)
                 for i, (lut, ff) in enumerate(zip(luts, ffs)):
                     lut.cfg_bitoffset = 32 * i
                     mode.connect(mode.ports["clk"], ff.pins["clk"])
                     mode.connect(mode.ports["in"][0:5], lut.pins["in"])
-                    mode.connect(lut.pins["out"], ff.pins["D"], pack_patterns = ["lut5_i" + str(i) + "_dff"])
+                    mode.connect(lut.pins["out"], ff.pins["D"], vpr_pack_patterns = ["lut5_i" + str(i) + "_dff"])
                     mode.connect(lut.pins["out"], mode.ports["out"][i], cfg_bits = (64 + i, ))
                     mode.connect(ff.pins["Q"], mode.ports["out"][i])
                 mode.commit()
 
             if True:
                 mode = fle6.create_mode("arithmetic", cfg_mode_selection = (66, 67))
-                luts = mode.instantiate(context.primitives["lut5"], "lut", vpr_num_pb = 2)
-                ffs = mode.instantiate(context.primitives["flipflop"], "ff", vpr_num_pb = 2)
+                luts = mode.instantiate(context.primitives["lut5"], "lut", 2)
+                ffs = mode.instantiate(context.primitives["flipflop"], "ff", 2)
                 adder = mode.instantiate(context.primitives["adder"], "fa", cfg_bitoffset = 68)
-                mode.connect(mode.ports["cin"], adder.pins["cin"], pack_patterns = ["carrychain"])
+                mode.connect(mode.ports["cin"], adder.pins["cin"], vpr_pack_patterns = ["carrychain"])
                 mode.connect(mode.ports["in"][5], adder.pins["cin_fabric"])
                 for i, (p, lut) in enumerate(zip(["a", "b"], luts)):
                     lut.cfg_bitoffset = 32 * i
                     mode.connect(mode.ports["in"][0:5], lut.pins["in"])
-                    mode.connect(lut.pins["out"], adder.pins[p], pack_patterns = ["carrychain"])
+                    mode.connect(lut.pins["out"], adder.pins[p], vpr_pack_patterns = ["carrychain"])
                 for i, (p, ff) in enumerate(zip(["s", "cout_fabric"], ffs)):
                     mode.connect(mode.ports["clk"], ff.pins["clk"])
-                    mode.connect(adder.pins[p], ff.pins["D"], pack_patterns = ["carrychain"])
+                    mode.connect(adder.pins[p], ff.pins["D"], vpr_pack_patterns = ["carrychain"])
                     mode.connect(adder.pins[p], mode.ports["out"][i], cfg_bits = (64 + i, ))
                     mode.connect(ff.pins["Q"], mode.ports["out"][i])
-                mode.connect(adder.pins["cout"], mode.ports["cout"], pack_patterns = ["carrychain"])
+                mode.connect(adder.pins["cout"], mode.ports["cout"], vpr_pack_patterns = ["carrychain"])
                 mode.commit()
 
             # logical view
@@ -481,7 +478,39 @@ class Scanchain(object):
             return filler
 
     @classmethod
+    def new_context(cls, cfg_width = 1, *, dont_add_primitive = tuple(), dont_add_logical_primitive = tuple()):
+        """Create a new context.
+
+        Args:
+            cfg_width (:obj:`int`): Width of the scanchain
+
+        Keyword Args:
+            dont_add_primitive (:obj:`Sequence` [:obj:`str` ]): A list of primitives (user view) and all primitives
+                depending on them that are excluded when creating the context
+            dont_add_logical_primitive (:obj:`Sequence` [:obj:`str` ]): A list of primitives (logical view) and all
+                primitives depending on them that are excluded when creating the context
+
+        Returns:
+            `Context`:
+        """
+        context = Context("scanchain")
+        context.summary.scanchain = {"cfg_width": cfg_width}
+        context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
+        context._fasm_delegate = ScanchainFASMDelegate(context)
+        cls._register_primitives(context, cfg_width, dont_add_primitive, dont_add_logical_primitive)
+        return context
+
+    @classmethod
     def new_renderer(cls, additional_template_search_paths = tuple()):
+        """Create a new file renderer.
+
+        Args:
+            additional_template_search_paths (:obj:`Sequence` [:obj:`str` ]): Additional paths where the renderer
+                should search for template files
+
+        Returns:
+            `FileRenderer`:
+        """
         r = FileRenderer()
         r.template_search_paths.insert(0, ADDITIONAL_TEMPLATE_SEARCH_PATH)
         r.template_search_paths.extend(additional_template_search_paths)
@@ -491,7 +520,23 @@ class Scanchain(object):
     def complete_scanchain(cls, context, logical_module = None, *,
             iter_instances = lambda m: itervalues(m.instances),
             timing_enclosure = lambda m: m.module_class.is_block or m.module_class.is_routing_box):
-        """Complete the scanchain."""
+        """Inject the scanchain.
+        
+        Args:
+            context (`Context`):
+            logical_module (`Module`): The module (logical view) in which scanchain is injected. If not specified, the
+                top-level array in ``context`` is selected
+
+        Keyword Args:
+            iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
+                the instances in a module
+            timing_enclosure (:obj:`Function` [`Module` ] -> :obj:`bool`): A function used to determine if
+                configuration enable signals should be registered for one configuration cycle in a module. This is
+                necessary because the configuration enable signal may control millions of registers across the entire
+                FPGA. This super high-fanout net, if not registered, will be very slow to drive
+
+        This method calls itself recursively to process all the instances (sub-modules).
+        """
         cfg_width = context.summary.scanchain["cfg_width"]
         module = uno(logical_module, context.database[ModuleView.logical, context.top.key])
         # special processing needed for IO blocks (output enable)
@@ -594,7 +639,18 @@ class Scanchain(object):
 
     @classmethod
     def annotate_user_view(cls, context, user_module = None, *, _annotated = None):
-        """Annotate configuration data to the user view."""
+        """Annotate configuration data back to the user view.
+        
+        Args:
+            context (`Context`):
+            user_module (`Module`): User view of the module to be annotated
+
+        Keyword Args:
+            _annotated (:obj:`set` [:obj:`Hashable` ]): A scratchpad used to track processed modules across recursive
+                calls
+
+        This method calls itself recursively to process all instances (sub-modules).
+        """
         module = uno(user_module, context.top)
         logical = context.database[ModuleView.logical, module.key]
         _annotated = uno(_annotated, set())

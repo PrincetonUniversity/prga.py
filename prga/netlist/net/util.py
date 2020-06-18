@@ -1,5 +1,7 @@
 # -*- encoding: ascii -*-
 # Python 2 and 3 compatible
+"""Utility methods for accessing nets."""
+
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
@@ -25,7 +27,7 @@ class NetUtils(object):
     def _slice(cls, bus, index):
         """`Slice` or `AbstractGenericNet`: Create a slice of ``bus``.
 
-        ``index`` will not be validated.
+        ``index`` won't be validated, so use with care.
         """
         if isinstance(index, int):
             index = slice(index, index + 1)
@@ -44,7 +46,9 @@ class NetUtils(object):
             net (`AbstractGenericNet`):
 
         Keyword Args:
-            coalesced (:obj:`bool`): Set if ``net`` is a nonref-bus
+            coalesced (:obj:`bool`): If not set (by default), ``net`` must be one-bit wide, and this method returns a
+                reference to the bit. If set, ``net`` must be a `BusType.nonref` bus, and this method returns a
+                reference to the bus.
         """
         if coalesced:
             if not net.bus_type.is_nonref:
@@ -101,16 +105,17 @@ class NetUtils(object):
             endpoint (:obj:`Hashable`): Endpoint for the navigation
 
         Keyword Arguments:
-            path (:obj:`Sequence` [:obj:`Hashable` ]): Path to be appended to any path reported by this method
-            yield_ (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`bool`): Lambda function testing if
-                a node should be emitted during navigation
-            stop (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`bool`): Lambda function testing if
+            path (:obj:`Sequence` [:obj:`Hashable` ]): An additional path appended to any path reported by this
+                method. This is mainly used in recusive calls to this method
+            yield_ (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`bool`): Test if
+                a path should be yielded when reaching this node
+            stop (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`bool`): Test if
                 the navigation should stop at the specified node (i.e. force treating it as a startpoint)
-            skip (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`bool`): Lambda function testing if
+            skip (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`bool`): Test if
                 a node should be ignored when reporting the path
 
         Yields:
-            path (:obj:`Sequence` [:obj:`Hashable` ]): a path to endpoint
+            path (:obj:`Sequence` [:obj:`Hashable` ]): a path to the endpoint
         """
         # 1. disassemble the node
         idx, net_key = endpoint
@@ -208,7 +213,7 @@ class NetUtils(object):
 
         Keyword Args:
             fully (:obj:`bool`): If set, every bit in ``sources`` is connected to all bits in ``sinks``.
-            **kwargs: Custom attibutes assigned to the connections
+            **kwargs: Custom attibutes assigned all connections
         """
         # 1. concat the sources & sinks
         sources, sinks = map(cls.concat, (sources, sinks))
@@ -319,10 +324,10 @@ class NetUtils(object):
                     .format(source, sink))
         elif source.parent._coalesce_connections:
             if not source.bus_type.is_nonref:
-                raise PRGAInternalError("'{}' does not support bitwise connection (source net '{}' is not a bus)"
+                raise PRGAInternalError("'{}' does not support bitwise connection (source net '{}' is not a nonref bus)"
                         .format(source.parent, source))
             elif not sink.bus_type.is_nonref:
-                raise PRGAInternalError("'{}' does not support bitwise connection (sink net '{}' is not a bus)"
+                raise PRGAInternalError("'{}' does not support bitwise connection (sink net '{}' is not a nonref bus)"
                         .format(source.parent, sink))
         elif len(source) != 1:
             raise PRGAInternalError("source net: len({}) != 1".format(source))
