@@ -176,16 +176,18 @@ class Enum(enum.IntEnum):
         
         Note that ``default`` is a reserved keyword. If set, the value will be used if no matching case specified.
         """
-        try:
-            return args[self.value]
-        except IndexError:
+        if self.value >= 0:
             try:
-                return kwargs[self.name]
+                return args[self.value]
+            except IndexError:
+                pass
+        try:
+            return kwargs[self.name]
+        except KeyError:
+            try:
+                return kwargs['default']
             except KeyError:
-                try:
-                    return kwargs['default']
-                except KeyError:
-                    raise PRGAInternalError("Value unspecified for case {}".format(self))
+                raise PRGAInternalError("Value unspecified for case {:r}".format(self))
 
 def enable_stdout_logging(name, level=logging.INFO, verbose=False):
     hdl = logging.StreamHandler(sys.stdout)

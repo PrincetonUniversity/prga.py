@@ -5,13 +5,12 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .common import AbstractModule
+from .common import AbstractModule, ConnGraph
 from ...util import Object, ReadonlyMappingProxy, uno
 from ...exception import PRGAInternalError
 
 from collections import OrderedDict
 from enum import Enum
-import networkx as nx
 
 __all__ = ['Module']
 
@@ -70,7 +69,7 @@ class Module(Object, AbstractModule):
         if conn_graph is not None:
             self._conn_graph = conn_graph
         else:
-            self._conn_graph = nx.DiGraph()
+            self._conn_graph = ConnGraph(self._coalesce_connections)
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
 

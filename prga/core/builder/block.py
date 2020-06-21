@@ -3,10 +3,11 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .base import BaseBuilder, MemOptUserConnGraph
+from .base import BaseBuilder
 from ..common import ModuleClass, NetClass, Position, Orientation, ModuleView
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
+from ...netlist.module.common import ConnGraph
 from ...netlist.module.module import Module
 from ...netlist.module.util import ModuleUtils
 from ...util import Object, uno
@@ -63,7 +64,7 @@ class _BaseClusterLikeBuilder(BaseBuilder):
         Keyword Args:
             fully (:obj:`bool`): If set to ``True``, connections are made between every source and every sink
             vpr_pack_patterns (:obj:`Sequence` [:obj:`str`]): Add `pack_pattern`_ tags to the connections
-            **kwargs: Additional attibutes to be associated with all connections
+            **kwargs: Additional attibutes assigned to all connections
 
         .. pack_pattern:
             https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Cportname=
@@ -84,7 +85,7 @@ class _BaseClusterLikeBuilder(BaseBuilder):
                 the mode, and returned. This affects the `num_pb`_ attribute in the output VPR specs
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the instance\(s\)
+            **kwargs: Additional attributes assigned to the instance\(s\)
 
         Returns:
             `Instance` or :obj:`tuple` [`Instance`]:
@@ -116,7 +117,7 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
             name (:obj:`str`): Name of this clock
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`: The created clock port
@@ -132,7 +133,7 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
             width (:obj:`int`): Number of bits in the port
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`: The created input port
@@ -147,7 +148,7 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
             width (:obj:`int`): Number of bits in the port
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`: The created output port
@@ -162,14 +163,14 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
             name (:obj:`str`): Name of the module
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the cluster
+            **kwargs: Additional attributes assigned to the cluster
 
         Returns:
             `Module`: The created module
         """
         return Module(name,
                 view = ModuleView.user,
-                conn_graph = MemOptUserConnGraph(),
+                conn_graph = ConnGraph(edge_attr_slots = ["vpr_pack_patterns"]),
                 allow_multisource = True,
                 module_class = ModuleClass.cluster,
                 clock = None,
@@ -195,7 +196,7 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
 
         Keyword Args:
             name (:obj:`str`): Name of this port. If not given, the name of the global wire is used
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`: The created port
@@ -216,7 +217,7 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
             orientation (`Orientation`): orientation of this port
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`: The created port
@@ -233,7 +234,7 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
             orientation (`Orientation`): orientation of this port
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`: The created port
@@ -242,31 +243,26 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
                 position = Position(0, 0), orientation = orientation, **kwargs)
 
     @classmethod
-    def new(cls, name, capacity, *, disallow_segments_passthru = False, **kwargs):
-        """Create a new block for building.
+    def new(cls, name, **kwargs):
+        """Create a new block.
         
         Args:
             name (:obj:`str`): Name of the block
-            capacity (:obj:`int`): Number of IO blocks in one tile
 
         Keyword Args:
-            disallow_segments_passthru (:obj:`bool`): If set to ``True``, no routing tracks are allowed to run over
-                the block
-            **kwargs: Additional attributes to be associated with the block
+            **kwargs: Additional attributes assigned to the block
 
         Returns:
             `Module`: The created block
         """
         return Module(name,
                 view = ModuleView.user,
-                conn_graph = MemOptUserConnGraph(),
+                conn_graph = ConnGraph(edge_attr_slots = ["vpr_pack_patterns"]),
                 allow_multisource = True,
                 module_class = ModuleClass.io_block,
                 clock = None,
-                capacity = capacity,
                 width = 1,
                 height = 1,
-                disallow_segments_passthru = disallow_segments_passthru,
                 **kwargs)
 
 # ----------------------------------------------------------------------------
@@ -323,7 +319,7 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
 
         Keyword Args:
             name (:obj:`str`): Name of this port. If not given, the name of the global wire is used
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`: The created port
@@ -347,7 +343,7 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
 
         Keyword Args:
             vpr_equivalent_pins (:obj:`bool`): Add `equivalent`_ tag for this port in the output VPR specs
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`: The created port
@@ -373,7 +369,7 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this port
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`: The created output port
@@ -383,7 +379,7 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
                 orientation = orientation, position = position, **kwargs)
 
     @classmethod
-    def new(cls, name, width, height, *, disallow_segments_passthru = False, **kwargs):
+    def new(cls, name, width, height, **kwargs):
         """Create a new block for building.
         
         Args:
@@ -392,21 +388,17 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
             height (:obj:`int`): Height of the block
 
         Keyword Args:
-            disallow_segments_passthru (:obj:`bool`): If set to ``True``, no routing tracks are allowed to run over
-                the block
-            **kwargs: Additional attributes to be associated with the block
+            **kwargs: Additional attributes assigned to the block
 
         Returns:
             `Module`: The created block
         """
         return Module(name,
                 view = ModuleView.user,
-                conn_graph = MemOptUserConnGraph(),
+                conn_graph = ConnGraph(edge_attr_slots = ["vpr_pack_patterns"]),
                 allow_multisource = True,
                 module_class = ModuleClass.logic_block,
                 clock = None,
-                capacity = 1,
                 width = width,
                 height = height,
-                disallow_segments_passthru = disallow_segments_passthru,
                 **kwargs)

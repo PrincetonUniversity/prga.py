@@ -22,6 +22,8 @@ class VerilogCollection(Object, AbstractPass):
         renderer (`FileRenderer`): File generation tasks are added to the specified renderer
         src_output_dir (:obj:`str`): Verilog source files are generated in the specified directory. Default value is
             the current working directory.
+
+    Keyword Args:
         header_output_dir (:obj:`str`): Verilog header files are generated in the specified directory. Default value
             is "{src_output_dir}/include"
         view (`ModuleView`): Generate Verilog source files with the specified view

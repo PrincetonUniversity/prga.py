@@ -102,12 +102,12 @@ class AbstractInstance(Abstract):
         return tuple(inst.key for inst in self.hierarchy)
 
 # ----------------------------------------------------------------------------
-# -- Memory-Optimized DiGraph for Non-Coalesced Connection Graph -------------
+# -- Memory-Optimized Connection Graph ---------------------------------------
 # ----------------------------------------------------------------------------
 class _Placeholder(Enum):
     placeholder = 0
 
-class MemOptNonCoalescedNodeDict(MutableMapping):
+class _MemOptNonCoalescedNodeDict(MutableMapping):
 
     __slots__ = ['_dict']
     def __init__(self):
@@ -157,57 +157,134 @@ class MemOptNonCoalescedNodeDict(MutableMapping):
                 if item is not _Placeholder.placeholder:
                     yield idx, key
 
-class MemOptNonCoalescedConnGraph(nx.DiGraph):
-    node_dict_factory = MemOptNonCoalescedNodeDict
-    adjlist_outer_dict_factory = MemOptNonCoalescedNodeDict
+_attr_dict_factories = {}
+def _get_attr_dict_factory(slots = tuple()):
+    slots = tuple(sorted(slots))
 
-class LazyDict(MutableMapping):
-    """Memory-optimized lazy dict."""
+    # shortcut
+    if factory := _attr_dict_factories.get( slots ):
+        return factory
+    elif not slots:
+        _attr_dict_factories[slots] = dict
+        return dict
 
-    __slots__ = ['_dict']
+    # create new class
+    class AttrDict(MutableMapping):
+        "Memory optimized attribute dict."
 
-    def __getitem__(self, k):
-        if k in self.__slots__:
+        __slots__ = ('_dict', ) + slots
+
+        def __getitem__(self, k):
+            if k in self.__slots__:
+                try:
+                    return getattr(self, k)
+                except AttributeError:
+                    raise KeyError(k)
+            else:
+                try:
+                    return self._dict[k]
+                except AttributeError:
+                    raise KeyError(k)
+
+        def __setitem__(self, k, v):
+            if k in self.__slots__:
+                setattr(self, k, v)
+            else:
+                try:
+                    self._dict[k] = v
+                except AttributeError:
+                    self._dict = {k: v}
+
+        def __delitem__(self, k):
+            if k in self.__slots__:
+                try:
+                    delattr(self, k)
+                except AttributeError:
+                    raise KeyError(k)
+            else:
+                try:
+                    del self._dict[k]
+                except AttributeError:
+                    raise KeyError(k)
+
+        def __len__(self):
+            return sum(1 for _ in iter(self))
+
+        def __iter__(self):
+            for k in self.__slots__:
+                if hasattr(self, k):
+                    yield k
             try:
-                return getattr(self, k)
+                for k in self._dict:
+                    yield k
             except AttributeError:
-                raise KeyError(k)
-        else:
-            try:
-                return self._dict[k]
-            except AttributeError:
-                raise KeyError(k)
+                return
 
-    def __setitem__(self, k, v):
-        if k in self.__slots__:
-            setattr(self, k, v)
-        else:
-            try:
-                self._dict[k] = v
-            except AttributeError:
-                self._dict = {k: v}
+        def __reduce__(self):
+            return _get_attr_dict_factory, (slots, )
 
-    def __delitem__(self, k):
-        if k in self.__slots__:
-            try:
-                delattr(self, k)
-            except AttributeError:
-                raise KeyError(k)
-        else:
-            try:
-                del self._dict[k]
-            except AttributeError:
-                raise KeyError(k)
+    # register and return class
+    _attr_dict_factories[slots] = AttrDict
+    return AttrDict
 
-    def __len__(self):
-        return sum(1 for _ in iter(self))
+_conn_graph_factories = {}
+def _get_conn_graph_factory(
+        coalesce_connections = False,
+        node_attr_slots = tuple(),
+        edge_attr_slots = tuple()):
+    node_attr_slots = tuple(sorted(node_attr_slots))
+    edge_attr_slots = tuple(sorted(edge_attr_slots))
 
-    def __iter__(self):
-        for k in self.__slots__:
-            if hasattr(self, k):
-                yield k
-        try:
-            for k in self._dict:
-                yield k
-        except AttributeError:
-            return
+    # shortcut
+    if factory := _conn_graph_factories.get( (coalesce_connections, node_attr_slots, edge_attr_slots) ):
+        return factory
+
+    # create new class
+    if coalesce_connections:
+        class ConnGraph(nx.DiGraph):
+            """Memory-optimized connection graph."""
+
+            node_attr_dict_factory = _get_attr_dict_factory(node_attr_slots)
+            edge_attr_dict_factory = _get_attr_dict_factory(edge_attr_slots)
+
+            def __reduce__(self):
+                return _get_conn_graph_factory, (coalesce_connections, node_attr_slots, edge_attr_slots)
+
+        factory = ConnGraph
+    else:
+        class ConnGraph(nx.DiGraph):
+            """Memory-optimized connection graph."""
+
+            node_dict_factory = _MemOptNonCoalescedNodeDict
+            node_attr_dict_factory = _get_attr_dict_factory(node_attr_slots)
+            adjlist_outer_dict_factory = _MemOptNonCoalescedNodeDict
+            edge_attr_dict_factory = _get_attr_dict_factory(edge_attr_slots)
+
+            def __reduce__(self):
+                return _get_conn_graph_factory, (coalesce_connections, node_attr_slots, edge_attr_slots)
+
+        factory = ConnGraph
+
+    # register and return class
+    _conn_graph_factories[coalesce_connections, node_attr_slots, edge_attr_slots] = ConnGraph
+    return ConnGraph
+
+def ConnGraph(
+        coalesce_connections = False,
+        node_attr_slots = tuple(),
+        edge_attr_slots = tuple()):
+    """Construct a memory-optimized connection graph.
+
+    Args:
+        coalesce_connections (:obj:`bool`): If set to ``True``, not bitwise connections are allowed in the connection
+            graph
+        node_attr_slots (:obj:`Sequence` [:obj:`str` ]):
+        edge_attr_slots (:obj:`Sequence` [:obj:`str` ]):
+
+    Returns:
+        `networkx.DiGraph`_:
+
+    .. networkx.DiGraph:
+        https://networkx.github.io/documentation/networkx-2.4/reference/classes/digraph.html
+    """
+    return _get_conn_graph_factory(coalesce_connections, node_attr_slots, edge_attr_slots)()

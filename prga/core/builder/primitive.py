@@ -5,6 +5,7 @@ from prga.compatible import *
 
 from .base import BaseBuilder
 from ..common import ModuleClass, PrimitiveClass, PrimitivePortClass, NetClass, ModuleView
+from ...netlist.module.common import ConnGraph
 from ...netlist.module.module import Module
 from ...netlist.module.util import ModuleUtils
 from ...netlist.net.common import PortDirection
@@ -24,7 +25,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
 
     @abstractproperty
     def counterpart(self):
-        """`Module`: The user counterpart of the primitive being built if we're building logical view."""
+        """`Module`: The user view of the primitive if we're building logical view."""
         raise NotImplementedError
 
     def create_clock(self, name, **kwargs):
@@ -34,7 +35,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
             name (:obj:`str`): Name of the clock
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`:
@@ -44,7 +45,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
                 raise PRGAInternalError("Cannot create user-available ports in the logical view of {}"
                     .format(self._module))
             else:
-                kwargs["net_class"] = NetClass.primitive
+                kwargs["net_class"] = NetClass.user
         elif self._module.primitive_class.is_memory:
             raise PRGAAPIError("Ports are pre-defined and immutable for memory primitive '{}'"
                 .format(self._module))
@@ -59,7 +60,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
             width (:obj:`int`): Width of the port
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`:
@@ -69,7 +70,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
                 raise PRGAInternalError("Cannot create user-available ports in the logical view of {}"
                         .format(self._module))
             else:
-                kwargs["net_class"] = NetClass.primitive
+                kwargs["net_class"] = NetClass.user
         elif self._module.primitive_class.is_memory:
             raise PRGAAPIError("Ports are pre-defined and immutable for memory primitive '{}'"
                 .format(self._module))
@@ -83,7 +84,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
             width (:obj:`int`): Width of the port
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`:
@@ -93,7 +94,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
                 raise PRGAInternalError("Cannot create user-available ports in the logical view of {}"
                         .format(self._module))
             else:
-                kwargs["net_class"] = NetClass.primitive
+                kwargs["net_class"] = NetClass.user
         elif self._module.primitive_class.is_memory:
             raise PRGAAPIError("Ports are pre-defined and immutable for memory primitive '{}'"
                 .format(self._module))
@@ -107,7 +108,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
             sinks: An output port, a subset of an output port, or a list of output ports/subsets
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the timing arcs
+            **kwargs: Additional attributes assigned to the timing arcs
         """
         if not self._module.is_cell:
             raise PRGAInternalError("Cannot add timing arc to {}".format(self._module))
@@ -136,14 +137,14 @@ class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
 
     @classmethod
     def new(cls, name, *, not_cell = False, **kwargs):
-        """Create a new custom primitive for building.
+        """Create a new custom primitive.
         
         Args:
             name (:obj:`str`): Name of the primitive
 
         Keyword Args:
             not_cell (:obj:`bool`): If set to ``True``, sub-modules can be added to the primitive
-            **kwargs: Custom attibutes assigned to the primitive
+            **kwargs: Additional attibutes assigned to the primitive
 
         Returns:
             `Module`:
@@ -164,7 +165,7 @@ class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
 
         Keyword Args:
             not_cell (:obj:`bool`): If set to ``True``, the primitive is created so sub-modules can be added
-            **kwargs: Custom attibutes assigned to the primitive
+            **kwargs: Additional attibutes assigned to the primitive
 
         Returns:
             `Module`:
@@ -177,7 +178,7 @@ class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
         for key, port in iteritems(user_view.ports):
             assert key == port.name
             ModuleUtils.create_port(m, key, len(port), port.direction,
-                    is_clock = port.is_clock, net_class = NetClass.primitive)
+                    is_clock = port.is_clock, net_class = NetClass.user)
         return m
 
     def create_cfg_port(self, name, width, direction, *, is_clock = False, **kwargs):
@@ -226,7 +227,7 @@ class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
 
         Keyword Args:
             fully (:obj:`bool`): If set to ``True``, connections are made between every source and every sink
-            **kwargs: Additional attibutes to be associated with all connections
+            **kwargs: Additional attibutes assigned to all connections
         """
         if self._module.is_cell:
             raise PRGAInternalError("Cannot connect {} and {} in {}".format(sources, sinks, self._module))
@@ -255,7 +256,7 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
             name (:obj:`str`): Name of the primitive
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the primitive
+            **kwargs: Additional attributes assigned to the primitive
 
         Returns:
             `Module`:
@@ -279,7 +280,7 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
         Keyword Args:
             single_port (:obj:`bool`): This method generates dual-port memory by default. Set this to ``True`` if a
                 single-port memory is needed
-            **kwargs: Additional attributes to be associated with the primitive
+            **kwargs: Additional attributes assigned to the primitive
 
         Returns:
             `Module`:
@@ -337,7 +338,7 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
             clock (:obj:`str`): If set, marks the input port as a sequential endpoint clocked by the specified clock
             vpr_combinational_sinks (:obj:`Sequence` [:obj:`str` ]): Output ports in this primitive to which combinational
                 paths exist from this port. See `combinational_sink_ports`_ for more information
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`:
@@ -373,7 +374,7 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
 
         Keyword Args:
             clock (:obj:`str`): If set, marks the output port as a sequential startpoint clocked by the specified clock
-            **kwargs: Additional attributes to be associated with the port
+            **kwargs: Additional attributes assigned to the port
 
         Returns:
             `Port`:
@@ -403,22 +404,22 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
         """
         m = super(PrimitiveBuilder, self).commit()
         if self._module.primitive_class.is_memory and not dont_create_logical_counterpart:
-            self._context.create_logical_primitive(self._module.name,
+            self._context.build_logical_primitive(self._module.name,
                     verilog_template = "memory.tmpl.v").commit()
         return m
 
-    def create_logical_counterpart(self, *, not_cell = False, **kwargs):
-        """Create the logical view of this module.
+    def build_logical_counterpart(self, *, not_cell = False, **kwargs):
+        """Build the logical view of this module.
 
         Keyword Args:
             not_cell (:obj:`bool`): If set to ``True``, sub-modules can be added to the logical view
-            **kwargs: Additional attributes to be associated with the logical view
+            **kwargs: Additional attributes assigned to the logical view
 
         Returns:
             `LogicalPrimitiveBuilder`:
         """
         self.commit()
-        return self._context.create_logical_primitive(self._module.name, not_cell = not_cell, **kwargs)
+        return self._context.build_logical_primitive(self._module.name, not_cell = not_cell, **kwargs)
 
 # ----------------------------------------------------------------------------
 # -- Builder for One Mode in a Multi-mode Primitive --------------------------
@@ -440,7 +441,7 @@ class _ModeBuilder(BaseBuilder):
             name (:obj:`str`): Name of this mode
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the mode
+            **kwargs: Additional attributes assigned to the mode
 
         Returns:
             `Module`:
@@ -450,6 +451,7 @@ class _ModeBuilder(BaseBuilder):
                 module_class = ModuleClass.mode,
                 parent = parent,
                 key = name,
+                conn_graph = ConnGraph(edge_attr_slots = ["vpr_pack_patterns"]),
                 **kwargs)
         for key, port in iteritems(parent.ports):
             ModuleUtils.create_port(m, port.name, len(port), port.direction,
@@ -467,7 +469,7 @@ class _ModeBuilder(BaseBuilder):
                 the mode, and returned. This affects the `num_pb`_ attribute in the output VPR specs
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the instance\(s\)
+            **kwargs: Additional attributes assigned to the instance\(s\)
 
         Returns:
             `Instance` or :obj:`tuple` [`Instance`]:
@@ -493,7 +495,7 @@ class _ModeBuilder(BaseBuilder):
         Keyword Args:
             fully (:obj:`bool`): If set to ``True``, connections are made between every source and every sink
             vpr_pack_patterns (:obj:`Sequence` [:obj:`str`]): Add `pack_pattern`_ tags to the connections
-            **kwargs: Additional attibutes to be associated with all connections
+            **kwargs: Additional attibutes assigned to all connections
 
         .. pack_pattern:
             https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Cportname=
@@ -526,7 +528,7 @@ class MultimodeBuilder(_BasePrimitiveBuilder):
             name (:obj:`str`): Name of the primitive
 
         Keyword Args:
-            **kwargs: Additional attibutes to be associated with the primitive
+            **kwargs: Additional attibutes assigned to the primitive
 
         Returns:
             `Module`:
@@ -539,14 +541,14 @@ class MultimodeBuilder(_BasePrimitiveBuilder):
                 modes = OrderedDict(),
                 **kwargs)
 
-    def create_mode(self, name, **kwargs):
+    def build_mode(self, name, **kwargs):
         """Create a new mode for this multi-mode primitive.
         
         Args:
             name (:obj:`str`): Name of the mode
 
         Keyword Args:
-            **kwargs: Additional attibutes to be associated with the mode
+            **kwargs: Additional attibutes assigned to the mode
 
         Returns:
             `_ModeBuilder`:
@@ -556,15 +558,15 @@ class MultimodeBuilder(_BasePrimitiveBuilder):
         mode = self._module.modes[name] = _ModeBuilder.new(self._module, name, **kwargs)
         return _ModeBuilder(self._context, mode)
 
-    def create_logical_counterpart(self, *, not_cell = False, **kwargs):
-        """Create the logical view of this primitive.
+    def build_logical_counterpart(self, *, not_cell = False, **kwargs):
+        """Build the logical view of this primitive.
 
         Keyword Args:
             not_cell (:obj:`bool`): If set, sub-modules can be added into this logical view
-            **kwargs: Additional attibutes to be associated with the primitive
+            **kwargs: Additional attibutes assigned to the primitive
 
         Returns:
             `LogicalPrimitiveBuilder`:
         """
         self.commit()
-        return self._context.create_logical_primitive(self._module.name, not_cell = not_cell, **kwargs)
+        return self._context.build_logical_primitive(self._module.name, not_cell = not_cell, **kwargs)

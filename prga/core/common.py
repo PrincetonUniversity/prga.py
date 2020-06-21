@@ -13,9 +13,9 @@ from abc import abstractproperty
 from copy import copy
 from math import ceil
 
-__all__ = ['Dimension', 'Direction', 'Orientation', 'OrientationTuple', 'Corner', 'Subtile', 'Position',
+__all__ = ['Dimension', 'Direction', 'Orientation', 'OrientationTuple', 'Corner', 'Position',
         'NetClass', 'IOType', 'ModuleClass', 'PrimitiveClass', 'PrimitivePortClass', 'ModuleView',
-        'Global', 'Segment', 'DirectTunnel', 'SegmentType', 'SegmentID', 'BlockPinID',
+        'Global', 'Segment', 'DirectTunnel', 'BridgeType', 'SegmentID', 'BlockPinID',
         'BlockPortFCValue', 'BlockFCValue', 'SwitchBoxPattern']
 
 # ----------------------------------------------------------------------------
@@ -62,7 +62,7 @@ class Orientation(Enum):
     north = 0       #: Direction.inc x Dimension.y
     east = 1        #: Direction.inc x Dimension.x
     south = 2       #: Direction.dec x Dimension.y
-    west = 3        #: Direction.dec x Dimension.x
+    west = 3       #: Direction.dec x Dimension.x
 
     @property
     def dimension(self):
@@ -107,13 +107,6 @@ class Orientation(Enum):
         """
         return self.dimension, self.direction
 
-    def to_subtile(self):
-        """`Subtile`: Convert to sub-tile position."""
-        try:
-            return Subtile[self.name]
-        except KeyError:
-            raise PRGAInternalError("{} does not have corresponding sub-tile position".format(self))
-
     @classmethod
     def compose(cls, dimension, direction):
         """Compose a dimension and a direction to an orientation.
@@ -131,16 +124,31 @@ class Orientation(Enum):
 # -- Orientation Tuple -------------------------------------------------------
 # ----------------------------------------------------------------------------
 class OrientationTuple(namedtuple('OrientationTuple', 'north east south west')):
+    """A tuple of values, one for each orientation.
 
-    def __new__(cls, default = False, north = None, east = None, south = None, west = None):
+    Args:
+        default: Default value for all orientations if no override is provided
+
+    Keyword Args:
+        north: Value for the north orientation
+        east: Value for the east orientation
+        south: Value for the south orientation
+        west: Value for the west orientation
+
+    Notes:
+        The specific value of an orientation can be accessed simply by indexing this tuple with that orientation enum.
+        For example: ``t = OrientationTuple(False); print(t[Orientation.north])``
+    """
+
+    def __new__(cls, default = None, *, north = None, east = None, south = None, west = None):
         return super(OrientationTuple, cls).__new__(cls,
                 north = north if north is not None else default,
                 east = east if east is not None else default,
                 south = south if south is not None else default,
                 west = west if west is not None else default)
 
-    def __getnewargs__(self):
-        return False, self.north, self.east, self.south, self.west
+    def __getnewargs_ex__(self):
+        return (None, ), {"north": self.north, "east": self.east, "south": self.south, "west": self.west}
 
 # ----------------------------------------------------------------------------
 # -- Corner ------------------------------------------------------------------
@@ -200,47 +208,6 @@ class Corner(Enum):
                 dim.case(Direction.inc, Direction.dec),
                 dim.case(Direction.dec, Direction.dec))
 
-    def to_subtile(self):
-        """`Subtile`: Convert to sub-tile position."""
-        try:
-            return Subtile[self.name]
-        except KeyError:
-            raise PRGAInternalError("{} does not have corresponding sub-tile position".format(self))
-
-# ----------------------------------------------------------------------------
-# -- Subtile -----------------------------------------------------------------
-# ----------------------------------------------------------------------------
-class Subtile(Enum):
-    """Sub-tile positions in a tile."""
-    # edges
-    north = -1      #: north edge of the tile, typically occupied by a connection box
-    east = -2       #: east edge of the tile, typically occupied by a connection box
-    south = -3      #: south edge of the tile, typically occupied by a connection box
-    west = -4       #: west edge of the tile, typically occupied by a connection box
-
-    # corners
-    northeast = -5  #: northeast corner of the tile, typically occupied by a switch box
-    northwest = -6  #: northeast corner of the tile, typically occupied by a switch box
-    southeast = -7  #: northeast corner of the tile, typically occupied by a switch box
-    southwest = -8  #: northeast corner of the tile, typically occupied by a switch box
-
-    # center
-    center = 0      #: center of the tile, typically occupied by a logic/io block
-
-    def to_orientation(self):
-        """`Orientation`: Convert to orientation."""
-        try:
-            return Orientation[self.name]
-        except KeyError:
-            raise PRGAInternalError("{} does not have corresponding orientation".format(self))
-
-    def to_corner(self):
-        """`Corner`: Convert to corner."""
-        try:
-            return Corner[self.name]
-        except KeyError:
-            raise PRGAInternalError("{} does not have corresponding corner".format(self))
-
 # ----------------------------------------------------------------------------
 # -- Position ----------------------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -275,16 +242,19 @@ class Position(namedtuple('Position', 'x y')):
 # ----------------------------------------------------------------------------
 class NetClass(Enum):
     """Class for nets."""
-    primitive = 0           #: input/outputs of primitives
-    mode = 1                #: input/outputs of a multi-mode primitive mapped into one of its logical modes
-    cluster = 2             #: input/outputs of intermediate level modules inside blocks
-    blockport = 3           #: input/outputs of blocks
-    io = 4                  #: external inputs/outputs of IOB/arrays
-    global_ = 5             #: global wires/clocks of blocks/arrays
-    segment = 6             #: routing wire segments and bridges
-    blockpin = 7            #: ports in connection box that correspond to block ports
-    switch = 8              #: switch inputs/outputs
-    cfg = 9                 #: configuration ports
+    # within block
+    user = 0                #: input/outputs of user-visible modules (e.g. primitive, mode, cluster)
+
+    # routing resources
+    block = 1               #: block ports
+    segment = 2             #: segment driver
+    bridge = 3              #: bridges between blocks, boxes and arrays
+
+    # logical-only nets
+    io = 4                  #: chip-level inputs/outputs
+    global_ = 5             #: global nets
+    switch = 6              #: switch input/outputs
+    cfg = 7                 #: configuration ports
 
 # ----------------------------------------------------------------------------
 # -- IO Type -----------------------------------------------------------------
@@ -311,17 +281,27 @@ class IOType(Enum):
 # ----------------------------------------------------------------------------
 class ModuleClass(Enum):
     """Class for modules."""
+    # below block
     primitive = 0           #: user available primitive cells
     cluster = 1             #: clusters
     mode = 2                #: one logical mode of a multi-mode primitive
+
+    # block
     io_block = 3            #: IO block
     logic_block = 4         #: logic block
+
+    # routing boxes
     switch_box = 5          #: switch box
     connection_box = 6      #: connection box
-    leaf_array = 7          #: leaf array
-    nonleaf_array = 8       #: non-leaf array
-    switch = 9              #: switch
-    cfg = 10                #: configuration modules
+
+    # tiles & arrays
+    tile = 7                #: tile (containing blocks and connection boxes)
+    leaf_array = 8          #: leaf array (containing tiles and switch boxes)
+    nonleaf_array = 9       #: non-leaf array (containing leaf arrays and non-leaf arrays)
+
+    # logical-only modules
+    switch = 10              #: switch
+    cfg = 11                #: configuration modules
 
     @property
     def is_block(self):
@@ -355,6 +335,7 @@ class PrimitiveClass(Enum):
     flipflop    = 1     #: D-flipflop
     inpad       = 2     #: input pad
     outpad      = 3     #: output pad 
+
     # user-defined primitives
     memory      = 4     #: user-defined memory
     custom      = 5     #: user-defined primitives
@@ -369,6 +350,7 @@ class PrimitivePortClass(Enum):
     .. _port_class:
         https://docs.verilogtorouting.org/en/latest/arch/reference/#classes
     """
+
     clock       = 0     #: clock for flipflop and memory
     lut_in      = 1     #: lut input
     lut_out     = 2     #: lut output
@@ -412,7 +394,7 @@ class Global(Object):
         is_clock (:obj:`bool`): If the global wire is a clock wire
     """
 
-    __slots__ = ['_name', '_width', '_is_clock', '_bound_to_position', '_bound_to_subblock']
+    __slots__ = ['_name', '_width', '_is_clock', '_bound_to_position', '_bound_to_subtile']
     def __init__(self, name, width = 1, is_clock = False):
         if is_clock and width != 1:
             raise PRGAInternalError("Clock wire must be 1-bit wide")
@@ -420,7 +402,7 @@ class Global(Object):
         self._width = width
         self._is_clock = is_clock
         self._bound_to_position = None
-        self._bound_to_subblock = None
+        self._bound_to_subtile = None
 
     @property
     def name(self):
@@ -448,19 +430,19 @@ class Global(Object):
         return self._bound_to_position
 
     @property
-    def bound_to_subblock(self):
-        """:obj:`int` or ``None``: The sub-IOB in which the global wire is bound to."""
-        return self._bound_to_subblock
+    def bound_to_subtile(self):
+        """:obj:`int` or ``None``: The IO block that the global wire is bound to."""
+        return self._bound_to_subtile
 
-    def bind(self, position, subblock):
-        """Bind the global wire to the ``subblock``-th IOB at ``position``.
+    def bind(self, position, subtile):
+        """Bind the global wire to the ``subtile``-th IO block at ``position``.
         
         Args:
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
-            subblock (:obj:`int`):
+            subtile (:obj:`int`):
         """
         self._bound_to_position = Position(*position)
-        self._bound_to_subblock = subblock
+        self._bound_to_subtile = subtile
 
 # ----------------------------------------------------------------------------
 # -- Direct Inter-block Tunnel -----------------------------------------------
@@ -494,25 +476,18 @@ class Segment(namedtuple('Segment', 'name width length')):
     pass
 
 # ----------------------------------------------------------------------------
-# -- Segment/Bridge Type -----------------------------------------------------
+# -- Bridge Type -------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class SegmentType(Enum):
-    """Segment/Bridge types."""
-    # switch box outputs
-    sboxout = 0             #: switch box outputs
-    # switch box inputs
-    sboxin_regular = 1      #: switch box inputs that are connected all the way to a switch box output
-    sboxin_cboxout = 2      #: switch box inputs that are connected all the way to a connection box output
-    sboxin_cboxout2 = 3     #: in case two connection boxes are used per routing channel
-    # connection box outputs
-    cboxout = 4             #: connection box outputs
-    # connection box inputs
-    cboxin = 5              #: connection box inputs
-    # array ports
-    array_input = 6         #: array inputs that are connected all the way to a switch box output
-    array_output = 7        #: array outputs that are connected all the way to a switch box output
-    array_cboxout = 8       #: array inputs/outputs that are connected all the way to a connection box output
-    array_cboxout2 = 9      #: in case two connection boxes are used per routing channel
+class BridgeType(Enum):
+    """Bridge types."""
+
+    # regular
+    regular_input = 0       #: regular segment input
+    regular_output = 1      #: regular segment output
+
+    # cboxout-sboxin bridge
+    cboxout = 2             #: cboxout-sboxin
+    cboxout2 = 3            #: secondary cboxout-sboxin
 
 # ----------------------------------------------------------------------------
 # -- Abstract Routing Node ID ------------------------------------------------
@@ -534,77 +509,163 @@ class AbstractRoutingNodeID(Hashable, Abstract):
 
     @abstractproperty
     def node_type(self):
-        """`NetClass`: Type of this node (blockpin or segment)."""
+        """`NetClass`: Type of this node (block, segment or bridge)."""
         raise NotImplementedError
 
 # ----------------------------------------------------------------------------
-# -- Segment/Bridge ID -------------------------------------------------------
+# -- Segment ID --------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class SegmentID(namedtuple('SegmentID', 'position prototype orientation segment_type'), AbstractRoutingNodeID):
-    """ID of segments and bridges.
+class SegmentID(namedtuple('SegmentID', 'position prototype orientation'), AbstractRoutingNodeID):
+    """ID of segments.
 
     Args:
         position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): anchor position
         prototype (`Segment`):
         orientation (`Orientation`): orientation
-        segment_type (`SegmentType`): type of the segment/bridge
     """
 
-    def __new__(cls, position, prototype, orientation, segment_type):
-        return super(SegmentID, cls).__new__(cls, Position(*position), prototype, orientation, segment_type)
+    def __new__(cls, position, prototype, orientation):
+        return super(SegmentID, cls).__new__(cls, Position(*position), prototype, orientation)
 
     def __hash__(self):
-        return hash( (self.position.x, self.position.y, self.prototype.name, self.orientation, self.segment_type) )
+        return hash( (self.position.x, self.position.y, self.prototype.name, self.orientation) )
 
     def __repr__(self):
-        return 'SegmentID({}, ({}, {}), {}, {})'.format(self.segment_type.name,
-                self.position.x, self.position.y, self.prototype.name, self.orientation.name)
+        return 'SegmentID({}, ({}, {}), {})'.format(
+                self.prototype.name, self.position.x, self.position.y, self.orientation.name)
 
-    def convert(self, segment_type = None, position_adjustment = (0, 0)):
-        """`SegmentID`: Convert to another segment ID.
+    def move(self, offset):
+        """Create a new `SegmentID` with the specified adjustment to the position of this segment ID.
 
         Args:
-            segment_type (`SegmentType`): convert to another segment type
-            position_adjustment (:obj:`tuple` [:obj:`int`, :obj:`int` ]): adjust the position of this segment ID
+            offset (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
+
+        Returns:
+            `SegmentID`:
         """
-        return type(self)(self.position + position_adjustment, self.prototype, self.orientation, uno(segment_type,
-            self.segment_type))
+        if offset == (0, 0):
+            return self
+        else:
+            return SegmentID(self.position + offset, self.prototype, self.orientation)
+
+    def convert(self, bridge_type = None):
+        """Convert to a segment ID or bridge ID.
+
+        Args:
+            bridge_type (`BridgeType`): Convert to a `BridgeID` of the specified type, or a `SegmentID` if not
+                specified
+        
+        Returns:
+            `SegmentID` if ``bridge_type`` is not specified; Otherwise `BridgeID`
+        """
+        if bridge_type is None:
+            return self
+        else:
+            return BridgeID(self.position, self.prototype, self.orientation, bridge_type)
 
     @property
     def node_type(self):
         return NetClass.segment
 
 # ----------------------------------------------------------------------------
+# -- Bridge ID -------------------------------------------------------
+# ----------------------------------------------------------------------------
+class BridgeID(namedtuple('BridgeID', 'position prototype orientation bridge_type'), AbstractRoutingNodeID):
+    """ID of bridges.
+
+    Args:
+        position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): anchor position
+        prototype (`Segment`):
+        orientation (`Orientation`): orientation
+        bridge_type (`BridgeType`): type of the bridge
+    """
+
+    def __new__(cls, position, prototype, orientation, bridge_type):
+        return super(BridgeID, cls).__new__(cls, Position(*position), prototype, orientation, bridge_type)
+
+    def __hash__(self):
+        return hash( (self.position.x, self.position.y, self.prototype.name, self.orientation, self.bridge_type) )
+
+    def __repr__(self):
+        return 'BridgeID[{}]({}, ({}, {}), {})'.format(self.bridge_type.name,
+                self.prototype.name, self.position.x, self.position.y, self.orientation.name)
+
+    def move(self, offset):
+        """Create a new `BridgeID` with the specified adjustment to the position of this bridge ID.
+
+        Args:
+            offset (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
+
+        Returns:
+            `BridgeID`:
+        """
+        if offset == (0, 0):
+            return self
+        else:
+            return BridgeID(self.position + offset, self.prototype, self.orientation, self.bridge_type)
+
+    def convert(self, bridge_type = None):
+        """Convert to a segment ID or bridge ID.
+
+        Args:
+            bridge_type (`BridgeType`): Convert to a `BridgeID` of the specified type, or a `SegmentID` if not
+                specified
+        
+        Returns:
+            `SegmentID` if ``bridge_type`` is not specified; Otherwise `BridgeID`
+        """
+        if bridge_type is None:
+            return SegmentID(self.position, self.prototype, self.orientation)
+        elif bridge_type is self.bridge_type:
+            return self
+        else:
+            return BridgeID(self.position, self.prototype, self.orientation, bridge_type)
+
+    @property
+    def node_type(self):
+        return NetClass.bridge
+
+# ----------------------------------------------------------------------------
 # -- Block Pin ID ------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class BlockPinID(namedtuple('BlockPinID', 'position prototype subblock'), AbstractRoutingNodeID):
+class BlockPinID(namedtuple('BlockPinID', 'position prototype subtile'), AbstractRoutingNodeID):
     """ID of block pin nodes.
 
     Args:
         position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): anchor position
         prototype (`Port`):
-        subblock (:obj:`int`): sub-block in a tile
+        subtile (:obj:`int`): subtile ID in a tile
     """
 
-    def __new__(cls, position, prototype, subblock = 0):
-        return super(BlockPinID, cls).__new__(cls, Position(*position), prototype, subblock)
+    def __new__(cls, position, prototype, subtile = 0):
+        return super(BlockPinID, cls).__new__(cls, Position(*position), prototype, subtile)
 
     def __hash__(self):
         return hash( (self.position.x, self.position.y, self.prototype.parent.key, self.prototype.key,
-            self.subblock) )
+            self.subtile) )
 
     def __repr__(self):
         return 'BlockPinID(({}, {}, {}), {}.{})'.format(
-                self.position.x, self.position.y, self.subblock,
+                self.position.x, self.position.y, self.subtile,
                 self.prototype.parent.name, self.prototype.name)
 
-    def move(self, position_adjustment):
-        """`BlockPinID`: Move and adjust the position of the block pin ID."""
-        return type(self)(self.position + position_adjustment, self.prototype, self.subblock)
+    def move(self, offset):
+        """Create a new `BlockPinID` with the specified adjustment to the position of this ID.
+
+        Args:
+            offset (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
+
+        Returns:
+            `BlockPinID`:
+        """
+        if offset == (0, 0):
+            return self
+        else:
+            return BlockPinID(self.position + offset, self.prototype, self.subtile)
 
     @property
     def node_type(self):
-        return NetClass.blockpin
+        return NetClass.block
 
 # ----------------------------------------------------------------------------
 # -- Block FC Value ----------------------------------------------------------
