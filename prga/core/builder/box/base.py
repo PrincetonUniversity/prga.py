@@ -32,7 +32,7 @@ class BaseRoutingBoxBuilder(BaseBuilder):
                 node.subtile,
                 node.prototype.name)
         elif node.node_type.is_segment:
-            return 'sgm_{}{}{}{}{}_{}'.format(
+            return 'so_{}{}{}{}{}_{}'.format(
                 'x' if node.position.x >= 0 else 'u', abs(node.position.x),
                 'y' if node.position.y >= 0 else 'v', abs(node.position.y),
                 node.orientation.name[0],

@@ -5,11 +5,12 @@ from prga.compatible import *
 
 from .base import BaseArrayBuilder
 from ..box.cbox import ConnectionBoxBuilder
-from ...common import Orientation, OrientationTuple, ModuleView, ModuleClass, Position, BlockFCValue
+from ...common import Orientation, OrientationTuple, ModuleView, ModuleClass, Position, BlockFCValue, Corner
 from ....netlist.module.module import Module
 from ....netlist.module.instance import Instance
 from ....netlist.module.util import ModuleUtils
 from ....util import Object, uno
+from ....exception import PRGAInternalError, PRGAAPIError
 
 __all__ = ['TileBuilder']
 
@@ -190,7 +191,7 @@ class TileBuilder(BaseArrayBuilder):
         """
         if (inst := self._module.instances.get( (ori, offset) )) is None:
             key = ConnectionBoxBuilder._cbox_key(self._module, ori, offset)
-            if self._no_channel(self._module, key.position, ori):
+            if self._no_channel(self._module, *key.channel):
                 raise PRGAAPIError("No connection box allowed at ({}, {}) in tile {}"
                         .format(ori, offset, self._module))
             try:
@@ -200,7 +201,7 @@ class TileBuilder(BaseArrayBuilder):
             except KeyError:
                 box = self._context._database[ModuleView.user, key] = ConnectionBoxBuilder.new(
                         self._module, ori, offset, **kwargs)
-            inst = ModuleUtils.instantiate(self._module, box, "cb_i_{}{}".format(ori.name[0], offset),
+            inst = ModuleUtils.instantiate(self._module, box, "cb_i{}{}".format(ori.name[0], offset),
                     key = (ori, offset))
         return ConnectionBoxBuilder(self._context, inst.model)
 
@@ -229,10 +230,10 @@ class TileBuilder(BaseArrayBuilder):
                 # check if a connection box instance is already here
                 if (ori, offset) in self._module.instances:
                     continue
-                pos = ConnectionBoxBuilder._cbox_key(self._module, ori, offset).position
+                key = ConnectionBoxBuilder._cbox_key(self._module, ori, offset)
                 # check if a connection box is needed here
                 # 1. channel?
-                if self._no_channel(self._module, pos, ori):
+                if self._no_channel(self._module, *key.channel):
                     continue
                 # 2. port?
                 cbox_needed = False
@@ -242,7 +243,7 @@ class TileBuilder(BaseArrayBuilder):
                         continue
                     blocks_checked.add(instance.model.key)
                     for port in itervalues(instance.model.ports):
-                        if port.position != pos or port.orientation is not ori:
+                        if port.position != key.position or port.orientation not in (ori, None):
                             continue
                         elif hasattr(port, 'global_'):
                             continue
@@ -278,8 +279,18 @@ class TileBuilder(BaseArrayBuilder):
                     if box_pin_conn is None:
                         node = node.move(box.model.key.position)
                         if (box_pin_conn := self._module.ports.get(node)) is None:
+                            boxpos = None
+                            if node.bridge_type.is_regular_input:
+                                boxpos = box.model.key.position, Corner.compose(node.orientation,
+                                        box.model.key.orientation)
+                            elif node.bridge_type.is_cboxout or node.bridge_type.is_cboxout2:
+                                boxpos = box.model.key.position, Corner.compose(node.orientation.opposite,
+                                        box.model.key.orientation)
+                            else:
+                                raise PRGAInternalError("Not expecting node {} in tile {}"
+                                        .format(node, self._module))
                             box_pin_conn = ModuleUtils.create_port(self._module, self._node_name(node),
-                                    len(box_pin), box_pin.model.direction, key = node)
+                                    len(box_pin), box_pin.model.direction, key = node, boxpos = boxpos)
                     if box_pin.model.direction.is_input:
                         self.connect(box_pin_conn, box_pin)
                     else:
