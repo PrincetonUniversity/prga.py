@@ -296,12 +296,11 @@ class ModuleClass(Enum):
 
     # tiles & arrays
     tile = 7                #: tile (containing blocks and connection boxes)
-    leaf_array = 8          #: leaf array (containing tiles and switch boxes)
-    nonleaf_array = 9       #: non-leaf array (containing leaf arrays and non-leaf arrays)
+    array = 8               #: array (containing tiles, arrays and switch boxes)
 
     # logical-only modules
-    switch = 10              #: switch
-    cfg = 11                #: configuration modules
+    switch = 9              #: switch
+    cfg = 10                #: configuration modules
 
     @property
     def is_block(self):
@@ -312,11 +311,6 @@ class ModuleClass(Enum):
     def is_routing_box(self):
         """:obj:`bool`: Test if this module is a routing box."""
         return self in (ModuleClass.switch_box, ModuleClass.connection_box)
-
-    @property
-    def is_array(self):
-        """:obj:`bool`: Test if this module is an array."""
-        return self in (ModuleClass.leaf_array, ModuleClass.nonleaf_array)
 
 # ----------------------------------------------------------------------------
 # -- Primitive Class ---------------------------------------------------------
