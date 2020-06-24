@@ -4,7 +4,8 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from ..base import BaseBuilder
-from ...common import Dimension, Position, Orientation, Corner, OrientationTuple
+from ..box.sbox import SwitchBoxBuilder
+from ...common import Dimension, Position, Orientation, Corner, OrientationTuple, BridgeType
 from ....netlist.net.common import PortDirection
 from ....netlist.net.util import NetUtils
 from ....netlist.module.util import ModuleUtils
@@ -307,19 +308,106 @@ class BaseArrayBuilder(BaseBuilder):
                         west  = pos.x >= module.width):
                     break
 
-    # @classmethod
-    # def _get_or_create_global_input(cls, module, global_):
-    #     source = module.ports.get(global_.name)
-    #     if source is not None:
-    #         if getattr(source, "global_", None) is not global_:
-    #             raise PRGAInternalError("'{}' is not driving global wire '{}'"
-    #                     .format(source, global_.name))
-    #     else:
-    #         source = ModuleUtils.create_port(array, global_.name, global_.width, PortDirection.input_,
-    #                 is_clock = global_.is_clock, global_ = global_)
-    #     return source
+    @classmethod
+    def _connect_cboxout(cls, module, pin, *, create_port = False):
+        pos, corner = pin.model.boxpos
+        pos += pin.instance.key
+        node = pin.model.key.move(pin.instance.key)
+        ori = node.orientation
+        it_corner = iter((
+            Corner.compose(ori.opposite, corner.decompose()[ori.dimension.perpendicular].opposite),
+            Corner.compose(ori,          corner.decompose()[ori.dimension.perpendicular]),
+            Corner.compose(ori,          corner.decompose()[ori.dimension.perpendicular].opposite),
+            ))
+        while True:
+            # using `while` only for easier flow control. this loop executes only once
+            while (sbox := cls.get_hierarchical_root(module, pos, corner)) is not None:
+                sgmt_drv_node = node.move(-cls.hierarchical_position(sbox)).convert()
+                if sgmt_drv_node not in sbox.pins:
+                    break
+                # does the bridge exist already?
+                for brg_type in (BridgeType.cboxout, BridgeType.cboxout2):
+                    if (bridge := sbox.hierarchy[0].pins.get(sgmt_drv_node.convert(brg_type))) is not None:
+                        # check across hierarchy to see if this bridge is usable
+                        for i, inst in enumerate(sbox.hierarchy[1:]):
+                            if (brg_drv := NetUtils.get_source(bridge, return_none_if_unconnected = True)) is None:
+                                # cool! this one is unused!
+                                bridge = bridge.instance.extend_hierarchy(
+                                        above = sbox.hierarchy[i + 1:]).pins[bridge.model.key]
+                                bridge = cls._expose_node(bridge)
+                                break
+                            elif brg_drv.net_type.is_pin:
+                                # bad news. this bridge is used by some other pins
+                                bridge = None
+                                break
+                            else:
+                                # we're not sure if this one is usable yet. Keep going up the hierarchy
+                                assert brg_drv.net_type.is_port
+                                bridge = inst.pins[brg_drv.key]
+                        if bridge is not None:
+                            # this bridge might be usable
+                            if (brg_drv := NetUtils.get_source(bridge, return_none_if_unconnected = True)) is None:
+                                NetUtils.connect(pin, bridge)
+                                return
+                            elif brg_drv == pin:
+                                return
+                # no bridge already available. create a new one
+                bridge = SwitchBoxBuilder._add_cboxout(sbox.model, sgmt_drv_node.convert(BridgeType.cboxout))
+                NetUtils.connect(pin, cls._expose_node(sbox.pins[bridge.key]))
+                return
+            # go to the next corner
+            try:
+                pos, corner = cls._equiv_sbox_position(pos, corner, next(it_corner))
+            except StopIteration:
+                break
+        if create_port:
+            cls._expose_node(pin, create_port = create_port)
+
+    @classmethod
+    def _get_or_create_global_input(cls, module, global_):
+        source = module.ports.get(global_.name)
+        if source is not None:
+            if getattr(source, "global_", None) is not global_:
+                raise PRGAInternalError("'{}' is not driving global wire '{}'"
+                        .format(source, global_.name))
+        else:
+            source = ModuleUtils.create_port(module, global_.name, global_.width, PortDirection.input_,
+                    is_clock = global_.is_clock, global_ = global_)
+        return source
 
     # == low-level API =======================================================
+    @classmethod
+    def get_hierarchical_root(cls, array, position, corner = None):
+        """Get the hierarchical root instance occupying the given position
+
+        Args:
+            position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of the tile
+            corner (`Corner`): If specified, get the switch box instance
+
+        Returns:
+            `Module`: If ``corner`` is not specified, return a hierarhical instance of a tile; otherwise a switch box
+        """
+        if array.module_class.is_nonleaf_array:
+            if (i := array._instances.get_root(position)) is None:
+                return None
+            if (sub := cls.get_hierarchical_root(i.model, position - i.key, corner)) is None:
+                return None
+            return sub.extend_hierarchy(above = i)
+        elif array.module_class.is_leaf_array:
+            return array._instances.get_root(position, corner)
+        else:
+            raise PRGAInternalError("Unsupported module class: {:r}".format(array.module_class))
+
+    @classmethod
+    def hierarchical_position(cls, instance):
+        if instance.model.module_class.is_block:
+            return sum( iter(i.key for i in instance.hierarchy[1:]), Position(0, 0) )
+        elif instance.model.module_class.is_connection_box:
+            return sum( iter(i.key for i in instance.hierarchy[1:]), instance.model.key.position )
+        elif instance.model.module_class.is_switch_box:
+            return sum( iter(i.key for i in instance.hierarchy[1:]), instance.hierarchy[0].key[0] )
+        else:
+            return sum( iter(i.key for i in instance.hierarchy), Position(0, 0) )
 
     # == high-level API ======================================================
     def connect(self, sources, sinks):

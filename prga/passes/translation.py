@@ -8,7 +8,7 @@ from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
 from ..netlist.net.common import PortDirection
 from ..netlist.net.util import NetUtils
-from ..core.common import ModuleClass, NetClass, IOType, ModuleView, SegmentID, BlockPinID
+from ..core.common import ModuleClass, NetClass, IOType, ModuleView, SegmentID, BlockPinID, Position
 from ..util import Abstract, Object, uno
 from ..exception import PRGAInternalError, PRGAAPIError
 
@@ -168,7 +168,7 @@ class TranslationPass(Object, AbstractPass):
                         if not port.global_.is_bound:
                             raise PRGAInternalError("Global wire '{}' not bound to an IO block yet"
                                     .format(port.global_.name))
-                        globals_[port.global_.bound_to_position, port.global_.bound_to_subblock] = port
+                        globals_[port.global_.bound_to_position, port.global_.bound_to_subtile] = port
                         continue
                     net_class = NetClass.global_
                 else:
@@ -185,37 +185,36 @@ class TranslationPass(Object, AbstractPass):
             logical_model = self._process_module(instance.model, context,
                     disable_coalesce = disable_coalesce or not logical._coalesce_connections)
             logical_instance = ModuleUtils.instantiate(logical, logical_model, instance.name, key = instance.key)
-            # # special processing for IO blocks in arrays
-            # if logical_model.module_class.is_io_block:
-            #     for iotype in IOType:
-            #         pin = logical_instance.pins.get(iotype)
-            #         if pin is None:
-            #             continue
-            #         port = ModuleUtils.create_port(logical,
-            #                 '{}_x{}y{}_{:d}'.format(iotype.name, *instance.key[0], instance.key[1]),
-            #                 len(pin), pin.model.direction, key = (iotype, ) + instance.key, net_class = NetClass.io)
-            #         if port.direction.is_input:
-            #             global_ = globals_.pop( port.key[1:], None )
-            #             if global_ is not None:
-            #                 self._register_u2l(logical, global_, port, module._coalesce_connections)
-            #             NetUtils.connect(port, pin)
-            #         else:
-            #             NetUtils.connect(pin, port)
-            # # and also IO pins of arrays
-            # elif logical_model.module_class.is_array:
-            #     for key, pin in iteritems(logical_instance.pins):
-            #         if not pin.model.net_class.is_io:
-            #             continue
-            #         iotype, pos, subblock = newkey = key[0], key[1] + instance.key, key[2]
-            #         port = ModuleUtils.create_port(logical, "{}_x{}y{}_{:d}".format(iotype.name, *pos, subblock),
-            #                 len(pin), pin.model.direction, key = newkey, net_class = NetClass.io)
-            #         if port.direction.is_input:
-            #             global_ = globals_.pop( port.key[1:], None )
-            #             if global_ is not None:
-            #                 self._register_u2l(logical, global_, port, module._coalesce_connections)
-            #             NetUtils.connect(port, pin)
-            #         else:
-            #             NetUtils.connect(pin, port)
+            # special processing for IO blocks in arrays
+            if logical_model.module_class.is_io_block:
+                for iotype in IOType:
+                    if (pin := logical_instance.pins.get(iotype)) is None:
+                        continue
+                    port = ModuleUtils.create_port(logical,
+                            '{}_x0y0_{:d}'.format(iotype.name, instance.key), len(pin), pin.model.direction,
+                            key = (iotype, Position(0, 0), instance.key), net_class = NetClass.io)
+                    if port.direction.is_input:
+                        global_ = globals_.pop( port.key[1:], None )
+                        if global_ is not None:
+                            self._register_u2l(logical, global_, port, module._coalesce_connections)
+                        NetUtils.connect(port, pin)
+                    else:
+                        NetUtils.connect(pin, port)
+            # and also IO pins of arrays
+            elif logical_model.module_class.is_array or logical_model.module_class.is_tile:
+                for key, pin in iteritems(logical_instance.pins):
+                    if not pin.model.net_class.is_io:
+                        continue
+                    iotype, pos, subblock = newkey = key[0], key[1] + instance.key, key[2]
+                    port = ModuleUtils.create_port(logical, "{}_x{}y{}_{:d}".format(iotype.name, *pos, subblock),
+                            len(pin), pin.model.direction, key = newkey, net_class = NetClass.io)
+                    if port.direction.is_input:
+                        global_ = globals_.pop( port.key[1:], None )
+                        if global_ is not None:
+                            self._register_u2l(logical, global_, port, module._coalesce_connections)
+                        NetUtils.connect(port, pin)
+                    else:
+                        NetUtils.connect(pin, port)
         # raise error for unbound globals
         for port in itervalues(globals_):
             raise PRGAInternalError("Global wire '{}' bound to subblock {} at {} but no IO input found there"

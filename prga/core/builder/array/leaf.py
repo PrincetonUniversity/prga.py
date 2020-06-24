@@ -299,15 +299,6 @@ class LeafArrayBuilder(BaseArrayBuilder):
                         outputs[secondary_output] = True, xo
                     # go to the next corner
                     curpos, curcorner = self._equiv_sbox_position(curpos, curcorner)
-                    # if curcorner.is_northeast:
-                    #     curpos, curcorner = curpos + (0, 1), Corner.southeast
-                    # elif curcorner.is_southeast:
-                    #     curpos, curcorner = curpos + (1, 0), Corner.southwest
-                    # elif curcorner.is_southwest:
-                    #     curpos, curcorner = curpos - (0, 1), Corner.northwest
-                    # else:
-                    #     assert curcorner.is_northwest
-                    #     curpos, curcorner = curpos - (1, 0), Corner.northeast
                     # check if we've gone through all corners
                     if curcorner in sbox_pattern.fill_corners:
                         break
@@ -358,7 +349,9 @@ class LeafArrayBuilder(BaseArrayBuilder):
                 (x, y), corner = key, None
             # if the instance is a tile, process global wires
             if corner is None:
-                # TODO: connect global wires
+                for pin in itervalues(instance.pins):
+                    if (global_ := getattr(pin.model, "global_", None)) is not None:
+                        self.connect(self._get_or_create_global_input(self._module, global_), pin)
                 pass
             # process routing nodes
             for node, pin in iteritems(instance.pins):
@@ -375,3 +368,6 @@ class LeafArrayBuilder(BaseArrayBuilder):
                             NetUtils.connect(self._expose_node(drivers[0]), pin)
                         elif not is_top:
                             self._expose_node(pin, create_port = True)
+                    elif ((node.bridge_type.is_cboxout or node.bridge_type.is_cboxout2) and
+                            pin.model.direction.is_output):
+                        self._connect_cboxout(self._module, pin, create_port = not is_top)

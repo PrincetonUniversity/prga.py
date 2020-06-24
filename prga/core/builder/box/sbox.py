@@ -7,6 +7,7 @@ from .base import BaseRoutingBoxBuilder
 from ...common import (Dimension, Position, BridgeType, Orientation, BridgeID, SegmentID, ModuleView, ModuleClass,
         SwitchBoxPattern)
 from ....netlist.net.common import PortDirection
+from ....netlist.net.util import NetUtils
 from ....netlist.module.module import Module
 from ....netlist.module.util import ModuleUtils
 from ....exception import PRGAAPIError, PRGAInternalError
@@ -70,20 +71,21 @@ class SwitchBoxBuilder(BaseRoutingBoxBuilder):
     def _sbox_key(cls, corner, identifier = None):
         return _SwitchBoxKey(corner, identifier)
 
-    # def _add_cboxout(self, node):
-    #     """Add and connect a cboxout input."""
-    #     if node.bridge_type.is_cboxout and node in self.ports:
-    #         node = node.convert(BridgeType.cboxout2)
-    #     if node in self.ports:
-    #         raise PRGAInternalError("'{}' already added to {}".format(node, self._module))
-    #     so_node = node.convert()
-    #     sink = self.ports.get(node_so)
-    #     if sink is None:
-    #         raise PRGAInternalError("{} does not have output '{}'".format(self._module, node_so))
-    #     port = ModuleUtils.create_port(self._module, self._node_name(node), node.prototype.width,
-    #             PortDirection.input_, key = node)
-    #     self.connect(port, sink)
-    #     return port
+    @classmethod
+    def _add_cboxout(cls, box, node):
+        """Add and connect a cboxout input."""
+        if node.bridge_type.is_cboxout and node in box.ports:
+            node = node.convert(BridgeType.cboxout2)
+        if node in box.ports:
+            raise PRGAInternalError("'{}' already added to {}".format(node, box))
+        node_so = node.convert()
+        sink = box.ports.get(node_so)
+        if sink is None:
+            raise PRGAInternalError("{} does not have output '{}'".format(box, node_so))
+        port = ModuleUtils.create_port(box, cls._node_name(node), node.prototype.width,
+                PortDirection.input_, key = node)
+        NetUtils.connect(port, sink)
+        return port
 
     def _connect_tracks(self,
             isgmt, iori, isec, idx,

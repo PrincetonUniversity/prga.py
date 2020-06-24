@@ -295,4 +295,9 @@ class TileBuilder(BaseArrayBuilder):
                         self.connect(box_pin_conn, box_pin)
                     else:
                         self.connect(box_pin, box_pin_conn)
-        # TODO: direct tunnels
+        for subtile, instance in enumerate(self._module._instances.subtiles):
+            # global nets
+            for pin in itervalues(instance.pins):
+                if (global_ := getattr(pin.model, "global_", None)) is not None:
+                    self.connect(self._get_or_create_global_input(self._module, global_), pin)
+            # TODO: direct tunnels
