@@ -4,9 +4,10 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .base import BaseArrayBuilder
+from .tile import TileBuilder
 from ..box.sbox import SwitchBoxBuilder
 from ...common import (Corner, Position, OrientationTuple, SwitchBoxPattern, ModuleView, ModuleClass, Orientation,
-        BridgeID, Dimension, BridgeType)
+        BridgeID, Dimension, BridgeType, BlockPinID)
 from ....netlist.net.util import NetUtils
 from ....netlist.module.instance import Instance
 from ....netlist.module.module import Module
@@ -40,57 +41,45 @@ class _ArrayInstancesMapping(Object, MutableMapping):
         self.sboxes = [[[None for _ in Corner] for _ in range(height)] for _ in range(width)]
         self.tiles = [[None for _ in range(height)] for _ in range(width)]
 
+    def __validate_position(self, x, y):
+        return 0 <= x < len(self.tiles) and 0 <= y < len(self.tiles[0])
+
     def __getitem__(self, key):
         try:
             (x, y), corner = key
-            try:
-                if isinstance((i := self.sboxes[x][y][corner]), Instance):
-                    return i
-            except (IndexError, TypeError):
-                pass
-            raise KeyError(key)
         except TypeError:
-            pass
-        try:
-            x, y = key
             try:
-                if isinstance((i := self.tiles[x][y]), Instance):
-                    return i
-            except (IndexError, TypeError):
-                pass
-        except TypeError:
-            pass
+                (x, y), corner = key, None
+            except TypeError:
+                raise KeyError(key)
+        if self.__validate_position(x, y):
+            if corner is not None and isinstance((i := self.sboxes[x][y][corner]), Instance):
+                return i
+            elif corner is None and isinstance((i := self.tiles[x][y]), Instance):
+                return i
         raise KeyError(key)
 
     def __setitem__(self, key, value):
         try:
             (x, y), corner = key
+        except TypeError:
             try:
-                if self.sboxes[x][y][corner] is None:
-                    self.sboxes[x][y][corner] = value
-                    return
-                else:
-                    raise PRGAInternalError("Switch box position ({}, {}, {:r}) already occupied"
-                            .format(x, y, corner))
-            except (IndexError, TypeError):
-                raise PRGAInternalError("Invalid switch box position ({}, {}, {:r})"
+                (x, y), corner = key, None
+            except TypeError:
+                raise PRGAInternalError("Invalid key: {:r}".format(key))
+        if not self.__validate_position(x, y):
+            raise PRGAInternalError("Invalid position: {:r}".format(key))
+        if corner is None:
+            if self.tiles[x][y] is None:
+                self.tiles[x][y] = value
+            else:
+                raise PRGAInternalError("Tile position ({}, {}) already occupied".format(x, y))
+        else:
+            if self.sboxes[x][y][corner] is None:
+                self.sboxes[x][y][corner] = value
+            else:
+                raise PRGAInternalError("Switch box position ({}, {}, {:r}) already occupied"
                         .format(x, y, corner))
-        except TypeError:
-            pass
-        try:
-            x, y = key
-            try:
-                if self.tiles[x][y] is None:
-                    self.tiles[x][y] = value
-                    return
-                else:
-                    raise PRGAInternalError("Tile position ({}, {}) already occupied"
-                            .format(x, y))
-            except (IndexError, TypeError):
-                raise PRGAInternalError("Invalid tile position ({}, {})"
-                        .format(x, y))
-        except TypeError:
-            raise PRGAInternalError("Invalid key: {:r}".format(key))
 
     def __delitem__(self, key):
         raise PRGAInternalError("Deleting from an array instances mapping is not supported")
@@ -117,6 +106,8 @@ class _ArrayInstancesMapping(Object, MutableMapping):
 
     def get_root(self, position, corner = None):
         x, y = position
+        if not self.__validate_position(x, y):
+            return None
         if corner is None:
             try:
                 if isinstance((i := self.tiles[x][y]), Instance):
@@ -443,7 +434,7 @@ class ArrayBuilder(BaseArrayBuilder):
                 return i
             elif (i.model.module_class.is_array and
                     (sub := cls.get_hierarchical_root(i.model, position - i.key, corner)) is not None):
-                return i
+                return sub.extend_hierarchy(above = i)
             else:
                 return None
         else:
@@ -582,6 +573,10 @@ class ArrayBuilder(BaseArrayBuilder):
             dont_create (:obj:`bool`): If set to ``True``, only existing switch box instances are to be filled. No new
                 instances are created
             dont_update (:obj:`bool`): If set to ``True``, existing switch box instances are not updated
+
+        Returns:
+            `ArrayBuilder`: Return ``self`` to support chaining, e.g.,
+                ``array = builder.fill().auto_connect().commit()``
         """
         processed_boxes = set()
         for x, y in product(range(self._module.width), range(self._module.height)):
@@ -654,8 +649,20 @@ class ArrayBuilder(BaseArrayBuilder):
                         builder.fill(output, drive_at_crosspoints = drivex, crosspoints_only = xo,
                                 exclude_input_orientations = excluded_inputs, pattern = sbox_pattern)
                     processed_boxes.add(instance.model.key)
+        return self
 
     def auto_connect(self, *, is_top = None):
+        """Automatically connect submodules.
+
+        Keyword Args:
+            is_top (:obj:`bool`): If set to ``True``, the array is treated as if it is the top-level array. This
+                affects if unconnected routing nodes are exposed as ports. If not set, this method checks the
+                ``context`` to see if the module being built is the top-level array
+
+        Returns:
+            `ArrayBuilder`: Return ``self`` to support chaining, e.g.,
+                ``array = builder.fill().auto_connect().commit()``
+        """
         is_top = self._module is self._context.top if is_top is None else is_top
         # 1st pass: auto-connect all sub-arrays
         auto_connected = set()
@@ -697,3 +704,18 @@ class ArrayBuilder(BaseArrayBuilder):
                     elif ((node.bridge_type.is_cboxout or node.bridge_type.is_cboxout2) and
                             pin.model.direction.is_output):
                         self._connect_cboxout(self._module, pin, create_port = not is_top)
+                elif isinstance(node, BlockPinID) and pin.model.direction.is_input:
+                    tile_pos = node.position + (x, y) - node.prototype.position 
+                    if (tile := self.get_hierarchical_root(self._module, tile_pos)) is not None:
+                        src_node = node.move(-self.hierarchical_position(tile) + (x, y))
+                        if (driver := tile.pins.get(src_node)) is None:
+                            if (blk := tile.model.instances.get(node.subtile)) is None:
+                                continue
+                            elif blk.model is not node.prototype.parent:
+                                continue
+                            port = TileBuilder._expose_blockpin(blk.pins[node.prototype.key])
+                            driver = tile.pins[port.key]
+                        self.connect(self._expose_node(driver), pin)
+                    elif not is_top and not (0 <= tile_pos.x < self.width and 0 <= tile_pos.y < self.height):
+                        self._expose_node(pin, create_port = True)
+        return self

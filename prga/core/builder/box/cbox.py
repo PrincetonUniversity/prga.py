@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from .base import BaseRoutingBoxBuilder
 from ...common import (Position, BridgeID, BridgeType, BlockFCValue, ModuleView, ModuleClass, BlockPinID, Direction,
-        Orientation, Dimension)
+        Orientation, Dimension, BlockPortFCValue)
 from ....algorithm.interconnect import InterconnectAlgorithms
 from ....netlist.net.common import PortDirection
 from ....netlist.module.module import Module
@@ -85,10 +85,11 @@ class ConnectionBoxBuilder(BaseRoutingBoxBuilder):
 
     @classmethod
     def _cbox_key(cls, tile, orientation, offset = None):
-        if orientation.dimension.case(x = tile.height == 1, y = tile.width == 1):
-            offset = 0
-        else:
-            raise PRGAAPIError("'offset' is required because tile {} is larger than 1x1".format(tile))
+        if offset is None:
+            if orientation.dimension.case(x = tile.height == 1, y = tile.width == 1):
+                offset = 0
+            else:
+                raise PRGAAPIError("'offset' is required because tile {} is larger than 1x1".format(tile))
         return _ConnectionBoxKey(tile, orientation, offset)
 
     # == high-level API ======================================================

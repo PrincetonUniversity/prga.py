@@ -10,8 +10,6 @@ from ....netlist.module.util import ModuleUtils
 from ....exception import PRGAInternalError
 from ....util import Object
 
-from abc import abstractmethod, abstractproperty
-
 __all__ = []
 
 # ----------------------------------------------------------------------------
@@ -113,15 +111,3 @@ class BaseArrayBuilder(BaseBuilder):
     def instances(self):
         """:obj:`Mapping` [:obj:`Hashable`, `Instance` ]: Proxy to ``module.instances``."""
         return self._module.instances
-
-    @abstractmethod
-    def auto_connect(self, *, is_top = False):
-        """Automatically connect submodules.
-
-        Keyword Args:
-            is_top (:obj:`bool`): If set, the array is treated as the top-level array. This affects if ports for
-                global wires are created. By default, the builder refers to the setting in the context in which it is
-                created to see if this array is the top
-        """
-        raise NotImplementedError
-

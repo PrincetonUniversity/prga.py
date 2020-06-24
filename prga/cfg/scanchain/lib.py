@@ -258,8 +258,8 @@ class Scanchain(object):
                     cfg_bitcount = 2 ** i,
                     verilog_template = "lut.tmpl.v")
             # user ports
-            in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_, net_class = NetClass.primitive)
-            out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output, net_class = NetClass.primitive)
+            in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_, net_class = NetClass.user)
+            out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output, net_class = NetClass.user)
             NetUtils.connect(in_, out, fully = True)
 
             # configuration ports
@@ -277,11 +277,11 @@ class Scanchain(object):
                     module_class = ModuleClass.primitive,
                     verilog_template = "flipflop.tmpl.v")
             clk = ModuleUtils.create_port(flipflop, 'clk', 1, PortDirection.input_,
-                    is_clock = True, net_class = NetClass.primitive)
+                    is_clock = True, net_class = NetClass.user)
             D = ModuleUtils.create_port(flipflop, 'D', 1, PortDirection.input_,
-                    net_class = NetClass.primitive)
+                    net_class = NetClass.user)
             Q = ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
-                    net_class = NetClass.primitive)
+                    net_class = NetClass.user)
             NetUtils.connect(clk, [D, Q], fully = True)
 
             # configuration ports
@@ -291,20 +291,20 @@ class Scanchain(object):
         # register fracturable LUT6
         if not ({"lut5", "lut6", "fraclut6"} & dont_add_primitive):
             # user view
-            fraclut6 = context.create_multimode('fraclut6', cfg_bitcount = 65)
+            fraclut6 = context.build_multimode('fraclut6', cfg_bitcount = 65)
             fraclut6.create_input("in", 6)
             fraclut6.create_output("o6", 1)
             fraclut6.create_output("o5", 1)
 
             if True:
-                mode = fraclut6.create_mode("lut6x1", cfg_mode_selection = (64, ))
+                mode = fraclut6.build_mode("lut6x1", cfg_mode_selection = (64, ))
                 inst = mode.instantiate(context.primitives["lut6"], "LUT6A", cfg_bitoffset = 0)
                 mode.connect(mode.ports["in"], inst.pins["in"])
                 mode.connect(inst.pins["out"], mode.ports["o6"], vpr_pack_patterns = ("lut6_dff", ))
                 mode.commit()
 
             if True:
-                mode = fraclut6.create_mode("lut5x2", cfg_mode_selection = tuple())
+                mode = fraclut6.build_mode("lut5x2", cfg_mode_selection = tuple())
                 insts = mode.instantiate(context.primitives["lut5"], "LUT5", 2)
                 insts[0].cfg_bitoffset = 0
                 insts[1].cfg_bitoffset = 32
@@ -316,7 +316,7 @@ class Scanchain(object):
 
             # logical view
             if "fraclut6" not in dont_add_logical_primitive:
-                fraclut6 = fraclut6.create_logical_counterpart(
+                fraclut6 = fraclut6.build_logical_counterpart(
                         cfg_bitcount = 65, verilog_template = "fraclut6.tmpl.v")
 
                 # combinational paths
@@ -331,7 +331,7 @@ class Scanchain(object):
         # register multi-mode flipflop
         if "mdff" not in dont_add_primitive:
             # user view
-            mdff = context.create_primitive("mdff",
+            mdff = context.build_primitive("mdff",
                     techmap_template = "mdff.techmap.tmpl.v",
                     premap_commands = (
                         "simplemap t:$dff t:$dffe t:$dffsr",
@@ -355,7 +355,7 @@ class Scanchain(object):
 
             # logical view
             if "mdff" not in dont_add_logical_primitive:
-                mdff = mdff.create_logical_counterpart(
+                mdff = mdff.build_logical_counterpart(
                         cfg_bitcount = 3,
                         verilog_template = "mdff.tmpl.v")
                 cls._get_or_create_cfg_ports(mdff._module, cfg_width)
@@ -365,7 +365,7 @@ class Scanchain(object):
         # register adder
         if "adder" not in dont_add_primitive:
             # user view
-            adder = context.create_primitive("adder",
+            adder = context.build_primitive("adder",
                     techmap_template = "adder.techmap.tmpl.v",
                     parameters = {
                         "CIN_FABRIC": {"init": "1'b0", "cfg": cls.PrimitiveParameter(0, 1)},
@@ -383,7 +383,7 @@ class Scanchain(object):
 
             # logical view
             if "adder" not in dont_add_logical_primitive:
-                adder = adder.create_logical_counterpart(
+                adder = adder.build_logical_counterpart(
                         cfg_bitcount = 1,
                         verilog_template = "adder.tmpl.v")
                 cls._get_or_create_cfg_ports(adder._module, cfg_width)
@@ -393,7 +393,7 @@ class Scanchain(object):
         # register simplified stratix-IV FLE
         if not ({"lut5", "lut6", "adder", "flipflop", "fle6"} & dont_add_primitive):
             # user view
-            fle6 = context.create_multimode('fle6', cfg_bitcount = 69)
+            fle6 = context.build_multimode('fle6', cfg_bitcount = 69)
             fle6.create_clock("clk")
             fle6.create_input("in", 6)
             fle6.create_input("cin", 1)
@@ -401,7 +401,7 @@ class Scanchain(object):
             fle6.create_output("cout", 1)
 
             if True:
-                mode = fle6.create_mode("lut6x1", cfg_mode_selection = tuple())
+                mode = fle6.build_mode("lut6x1", cfg_mode_selection = tuple())
                 lut = mode.instantiate(context.primitives["lut6"], "lut", cfg_bitoffset = 0)
                 ff = mode.instantiate(context.primitives["flipflop"], "ff")
                 mode.connect(mode.ports["clk"], ff.pins["clk"])
@@ -412,7 +412,7 @@ class Scanchain(object):
                 mode.commit()
 
             if True:
-                mode = fle6.create_mode("lut5x2", cfg_mode_selection = (66, ))
+                mode = fle6.build_mode("lut5x2", cfg_mode_selection = (66, ))
                 luts = mode.instantiate(context.primitives["lut5"], "lut", 2)
                 ffs = mode.instantiate(context.primitives["flipflop"], "ff", 2)
                 for i, (lut, ff) in enumerate(zip(luts, ffs)):
@@ -425,7 +425,7 @@ class Scanchain(object):
                 mode.commit()
 
             if True:
-                mode = fle6.create_mode("arithmetic", cfg_mode_selection = (66, 67))
+                mode = fle6.build_mode("arithmetic", cfg_mode_selection = (66, 67))
                 luts = mode.instantiate(context.primitives["lut5"], "lut", 2)
                 ffs = mode.instantiate(context.primitives["flipflop"], "ff", 2)
                 adder = mode.instantiate(context.primitives["adder"], "fa", cfg_bitoffset = 68)
@@ -445,7 +445,7 @@ class Scanchain(object):
 
             # logical view
             if "fle6" not in dont_add_logical_primitive:
-                fle6 = fle6.create_logical_counterpart(
+                fle6 = fle6.build_logical_counterpart(
                         cfg_bitcount = 69, verilog_template = "fle6.tmpl.v")
 
                 # combinational paths
@@ -497,7 +497,7 @@ class Scanchain(object):
         context.summary.scanchain = {"cfg_width": cfg_width}
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
         # context._fasm_delegate = ScanchainFASMDelegate(context)
-        # cls._register_primitives(context, cfg_width, dont_add_primitive, dont_add_logical_primitive)
+        cls._register_primitives(context, cfg_width, dont_add_primitive, dont_add_logical_primitive)
         return context
 
     @classmethod

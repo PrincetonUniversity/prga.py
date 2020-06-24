@@ -5,10 +5,12 @@ from prga.compatible import *
 
 from .base import BaseArrayBuilder
 from ..box.cbox import ConnectionBoxBuilder
-from ...common import Orientation, OrientationTuple, ModuleView, ModuleClass, Position, BlockFCValue, Corner
+from ...common import (Orientation, OrientationTuple, ModuleView, ModuleClass, Position, BlockFCValue, Corner,
+        BlockPortFCValue, BlockPinID)
 from ....netlist.module.module import Module
 from ....netlist.module.instance import Instance
 from ....netlist.module.util import ModuleUtils
+from ....netlist.net.util import NetUtils
 from ....util import Object, uno
 from ....exception import PRGAInternalError, PRGAAPIError
 
@@ -38,31 +40,24 @@ class _TileInstancesMapping(Object, MutableMapping):
     def __getitem__(self, key):
         try:
             ori, offset = key
-            try:
-                if self.cboxes[ori][offset] is not None:
-                    return self.cboxes[ori][offset]
-                else:
-                    raise KeyError(key)
-            except IndexError:
-                raise KeyError(key)
+            if 0 <= offset < len(self.cboxes[ori]) and (i := self.cboxes[ori][offset]) is not None:
+                return i
         except TypeError:
-            try:
-                return self.subtiles[key]
-            except (IndexError, TypeError):
-                raise KeyError(key)
+            if 0 <= key < len(self.subtiles) and (i := self.subtiles[key]) is not None:
+                return i
+        raise KeyError(key)
 
     def __setitem__(self, key, value):
         try:
             ori, offset = key
-            try:
-                if self.cboxes[ori][offset] is None:
-                    self.cboxes[ori][offset] = value
-                else:
-                    raise PRGAInternalError("Connection box position ({}, {}) already occupied by {}"
-                            .format(ori, offset, self.cboxes[ori][offset]))
-            except IndexError:
+            if not (0 <= offset < len(self.cboxes[ori])):
                 raise PRGAInternalError("Invalid connection box position: ({}, {})"
                         .format(ori, offset))
+            elif (i := self.cboxes[ori][offset]) is not None:
+                raise PRGAInternalError("Connection box position ({}, {}) already occupied"
+                        .format(ori, offset))
+            else:
+                self.cboxes[ori][offset] = value
         except TypeError:
             if key < len(self.subtiles):
                 raise PRGAInternalError("Subtile {} already occupied by {}".format(key, self.subtiles[key])) 
@@ -94,6 +89,18 @@ class TileBuilder(BaseArrayBuilder):
         context (`Context`): The context of the builder
         module (`Module`): The module to be built
     """
+
+    @classmethod
+    def _expose_blockpin(cls, pin):
+        """Expose a block pin as a ``BlockPinID`` node."""
+        node = BlockPinID(pin.model.position, pin.model, pin.instance.key)
+        port = ModuleUtils.create_port(pin.parent, cls._node_name(node), len(pin),
+                pin.model.direction, key = node)
+        if port.direction.is_input:
+            NetUtils.connect(port, pin)
+        else:
+            NetUtils.connect(pin, port)
+        return port
 
     # == high-level API ======================================================
     @classmethod
@@ -216,6 +223,10 @@ class TileBuilder(BaseArrayBuilder):
 
         Keyword Args:
             fc_override (:obj:`Mapping`): Override the FC settings for specific blocks. Indexed by block key.
+
+        Returns:
+            `TileBuilder`: Return ``self`` to support chaining, e.g.,
+                ``array = builder.fill().auto_connect().commit()``
         """
         # process FC values
         default_fc = BlockFCValue._construct(default_fc)
@@ -258,9 +269,15 @@ class TileBuilder(BaseArrayBuilder):
                 # ok, connection box is needed. create and fill
                 builder = self.build_connection_box(ori, offset)
                 builder.fill(default_fc, fc_override = fc_override)
+        return self
 
     def auto_connect(self):
-        """Automaticaly connect submodules."""
+        """Automatically connect submodules.
+
+        Returns:
+            `TileBuilder`: Return ``self`` to support chaining, e.g.,
+                ``array = builder.fill().auto_connect().commit()``
+        """
         # regular nets
         for ori in Orientation:
             for offset in range(ori.dimension.case(x = self._module.height, y = self._module.width)):
@@ -300,4 +317,28 @@ class TileBuilder(BaseArrayBuilder):
             for pin in itervalues(instance.pins):
                 if (global_ := getattr(pin.model, "global_", None)) is not None:
                     self.connect(self._get_or_create_global_input(self._module, global_), pin)
-            # TODO: direct tunnels
+            # direct tunnels
+            for tunnel in itervalues(self._context.tunnels):
+                if tunnel.sink.parent is not instance.model:
+                    continue
+                # find the sink pin of the tunnel
+                sink = instance.pins[tunnel.sink.key]
+                # check if the sink pin is already driven
+                if (driver := NetUtils.get_source(sink, return_none_if_unconnected = True)) is None:
+                    pass
+                elif driver.net_type.is_pin:
+                    assert driver.instance.model.module_class.is_connection_box
+                    box = driver.instance.model
+                    src_node = BlockPinID(tunnel.offset, tunnel.source, subtile)
+                    if (tunnel_src_port := box.ports.get(src_node)) is None:
+                        tunnel_src_port = ModuleUtils.create_port(box, ConnectionBoxBuilder._node_name(src_node),
+                                len(tunnel.source), driver.model.direction.opposite, key = src_node)
+                        NetUtils.connect(tunnel_src_port, driver.model)
+                    sink = driver.instance.pins[src_node]
+                else:
+                    continue
+                # create the source port and connect them
+                src_node = BlockPinID(tunnel.sink.position + tunnel.offset, tunnel.source, subtile)
+                NetUtils.connect(ModuleUtils.create_port(self._module, self._node_name(src_node), len(tunnel.source),
+                    tunnel.sink.direction, key = src_node), sink)
+        return self
