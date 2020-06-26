@@ -300,7 +300,7 @@ class _VPRArchGeneration(Object, AbstractPass):
                 capacity = getattr(i, "vpr_capacity", 1)
                 skip = capacity - 1
                 block = i.model
-                self.active_blocks[block.key] = True
+                self.active_blocks.setdefault(block.key, set()).add(tile.name)
                 subtile_name = "{}_s{}".format(tile.name, subtile)
                 with self.xml.element("sub_tile", {"name": subtile_name, "capacity": capacity}):
                     # 1. emit ports:
@@ -696,14 +696,16 @@ class _VPRArchGeneration(Object, AbstractPass):
 
     def _direct(self, tunnel):
         vpr_offset = tunnel.source.position - tunnel.sink.position - tunnel.offset
-        self.xml.element_leaf("direct", {
-            "name": tunnel.name,
-            "from_pin": "{}.{}".format(tunnel.source.parent.name, tunnel.source.name),
-            "to_pin": "{}.{}".format(tunnel.sink.parent.name, tunnel.sink.name),
-            "x_offset": vpr_offset.x,
-            "y_offset": vpr_offset.y,
-            "z_offset": 0,
-            })
+        for from_tile, to_tile in product(self.active_blocks.get(tunnel.source.parent.key, tuple()),
+                self.active_blocks.get(tunnel.sink.parent.key, tuple())):
+            self.xml.element_leaf("direct", {
+                "name": tunnel.name,
+                "from_pin": "{}.{}".format(from_tile, tunnel.source.name),
+                "to_pin": "{}.{}".format(to_tile, tunnel.sink.name),
+                "x_offset": vpr_offset.x,
+                "y_offset": vpr_offset.y,
+                "z_offset": 0,
+                })
 
     def run(self, context):
         # create and add VPR summary if not present

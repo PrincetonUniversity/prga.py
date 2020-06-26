@@ -160,6 +160,9 @@ class TileBuilder(BaseArrayBuilder):
         elif not (model.width == self._module.width and model.height == self._module.height):
             raise PRGAInternalError("The size of block {} ({}x{}) does not fit the size of tile {} ({}x{})"
                     .format(model, model.width, model.height, self._module, self._module.width, self._module.height))
+        elif self._module._instances.subtiles:
+            raise PRGAAPIError("At most one type of subtile per tile. {} is already instantiated in {}"
+                    .format(self._module._instances[0].model, self._module))
         subtile = len(self._module._instances.subtiles)
         if reps is None:
             return ModuleUtils.instantiate(self._module, model, uno(name, "lb_i{}".format(subtile)), key = subtile)
