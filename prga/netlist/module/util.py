@@ -13,7 +13,6 @@ from ..net.bus import Port, Pin
 from ...exception import PRGAInternalError
 from ...util import uno
 
-from collections import OrderedDict
 from itertools import chain, product
 from networkx import NetworkXError, DiGraph
 

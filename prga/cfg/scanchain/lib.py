@@ -16,7 +16,7 @@ from ...util import Object, uno
 from ...exception import PRGAInternalError
 
 import os
-from collections import OrderedDict, namedtuple
+from collections import namedtuple
 from itertools import chain
 
 import logging

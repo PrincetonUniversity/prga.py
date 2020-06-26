@@ -18,7 +18,8 @@ from ..renderer.renderer import FileRenderer
 from ..util import Object, ReadonlyMappingProxy, uno
 from ..exception import PRGAAPIError, PRGAInternalError
 
-from collections import OrderedDict
+# In Python 3.7 and above, ``dict`` preserves insertion order and is more performant than ``OrderedDict``
+OrderedDict = dict
 
 import os, sys
 sys.setrecursionlimit(2**16)

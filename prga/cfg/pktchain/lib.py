@@ -11,14 +11,13 @@ from ...netlist.net.common import PortDirection, Const
 from ...netlist.net.util import NetUtils
 from ...netlist.module.module import Module
 from ...netlist.module.util import ModuleUtils
-from ...passes.translation import TranslationPass
 from ...passes.vpr import FASMDelegate
 from ...renderer.renderer import FileRenderer
 from ...util import Object, uno
 from ...exception import PRGAInternalError, PRGAAPIError
 
 import os
-from collections import OrderedDict, namedtuple
+from collections import namedtuple
 from itertools import chain, product
 
 import logging
@@ -443,7 +442,7 @@ class Pktchain(Scanchain):
             `Context`:
         """
         if phit_width not in (1, 2, 4, 8, 16, 32):
-            raise PRGAAPIError("Unsupported configuration phit width: {}. Supported values are: [1, 2, 4, 8, 16]"
+            raise PRGAAPIError("Unsupported configuration phit width: {}. Supported values are: [1, 2, 4, 8, 16, 32]"
                     .format(phit_width))
         if cfg_width not in (1, 2, 4):
             raise PRGAAPIError("Unsupported configuration chain width: {}. Supported values are: [1, 2, 4]"

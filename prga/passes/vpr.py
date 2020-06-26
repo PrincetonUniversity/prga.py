@@ -27,6 +27,7 @@ _logger = logging.getLogger(__name__)
 __all__ = ['FASMDelegate', 'TimingDelegate', 'VPRScalableDelegate',
         'VPRArchGeneration', 'VPRScalableArchGeneration', 'VPR_RRG_Generation']
 
+# In Python 3.7 and above, ``dict`` preserves insertion order and is more performant than ``OrderedDict``
 OrderedDict = dict
 
 # ----------------------------------------------------------------------------

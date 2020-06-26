@@ -9,7 +9,9 @@ from .common import AbstractModule, ConnGraph
 from ...util import Object, ReadonlyMappingProxy, uno
 from ...exception import PRGAInternalError
 
-from collections import OrderedDict
+# In Python 3.7 and above, ``dict`` preserves insertion order and is more performant than ``OrderedDict``
+OrderedDict = dict
+
 from enum import Enum
 
 __all__ = ['Module']

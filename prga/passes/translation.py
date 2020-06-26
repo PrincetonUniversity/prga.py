@@ -13,7 +13,6 @@ from ..util import Abstract, Object, uno
 from ..exception import PRGAInternalError, PRGAAPIError
 
 from abc import abstractmethod
-from collections import OrderedDict
 from itertools import chain
 from networkx.exception import NetworkXError
 

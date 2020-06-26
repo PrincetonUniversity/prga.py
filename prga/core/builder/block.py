@@ -13,8 +13,6 @@ from ...netlist.module.util import ModuleUtils
 from ...util import Object, uno
 from ...exception import PRGAAPIError, PRGAInternalError
 
-from collections import OrderedDict
-
 __all__ = ['ClusterBuilder', 'LogicBlockBuilder', 'IOBlockBuilder']
 
 # ----------------------------------------------------------------------------

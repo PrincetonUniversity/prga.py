@@ -13,7 +13,9 @@ from ...netlist.net.util import NetUtils
 from ...exception import PRGAAPIError, PRGAInternalError
 
 from abc import abstractproperty
-from collections import OrderedDict
+
+# In Python 3.7 and above, ``dict`` preserves insertion order and is more performant than ``OrderedDict``
+OrderedDict = dict
 
 __all__ = ["LogicalPrimitiveBuilder", "PrimitiveBuilder", 'MultimodeBuilder']
 
