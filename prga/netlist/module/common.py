@@ -169,7 +169,7 @@ def _get_attr_dict_factory(slots = tuple()):
         return dict
 
     # create new class
-    class AttrDict(MutableMapping):
+    class _AttrDict(MutableMapping):
         "Memory optimized attribute dict."
 
         __slots__ = ('_dict', ) + slots
@@ -221,11 +221,22 @@ def _get_attr_dict_factory(slots = tuple()):
                 return
 
         def __reduce__(self):
-            return _get_attr_dict_factory, (slots, )
+            return AttrDict, slots
 
     # register and return class
-    _attr_dict_factories[slots] = AttrDict
-    return AttrDict
+    _attr_dict_factories[slots] = _AttrDict
+    return _AttrDict
+
+def AttrDict(slots = tuple()):
+    """Construct a memory-optimized connection graph node.
+
+    Args:
+        slots (:obj:`Sequence` [:obj:`str` ]): Pre-allocated keys
+
+    Returns:
+        :obj:`MutableMapping`:
+    """
+    return _get_conn_graph_factory(slots)()
 
 _conn_graph_factories = {}
 def _get_conn_graph_factory(
@@ -241,18 +252,18 @@ def _get_conn_graph_factory(
 
     # create new class
     if coalesce_connections:
-        class ConnGraph(nx.DiGraph):
+        class _ConnGraph(nx.DiGraph):
             """Memory-optimized connection graph."""
 
             node_attr_dict_factory = _get_attr_dict_factory(node_attr_slots)
             edge_attr_dict_factory = _get_attr_dict_factory(edge_attr_slots)
 
             def __reduce__(self):
-                return _get_conn_graph_factory, (coalesce_connections, node_attr_slots, edge_attr_slots)
+                return ConnGraph, (True, node_attr_slots, edge_attr_slots)
 
-        factory = ConnGraph
+        factory = _ConnGraph
     else:
-        class ConnGraph(nx.DiGraph):
+        class _ConnGraph(nx.DiGraph):
             """Memory-optimized connection graph."""
 
             node_dict_factory = _MemOptNonCoalescedNodeDict
@@ -261,13 +272,13 @@ def _get_conn_graph_factory(
             edge_attr_dict_factory = _get_attr_dict_factory(edge_attr_slots)
 
             def __reduce__(self):
-                return _get_conn_graph_factory, (coalesce_connections, node_attr_slots, edge_attr_slots)
+                return ConnGraph, (False, node_attr_slots, edge_attr_slots)
 
-        factory = ConnGraph
+        factory = _ConnGraph
 
     # register and return class
-    _conn_graph_factories[coalesce_connections, node_attr_slots, edge_attr_slots] = ConnGraph
-    return ConnGraph
+    _conn_graph_factories[coalesce_connections, node_attr_slots, edge_attr_slots] = factory
+    return factory
 
 def ConnGraph(
         coalesce_connections = False,
