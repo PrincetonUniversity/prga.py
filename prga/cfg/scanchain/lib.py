@@ -85,8 +85,7 @@ class ScanchainFASMDelegate(FASMDelegate):
         cfg_bitoffset = 0
         if instance:
             for i in reversed(instance.hierarchy):
-                offset = getattr(i, "cfg_bitoffset", None)
-                if offset is None:
+                if (offset := getattr(i, "cfg_bitoffset", None)) is None:
                     return None
                 cfg_bitoffset += offset
         return cfg_bitoffset
