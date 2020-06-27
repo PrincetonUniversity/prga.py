@@ -21,7 +21,7 @@ module mdff (
     localparam ENABLE_SR = 1;
     localparam SR_SET = 2;
 
-    reg [2:0] cfg_d;
+    wire [2:0] cfg_d;
     reg internal_ce, internal_sr;
 
     always @* begin
@@ -52,15 +52,13 @@ module mdff (
         end
     end
 
-    wire [{{ 2 + cfg_width }}:0] cfg_d_next;
-
-    always @(posedge cfg_clk) begin
-        if (cfg_e && cfg_we) begin
-            cfg_d <= cfg_d_next;
-        end
-    end
-
-    assign cfg_d_next = {{ '{' -}} cfg_d, cfg_i {{- '}' }};
-    assign cfg_o = cfg_d_next[{{ 2 + cfg_width }} -: {{ cfg_width }}];
+    {{ module.instances.i_cfg_data.model.name }} i_cfg_data (
+        .cfg_clk            (cfg_clk)
+        ,.cfg_e             (cfg_e)
+        ,.cfg_we            (cfg_we)
+        ,.cfg_i             (cfg_i)
+        ,.cfg_o             (cfg_o)
+        ,.cfg_d             (cfg_d)
+        );
 
 endmodule

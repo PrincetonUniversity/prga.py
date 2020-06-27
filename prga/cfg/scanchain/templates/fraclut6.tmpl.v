@@ -15,7 +15,7 @@ module fraclut6 (
     output wire [{{ cfg_width - 1 }}:0] cfg_o
     );
 
-    reg [64:0] cfg_d;
+    wire [64:0] cfg_d;
     reg [5:0] internal_in;
     reg lut5A_out;
 
@@ -65,15 +65,13 @@ module fraclut6 (
         end
     end
 
-    wire [{{ 64 + cfg_width }}:0] cfg_d_next;
-
-    always @(posedge cfg_clk) begin
-        if (cfg_e && cfg_we) begin
-            cfg_d <= cfg_d_next;
-        end
-    end
-
-    assign cfg_d_next = {{ '{' -}} cfg_d, cfg_i {{- '}' }};
-    assign cfg_o = cfg_d_next[{{ 64 + cfg_width }} -: {{ cfg_width }}];
+    {{ module.instances.i_cfg_data.model.name }} i_cfg_data (
+        .cfg_clk            (cfg_clk)
+        ,.cfg_e             (cfg_e)
+        ,.cfg_we            (cfg_we)
+        ,.cfg_i             (cfg_i)
+        ,.cfg_o             (cfg_o)
+        ,.cfg_d             (cfg_d)
+        );
 
 endmodule

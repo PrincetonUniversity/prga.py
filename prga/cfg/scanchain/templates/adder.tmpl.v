@@ -22,7 +22,7 @@ module adder (
 
     localparam CIN_FABRIC = 0;
 
-    reg [0:0] cfg_d;
+    wire [0:0] cfg_d;
 
     always @* begin
         if (cfg_e) begin    // avoid program-time oscillation
@@ -39,15 +39,13 @@ module adder (
 
     assign cout_fabric = cout;
 
-    wire [{{ 0 + cfg_width }}:0] cfg_d_next;
-
-    always @(posedge cfg_clk) begin
-        if (cfg_e && cfg_we) begin
-            cfg_d <= cfg_d_next;
-        end
-    end
-
-    assign cfg_d_next = {{ '{' -}} cfg_d, cfg_i {{- '}' }};
-    assign cfg_o = cfg_d_next[{{ 0 + cfg_width }} -: {{ cfg_width }}];
+    {{ module.instances.i_cfg_data.model.name }} i_cfg_data (
+        .cfg_clk            (cfg_clk)
+        ,.cfg_e             (cfg_e)
+        ,.cfg_we            (cfg_we)
+        ,.cfg_i             (cfg_i)
+        ,.cfg_o             (cfg_o)
+        ,.cfg_d             (cfg_d)
+        );
 
 endmodule

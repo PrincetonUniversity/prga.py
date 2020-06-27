@@ -38,7 +38,7 @@ module fle6 (
     localparam CIN_FABRIC = MODE + MODE_WIDTH;
     localparam CFG_BITCOUNT = CIN_FABRIC + 1;
     
-    reg [CFG_BITCOUNT - 1:0] cfg_d;
+    wire [CFG_BITCOUNT - 1:0] cfg_d;
     reg [5:0] internal_in;
     reg [1:0] internal_lut;
     reg [1:0] internal_ff;
@@ -143,15 +143,13 @@ module fle6 (
         end
     end
 
-    wire [CFG_BITCOUNT - 1 + {{ cfg_width }}:0] cfg_d_next;
-
-    always @(posedge cfg_clk) begin
-        if (cfg_e && cfg_we) begin
-            cfg_d <= cfg_d_next;
-        end
-    end
-
-    assign cfg_d_next = {{ '{' -}} cfg_d, cfg_i {{- '}' }};
-    assign cfg_o = cfg_d_next[CFG_BITCOUNT +: {{ cfg_width }}];
+    {{ module.instances.i_cfg_data.model.name }} i_cfg_data (
+        .cfg_clk            (cfg_clk)
+        ,.cfg_e             (cfg_e)
+        ,.cfg_we            (cfg_we)
+        ,.cfg_i             (cfg_i)
+        ,.cfg_o             (cfg_o)
+        ,.cfg_d             (cfg_d)
+        );
 
 endmodule

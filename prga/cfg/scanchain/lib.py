@@ -248,7 +248,7 @@ class Scanchain(object):
                 continue
             lut = Module(name,
                     view = ModuleView.logical,
-                    is_cell = True,
+                    allow_multisource = True,
                     module_class = ModuleClass.primitive,
                     cfg_bitcount = 2 ** i,
                     verilog_template = "lut.tmpl.v")
@@ -256,6 +256,9 @@ class Scanchain(object):
             in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_, net_class = NetClass.user)
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output, net_class = NetClass.user)
             NetUtils.connect(in_, out, fully = True)
+
+            # configuration data
+            ModuleUtils.instantiate(lut, cls.get_cfg_data_cell(context, 2 ** i), "i_cfg_data")
 
             # configuration ports
             cls._get_or_create_cfg_ports(lut, cfg_width)
@@ -311,12 +314,15 @@ class Scanchain(object):
 
             # logical view
             if "fraclut6" not in dont_add_logical_primitive:
-                fraclut6 = fraclut6.build_logical_counterpart(
+                fraclut6 = fraclut6.build_logical_counterpart(not_cell = True, allow_multisource = True,
                         cfg_bitcount = 65, verilog_template = "fraclut6.tmpl.v")
 
                 # combinational paths
-                fraclut6.add_timing_arc(fraclut6.ports["in"], fraclut6.ports["o6"])
-                fraclut6.add_timing_arc(fraclut6.ports["in"][:5], fraclut6.ports["o5"])
+                NetUtils.connect(fraclut6.ports["in"], fraclut6.ports["o6"], fully = True)
+                NetUtils.connect(fraclut6.ports["in"][:5], fraclut6.ports["o5"], fully = True)
+
+                # configuration data
+                ModuleUtils.instantiate(fraclut6.module, cls.get_cfg_data_cell(context, 65), "i_cfg_data")
 
                 # configuration ports
                 cls._get_or_create_cfg_ports(fraclut6._module, cfg_width)
@@ -350,9 +356,9 @@ class Scanchain(object):
 
             # logical view
             if "mdff" not in dont_add_logical_primitive:
-                mdff = mdff.build_logical_counterpart(
-                        cfg_bitcount = 3,
-                        verilog_template = "mdff.tmpl.v")
+                mdff = mdff.build_logical_counterpart(not_cell = True, allow_multisource = True,
+                        cfg_bitcount = 3, verilog_template = "mdff.tmpl.v")
+                ModuleUtils.instantiate(mdff.module, cls.get_cfg_data_cell(context, 3), "i_cfg_data")
                 cls._get_or_create_cfg_ports(mdff._module, cfg_width)
             
             mdff.commit()
@@ -378,9 +384,9 @@ class Scanchain(object):
 
             # logical view
             if "adder" not in dont_add_logical_primitive:
-                adder = adder.build_logical_counterpart(
-                        cfg_bitcount = 1,
-                        verilog_template = "adder.tmpl.v")
+                adder = adder.build_logical_counterpart(not_cell = True, allow_multisource = True,
+                        cfg_bitcount = 1, verilog_template = "adder.tmpl.v")
+                ModuleUtils.instantiate(adder.module, cls.get_cfg_data_cell(context, 1), "i_cfg_data")
                 cls._get_or_create_cfg_ports(adder._module, cfg_width)
 
             adder.commit()
@@ -440,12 +446,14 @@ class Scanchain(object):
 
             # logical view
             if "fle6" not in dont_add_logical_primitive:
-                fle6 = fle6.build_logical_counterpart(
+                fle6 = fle6.build_logical_counterpart(not_cell = True, allow_multisource = True,
                         cfg_bitcount = 69, verilog_template = "fle6.tmpl.v")
+                ModuleUtils.instantiate(fle6.module, cls.get_cfg_data_cell(context, 69), "i_cfg_data")
 
                 # combinational paths
-                fle6.add_timing_arc([fle6.ports["in"], fle6.ports["cin"]], [fle6.ports["out"], fle6.ports["cout"]])
-                fle6.add_timing_arc(fle6.ports["clk"], fle6.ports["out"])
+                NetUtils.connect([fle6.ports["in"], fle6.ports["cin"]], [fle6.ports["out"], fle6.ports["cout"]],
+                        fully = True)
+                NetUtils.connect(fle6.ports["clk"], fle6.ports["out"], fully = True)
 
                 # configuration ports
                 cls._get_or_create_cfg_ports(fle6._module, cfg_width)
@@ -453,24 +461,31 @@ class Scanchain(object):
             fle6.commit()
 
     @classmethod
-    def _get_or_register_filler(cls, context, cfg_width, filler_width):
-        key = ("cfg_filler", filler_width)
-        try:
-            return context.database[ModuleView.logical, key]
-        except KeyError:
-            filler = Module("cfg_filler_d{}".format(filler_width),
+    def get_cfg_data_cell(cls, context, data_width):
+        """Get the configuration module for ``data_width`` bits.
+
+        Args:
+            context (`Context`):
+            data_width (:obj:`int`): Width of the data port
+        
+        Returns:
+            `Module`:
+        """
+        key = ("cfg_data", data_width)
+        if (module := context.database.get( (ModuleView.logical, key) )) is None:
+            module = Module("cfg_data_d{}".format(data_width),
                     view = ModuleView.logical,
                     is_cell = True,
                     module_class = ModuleClass.cfg,
-                    verilog_template = "cfg_filler.tmpl.v",
+                    verilog_template = "cfg_data.tmpl.v",
                     key = key,
-                    cfg_bitcount = filler_width)
-            cfg_clk = cls._get_or_create_cfg_ports(filler, cfg_width)["cfg_clk"]
-            cfg_d = ModuleUtils.create_port(filler, "cfg_d", filler_width, PortDirection.output,
+                    cfg_bitcount = data_width)
+            cfg_clk = cls._get_or_create_cfg_ports(module, context.summary.scanchain["cfg_width"])["cfg_clk"]
+            cfg_d = ModuleUtils.create_port(module, "cfg_d", data_width, PortDirection.output,
                     net_class = NetClass.cfg)
             NetUtils.connect(cfg_clk, cfg_d, fully = True)
-            context._database[ModuleView.logical, key] = filler
-            return filler
+            context._database[ModuleView.logical, key] = module
+        return module
 
     @classmethod
     def new_context(cls, cfg_width = 1, *, dont_add_primitive = tuple(), dont_add_logical_primitive = tuple()):
@@ -539,7 +554,7 @@ class Scanchain(object):
             oe = module.ports.get(IOType.oe)
             if oe is not None:
                 inst = ModuleUtils.instantiate(module,
-                        cls._get_or_register_filler(context, cfg_width, 1),
+                        cls.get_cfg_data_cell(context, 1),
                         '_cfg_oe')
                 NetUtils.connect(inst.pins["cfg_d"], oe)
         # connecting scanchain ports
@@ -595,7 +610,7 @@ class Scanchain(object):
                 if cfg_bitoffset % cfg_width != 0:
                     remainder = cfg_width - (cfg_bitoffset % cfg_width)
                     filler = ModuleUtils.instantiate(module,
-                            cls._get_or_register_filler(context, cfg_width, remainder),
+                            cls.get_cfg_data_cell(context, remainder),
                             "_cfg_filler_inst")
                     NetUtils.connect(cls._get_or_create_cfg_ports(module, cfg_width, enable_only = True),
                             filler.pins["cfg_e"])

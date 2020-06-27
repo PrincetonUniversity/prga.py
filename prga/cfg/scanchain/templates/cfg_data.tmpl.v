@@ -24,3 +24,4 @@ module {{ module.name }} (
     assign cfg_o = cfg_d_next[CFG_BITCOUNT +: CFG_WIDTH];
 
 endmodule
+
