@@ -54,13 +54,14 @@ class ScanchainSwitchDatabase(Object, AbstractSwitchDatabase):
             cfg_bitcount = (width - 1).bit_length()
         except AttributeError:
             cfg_bitcount = len(bin(width - 1).lstrip('-0b'))
-        switch = Module('sw' + str(width), view = ModuleView.logical, is_cell = True, key = key,
+        switch = Module('sw' + str(width), view = ModuleView.logical, key = key,
                 module_class = ModuleClass.switch, cfg_bitcount = cfg_bitcount,
-                verilog_template = "switch.tmpl.v")
+                allow_multisource = True, verilog_template = "switch.tmpl.v")
         # switch inputs/outputs
         i = ModuleUtils.create_port(switch, 'i', width, PortDirection.input_, net_class = NetClass.switch)
         o = ModuleUtils.create_port(switch, 'o', 1, PortDirection.output, net_class = NetClass.switch)
         NetUtils.connect(i, o, fully = True)
+        ModuleUtils.instantiate(switch, Scanchain.get_cfg_data_cell(self.context, cfg_bitcount), "i_cfg_data")
         # configuration circuits
         self.entry._get_or_create_cfg_ports(switch, self.cfg_width)
         return self.context._database.setdefault((ModuleView.logical, key), switch)

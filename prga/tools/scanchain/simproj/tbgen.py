@@ -67,9 +67,14 @@ def _update_config_list(module, config, prefix = '', base = 0):
                     low = global_base % 64
                     high = min(low + length - local_base, 64)
                     num_bits = high - low
-                    config.append( (
-                        '{}{}.cfg_d[{}:{}]'.format(prefix, instance.name, local_base + num_bits - 1, local_base),
-                        addr, low, high - 1) )
+                    if instance.name == "_cfg_oe":
+                        config.append( ('{}{}.cfg_d[{}:{}]'
+                            .format(prefix, instance.name, local_base + num_bits - 1, local_base),
+                            addr, low, high - 1) )
+                    else:
+                        config.append( ('{}{}.i_cfg_data.cfg_d[{}:{}]'
+                            .format(prefix, instance.name, local_base + num_bits - 1, local_base),
+                            addr, low, high - 1) )
                     global_base += num_bits
                     local_base += num_bits
         else:

@@ -13,7 +13,7 @@ module {{ module.name }} (
     output wire [{{ cfg_width - 1 }}:0] cfg_o
     );
 
-    reg [{{ module.cfg_bitcount - 1 }}:0] cfg_d;
+    wire [{{ module.cfg_bitcount - 1 }}:0] cfg_d;
 
     always @* begin
         if (cfg_e) begin    // avoid oscillating
@@ -28,15 +28,13 @@ module {{ module.name }} (
         end
     end
 
-    wire [{{ module.cfg_bitcount + cfg_width - 1 }}:0] cfg_d_next;
-
-    always @(posedge cfg_clk) begin
-        if (cfg_e && cfg_we) begin
-            cfg_d <= cfg_d_next;
-        end
-    end
-
-    assign cfg_d_next = {{ '{' -}} cfg_d, cfg_i {{- '}' }};
-    assign cfg_o = cfg_d_next[{{ module.cfg_bitcount + cfg_width - 1 }} -: {{ cfg_width }}];
+    {{ module.instances.i_cfg_data.model.name }} i_cfg_data (
+        .cfg_clk            (cfg_clk)
+        ,.cfg_e             (cfg_e)
+        ,.cfg_we            (cfg_we)
+        ,.cfg_i             (cfg_i)
+        ,.cfg_o             (cfg_o)
+        ,.cfg_d             (cfg_d)
+        );
 
 endmodule

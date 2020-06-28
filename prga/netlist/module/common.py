@@ -9,6 +9,7 @@ from ...util import Enum, Abstract, Object
 
 from abc import abstractproperty, abstractmethod
 from enum import Enum
+from copy import copy
 import networkx as nx
 
 __all__ = []
@@ -221,7 +222,11 @@ def _get_attr_dict_factory(slots = tuple()):
                 return
 
         def __reduce__(self):
-            return AttrDict, slots
+            return AttrDict, (slots, ), {k: getattr(self, k) for k in self.__slots__ if hasattr(self, k)}
+
+        def __setstate__(self, state):
+            for k, v in iteritems(state):
+                setattr(self, k, v)
 
     # register and return class
     _attr_dict_factories[slots] = _AttrDict
@@ -259,7 +264,10 @@ def _get_conn_graph_factory(
             edge_attr_dict_factory = _get_attr_dict_factory(edge_attr_slots)
 
             def __reduce__(self):
-                return ConnGraph, (True, node_attr_slots, edge_attr_slots)
+                d = copy(self.__dict__)
+                del d["node_attr_dict_factory"]
+                del d["edge_attr_dict_factory"]
+                return ConnGraph, (True, node_attr_slots, edge_attr_slots), d
 
         factory = _ConnGraph
     else:
@@ -272,7 +280,12 @@ def _get_conn_graph_factory(
             edge_attr_dict_factory = _get_attr_dict_factory(edge_attr_slots)
 
             def __reduce__(self):
-                return ConnGraph, (False, node_attr_slots, edge_attr_slots)
+                d = copy(self.__dict__)
+                del d["node_dict_factory"]
+                del d["node_attr_dict_factory"]
+                del d["adjlist_outer_dict_factory"]
+                del d["edge_attr_dict_factory"]
+                return ConnGraph, (False, node_attr_slots, edge_attr_slots), d
 
         factory = _ConnGraph
 
