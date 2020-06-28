@@ -189,16 +189,26 @@ class ArrayBuilder(BaseArrayBuilder):
         else:
             raise PRGAInternalError("Unknown node type: {:r}".format(pin.model.key.node_type))
         while (port := array.ports.get(node)) is not None:
-            if port.direction is pin.model.direction:
-                source, sink = (pin, port) if port.direction.is_output else (port, pin)
-                if (cur_source := NetUtils.get_source(sink, return_none_if_unconnected = True)) is None:
-                    NetUtils.connect(source, sink)
-                    break
-                elif cur_source == source:
-                    break
+            if port.direction.is_output:
+                if pin.model.direction.is_output:
+                    if (cur_source := NetUtils.get_source(port, return_none_if_unconnected = True)) is None:
+                        NetUtils.connect(pin, port)
+                        break
+                    elif cur_source == pin:
+                        break
+            elif port.direction.is_input:
+                if pin.model.direction.is_input:
+                    if (cur_source := NetUtils.get_source(pin, return_none_if_unconnected = True)) is None:
+                        if node.bridge_type not in (BridgeType.cboxout, BridgeType.cboxout2):
+                            NetUtils.connect(port, pin)
+                            break
+                    elif cur_source == port:
+                        break
             if node.bridge_type.is_cboxout:
                 node = node.convert(BridgeType.cboxout2)
                 continue
+            elif node.bridge_type.is_cboxout2:
+                raise PRGAInternalError("All cboxout bridges are used up in {}".format(array))
             raise PRGAInternalError("{} already exposed but not correctly connected".format(pin))
         boxpos, boxcorner = None, None
         if pin.instance.model.module_class.is_switch_box:

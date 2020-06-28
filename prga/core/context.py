@@ -31,6 +31,8 @@ except ImportError:
 
 __all__ = ['ContextSummary', 'Context']
 
+_VERSION = open(os.path.join(os.path.dirname(__file__), "..", "..", "VERSION"), "r").read().strip()
+
 # ----------------------------------------------------------------------------
 # -- FPGA Summary ------------------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -97,7 +99,7 @@ class Context(Object):
         else:
             self._database = database
         self.summary = ContextSummary()
-        self.version = open(os.path.join(os.path.dirname(__file__), "..", "..", "VERSION"), "r").read().strip()
+        self.version = _VERSION
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
 
@@ -631,7 +633,14 @@ class Context(Object):
         Args:
             file_ (:obj:`str` or file-like object): the pickled file
         """
-        if isinstance(file_, basestring):
-            return pickle.load(open(file_, OpenMode.rb))
-        else:
-            return pickle.load(file_)
+        obj = pickle.load(open(file_, OpenMode.rb) if isinstance(file_, basestring) else file_)
+        if isinstance(obj, cls) and (version := getattr(obj, "version", None)) != _VERSION:
+            if version is None:
+                raise PRGAAPIError(
+                        "The context is pickled by an old PRGA release, not supported by current version {}"
+                        .format(_VERSION))
+            else:
+                raise PRGAAPIError(
+                        "The context is pickled by PRGA version {}, not supported by current version {}"
+                        .format(version, _VERSION))
+        return obj
