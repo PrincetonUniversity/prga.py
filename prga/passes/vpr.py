@@ -914,7 +914,7 @@ class VPRScalableDelegate(Object):
     Keyword Args:
         device (:obj:`Mapping`): Overwrite the auto-generated dummy `device`_ tag in the output VPR specs
 
-    .. device:
+    .. _device:
         https://docs.verilogtorouting.org/en/latest/arch/reference/#arch-device-info
     """
 
@@ -948,11 +948,8 @@ class VPRScalableDelegate(Object):
             **kwargs: Refer to the attributes requirement for each type of rule under the `Grid Location Tag`_ section
                 in VPR's documentation
 
-        .. Grid Location Tag:
-            https://docs.verilogtorouting.org/en/latest/arch/reference/#grid-location-tags
-
-        .. Priority:
-            https://docs.verilogtorouting.org/en/latest/arch/reference/#grid-location-tags
+        .. _Grid Location Tag: https://docs.verilogtorouting.org/en/latest/arch/reference/#grid-location-tags
+        .. _Priority: https://docs.verilogtorouting.org/en/latest/arch/reference/#grid-location-tags
         """
         if rule not in self._rule_args:
             raise PRGAAPIError("Unknown rule type: {}".format(rule))
@@ -1107,10 +1104,10 @@ class VPR_RRG_Generation(Object, AbstractPass):
             pin (`Pin`): Hierarchical pin
 
         Returns:
-            channel_position (`Position`): Position of the routing channel
+            channel\_position (`Position`): Position of the routing channel
             orientation (`Orientation`): Orientation of the port
-            block_position (`Position`): Position of the parent block instance, used to calculate the
-                xlow/ylow/xhigh/yhigh attributes for the src/sink nodes
+            block\_position (`Position`): Position of the parent block instance, used to calculate the
+            xlow/ylow/xhigh/yhigh attributes for the src/sink nodes
         """
         port = pin.model
         block_position = ArrayBuilder.hierarchical_position(pin.instance)

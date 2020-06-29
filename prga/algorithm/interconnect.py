@@ -18,9 +18,9 @@ class InterconnectAlgorithms(object):
 
     @classmethod
     def crossbar(cls, N, M, connectivity, *, n_util = None):
-        """Generate ``(n, m)`` pairs so that each ``m`` is paired with ``connectivity`` ``n``s. The goal is
-        that each ``n`` is paired with about the same number of ``m``s \(fairness\), while each ``m`` is paired
-        with a different composition of ``n``s \(diversity\).
+        """Generate ``(n, m)`` pairs so that each ``m`` is paired with ``connectivity`` ``n`` s. The goal is
+        that each ``n`` is paired with about the same number of ``m`` s \(fairness\), while each ``m`` is paired
+        with a different composition of ``n`` s \(diversity\).
 
         Args:
             N (:obj:`int`):
@@ -31,7 +31,7 @@ class InterconnectAlgorithms(object):
             n_util (:obj:`Sequence` [:obj:`int` ]): carry-over state
 
         Yields:
-            :obj:`tuple` (:obj:`int`, :obj:`int`):
+            :obj:`tuple` [:obj:`int`, :obj:`int` ]:
         """
         # special cases
         if connectivity == 0:

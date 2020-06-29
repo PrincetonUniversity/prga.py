@@ -192,7 +192,7 @@ class Corner(Enum):
                 Corner.northeast)
 
     def decompose(self):
-        """:obj:`tuple` (`Orientation`, `Orientation`): Decompose this corner into two `Orientation`s. X-dimension
+        """:obj:`tuple` [`Orientation`, `Orientation` ]: Decompose this corner into two `Orientation` s. X-dimension
         first."""
         return self.case(
                 (Orientation.east, Orientation.north),

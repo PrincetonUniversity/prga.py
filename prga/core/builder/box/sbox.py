@@ -345,7 +345,7 @@ class SwitchBoxBuilder(BaseRoutingBoxBuilder):
         """Get or create a segment input port in this switch box.
 
         Args:
-            segment (`Segment`): Prototype of the segment
+            segment (`prga.core.common.Segment`): Prototype of the segment
             orientation (`Orientation`): Orientation of the segment
             section (:obj:`int`): Section of the segment
 
@@ -371,7 +371,7 @@ class SwitchBoxBuilder(BaseRoutingBoxBuilder):
         """Get or create a segment output port in this switch box.
 
         Args:
-            segment (`Segment`): Prototype of the segment
+            segment (`prga.core.common.Segment`): Prototype of the segment
             orientation (`Orientation`): Orientation of the segment
             section (:obj:`int`): Section of the segment
 

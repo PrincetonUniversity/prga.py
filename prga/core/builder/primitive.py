@@ -345,7 +345,7 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
         Returns:
             `Port`:
 
-        .. combinational_sink_ports:
+        .. _combinational\_sink\_ports:
             https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Cportname=
         """
         vpr_combinational_sinks = tuple(set(vpr_combinational_sinks))
@@ -476,7 +476,7 @@ class _ModeBuilder(BaseBuilder):
         Returns:
             `Instance` or :obj:`tuple` [`Instance`]:
 
-        .. num_pb:
+        .. _num\_pb:
             https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Cportname=
         """
         if reps is None:
@@ -499,7 +499,7 @@ class _ModeBuilder(BaseBuilder):
             vpr_pack_patterns (:obj:`Sequence` [:obj:`str`]): Add `pack_pattern`_ tags to the connections
             **kwargs: Additional attibutes assigned to all connections
 
-        .. pack_pattern:
+        .. _pack\_pattern:
             https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Cportname=
         """
         if not vpr_pack_patterns:

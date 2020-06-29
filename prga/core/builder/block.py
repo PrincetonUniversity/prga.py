@@ -47,7 +47,7 @@ class _BaseClusterLikeBuilder(BaseBuilder):
 
     @property
     def instances(self):
-        """:obj:`Mapping` [:obj:`Hashable`, `AbstractInstances` ]: Proxy to ``module.instances``."""
+        """:obj:`Mapping` [:obj:`Hashable`, `Instance` ]: Proxy to ``module.instances``."""
         return self._module.instances
 
     def connect(self, sources, sinks, *, fully = False, vpr_pack_patterns = None, **kwargs):
@@ -64,7 +64,7 @@ class _BaseClusterLikeBuilder(BaseBuilder):
             vpr_pack_patterns (:obj:`Sequence` [:obj:`str`]): Add `pack_pattern`_ tags to the connections
             **kwargs: Additional attibutes assigned to all connections
 
-        .. pack_pattern:
+        .. _pack\_pattern:
             https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Cportname=
         """
         if not vpr_pack_patterns:
@@ -88,7 +88,7 @@ class _BaseClusterLikeBuilder(BaseBuilder):
         Returns:
             `Instance` or :obj:`tuple` [`Instance`]:
 
-        .. num_pb:
+        .. _num\_pb:
             https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Cportname=
         """
         if reps is None:

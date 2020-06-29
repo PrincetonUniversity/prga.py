@@ -312,7 +312,7 @@ class Context(Object):
             length (:obj:`int`): Length of the segment
 
         Returns:
-            `Segment`:
+            `prga.core.common.Segment`:
         """
         if name in self._segments:
             raise PRGAAPIError("Segment named '{}' is already created".format(name))
@@ -494,7 +494,7 @@ class Context(Object):
         Keyword Args:
             width (:obj:`int`): Width of the tile. Overriden by the width of ``block`` if ``block`` is specified.
             height (:obj:`int`): Height of the tile. Overriden by the height of ``block`` if ``block`` is specified.
-            name (:obj:`str`): Name of the tile. `"tile_{block}"` by default if ``block`` is specified.
+            name (:obj:`str`): Name of the tile. ``"tile_{block}"`` by default if ``block`` is specified.
             edge (`OrientationTuple` [:obj:`bool` ]): Specify on which edges of the top-level is the tile. This
                 affects if IO blocks can be instantiated
             disallow_segments_passthru (:obj:`bool`): If set to ``True``, routing tracks are not allowed to run over
@@ -504,8 +504,8 @@ class Context(Object):
         Returns:
             `TileBuilder`:
 
-        .. capacity:
-            https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Csub_tilename
+        .. _capacity:
+            https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Csub\_tilename
         """
         if block is not None:
             if not block.module_class.is_block:

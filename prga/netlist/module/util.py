@@ -180,7 +180,7 @@ class ModuleUtils(object):
                 function that returns an edge attribute mapping
             coalesce_connections (:obj:`bool`): If set, the reduced timing graph coalesce bus connections
 
-        .. networkx.DiGraph: https://networkx.github.io/documentation/stable/reference/classes/digraph.html
+        .. _networkx.DiGraph: https://networkx.github.io/documentation/stable/reference/classes/digraph.html
         """
         if graph is None:
             graph = DiGraph()

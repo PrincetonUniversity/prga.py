@@ -308,7 +308,7 @@ def ConnGraph(
     Returns:
         `networkx.DiGraph`_:
 
-    .. networkx.DiGraph:
+    .. _networkx.DiGraph:
         https://networkx.github.io/documentation/networkx-2.4/reference/classes/digraph.html
     """
     return _get_conn_graph_factory(coalesce_connections, node_attr_slots, edge_attr_slots)()

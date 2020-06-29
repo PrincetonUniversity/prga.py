@@ -740,7 +740,7 @@ class Scanchain(object):
         """Automatically inject configuration circuitry."""
 
         def run(self, context):
-            Scanchain.complete_scanchain(context, context.database[ModuleView.logical, context.top.key])
+            Scanchain.complete_scanchain(context)
             Scanchain.annotate_user_view(context)
 
         @property

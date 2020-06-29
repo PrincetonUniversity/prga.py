@@ -110,7 +110,7 @@ class FileRenderer(Object):
         """Add a Verilog rendering task.
 
         Args:
-            module (`Abstractg`): The module to be rendered
+            module (`Module`): The module to be rendered
             file_ (:obj:`str` of file-like object): The output file
             template (:obj:`str`): The template to be used
             **kwargs: Additional key-value parameters to be passed into the template when rendering
@@ -165,7 +165,7 @@ class FileRenderer(Object):
 
         Args:
             file_ (:obj:`str` of file-like object): The output file
-            module (:obj:`Abstractg`): The blackbox module
+            module (`Module`): The blackbox module
 
         Keyword Args:
             template (:obj:`str`): The template to be used
@@ -224,7 +224,7 @@ class FileRenderer(Object):
 
         Args:
             file_ (:obj:`str` of file-like object): The output file
-            module (:obj:`Abstractg`): The memory module
+            module (`Module`): The memory module
             template (:obj:`str`): The template to be used
 
         Keyword Args:
@@ -247,7 +247,7 @@ class FileRenderer(Object):
 
         Args:
             file_ (:obj:`str` or file-like object): The output file
-            module (:obj:`Abstractg`): The memory module
+            module (`Module`): The memory module
 
         Keyword Args:
             template (:obj:`str`): The template to be used

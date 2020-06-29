@@ -150,10 +150,10 @@ class TileBuilder(BaseArrayBuilder):
             **kwargs: Additional attributes assigned to each instance
 
         Returns:
-            `Instance` or :obj:`tuple` [`Instance`]:
+            `Instance` or :obj:`tuple` [`Instance` ]:
 
-        .. capacity:
-            https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Csub_tilename
+        .. _capacity:
+            https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Csub\_tilename
         """
         if not model.module_class.is_block:
             raise PRGAInternalError("{} is not a logic/IO block".format(model))
@@ -188,9 +188,8 @@ class TileBuilder(BaseArrayBuilder):
             `ConnectionBoxBuilder`:
 
         Note:
-            Connection boxes are indexed as the following:
+            Connection boxes are indexed as the following::
 
-            .. code-block:: python
                     0   1   2   3
                   +---------------+
                 2 |     north     | 2

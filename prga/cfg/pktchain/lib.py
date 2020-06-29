@@ -11,6 +11,7 @@ from ...netlist.net.common import PortDirection, Const
 from ...netlist.net.util import NetUtils
 from ...netlist.module.module import Module
 from ...netlist.module.util import ModuleUtils
+from ...passes.base import AbstractPass
 from ...passes.vpr import FASMDelegate
 from ...renderer.renderer import FileRenderer
 from ...util import Object, uno
@@ -687,7 +688,7 @@ class Pktchain(Scanchain):
         # scanchain
         scanchain_cfg_nets, scanchain_bitoffset = {}, 0
         none_once = False
-        for instance in iter_instances(module):
+        for instance in tuple(iter_instances(module)):
             # control
             if instance is None:
                 if none_once:
@@ -796,3 +797,22 @@ class Pktchain(Scanchain):
                     cls.annotate_user_view(context, instance.model, _annotated = _annotated)
         else:
             super(Pktchain, cls).annotate_user_view(context, module, _annotated = _annotated)
+
+    class InjectConfigCircuitry(Object, AbstractPass):
+        """Automatically inject configuration circuitry."""
+
+        def run(self, context):
+            Pktchain.complete_pktchain(context)
+            Pktchain.annotate_user_view(context)
+
+        @property
+        def key(self):
+            return "config.injection.pktchain"
+
+        @property
+        def dependences(self):
+            return ("translation", )
+        
+        @property
+        def passes_after_self(self):
+            return ("rtl", )
