@@ -846,6 +846,10 @@ class VPRArchGeneration(_VPRArchGeneration):
         return "vpr.arch"
 
     @property
+    def dependences(self):
+        return ("config.injection", )
+
+    @property
     def _update_summary(self):
         return True
 
@@ -1054,7 +1058,7 @@ class VPR_RRG_Generation(Object, AbstractPass):
 
     @property
     def dependences(self):
-        return "vpr.arch"
+        return ("vpr.arch", )
 
     @property
     def is_readonly_pass(self):

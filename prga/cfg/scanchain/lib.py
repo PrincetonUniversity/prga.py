@@ -9,6 +9,7 @@ from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
 from ...netlist.module.module import Module
 from ...netlist.module.util import ModuleUtils
+from ...passes.base import AbstractPass
 from ...passes.translation import AbstractSwitchDatabase, TranslationPass
 from ...passes.vpr import FASMDelegate
 from ...renderer.renderer import FileRenderer
@@ -734,3 +735,22 @@ class Scanchain(object):
                             if (idx & (1 << digit)):
                                 this_cfg_bits += (switch.cfg_bitoffset + digit, )
                         stack.append( (input_, this_cfg_bits) )
+
+    class InjectConfigCircuitry(Object, AbstractPass):
+        """Automatically inject configuration circuitry."""
+
+        def run(self, context):
+            Scanchain.complete_scanchain(context, context.database[ModuleView.logical, context.top.key])
+            Scanchain.annotate_user_view(context)
+
+        @property
+        def key(self):
+            return "config.injection.scanchain"
+
+        @property
+        def dependences(self):
+            return ("translation", )
+        
+        @property
+        def passes_after_self(self):
+            return ("rtl", )
