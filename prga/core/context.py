@@ -41,7 +41,7 @@ class ContextSummary(Object):
 
     __slots__ = [
             # generic summaries: updated by 'SummaryUpdate'
-            'ios',                  # list of IOType, (x, y), subblock
+            'ios',                  # list of IOType, (x, y), subtile
             'active_blocks',        # dict of block keys to active orientations
             'active_primitives',    # set of primitive keys
             'lut_sizes',            # set of LUT sizes
@@ -271,7 +271,7 @@ class Context(Object):
         return ReadonlyMappingProxy(self._globals)
 
     def create_global(self, name, width = 1, *,
-            is_clock = False, bind_to_position = None, bind_to_subblock = None):
+            is_clock = False, bind_to_position = None, bind_to_subtile = None):
         """Create a global wire.
 
         Args:
@@ -282,8 +282,8 @@ class Context(Object):
             is_clock (:obj:`bool`): Set to ``True`` if this global wire is a clock. A global clock must be 1-bit wide
             bind_to_position (:obj:`Position`): Assign the IOB at the position as the driver of this global wire. If
                 not specified, use `Global.bind` to bind later
-            bind_to_subblock (:obj:`int`): Assign the IOB with the sub-block ID as the driver of this global wire. If
-                ``bind_to_position`` is specified, ``bind_to_subblock`` is ``0`` by default
+            bind_to_subtile (:obj:`int`): Assign the IOB with the subtile ID as the driver of this global wire. If
+                ``bind_to_position`` is specified, ``bind_to_subtile`` is ``0`` by default
 
         Returns:
             `Global`: The created global wire
@@ -294,7 +294,7 @@ class Context(Object):
             raise PRGAAPIError("Only 1-bit wide global wires are supported now")
         global_ = self._globals.setdefault(name, Global(name, width, is_clock))
         if bind_to_position is not None:
-            global_.bind(bind_to_position, uno(bind_to_subblock, 0))
+            global_.bind(bind_to_position, uno(bind_to_subtile, 0))
         return global_
 
     # -- Segments ------------------------------------------------------------

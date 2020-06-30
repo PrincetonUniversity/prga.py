@@ -46,8 +46,8 @@ def iobind(summary, mod_top, fixed = None):
     """
     # prepare assignment map
     available = {PortDirection.input_: set(), PortDirection.output: set()}
-    for iotype, (x, y), subblock in summary.ios:
-        available[iotype.case(PortDirection.input_, PortDirection.output)].add( (x, y, subblock) )
+    for iotype, (x, y), subtile in summary.ios:
+        available[iotype.case(PortDirection.input_, PortDirection.output)].add( (x, y, subtile) )
     assigned = {}   # port -> io
     # process fixed assignments
     for name, assignment in iteritems(uno(fixed, {})):
@@ -73,7 +73,7 @@ def iobind(summary, mod_top, fixed = None):
                     .format(index, port_name))
         elif not assignment in available[port.direction]:
             raise PRGAAPIError("Conflicting or invalid assignment at ({}, {}, {})"
-                    .format(x, y, subblock))
+                    .format(x, y, subtile))
         available[port.direction].remove( assignment )
         available[port.direction.opposite].discard( assignment )
         assigned[port.direction.case("", "out:") + name] = assignment
@@ -113,6 +113,6 @@ if __name__ == "__main__":
             parse_io_bindings(args.fixed) if args.fixed is not None else {})
     # print results
     ostream = sys.stdout if args.output is None else open(args.output, 'w')
-    for name, (x, y, subblock) in iteritems(assignments):
-        ostream.write("{} {} {} {}\n".format(name, x, y, subblock))
+    for name, (x, y, subtile) in iteritems(assignments):
+        ostream.write("{} {} {} {}\n".format(name, x, y, subtile))
     _logger.info("Assignment generated. Bye")

@@ -207,8 +207,8 @@ class TranslationPass(Object, AbstractPass):
                 for key, pin in iteritems(logical_instance.pins):
                     if not pin.model.net_class.is_io:
                         continue
-                    iotype, pos, subblock = newkey = key[0], key[1] + instance.key, key[2]
-                    port = ModuleUtils.create_port(logical, "{}_x{}y{}_{:d}".format(iotype.name, *pos, subblock),
+                    iotype, pos, subtile = newkey = key[0], key[1] + instance.key, key[2]
+                    port = ModuleUtils.create_port(logical, "{}_x{}y{}_{:d}".format(iotype.name, *pos, subtile),
                             len(pin), pin.model.direction, key = newkey, net_class = NetClass.io)
                     if port.direction.is_input:
                         global_ = globals_.pop( port.key[1:], None )
@@ -219,8 +219,8 @@ class TranslationPass(Object, AbstractPass):
                         NetUtils.connect(pin, port)
         # raise error for unbound globals
         for port in itervalues(globals_):
-            raise PRGAInternalError("Global wire '{}' bound to subblock {} at {} but no IO input found there"
-                    .format(port.global_.name, port.global_.bound_to_subblock, port.global_.bound_to_position))
+            raise PRGAInternalError("Global wire '{}' bound to subtile {} at {} but no IO input found there"
+                    .format(port.global_.name, port.global_.bound_to_subtile, port.global_.bound_to_position))
         # translate connections
         if module.module_class.is_primitive:
             pass
@@ -276,7 +276,7 @@ class TranslationPass(Object, AbstractPass):
         _logger.info("Translated: {}".format(module))
         return logical
 
-    def run(self, context):
+    def run(self, context, renderer = None):
         top = uno(self.top, context.top)
         if top is None:
             raise PRGAAPIError("Top-level array not set yet.")

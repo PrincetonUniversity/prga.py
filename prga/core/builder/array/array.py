@@ -592,7 +592,10 @@ class ArrayBuilder(BaseArrayBuilder):
         for x, y in product(range(self._module.width), range(self._module.height)):
             position = Position(x, y)
             for corner in sbox_pattern.fill_corners:
-                if (instance := self._module._instances.get_root(position, corner)) is None:
+                if any(ori.case(y == self.height - 1, x == self.width - 1, y == 0, x == 0) and self._module.edge[ori]
+                        for ori in corner.decompose()):
+                    continue
+                elif (instance := self._module._instances.get_root(position, corner)) is None:
                     if dont_create:
                         continue
                 elif not instance.model.module_class.is_switch_box or dont_update:
@@ -613,9 +616,11 @@ class ArrayBuilder(BaseArrayBuilder):
                     secondary_output = primary_output.opposite
                     if (not self._no_channel_for_switchbox(self._module, curpos, curcorner, secondary_output, True)
                             and self._no_channel_for_switchbox(self._module, curpos, curcorner, secondary_output)):
-                        i = self._module._instances.get_root(*self._equiv_sbox_position(curpos, curcorner,
-                                Corner[secondary_output.case("southwest", "northwest", "northeast", "southeast")]))
-                        if i is not None and not i.model.module_class.is_switch_box:
+                        otherpos, othercorner = self._equiv_sbox_position(curpos, curcorner,
+                                Corner[secondary_output.case("southwest", "northwest", "northeast", "southeast")])
+                        if (not (0 <= otherpos.x < self.width and 0 <= otherpos.y < self.height) or
+                                ((i := self._module._instances.get_root(otherpos, othercorner)) is not None and
+                                    not i.model.module_class.is_switch_box)):
                             _, xo = outputs.get(secondary_output, (True, True))
                             outputs[secondary_output] = True, xo
                     # go to the next corner

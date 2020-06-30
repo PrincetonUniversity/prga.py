@@ -6,6 +6,7 @@ from prga.compatible import *
 from .base import AbstractPass
 from ..core.common import ModuleView
 from ..util import Object
+from ..exception import PRGAAPIError
 
 import os
 
@@ -18,13 +19,11 @@ class YosysScriptsCollection(AbstractPass):
     """Collecting Yosys script rendering tasks.
 
     Args:
-        renderer (`FileRenderer`):
         output_dir (:obj:`str`): Directory for all output files. Current working directory is used by default
     """
 
-    __slots__ = ['renderer', 'output_dir']
-    def __init__(self, renderer, output_dir = "."):
-        self.renderer = renderer
+    __slots__ = ['output_dir']
+    def __init__(self, output_dir = "."):
         self.output_dir = output_dir
 
     @property
@@ -39,32 +38,34 @@ class YosysScriptsCollection(AbstractPass):
     def is_readonly_pass(self):
         return True
 
-    def run(self, context):
+    def run(self, context, renderer = None):
+        if renderer is None:
+            raise PRGAAPIError("File renderer is required for the Yosys Script Collection pass")
         if not hasattr(context.summary, "yosys"):
             context.summary.yosys = {}
         f = context.summary.yosys["script"] = os.path.join(os.path.abspath(self.output_dir), "synth.ys") 
-        self.renderer.add_yosys_synth_script(f, context.summary.lut_sizes)
+        renderer.add_yosys_synth_script(f, context.summary.lut_sizes)
         for primitive_key in context.summary.active_primitives:
             primitive = context.database[ModuleView.user, primitive_key]
-            self.renderer.add_yosys_library(
+            renderer.add_yosys_library(
                     os.path.join(os.path.abspath(self.output_dir), "lib.v"),
                     primitive, template = getattr(primitive, "lib_template", None))
             techmap_template = getattr(primitive, "techmap_template", None)
             if techmap_template is not None:
                 if primitive.primitive_class.is_custom:
                     premap_commands = getattr(primitive, "premap_commands", tuple())
-                    self.renderer.add_yosys_techmap(
+                    renderer.add_yosys_techmap(
                         os.path.join(os.path.abspath(self.output_dir), primitive.name + ".techmap.v"),
                         techmap_template, premap_commands = premap_commands)
                 elif primitive.primitive_class.is_memory:
                     try:
                         mem_infer_rule_template = primitive.mem_infer_rule_template
                         mem_infer_rule = os.path.join(os.path.abspath(self.output_dir), "bram.rule")
-                        self.renderer.add_yosys_mem_infer_rule(mem_infer_rule, primitive, mem_infer_rule_template)
+                        renderer.add_yosys_mem_infer_rule(mem_infer_rule, primitive, mem_infer_rule_template)
                     except AttributeError:
                         mem_infer_rule = None
                     premap_commands = getattr(primitive, "premap_commands", tuple())
-                    self.renderer.add_yosys_memory_techmap(
+                    renderer.add_yosys_memory_techmap(
                         os.path.join(os.path.abspath(self.output_dir), primitive.name + ".techmap.v"),
                         primitive, techmap_template,
                         premap_commands = premap_commands, rule_script = mem_infer_rule)

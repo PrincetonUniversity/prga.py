@@ -66,26 +66,28 @@ class Flow(Object):
         """
         self._passes.append( pass_ )
 
-    def run(self, context):
+    def run(self, context, renderer = None):
         """Run all added passes on ``context``.
 
         Args:
             context (`Context`):
+            renderer (`FileRenderer`):
         """
         # 1. resolve dependences/conflicts
         passes = {}
         while self._passes:
             updated = None
             for i, pass_ in enumerate(self._passes):
-                # 1.1 is the pass added twice?
-                if pass_.key in passes:
-                    raise PRGAAPIError("Pass {} is added twice".format(pass_.key))
-                # 1.2 any duplicates? 
-                try:
-                    duplicate = next(key for key in passes if not self.__key_is_irrelevent(pass_.key, key))
-                    raise PRGAAPIError("Pass {} and {} conflict with each other".format(pass_.key, key))
-                except StopIteration:
-                    pass
+                if not pass_.is_readonly_pass:
+                    # 1.1 is the pass added twice?
+                    if pass_.key in passes:
+                        raise PRGAAPIError("Pass {} is added twice".format(pass_.key))
+                    # 1.2 any duplicates? 
+                    try:
+                        duplicate = next(key for key in passes if not self.__key_is_irrelevent(pass_.key, key))
+                        raise PRGAAPIError("Pass {} and {} conflict with each other".format(pass_.key, key))
+                    except StopIteration:
+                        pass
                 # 1.3 any conflicts?
                 try:
                     conflict = next(key for key in passes if any(self.__key_is_prefix(rule, key)
@@ -132,5 +134,8 @@ class Flow(Object):
         for pass_ in passes:
             _logger.info("running pass '%s'", pass_.key)
             t = time.time()
-            pass_.run(context)
+            pass_.run(context, renderer)
             _logger.info("pass '%s' took %f seconds", pass_.key, time.time() - t)
+        # 4. render all files
+        if renderer is not None:
+            renderer.render()

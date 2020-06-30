@@ -14,7 +14,7 @@ from ...passes.translation import AbstractSwitchDatabase, TranslationPass
 from ...passes.vpr import FASMDelegate
 from ...renderer.renderer import FileRenderer
 from ...util import Object, uno
-from ...exception import PRGAInternalError
+from ...exception import PRGAInternalError, PRGAAPIError
 
 import os
 from collections import namedtuple
@@ -737,10 +737,30 @@ class Scanchain(object):
                         stack.append( (input_, this_cfg_bits) )
 
     class InjectConfigCircuitry(Object, AbstractPass):
-        """Automatically inject configuration circuitry."""
+        """Automatically inject configuration circuitry.
+        
+        Keyword Args:
+            iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
+                the instances in a module
+            timing_enclosure (:obj:`Function` [`Module` ] -> :obj:`bool`): A function used to determine if
+                configuration enable signals should be registered for one configuration cycle in a module. This is
+                necessary because the configuration enable signal may control millions of registers across the entire
+                FPGA. This super high-fanout net, if not registered, will be very slow to drive
+        """
 
-        def run(self, context):
-            Scanchain.complete_scanchain(context)
+        __slots__ = ["iter_instances", "timing_enclosure"]
+
+        def __init__(self, *, iter_instances = None, timing_enclosure = None):
+            self.iter_instances = iter_instances
+            self.timing_enclosure = timing_enclosure
+
+        def run(self, context, renderer = None):
+            kwargs = {}
+            if callable(self.iter_instances):
+                kwargs["iter_instances"] = self.iter_instances
+            if callable(self.timing_enclosure):
+                kwargs["timing_enclosure"] = self.timing_enclosure
+            Scanchain.complete_scanchain(context, **kwargs)
             Scanchain.annotate_user_view(context)
 
         @property

@@ -708,7 +708,7 @@ class _VPRArchGeneration(Object, AbstractPass):
                 "z_offset": 0,
                 })
 
-    def run(self, context):
+    def run(self, context, renderer = None):
         # create and add VPR summary if not present
         if not hasattr(context.summary, 'vpr'):
             context.summary.vpr = {}
@@ -1261,16 +1261,16 @@ class VPR_RRG_Generation(Object, AbstractPass):
         else:
             self.xml.element_leaf("edge", attrs)
 
-    def _edge_box_output(self, head_pin_bit, tail_pin_bit, tail_id, fasm_features = tuple(), delay = 0.0):
+    def _edge_box_output(self, head_pin_bit, tail_pin_bit, tail_pkg, fasm_features = tuple(), delay = 0.0):
         sink_port_bit = head_pin_bit.bus.model[head_pin_bit.index]
         for src_port_bit in NetUtils.get_multisource(sink_port_bit):
             this_fasm = fasm_features + self.fasm.fasm_features_for_routing_switch(src_port_bit, sink_port_bit,
                     head_pin_bit.bus.instance)
             this_delay = delay + self.timing.vpr_delay_of_routing_switch(src_port_bit, sink_port_bit)
             self._edge_box_input(head_pin_bit.bus.instance.pins[src_port_bit.bus.key][src_port_bit.index],
-                    tail_pin_bit, tail_id, this_fasm, this_delay)
+                    tail_pin_bit, tail_pkg, this_fasm, this_delay)
 
-    def _edge_box_input(self, head_pin_bit, tail_pin_bit, tail_id, fasm_features = tuple(), delay = 0.0):
+    def _edge_box_input(self, head_pin_bit, tail_pin_bit, tail_pkg, fasm_features = tuple(), delay = 0.0):
         head_idx, head_node = NetUtils._reference(head_pin_bit)
 
         try:
@@ -1280,13 +1280,48 @@ class VPR_RRG_Generation(Object, AbstractPass):
             return
 
         head_pin_bit = NetUtils._dereference(head_pin_bit.parent, pred_node, coalesced = True)[head_idx]
-        if (id_ := self.conn_graph.nodes[pred_node].get("id")) is None:
-            self._edge_box_output(head_pin_bit, tail_pin_bit, tail_id, fasm_features, delay)
+        pred_data = self.conn_graph.nodes[pred_node]
+        if (id_ := pred_data.get("id")) is None:
+            self._edge_box_output(head_pin_bit, tail_pin_bit, tail_pkg, fasm_features, delay)
             return
-        else:
-            self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
+        elif tail_pkg[0] in ("CHANX", "CHANY"):                     # ??? -> track
+            tail_id, tail_lower, tail_higher, tail_ori = tail_pkg[1:]
+            tail_start = tail_ori.direction.case(tail_lower, tail_higher)
+            if pred_data["type"] in ("CHANX", "CHANY"):             # track -> track
+                head_ori, head_lower, head_higher, _ = self._analyze_track(pred_node)
+                if head_ori is tail_ori:                            # straight connection
+                    dim, dir_ = tail_ori.decompose()
+                    if (head_lower[dim.perpendicular] == tail_start[dim.perpendicular] and
+                            head_lower[dim] <= tail_start[dim] + dir_.case(-1, 1) <= head_higher[dim]):
+                        self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
+                        return
+                elif head_ori is not tail_ori.opposite:             # not a U-turn
+                    from_dim, from_dir = head_ori.decompose()
+                    to_dim, to_dir = tail_ori.decompose()
+                    if (head_lower[to_dim] + to_dir.case(1, 0) == tail_start[to_dim] and
+                            head_lower[from_dim] <= tail_start[from_dim] + from_dir.case(0, 1) <= head_higher[from_dim]):
+                        self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
+                        return
+            else:                                                   # block pin -> track
+                head_chan, head_ori, _ = self._analyze_blockpin(head_pin_bit.bus)
+                dim = head_ori.dimension.perpendicular
+                if dim is tail_ori.dimension and head_chan == tail_start:
+                    self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
+                    return
+        else:                                                       # ??? -> block pin
+            tail_id, tail_chan, dim = tail_pkg[1:]
+            if pred_data["type"] in ("CHANX", "CHANY"):             # track -> block pin
+                head_ori, head_lower, head_higher, _ = self._analyze_track(pred_node)
+                if (dim is head_ori.dimension and head_lower[dim] <= tail_chan[dim] <= head_higher[dim]
+                        and tail_chan[dim.perpendicular] == head_lower[dim.perpendicular]):
+                    self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
+                    return
+            else:                                                   # block pin -> block pin
+                self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
+                return
+        _logger.info("Physical connection {} -> {} ignored due to reachability".format(head_pin_bit, tail_pin_bit))
 
-    def run(self, context):
+    def run(self, context, renderer = None):
         # runtime-generated data
         self.tile2id = OrderedDict()
         self.tilepin2ptc = OrderedDict()
@@ -1426,21 +1461,29 @@ class VPR_RRG_Generation(Object, AbstractPass):
                     if (type_ := sink_data.get("type")) in ("CHANX", "CHANY"):
                         # 1. get the pin
                         sink_pin = NetUtils._dereference(context.top, sink_node, coalesced = True)
-                        # 2. emit edges
+                        # 2. prepare the tail package
+                        ori, lower, higher, _ = self._analyze_track(sink_node)
+                        # 3. emit edges
                         for i, sink_pin_bit in enumerate(sink_pin):
-                            self._edge_box_output(sink_pin_bit, sink_pin_bit, sink_data["id"] + i)
+                            self._edge_box_output(sink_pin_bit, sink_pin_bit,
+                                    # tail_type, tail_id,             lower_pos, higher_pos, orientation
+                                    (type_,      sink_data["id"] + i, lower,     higher,     ori))
                     elif type_ == "IPIN":
                         # 1. get the pin
                         sink_pin = NetUtils._dereference(context.top, sink_node, coalesced = True)
+                        # 2. prepare the tail package
+                        chan, ori, _ = self._analyze_blockpin(sink_pin)
                         iopin_id = sink_data["id"]
                         srcsink_id = sink_data["srcsink_id"]
                         equivalent = sink_data.get("equivalent", False)
-                        # 2. emit edges
+                        # 3. emit edges
                         for i, sink_pin_bit in enumerate(sink_pin):
-                            # 2.1 IPIN -> SINK
+                            # 3.1 IPIN -> SINK
                             self._edge(iopin_id + i, srcsink_id + (0 if equivalent else i), switch_id = 0)
-                            # 2.2 ??? -> IPIN
-                            self._edge_box_input(sink_pin_bit, sink_pin_bit, iopin_id + i)
+                            # 3.2 ??? -> IPIN
+                            self._edge_box_input(sink_pin_bit, sink_pin_bit,
+                                    # tail_type, tail_id,      chan_pos, dimension
+                                    (type_,      iopin_id + i, chan,     ori.dimension.perpendicular))
                     elif type_ == "OPIN":
                         # 1. get the pin
                         sink_pin = NetUtils._dereference(context.top, sink_node, coalesced = True)

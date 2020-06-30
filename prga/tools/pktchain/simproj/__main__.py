@@ -47,8 +47,8 @@ _logger.info("Assigning IO ...")
 io_assignments = iobind(context.summary, model_top, 
         parse_io_bindings(args.io) if args.io is not None else {})
 ostream = open('io.pads', 'w')
-for name, (x, y, subblock) in iteritems(io_assignments):
-    ostream.write("{} {} {} {}\n".format(name, x, y, subblock))
+for name, (x, y, subtile) in iteritems(io_assignments):
+    ostream.write("{} {} {} {}\n".format(name, x, y, subtile))
 
 _logger.info("Pickling architecture context summary ...")
 context.pickle_summary(args.summary)

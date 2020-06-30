@@ -62,14 +62,14 @@ class PktchainTbgen(object):
             tb_top (`VerilogModule`): Top-level module of the testbench of the behavioral model
             behav_top (`VerilogModule`): Top-level module of the behavioral model
             io_bindings (:obj:`Mapping` [:obj:`str` ], :obj:`tuple` [:obj:`int`, :obj:`int`, :obj:`int`]): Mapping from
-               port name in the behavioral model to \(x, y, subblock\)
+               port name in the behavioral model to \(x, y, subtile\)
         """
         fpga_top = context.database[ModuleView.logical, context.top.key]
 
         # extract io bindings
         impl_info = {'name': fpga_top.name}
         ports = impl_info['ports'] = {}
-        for name, (x, y, subblock) in iteritems(io_bindings):
+        for name, (x, y, subtile) in iteritems(io_bindings):
             direction = PortDirection.input_
             if name.startswith('out:'):
                 name = name[4:]
@@ -93,12 +93,12 @@ class PktchainTbgen(object):
             elif index is not None and (behav_port.low is None or index < behav_port.low or index >= behav_port.high):
                 raise PRGAAPIError("Bit index '{}' is not in port '{}'"
                         .format(index, port_name))
-                # 2. is (x, y, subblock) an IO block?
+                # 2. is (x, y, subtile) an IO block?
             port = fpga_top.ports.get(
-                    (direction.case(IOType.ipin, IOType.opin), (x, y), subblock) )
+                    (direction.case(IOType.ipin, IOType.opin), (x, y), subtile) )
             if port is None:
                 raise PRGAAPIError("No {} IO port found at position ({}, {}, {})"
-                        .format(direction, x, y, subblock))
+                        .format(direction, x, y, subtile))
                 # 3. bind
             behav_port = copy(behav_port)
             behav_port.name = name

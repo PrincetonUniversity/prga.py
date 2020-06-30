@@ -4,7 +4,6 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .protocol import PktchainProtocol
-from .lib import Pktchain
 from ...core.common import Orientation, IOType, ModuleView
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
@@ -28,11 +27,11 @@ class PktchainSystem(object):
 
     @classmethod
     def _pop_available_io(cls, available, io_type, prev, scan_direction, fabric, force_change_tile = False):
-        (x, y), subblock = prev
+        (x, y), subtile = prev
         if not force_change_tile:
-            subblock += 1
+            subtile += 1
         else:
-            subblock = 0
+            subtile = 0
             if scan_direction.is_north:
                 y += 1
             elif scan_direction.is_south:
@@ -42,12 +41,12 @@ class PktchainSystem(object):
             else:
                 x -= 1
         while 0 <= x < fabric.width and 0 <= y < fabric.height:
-            io = (x, y), subblock
+            io = (x, y), subtile
             if io in available[io_type]:
                 available[io_type].remove( io )
                 available[io_type.opposite].discard( io )
                 return io
-            subblock = 0
+            subtile = 0
             if scan_direction.is_north:
                 y += 1
             elif scan_direction.is_south:
@@ -59,6 +58,41 @@ class PktchainSystem(object):
         raise PRGAAPIError("Ran out of IOs")
 
     @classmethod
+    def _create_axilite_intf(cls, module, prefix, addr_width, data_bytes, is_master = False):
+        ports = {}
+        # aliases
+        p, mcp = prefix, ModuleUtils.create_port
+        # master output, master input
+        mo, mi = ((PortDirection.output, PortDirection.input_) if is_master else
+                (PortDirection.input_, PortDirection.output))
+        # write address channel
+        ports["AWVALID"]  = mcp(module,  p+"_AWVALID", 1,              mo)
+        ports["AWREADY"]  = mcp(module,  p+"_AWREADY", 1,              mi)
+        ports["AWADDR"]   = mcp(module,  p+"_AWADDR",  addr_width,     mo)
+        ports["AWPROT"]   = mcp(module,  p+"_AWPROT",  3,              mo)
+        # write data channel
+        ports["WVALID"]   = mcp(module,  p+"_WVALID",  1,              mo)
+        ports["WREADY"]   = mcp(module,  p+"_WREADY",  1,              mi)
+        ports["WDATA"]    = mcp(module,  p+"_WDATA",   data_bytes * 8, mo)
+        ports["WSTRB"]    = mcp(module,  p+"_WSTRB",   data_bytes,     mo)
+        # write response channel
+        ports["BVALID"]   = mcp(module,  p+"_BVALID",  1,              mi)
+        ports["BREADY"]   = mcp(module,  p+"_BREADY",  1,              mo)
+        ports["BRESP"]    = mcp(module,  p+"_BRESP",   2,              mi)
+        # read address channel
+        ports["ARVALID"]  = mcp(module,  p+"_ARVALID", 1,              mo)
+        ports["ARREADY"]  = mcp(module,  p+"_ARREADY", 1,              mi)
+        ports["ARADDR"]   = mcp(module,  p+"_ARADDR",  addr_width,     mo)
+        ports["ARPROT"]   = mcp(module,  p+"_ARPROT",  3,              mo)
+        # read response channel
+        ports["RVALID"]   = mcp(module,  p+"_RVALID",  1,              mi)
+        ports["RREADY"]   = mcp(module,  p+"_RREADY",  1,              mo)
+        ports["RDATA"]    = mcp(module,  p+"_RDATA",   data_bytes * 8, mi)
+        ports["RRESP"]    = mcp(module,  p+"_RRESP",   2,              mi)
+        # return created ports
+        return ports
+
+    @classmethod
     def iobind_user_axilite(cls, context, start_pos = None, scan_direction = Orientation.north, start_subbblock = 0,
             *, addr_width = None, data_bytes = None, leftovers = False):
         """Bind AXI4Lite user interface pins to the fabric.
@@ -67,7 +101,7 @@ class PktchainSystem(object):
             context (`Context`):
             start_pos (:obj:`tuple` [:obj:`int`, :obj:`int`]): Starting position
             scan_direction (`Orientation`): Search for IO blocks in the given orientation
-            start_subbblock (:obj:`int`): Starting subblock
+            start_subbblock (:obj:`int`): Starting subtile
 
         Keyword Args:
             addr_width (:obj:`int`): Address port width
@@ -83,14 +117,14 @@ class PktchainSystem(object):
         assignments = {}
         # 1. get all IOs
         available = {IOType.ipin: set(), IOType.opin: set()}
-        for iotype, (x, y), subblock in context.summary.ios:
-            available[iotype].add( ((x, y), subblock) )
+        for iotype, (x, y), subtile in context.summary.ios:
+            available[iotype].add( ((x, y), subtile) )
         # 2. bind clk
         for g in itervalues(context.globals):
             if g.is_clock:
-                assignments["ACLK"] = [(IOType.ipin, g.bound_to_position, g.bound_to_subblock, )]
-                available[IOType.ipin].discard( (g.bound_to_position, g.bound_to_subblock) )
-                available[IOType.opin].discard( (g.bound_to_position, g.bound_to_subblock) )
+                assignments["ACLK"] = [(IOType.ipin, g.bound_to_position, g.bound_to_subtile, )]
+                available[IOType.ipin].discard( (g.bound_to_position, g.bound_to_subtile) )
+                available[IOType.opin].discard( (g.bound_to_position, g.bound_to_subtile) )
                 if start_pos is None:
                     _, start_pos, start_subbblock = assignments["ACLK"][0]
                 break
@@ -129,7 +163,7 @@ class PktchainSystem(object):
 
     @classmethod
     def build_system_axilite(cls, context, expose_gpio = False,
-            *, name = "system", io_start_pos = None, io_start_subblock = 0, io_scan_direction = Orientation.north):
+            *, name = "system", io_start_pos = None, io_start_subtile = 0, io_scan_direction = Orientation.north):
         """Create the system top wrapping the reconfigurable fabric. Assign and connect user pins.
 
         Args:
@@ -146,7 +180,7 @@ class PktchainSystem(object):
         # create ports
         clk = ModuleUtils.create_port(system, "clk", 1, PortDirection.input_, is_clock = True)
         rst = ModuleUtils.create_port(system, "rst", 1, PortDirection.input_)
-        slave = Pktchain._create_axilite_intf(system, "m",
+        slave = cls._create_axilite_intf(system, "m",
                 PktchainProtocol.AXILiteController.ADDR_WIDTH,
                 2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3))
         # create instances
@@ -154,7 +188,7 @@ class PktchainSystem(object):
         intf = ModuleUtils.instantiate(system, context.database[ModuleView.logical, "pktchain_axilite_intf"],
                 "i_intf")
         # assign IO pins
-        assignments, gpio = cls.iobind_user_axilite(context, io_start_pos, io_scan_direction, io_start_subblock,
+        assignments, gpio = cls.iobind_user_axilite(context, io_start_pos, io_scan_direction, io_start_subtile,
                 leftovers = True)
         summary = context.summary.pktchain.setdefault("intf", {})
         summary["type"] = "axilite"

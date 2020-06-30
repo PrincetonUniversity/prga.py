@@ -4,8 +4,9 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .protocol import PktchainProtocol
+from .system import PktchainSystem
 from ..scanchain.lib import Scanchain, ScanchainSwitchDatabase, ScanchainFASMDelegate
-from ...core.common import ModuleClass, ModuleView, NetClass
+from ...core.common import ModuleClass, ModuleView, NetClass, Orientation
 from ...core.context import Context
 from ...netlist.net.common import PortDirection, Const
 from ...netlist.net.util import NetUtils
@@ -120,41 +121,6 @@ class Pktchain(Scanchain):
             ports["phit_o"] = ModuleUtils.create_port(module, cls._phit_port_name("phit_o", chain), phit_width,
                     PortDirection.output, net_class = NetClass.cfg)
             return ports
-
-    @classmethod
-    def _create_axilite_intf(cls, module, prefix, addr_width, data_bytes, is_master = False):
-        ports = {}
-        # aliases
-        p, mcp = prefix, ModuleUtils.create_port
-        # master output, master input
-        mo, mi = ((PortDirection.output, PortDirection.input_) if is_master else
-                (PortDirection.input_, PortDirection.output))
-        # write address channel
-        ports["AWVALID"]  = mcp(module,  p+"_AWVALID", 1,              mo)
-        ports["AWREADY"]  = mcp(module,  p+"_AWREADY", 1,              mi)
-        ports["AWADDR"]   = mcp(module,  p+"_AWADDR",  addr_width,     mo)
-        ports["AWPROT"]   = mcp(module,  p+"_AWPROT",  3,              mo)
-        # write data channel
-        ports["WVALID"]   = mcp(module,  p+"_WVALID",  1,              mo)
-        ports["WREADY"]   = mcp(module,  p+"_WREADY",  1,              mi)
-        ports["WDATA"]    = mcp(module,  p+"_WDATA",   data_bytes * 8, mo)
-        ports["WSTRB"]    = mcp(module,  p+"_WSTRB",   data_bytes,     mo)
-        # write response channel
-        ports["BVALID"]   = mcp(module,  p+"_BVALID",  1,              mi)
-        ports["BREADY"]   = mcp(module,  p+"_BREADY",  1,              mo)
-        ports["BRESP"]    = mcp(module,  p+"_BRESP",   2,              mi)
-        # read address channel
-        ports["ARVALID"]  = mcp(module,  p+"_ARVALID", 1,              mo)
-        ports["ARREADY"]  = mcp(module,  p+"_ARREADY", 1,              mi)
-        ports["ARADDR"]   = mcp(module,  p+"_ARADDR",  addr_width,     mo)
-        ports["ARPROT"]   = mcp(module,  p+"_ARPROT",  3,              mo)
-        # read response channel
-        ports["RVALID"]   = mcp(module,  p+"_RVALID",  1,              mi)
-        ports["RREADY"]   = mcp(module,  p+"_RREADY",  1,              mo)
-        ports["RDATA"]    = mcp(module,  p+"_RDATA",   data_bytes * 8, mi)
-        ports["RRESP"]    = mcp(module,  p+"_RRESP",   2,              mi)
-        # return created ports
-        return ports
 
     @classmethod
     def _build_pktchain_backbone(cls, context, xpos = None, ypos = None, *, top = "backbone"):
@@ -420,9 +386,9 @@ class Pktchain(Scanchain):
             mcp(mod, "cfg_phit_i_full",     1,              PortDirection.output),
             mcp(mod, "cfg_phit_i_wr",       1,              PortDirection.input_),
             mcp(mod, "cfg_phit_i",          phit_width,     PortDirection.input_),
-            cls._create_axilite_intf(mod, "m", PktchainProtocol.AXILiteController.ADDR_WIDTH,
+            PktchainSystem._create_axilite_intf(mod, "m", PktchainProtocol.AXILiteController.ADDR_WIDTH,
                     2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3))
-            cls._create_axilite_intf(mod, "u", PktchainProtocol.AXILiteController.ADDR_WIDTH,
+            PktchainSystem._create_axilite_intf(mod, "u", PktchainProtocol.AXILiteController.ADDR_WIDTH,
                     2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3), is_master = True)
             # instances
             mit(mod, context.database[ModuleView.logical, "pktchain_axilite_intf_fe"], "i_fe")
@@ -512,6 +478,8 @@ class Pktchain(Scanchain):
                 phit_o_wr = router.pins["phit_o_wr"],
                 phit_o_full = router.pins["phit_o_full"])
         # update chain settings
+        _logger.debug("Wrapping up leaf chains ({} bits) as the {}-th router in secondary chain No. {} ({})"
+                .format(scanchain_bitoffset, len(secondary_chain) + 1, chain, module))
         secondary_chain.append( scanchain_bitoffset )
         scanchain_cfg_nets.clear()
         return 0
@@ -691,10 +659,15 @@ class Pktchain(Scanchain):
         for instance in tuple(iter_instances(module)):
             # control
             if instance is None:
+                _logger.debug("Chain break (None) yielded")
                 if none_once:
                     if _not_top:
+                        _logger.debug("Exposing secondary chain No. {} ({} routers, {})"
+                                .format(len(chains), len(current_chain), module))
                         cls._expose_pktchain_secondary_chain(module, secondary_cfg_nets, len(chains))
                     else:
+                        _logger.debug("Attaching secondary chain No. {} ({} routers) to the primary backbone"
+                                .format(len(chains), len(current_chain)))
                         dispatcher, gatherer = cls._attach_pktchain_secondary_chain(context, module,
                                 dispatcher, gatherer, secondary_cfg_nets, len(chains))
                     chains.append( tuple(iter(current_chain)) )
@@ -726,6 +699,10 @@ class Pktchain(Scanchain):
                 if (chainoffsets := getattr(instance, "cfg_chainoffsets", None)) is None:
                     chainoffsets = instance.cfg_chainoffsets = {}
                 chainoffsets[subchain] = len(chains), len(current_chain)
+                _logger.debug(("Adding {} routers ({} bits, respectively) from {} to secondary chain "
+                    "No. {} ({} routers after, {})")
+                    .format(len(subchain_map[subchain]), ', '.join(map(str, subchain_map[subchain])), instance,
+                        len(chains), len(current_chain) + len(subchain_map[subchain]), module))
                 current_chain.extend( subchain_map[subchain] )
                 # connect ports
                 cls._connect_pktchain_subchain(module, instance, subchain, secondary_cfg_nets)
@@ -740,8 +717,12 @@ class Pktchain(Scanchain):
         # if we have a secondary chain, expose it and update our main chain map
         if secondary_cfg_nets:
             if _not_top:
+                _logger.debug("Exposing secondary chain No. {} ({} routers, {})"
+                        .format(len(chains), len(current_chain), module))
                 cls._expose_pktchain_secondary_chain(module, secondary_cfg_nets, len(chains))
             else:
+                _logger.debug("Attaching secondary chain No. {} ({} routers) to the primary backbone"
+                        .format(len(chains), len(current_chain)))
                 dispatcher, gatherer = cls._attach_pktchain_secondary_chain(context, module,
                         dispatcher, gatherer, secondary_cfg_nets, len(chains))
             chains.append( tuple(iter(current_chain)) )
@@ -762,6 +743,8 @@ class Pktchain(Scanchain):
                     raise PRGAInternalError("Unbalanced chain. Col. {} has {} tiles but col. {} has {}"
                             .format(0, y_tiles, i, len(chain)))
             fabric["y_tiles"] = y_tiles
+            _logger.info("Pktchain injected: {} nodes on primary backbone, {} nodes per secondary chain"
+                    .format(len(chains), y_tiles))
 
     @classmethod
     def annotate_user_view(cls, context, user_module = None, *, _annotated = None):
@@ -799,10 +782,27 @@ class Pktchain(Scanchain):
             super(Pktchain, cls).annotate_user_view(context, module, _annotated = _annotated)
 
     class InjectConfigCircuitry(Object, AbstractPass):
-        """Automatically inject configuration circuitry."""
+        """Automatically inject configuration circuitry.
+        
+        Keyword Args:
+            iter_instances (:obj:`Callable` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
+                the instances in a module. In addition, when the module is an array, ``None`` can be yielded to
+                control pktchain router injection. When one ``None`` is yielded, a pktchain router is injected for
+                tiles/switch boxes that are not already controlled by another pktchain router. When two ``None`` are
+                yielded consecutively, the current secondary pktchain is terminated and attached to the primary
+                pktchain.
+        """
 
-        def run(self, context):
-            Pktchain.complete_pktchain(context)
+        __slots__ = ["iter_instances"]
+
+        def __init__(self, *, iter_instances = None):
+            self.iter_instances = iter_instances
+
+        def run(self, context, renderer = None):
+            kwargs = {}
+            if callable(self.iter_instances):
+                kwargs["iter_instances"] = self.iter_instances
+            Pktchain.complete_pktchain(context, **kwargs)
             Pktchain.annotate_user_view(context)
 
         @property
@@ -816,3 +816,85 @@ class Pktchain(Scanchain):
         @property
         def passes_after_self(self):
             return ("rtl", )
+
+    class BuildAXILiteSystem(Object, AbstractPass):
+        """Create a system wrapping the fabric with a bitstream controller. 
+
+        Args:
+            expose_gpio (:obj:`bool`): If set to True, pins of the fabric that are not used in the user AXI4-Lite
+                interface are exposed at the top level
+
+        Keyword Args:
+            name (:obj:`str`): Name of the system top module. ``"system"`` by default
+            io_start_pos (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Starting position when searching IO pins
+            io_start_subtile (:obj:`int`): Starting subtile when searching IO pins
+            io_scan_direction (`Orientation`): Starting direction when searching IO pins
+
+        This pass wraps the reconfigurable fabric into a system with AXILite interface. The system contains a
+        bitstream controller and a user protection layer which times out when the fabric does not follow the AXILite
+        protocol. IO pins are automatically assigned for the AXI ports. Use ``io_start_pos``, ``io_start_subtile`` and
+        ``io_scan_direction`` to fine-tune IO assignment.
+        """
+
+        __slots__ = ["expose_gpio", "name", "io_start_pos", "io_start_subtile", "io_scan_direction"]
+
+        def __init__(self, expose_gpio = False, *,
+                name = None, io_start_pos = None, io_start_subtile = 0, io_scan_direction = Orientation.north):
+            self.expose_gpio = expose_gpio
+            self.name = name
+            self.io_start_pos = io_start_pos
+            self.io_start_subtile = io_start_subtile
+            self.io_scan_direction = io_scan_direction
+
+        def run(self, context, renderer = None):
+            PktchainSystem.build_system_axilite(context, self.expose_gpio,
+                    name = self.name, io_start_pos = self.io_start_pos, io_start_subtile = self.io_start_subtile,
+                    io_scan_direction = self.io_scan_direction)
+
+        @property
+        def key(self):
+            return "system.pktchain.build"
+
+        @property
+        def dependences(self):
+            return ("vpr", )
+
+        @property
+        def passes_after_self(self):
+            return ("rtl", )
+
+    class GenerateAXILiteIOConstraints(Object, AbstractPass):
+        """Generate the IO constraints file for AXILite system.
+
+        Args:
+            io_constraints_output_file (:obj:`str` or file-like object): Output file for IO constraints
+
+        Keyword Args:
+            addr_width (:obj:`int`): Width of the AXILite address ports
+            data_bytes (:obj:`int`): Width of the AXILite data ports (in 8-bit bytes)
+        """
+
+        __slots__ = ["io_constraints_output_file", "addr_width", "data_bytes"]
+
+        def __init__(self, io_constraints_output_file, *, addr_width = 8, data_bytes = 4):
+            self.io_constraints_output_file = io_constraints_output_file
+            self.addr_width = addr_width
+            self.data_bytes = data_bytes
+
+        def run(self, context, renderer = None):
+            if renderer is None:
+                raise PRGAAPIError("File renderer is required for the Pktchain System Building pass")
+            PktchainSystem.generate_axilite_io_assignment_constraint(context, renderer, 
+                    self.io_constraints_output_file, addr_width = self.addr_width, data_bytes = self.data_bytes)
+
+        @property
+        def key(self):
+            return "system.pktchain.io"
+
+        @property
+        def dependences(self):
+            return ("system.pktchain.build", )
+
+        @property
+        def is_readonly_pass(self):
+            return True
