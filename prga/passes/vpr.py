@@ -47,7 +47,7 @@ class FASMDelegate(Object):
             source: Source net
             sink: Sink net
             instance (`Instance`): Hierarchical instance in the logic/io block. ``source`` and ``sink`` are
-                both immediate child-nets of this instance if ``instance`` is not None.
+                both immediate child-nets of this instance if ``instance`` is not ``None``.
         
         Returns:
             :obj:`Sequence` [:obj:`str` ]: "fasm_mux" features
@@ -161,11 +161,11 @@ class TimingDelegate(Object):
             source: Source net
             sink: Sink net
             instance (`Instance`): Hierarchical instance in the logic/io block. ``source`` and ``sink`` are
-                both immediate child-nets of this instance if ``instance`` is not None.
+                both immediate child-nets of this instance if ``instance`` is not ``None``.
         
         Returns:
-            :obj:`float`: Max delay. Return `None` if not applicable 
-            :obj:`float`: Min delay. Return `None` if not applicable
+            :obj:`float`: Max delay. Return ``None`` if not applicable 
+            :obj:`float`: Min delay. Return ``None`` if not applicable
         """
         return None, None
 
@@ -178,7 +178,7 @@ class TimingDelegate(Object):
                 endpoint of this instance.
         
         Returns:
-            :obj:`float`: Setup time. Return `None` if not applicable
+            :obj:`float`: Setup time. Return ``None`` if not applicable
         """
         return 1e-11
 
@@ -191,7 +191,7 @@ class TimingDelegate(Object):
                 endpoint of this instance.
         
         Returns:
-            :obj:`float`: Hold time. Return `None` if not applicable
+            :obj:`float`: Hold time. Return ``None`` if not applicable
         """
         return None
 
@@ -204,8 +204,8 @@ class TimingDelegate(Object):
                 startpoint of this instance.
         
         Returns:
-            :obj:`float`: Max delay. Return `None` if not applicable 
-            :obj:`float`: Min delay. Return `None` if not applicable
+            :obj:`float`: Max delay. Return ``None`` if not applicable 
+            :obj:`float`: Min delay. Return ``None`` if not applicable
         """
         return 1e-11, None
 
@@ -216,11 +216,11 @@ class TimingDelegate(Object):
             source: Source net
             sink: Sink net
             instance (`Instance`): Hierarchical instance in the logic/io block. ``source`` and ``sink`` are
-                both immediate child-nets of this instance if ``instance`` is not None.
+                both immediate child-nets of this instance if ``instance`` is not ``None``.
         
         Returns:
-            :obj:`float`: Max delay. Return `None` if not applicable 
-            :obj:`float`: Min delay. Return `None` if not applicable
+            :obj:`float`: Max delay. Return ``None`` if not applicable 
+            :obj:`float`: Min delay. Return ``None`` if not applicable
         """
         return 1e-11, None
 
