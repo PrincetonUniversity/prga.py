@@ -6,7 +6,7 @@ from prga.compatible import *
 from .base import AbstractPass
 from ..core.common import ModuleView
 from ..util import Object, uno
-from ..exception import PRGAInternalError, PRGAAPIError
+from ..exception import PRGAInternalError
 
 import os
 
@@ -19,6 +19,7 @@ class VerilogCollection(Object, AbstractPass):
     """Collecting Verilog rendering tasks.
     
     Args:
+        renderer (`FileRenderer`): File generation tasks are added to the specified renderer
         src_output_dir (:obj:`str`): Verilog source files are generated in the specified directory. Default value is
             the current working directory.
 
@@ -29,7 +30,8 @@ class VerilogCollection(Object, AbstractPass):
     """
 
     __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'view', 'visited']
-    def __init__(self, src_output_dir = ".", header_output_dir = None, view = ModuleView.logical):
+    def __init__(self, renderer, src_output_dir = ".", header_output_dir = None, view = ModuleView.logical):
+        self.renderer = renderer
         self.src_output_dir = src_output_dir
         self.header_output_dir = os.path.abspath(uno(header_output_dir, os.path.join(src_output_dir, "include")))
         self.view = view
@@ -64,12 +66,10 @@ class VerilogCollection(Object, AbstractPass):
     def is_readonly_pass(self):
         return True
 
-    def run(self, context, renderer = None):
-        if renderer is None:
-            raise PRGAAPIError("File renderer is required for the Verilog Collection pass")
-        self.renderer = renderer
-        if (top := context.system_top) is None:
-            raise PRGAAPIError("System top module is not set")
+    def run(self, context):
+        top = context.system_top
+        if top is None:
+            raise PRGAInternalError("System top module is not set")
         if not hasattr(context.summary, "rtl"):
             context.summary.rtl = {}
         self.visited = context.summary.rtl["sources"] = {}

@@ -253,7 +253,9 @@ class Scanchain(object):
                     allow_multisource = True,
                     module_class = ModuleClass.primitive,
                     cfg_bitcount = 2 ** i,
-                    verilog_template = "lut.tmpl.v")
+                    verilog_template = "lut.tmpl.v",
+                    test_makefile_template = "test_lut.tmpl",
+                    test_python_template = "test_lut.tmpl.py" )
             # user ports
             in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_, net_class = NetClass.user)
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output, net_class = NetClass.user)
@@ -449,7 +451,9 @@ class Scanchain(object):
             # logical view
             if "fle6" not in dont_add_logical_primitive:
                 fle6 = fle6.build_logical_counterpart(not_cell = True, allow_multisource = True,
-                        cfg_bitcount = 69, verilog_template = "fle6.tmpl.v")
+                        cfg_bitcount = 69, verilog_template = "fle6.tmpl.v",
+                        test_makefile_template = "test_fle6.tmpl",
+                        test_python_template = "test_fle6.tmpl.py")
                 ModuleUtils.instantiate(fle6.module, cls.get_cfg_data_cell(context, 69), "i_cfg_data")
 
                 # combinational paths
