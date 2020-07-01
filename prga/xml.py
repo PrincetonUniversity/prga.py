@@ -1,5 +1,7 @@
 # -*- encoding: ascii -*-
 # Python 2 and 3 compatible
+"""XML streaming generation."""
+
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 

@@ -1,0 +1,44 @@
+read_library:
+    {%- for lib in libraries %}
+    read_verilog -lib {{ lib }}
+    {%- endfor %}
+
+coarse:
+    synth -flatten -run coarse
+
+memory:
+    {%- for memmap in memory_techmaps %}
+        {%- if memmap.rule %}
+    memory_bram -rules {{ memmap.rule }}
+        {%- endif %}
+        {%- for command in memmap.premap_commands %}
+    {{ command }}
+        {%- endfor %}
+        {%- if memmap.techmap %}
+    techmap -map {{ memmap.techmap }}
+        {%- endif %}
+    {%- endfor %}
+    opt -full
+    memory_map
+
+techmap:
+    {%- for entry in techmaps %}
+    {%- for command in entry.premap_commands %}
+    {{ command }}
+    {%- endfor %}
+        {%- if entry.techmap %}
+    techmap -map {{ entry.techmap }}
+        {%- endif %}
+    {%- endfor %}
+    opt -full
+
+luts:
+    techmap
+    {%- set comma = joiner(",") %}
+    abc9 -luts {% for size in lut_sizes|sort %}{{ comma() }}{{ size }}:{{ size }}{% endfor %}
+    opt -fast -full
+    clean
+
+check:
+    stat
+    check -noinit

@@ -5,7 +5,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-__all__ = ["PRGAInternalError", "PRGAAPIError"]
+__all__ = ["PRGAInternalError", "PRGAAPIError", "PRGATypeError", "PRGAIndexError"]
 
 class PRGAInternalError(RuntimeError):
     '''Critical internal error within PRGA flow.
@@ -21,4 +21,20 @@ class PRGAAPIError(PRGAInternalError):
 
     This error is thrown when the API is not used correctly.
     """
+    pass
+
+class PRGATypeError(TypeError):
+    """A PRGA-specific type error."""
+
+    def __init__(self, arg, type_, msg = None):
+        self.arg = arg
+        self.type_ = type_
+        self.msg = msg
+
+    def __str__(self):
+        return "PRGATypeError: Invalid argument '{}', expecting {}.{}".format(self.arg, self.type_,
+                '' if self.msg is None else (' ' + self.msg))
+
+class PRGAIndexError(IndexError):
+    """A PRGA-specific index error."""
     pass
