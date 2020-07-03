@@ -23,11 +23,11 @@ def simple_test(dut):
     clk = dut.cfg_clk
     # Signals
     input = dut.{{NetUtils.get_source(module.pins['in']).name}}
-    out = dut.{{module.pins['out']._model.name}}
+    out = dut.{{ module.name }}.{{ module.pins['out'].model.name }}
     cfg_e = dut.{{NetUtils.get_source(module.pins['cfg_e']).name}}
     cfg_we = dut.{{NetUtils.get_source(module.pins['cfg_we']).name}}
     cfg_i = dut.{{NetUtils.get_source(module.pins['cfg_i']).name}}
-    cfg_o = dut.{{module.pins['cfg_o']._model.name}}
+    cfg_o = dut.{{ module.name }}.{{ module.pins['cfg_o'].model.name }}
     
     # No. of input bits
     # n_input = input()
@@ -66,11 +66,11 @@ def changing_config(dut):
 
     # Signals
     input = dut.{{NetUtils.get_source(module.pins['in']).name}}
-    out = dut.{{module.pins['out']._model.name}}
+    out = dut.{{ module.name }}.{{ module.pins['out'].model.name }}
     cfg_e = dut.{{NetUtils.get_source(module.pins['cfg_e']).name}}
     cfg_we = dut.{{NetUtils.get_source(module.pins['cfg_we']).name}}
     cfg_i = dut.{{NetUtils.get_source(module.pins['cfg_i']).name}}
-    cfg_o = dut.{{module.pins['cfg_o']._model.name}}
+    cfg_o = dut.{{ module.name }}.{{ module.pins['cfg_o'].model.name }}
 
     # No. of input bits
     n_input = int(math.log({{module.model.cfg_bitcount}},2))

@@ -277,7 +277,9 @@ class Scanchain(object):
                     view = ModuleView.logical,
                     is_cell = True,
                     module_class = ModuleClass.primitive,
-                    verilog_template = "flipflop.tmpl.v")
+                    verilog_template = "flipflop.tmpl.v",
+                    test_makefile_template = "test_lut.tmpl",
+                    test_python_template = "test_flipflop.tmpl.py")
             clk = ModuleUtils.create_port(flipflop, 'clk', 1, PortDirection.input_,
                     is_clock = True, net_class = NetClass.user)
             D = ModuleUtils.create_port(flipflop, 'D', 1, PortDirection.input_,

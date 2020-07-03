@@ -41,13 +41,13 @@ class Tester(Object, AbstractPass):
         if not path.exists(self.tests_dir):
             os.mkdir(self.tests_dir)
 
-    def get_instance_file(module):
+    def get_instance_file(self,module):
 
         instance_files = []
 
         for temp in itervalues(module.instances):
             instance_files.append(path.join(self.rtl_dir,temp.model.name+".v"))
-            instance_files.append(get_instance_file(temp.model))
+            instance_files+= self.get_instance_file(temp.model)
         
         return instance_files
 
@@ -81,18 +81,22 @@ class Tester(Object, AbstractPass):
             if instance.model.module_class.is_primitive:
                 # print(instance)
                 # print(instance.name)
+
+                # for x in itervalues(instance.pins):
+                #     print(x)
+                #     try:
+                #         # if x.is_source:
+                #         print(NetUtils.get_source(x))
+                #     except:
+                #         print("Doesnt have a source")
+                #     print()
+
+
                 if 'lut' in instance.name:                    
-                    print("It is LUT")
                     if not path.exists(path.join(self.tests_dir,"test_" + module.name)):
                         os.mkdir(path.join(self.tests_dir,"test_" + module.name))
 
-                    # instance_files = []
-
-                    # for temp in itervalues(module.instances):
-                    #     instance_files.append(path.join(self.rtl_dir,temp.model.name+".v"))
-                    
-                    instance_files = get_instance_file(module)
-
+                    instance_files = self.get_instance_file(module)
                     setattr(module,"files",' '.join(instance_files))
                     
                     setattr(module,"verilog_file",path.join(self.rtl_dir,module.name+".v"))
