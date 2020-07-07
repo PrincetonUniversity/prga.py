@@ -301,6 +301,7 @@ class ModuleClass(Enum):
     # logical-only modules
     switch = 9              #: switch
     cfg = 10                #: configuration modules
+    aux = 11                #: auxiliary modules
 
     @property
     def is_block(self):

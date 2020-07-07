@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from ..core.common import ModuleView
+from ..core.common import ModuleView, ModuleClass
 from ..netlist.net.util import NetUtils
 from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
@@ -85,10 +85,12 @@ class FileRenderer(Object):
                 "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo"):
             context._database[ModuleView.logical, d] = Module(d,
                     view = ModuleView.logical,
+                    module_class = ModuleClass.aux,
                     verilog_template = "stdlib/{}.v".format(d))
         for d in ("prga_ram_1r1w_dc", "prga_async_fifo", "prga_async_tokenfifo", "prga_clkdiv"):
             context._database[ModuleView.logical, d] = Module(d,
                     view = ModuleView.logical,
+                    module_class = ModuleClass.aux,
                     verilog_template = "cdclib/{}.v".format(d))
         ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo"],
                 context._database[ModuleView.logical, "prga_ram_1r1w"], "ram")
