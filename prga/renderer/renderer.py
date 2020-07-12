@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from ..core.common import ModuleView
+from ..core.common import ModuleView, ModuleClass
 from ..netlist.net.util import NetUtils
 from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
@@ -86,10 +86,12 @@ class FileRenderer(Object):
                 "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo"):
             context._database[ModuleView.logical, d] = Module(d,
                     view = ModuleView.logical,
+                    module_class = ModuleClass.aux,
                     verilog_template = "stdlib/{}.v".format(d))
         for d in ("prga_ram_1r1w_dc", "prga_async_fifo", "prga_async_tokenfifo", "prga_clkdiv"):
             context._database[ModuleView.logical, d] = Module(d,
                     view = ModuleView.logical,
+                    module_class = ModuleClass.aux,
                     verilog_template = "cdclib/{}.v".format(d))
         ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo"],
                 context._database[ModuleView.logical, "prga_ram_1r1w"], "ram")
@@ -126,42 +128,41 @@ class FileRenderer(Object):
         self.tasks.setdefault(file_, []).append( (template, parameters) )
 
 
-    def add_makefile(self, module, file_, instance_files, template = 'test_base.tmpl', **kwargs):
+    def add_makefile(self, instance, file_, template = 'test_base.tmpl', **kwargs):
         """Add a Verilog rendering task.
 
         Args:
-            module (`Abstractg`): The module to be rendered
+            instance (`Abstractg`): The instance to be rendered
             file_ (:obj:`str` of file-like object): The output file
             template (:obj:`str`): The template to be used
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
         parameters = {
-                "module": module,
+                "instance": instance,
                 "source2verilog": self._source2verilog,
                 'itervalues': itervalues,
-                'iteritems': iteritems,
-                'instance_files' : instance_files
+                'iteritems': iteritems
                 }
         parameters.update(kwargs)
-        self.test_tasks.setdefault(file_, []).append( (template, parameters) )
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
 
-    def add_python_test(self, module, file_, template = 'test_base.tmpl.py', **kwargs):
+    def add_python_test(self, instance, file_, template = 'test_base.tmpl.py', **kwargs):
         """Add a Verilog rendering task.
 
         Args:
-            module (`Abstractg`): The module to be rendered
+            instance (`Abstractg`): The instance to be rendered
             file_ (:obj:`str` of file-like object): The output file
             template (:obj:`str`): The template to be used
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
         parameters = {
-                "module": module,
+                "instance": instance,
                 "source2verilog": self._source2verilog,
                 'itervalues': itervalues,
                 'iteritems': iteritems,
                 }
         parameters.update(kwargs)
-        self.test_tasks.setdefault(file_, []).append( (template, parameters) )
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
 
     def add_generic(self, file_, template, **kwargs):
         """Add a generic file rendering task.
@@ -332,21 +333,3 @@ class FileRenderer(Object):
                 file_ = open(file_, OpenMode.wb)
             for template, parameters in l:
                 env.get_template(template).stream(parameters).dump(file_, encoding="ascii")
-
-    def render_test(self):
-        """Render all added files and clear the task queue."""
-        env = jj.Environment(loader = jj.FileSystemLoader(self.template_search_paths))
-        env.globals.update(NetUtils=NetUtils)
-        while self.test_tasks:
-            file_, l = self.test_tasks.popitem()
-            if isinstance(file_, basestring):
-                d = os.path.dirname(file_)
-                if d:
-                    makedirs(d)
-                file_ = open(file_, OpenMode.wb)
-            for template, parameters in l:
-                # print(template)
-                # print(file_)
-                # print()
-                env.get_template(template).stream(parameters).dump(file_, encoding="ascii")
-

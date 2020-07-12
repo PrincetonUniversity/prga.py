@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from ...core.common import NetClass, ModuleClass, ModuleView, IOType
+from ...core.common import NetClass, ModuleClass, ModuleView, IOType, PrimitiveClass
 from ...core.context import Context
 from ...netlist.net.common import PortDirection
 from ...netlist.net.util import NetUtils
@@ -253,9 +253,9 @@ class Scanchain(object):
                     allow_multisource = True,
                     module_class = ModuleClass.primitive,
                     cfg_bitcount = 2 ** i,
+                    primitive_class = PrimitiveClass.lut,
                     verilog_template = "lut.tmpl.v",
-                    test_makefile_template = "test_lut.tmpl",
-                    test_python_template = "test_lut.tmpl.py" )
+                    test_python_template = "test_instance_lut.tmpl.py" )
             # user ports
             in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_, net_class = NetClass.user)
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output, net_class = NetClass.user)
@@ -278,7 +278,7 @@ class Scanchain(object):
                     is_cell = True,
                     module_class = ModuleClass.primitive,
                     verilog_template = "flipflop.tmpl.v",
-                    test_makefile_template = "test_lut.tmpl",
+                    primitive_class = PrimitiveClass.flipflop,
                     test_python_template = "test_flipflop.tmpl.py")
             clk = ModuleUtils.create_port(flipflop, 'clk', 1, PortDirection.input_,
                     is_clock = True, net_class = NetClass.user)

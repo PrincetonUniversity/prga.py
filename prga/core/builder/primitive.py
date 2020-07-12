@@ -176,6 +176,7 @@ class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
                 view = ModuleView.logical,
                 is_cell = not not_cell,
                 module_class = ModuleClass.primitive,
+                primitive_class = user_view.primitive_class,
                 **kwargs)
         for key, port in iteritems(user_view.ports):
             assert key == port.name

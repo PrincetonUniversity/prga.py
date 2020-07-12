@@ -22,16 +22,16 @@ def simple_test(dut):
     clock_generation(dut.cfg_clk)
     clk = dut.cfg_clk
     # Signals
-    input = dut.{{NetUtils.get_source(module.pins['in']).name}}
-    out = dut.{{ module.name }}.{{ module.pins['out'].model.name }}
-    cfg_e = dut.{{NetUtils.get_source(module.pins['cfg_e']).name}}
-    cfg_we = dut.{{NetUtils.get_source(module.pins['cfg_we']).name}}
-    cfg_i = dut.{{NetUtils.get_source(module.pins['cfg_i']).name}}
-    cfg_o = dut.{{ module.name }}.{{ module.pins['cfg_o'].model.name }}
+    input = dut.{{instance.test_hierarchy}}{{NetUtils.get_source(instance.pins['in']).name}}
+    out = dut.{{instance.test_hierarchy}}{{ instance.pins['out'].model.name }}
+    cfg_e = dut.{{instance.test_hierarchy}}i_cfg_data.{{NetUtils.get_source(instance.pins['cfg_e']).name}}
+    cfg_we = dut.{{instance.test_hierarchy}}i_cfg_data.{{NetUtils.get_source(instance.pins['cfg_we']).name}}
+    cfg_i = dut.{{instance.test_hierarchy}}i_cfg_data.{{NetUtils.get_source(instance.pins['cfg_i']).name}}
+    cfg_o = dut.{{instance.test_hierarchy}}i_cfg_data.{{ instance.pins['cfg_o'].model.name }}
     
     # No. of input bits
     # n_input = input()
-    n_input = int(math.log({{module.model.cfg_bitcount}},2))
+    n_input = int(math.log({{instance.model.cfg_bitcount}},2))
 
     # Setting up LUT
     # Set the value of cfd
@@ -65,15 +65,15 @@ def changing_config(dut):
     clk = dut.cfg_clk
 
     # Signals
-    input = dut.{{NetUtils.get_source(module.pins['in']).name}}
-    out = dut.{{ module.name }}.{{ module.pins['out'].model.name }}
-    cfg_e = dut.{{NetUtils.get_source(module.pins['cfg_e']).name}}
-    cfg_we = dut.{{NetUtils.get_source(module.pins['cfg_we']).name}}
-    cfg_i = dut.{{NetUtils.get_source(module.pins['cfg_i']).name}}
-    cfg_o = dut.{{ module.name }}.{{ module.pins['cfg_o'].model.name }}
-
+    input = dut.{{instance.test_hierarchy}}{{NetUtils.get_source(instance.pins['in']).name}}
+    out = dut.{{instance.test_hierarchy}}{{ instance.pins['out'].model.name }}
+    cfg_e = dut.{{instance.test_hierarchy}}{{NetUtils.get_source(instance.pins['cfg_e']).name}}
+    cfg_we = dut.{{instance.test_hierarchy}}{{NetUtils.get_source(instance.pins['cfg_we']).name}}
+    cfg_i = dut.{{instance.test_hierarchy}}{{NetUtils.get_source(instance.pins['cfg_i']).name}}
+    cfg_o = dut.{{instance.test_hierarchy}}{{ instance.pins['cfg_o'].model.name }}
+    
     # No. of input bits
-    n_input = int(math.log({{module.model.cfg_bitcount}},2))
+    n_input = int(math.log({{instance.model.cfg_bitcount}},2))
 
     # Setting up LUT
     # Set the value of cfd
