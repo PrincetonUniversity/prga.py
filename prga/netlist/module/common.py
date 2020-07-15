@@ -241,7 +241,7 @@ def AttrDict(slots = tuple()):
     Returns:
         :obj:`MutableMapping`:
     """
-    return _get_conn_graph_factory(slots)()
+    return _get_attr_dict_factory(slots)()
 
 _conn_graph_factories = {}
 def _get_conn_graph_factory(
