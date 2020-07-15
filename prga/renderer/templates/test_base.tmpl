@@ -4,8 +4,8 @@ TOPLEVEL_LANG = verilog
 VERILOG_SOURCES = {{instance.files}}
 # TOPLEVEL is the name of the toplevel instance in the Verilog or VHDL file
 TOPLEVEL={{instance.top_level}}
-# instance is the name of the python testfile
-instance=test
+# MODULE is the name of the python testfile
+MODULE=test
 
 include $(shell cocotb-config --makefiles)/Makefile.inc
 include $(shell cocotb-config --makefiles)/Makefile.sim

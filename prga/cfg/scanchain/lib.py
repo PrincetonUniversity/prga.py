@@ -255,9 +255,9 @@ class Scanchain(object):
                     cfg_bitcount = 2 ** i,
                     primitive_class = PrimitiveClass.lut,
                     verilog_template = "lut.tmpl.v",
-                    test_python_template = "test_instance_lut.tmpl.py" )
+                    test_python_template = "test_lut.tmpl.py" )
             # user ports
-            in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_, net_class = NetClass.user)
+            in_ = ModuleUtils.create_port(lut, "bits_in", i, PortDirection.input_, net_class = NetClass.user)
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output, net_class = NetClass.user)
             NetUtils.connect(in_, out, fully = True)
 
@@ -296,14 +296,14 @@ class Scanchain(object):
         if not ({"lut5", "lut6", "fraclut6"} & dont_add_primitive):
             # user view
             fraclut6 = context.build_multimode('fraclut6', cfg_bitcount = 65)
-            fraclut6.create_input("in", 6)
+            fraclut6.create_input("bits_in", 6)
             fraclut6.create_output("o6", 1)
             fraclut6.create_output("o5", 1)
 
             if True:
                 mode = fraclut6.build_mode("lut6x1", cfg_mode_selection = (64, ))
                 inst = mode.instantiate(context.primitives["lut6"], "LUT6A", cfg_bitoffset = 0)
-                mode.connect(mode.ports["in"], inst.pins["in"])
+                mode.connect(mode.ports["bits_in"], inst.pins["bits_in"])
                 mode.connect(inst.pins["out"], mode.ports["o6"], vpr_pack_patterns = ("lut6_dff", ))
                 mode.commit()
 
@@ -312,8 +312,8 @@ class Scanchain(object):
                 insts = mode.instantiate(context.primitives["lut5"], "LUT5", 2)
                 insts[0].cfg_bitoffset = 0
                 insts[1].cfg_bitoffset = 32
-                mode.connect(mode.ports["in"][:5], insts[0].pins["in"])
-                mode.connect(mode.ports["in"][:5], insts[1].pins["in"])
+                mode.connect(mode.ports["bits_in"][:5], insts[0].pins["bits_in"])
+                mode.connect(mode.ports["bits_in"][:5], insts[1].pins["bits_in"])
                 mode.connect(insts[0].pins["out"], mode.ports["o6"], vpr_pack_patterns = ("lut5A_dff", ))
                 mode.connect(insts[1].pins["out"], mode.ports["o5"], vpr_pack_patterns = ("lut5B_dff", ))
                 mode.commit()
@@ -324,8 +324,8 @@ class Scanchain(object):
                         cfg_bitcount = 65, verilog_template = "fraclut6.tmpl.v")
 
                 # combinational paths
-                NetUtils.connect(fraclut6.ports["in"], fraclut6.ports["o6"], fully = True)
-                NetUtils.connect(fraclut6.ports["in"][:5], fraclut6.ports["o5"], fully = True)
+                NetUtils.connect(fraclut6.ports["bits_in"], fraclut6.ports["o6"], fully = True)
+                NetUtils.connect(fraclut6.ports["bits_in"][:5], fraclut6.ports["o5"], fully = True)
 
                 # configuration data
                 ModuleUtils.instantiate(fraclut6.module, cls.get_cfg_data_cell(context, 65), "i_cfg_data")
@@ -402,7 +402,7 @@ class Scanchain(object):
             # user view
             fle6 = context.build_multimode('fle6', cfg_bitcount = 69)
             fle6.create_clock("clk")
-            fle6.create_input("in", 6)
+            fle6.create_input("bits_in", 6)
             fle6.create_input("cin", 1)
             fle6.create_output("out", 2)
             fle6.create_output("cout", 1)
@@ -412,7 +412,7 @@ class Scanchain(object):
                 lut = mode.instantiate(context.primitives["lut6"], "lut", cfg_bitoffset = 0)
                 ff = mode.instantiate(context.primitives["flipflop"], "ff")
                 mode.connect(mode.ports["clk"], ff.pins["clk"])
-                mode.connect(mode.ports["in"], lut.pins["in"])
+                mode.connect(mode.ports["bits_in"], lut.pins["bits_in"])
                 mode.connect(lut.pins["out"], ff.pins["D"], vpr_pack_patterns = ["lut6_dff"])
                 mode.connect(lut.pins["out"], mode.ports["out"][0], cfg_bits = (64, ))
                 mode.connect(ff.pins["Q"], mode.ports["out"][0])
@@ -425,7 +425,7 @@ class Scanchain(object):
                 for i, (lut, ff) in enumerate(zip(luts, ffs)):
                     lut.cfg_bitoffset = 32 * i
                     mode.connect(mode.ports["clk"], ff.pins["clk"])
-                    mode.connect(mode.ports["in"][0:5], lut.pins["in"])
+                    mode.connect(mode.ports["bits_in"][0:5], lut.pins["bits_in"])
                     mode.connect(lut.pins["out"], ff.pins["D"], vpr_pack_patterns = ["lut5_i" + str(i) + "_dff"])
                     mode.connect(lut.pins["out"], mode.ports["out"][i], cfg_bits = (64 + i, ))
                     mode.connect(ff.pins["Q"], mode.ports["out"][i])
@@ -437,10 +437,10 @@ class Scanchain(object):
                 ffs = mode.instantiate(context.primitives["flipflop"], "ff", 2)
                 adder = mode.instantiate(context.primitives["adder"], "fa", cfg_bitoffset = 68)
                 mode.connect(mode.ports["cin"], adder.pins["cin"], vpr_pack_patterns = ["carrychain"])
-                mode.connect(mode.ports["in"][5], adder.pins["cin_fabric"])
+                mode.connect(mode.ports["bits_in"][5], adder.pins["cin_fabric"])
                 for i, (p, lut) in enumerate(zip(["a", "b"], luts)):
                     lut.cfg_bitoffset = 32 * i
-                    mode.connect(mode.ports["in"][0:5], lut.pins["in"])
+                    mode.connect(mode.ports["bits_in"][0:5], lut.pins["bits_in"])
                     mode.connect(lut.pins["out"], adder.pins[p], vpr_pack_patterns = ["carrychain"])
                 for i, (p, ff) in enumerate(zip(["s", "cout_fabric"], ffs)):
                     mode.connect(mode.ports["clk"], ff.pins["clk"])
@@ -459,7 +459,7 @@ class Scanchain(object):
                 ModuleUtils.instantiate(fle6.module, cls.get_cfg_data_cell(context, 69), "i_cfg_data")
 
                 # combinational paths
-                NetUtils.connect([fle6.ports["in"], fle6.ports["cin"]], [fle6.ports["out"], fle6.ports["cout"]],
+                NetUtils.connect([fle6.ports["bits_in"], fle6.ports["cin"]], [fle6.ports["out"], fle6.ports["cout"]],
                         fully = True)
                 NetUtils.connect(fle6.ports["clk"], fle6.ports["out"], fully = True)
 

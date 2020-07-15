@@ -324,6 +324,7 @@ class FileRenderer(Object):
     def render(self):
         """Render all added files and clear the task queue."""
         env = jj.Environment(loader = jj.FileSystemLoader(self.template_search_paths))
+        env.globals.update(NetUtils=NetUtils)
         while self.tasks:
             file_, l = self.tasks.popitem()
             if isinstance(file_, basestring):

@@ -41,7 +41,12 @@ class Tester(Object, AbstractPass):
     def get_instance_file(self,module):
 
         instance_files = [path.join(self.rtl_dir,module.name+".v")]
-
+        # for x in module._instances:
+        #     print(x)
+        #     print(module.instances[x])
+        
+        print(module._instances.keys())
+                    
         queue = []
 
         for temp in itervalues(module.instances):
@@ -51,13 +56,15 @@ class Tester(Object, AbstractPass):
             curr = queue.pop(0)
             curr_file = path.join(self.rtl_dir,curr.name+".v")
             if curr_file not in instance_files:
-                instance_files.append(path.join(self.rtl_dir,curr.name+".v"))
-            
+                instance_files.append(curr_file)
             for temp in itervalues(curr.instances):
+                # print(temp)
                 queue.append(temp.model)
-        
+
+            # if module.name == "clb":
+            #     print(queue)
             # instance_files+= self.get_instance_file(temp.model)
-        
+                
         return instance_files
 
 
@@ -108,12 +115,9 @@ class Tester(Object, AbstractPass):
         if not hasattr(module, "test_dir"):
             setattr(module,"test_dir",f)
         
-        # This if condition checks if the module is a primitive
-        # if module.module_class.is_primitive :
-        #     if not path.exists(path.join(self.tests_dir,"test_" + module.name)):
-        #         os.mkdir(path.join(self.tests_dir,"test_" + module.name))
-
         print(module.name)
+        print(module.view)
+        print(module.instances.m)
         # print(f)
         # print(path.join(f,"Makefile"))
         # print(path.join(f,"test.py"))
@@ -123,39 +127,41 @@ class Tester(Object, AbstractPass):
         # print(module.verilog_file)
 
         primitives = self.get_primitives(module)
-        # for a,b in primitives:
-        #     print(a,b)
-        # print()
+        
         if len(primitives)!=0:
             # print(module)
-
+            # for a,b in primitives:
+            #     print(a,b)
+            #     print(a.model)
             # print(primitives)
+            # for k,v in module._instances:
+            #     print(k,v)
 
             test_dir = path.join(self.tests_dir,"test_" + module.name)
 
-            if not path.exists(test_dir):
-                os.mkdir(test_dir)
+            # for x in self.get_instance_file(module):
+            #     print(x)
 
-            # print(module)
             instance_files = ' '.join(self.get_instance_file(module))
-
+            
             for primitive,heirarchy in primitives:
                 # print(primitive)
                 # print(heirarchy)
                 primitive_test_dir = path.join(test_dir,"test_" + '_'.join(heirarchy))
-                if not path.exists(primitive_test_dir):
-                    os.mkdir(primitive_test_dir)                
-                # print(getattr(primitive, "test_python_template", "test_base.tmpl.py"))
                 # Add instances_files for makefile
+                setattr(primitive,"test_hierarchy",'.'.join(heirarchy)+'.')
                 # print(instance_files)
                 setattr(primitive,"files",instance_files)
                 self.renderer.add_makefile(primitive, path.join(primitive_test_dir,"Makefile"), "test_base.tmpl")
                 
                 # Add heirarchy for python test files
-                setattr(primitive,"test_hierarchy",'.'.join(heirarchy)+'.')
+                if len(heirarchy)!=0 :
+                    setattr(primitive,"test_hierarchy",'.'.join(heirarchy)+'.')
+                else:
+                    setattr(primitive,"test_hierarchy",'.')
+
                 setattr(primitive,"top_level",module.name)
                 # print(primitive.test_hierarchy)
-                # print(getattr(primitive.model, "test_python_template", "test_base.tmpl.py"))
                 # print(getattr(primitive.model, "test_python_template", "test_base.tmpl.py"))
                 # print(primitive.files)
                 # print(primitive.test_hierarchy)
@@ -165,30 +171,7 @@ class Tester(Object, AbstractPass):
                 self.renderer.add_python_test(primitive, path.join(primitive_test_dir,"test.py"), getattr(primitive.model, "test_python_template", "test_base.tmpl.py"))
                 
                 self.renderer.add_python_test(primitive, path.join(primitive_test_dir,"config.py"), "config.py")
-            # print()
-        # for instance in itervalues(module.instances):
-        #     if instance.model.module_class.is_primitive:
-        #         print(instance.name)
-        #         if 'lut' in instance.name:
-        #             primitives = self.get_primitives(module)
-        #             print(primitives)
-        #             if not path.exists(path.join(self.tests_dir,"test_" + module.name)):
-        #                 os.mkdir(path.join(self.tests_dir,"test_" + module.name))
-
-        #             # print(self.get_heirarchy(module))
-        #             instance_files = self.get_instance_file(module)
-        #             setattr(module,"files",' '.join(instance_files))
-                    
-        #             setattr(module,"verilog_file",path.join(self.rtl_dir,module.name+".v"))
-
-        #             self.renderer.add_makefile(module, path.join(f,"Makefile"), "test_base.tmpl")
-        #             self.renderer.add_python_test(instance, path.join(f,"test.py"), "test_instance_lut.tmpl.py")
-        #             self.renderer.add_python_test(module, path.join(f,"config.py"), "config.py")
-       
-        #         # print(instance.model.module_name)
-
-
-        # print()
+        print()
 
         for instance in itervalues(module.instances):
             self._process_module(instance.model)
@@ -201,9 +184,9 @@ class Tester(Object, AbstractPass):
     @property
     def dependences(self):
         if self.view.is_logical:
-            return ("translation", )
+            return ("translation", "rtl.verilog")
         else:
-            return ("translation", "materialization")
+            return ("translation", "materialization","rtl.verilog")
 
     @property
     def is_readonly_pass(self):

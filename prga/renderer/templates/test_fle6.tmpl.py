@@ -111,7 +111,7 @@ def wrapper(dut,test_mode=0):
     """Wrapper code for test """
     
     clk = dut.clk
-    cfg_clk = dut.cfg_clk
+    cfg_clk = dut.i_cfg_date.cfg_clk
     
     clock_generation(cfg_clk)
     clock_generation(clk)
@@ -119,14 +119,14 @@ def wrapper(dut,test_mode=0):
     
 
     # Signals
-    bits_in = dut.{{instance.test_hierarchy}}in
+    bits_in = dut.{{instance.test_hierarchy}}bits_in
     out = dut.{{instance.test_hierarchy}}out
     cin = dut.{{instance.test_hierarchy}}cin
     cout = dut.{{instance.test_hierarchy}}cout
-    cfg_e = dut.{{instance.test_hierarchy}}cfg_e
-    cfg_we = dut.{{instance.test_hierarchy}}cfg_we
-    cfg_i = dut.{{instance.test_hierarchy}}cfg_i
-    cfg_o = dut.{{instance.test_hierarchy}}cfg_o
+    cfg_e = dut.{{instance.test_hierarchy}}i_cfg_date.cfg_e
+    cfg_we = dut.{{instance.test_hierarchy}}i_cfg_date.cfg_we
+    cfg_i = dut.{{instance.test_hierarchy}}i_cfg_date.cfg_i
+    cfg_o = dut.{{instance.test_hierarchy}}i_cfg_date.cfg_o
     
     # Local Parameters
     LUT5A_DATA_WIDTH = dut.{{instance.test_hierarchy}}LUT5A_DATA_WIDTH.value.integer

@@ -125,7 +125,7 @@ class Context(Object):
                     is_cell = True,
                     module_class = ModuleClass.primitive,
                     primitive_class = PrimitiveClass.lut)
-            in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_,
+            in_ = ModuleUtils.create_port(lut, 'bits_in', i, PortDirection.input_,
                     port_class = PrimitivePortClass.lut_in, vpr_combinational_sinks = ("out", ))
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
                     port_class = PrimitivePortClass.lut_out)

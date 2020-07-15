@@ -7,20 +7,18 @@ from cocotb.result import TestFailure
 from cocotb.binary import BinaryValue
 from cocotb.scoreboard import Scoreboard
 
-def clock_generation(clk):
-    clock_period = 10 #This must be an even number
-    test_time = 10000
+def clock_generation(clk,clock_period=10,test_time=10000):
     c= Clock(clk,clock_period)
-    cocotb.fork(c.start(test_time//clock_period,start_high = False))
+    cocotb.fork(c.start(test_time//clock_period))
     
 @cocotb.test()
 def simple_test(dut):
     clk = dut.clk
     clock_generation(clk)
     # Signals
-    D = dut.{{instance.test_hierarchy}}{{instance.pins['D'].model.name}}
-    Q = dut.{{instance.test_hierarchy}}{{instance.pins['Q'].model.name }}
-    cfg_e = dut.{{instance.test_hierarchy}}{{NetUtils.get_source(instance.pins['cfg_e']).name}}
+    D = dut.{{instance.test_hierarchy}}D
+    Q = dut.{{instance.test_hierarchy}}Q
+    cfg_e = dut.{{instance.test_hierarchy}}cfg_e
     
     for _ in range(3):
         yield RisingEdge(clk)

@@ -7,13 +7,9 @@ from cocotb.result import TestFailure
 from cocotb.binary import BinaryValue
 from cocotb.scoreboard import Scoreboard
 
-def clock_generation(clk):
-    clock_period = 10 #This must be an even number
-    test_time = 10000
-    
+def clock_generation(clk,clock_period=10,test_time=10000):
     c= Clock(clk,clock_period)
-
-    cocotb.fork(c.start(test_time//clock_period,start_high = False))
+    cocotb.fork(c.start(test_time//clock_period))
     
 @cocotb.test()
 def simple_test(dut):
@@ -22,16 +18,16 @@ def simple_test(dut):
     clock_generation(dut.cfg_clk)
     clk = dut.cfg_clk
     # Signals
-    input = dut.bits_in
-    out = dut.out
-    cfg_e = dut.cfg_e
-    cfg_we = dut.cfg_we
-    cfg_i = dut.cfg_i
-    cfg_o = dut.cfg_o
+    input = dut.{{instance.test_hierarchy}}bits_in
+    out = dut.{{instance.test_hierarchy}}out
+    cfg_e = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_e
+    cfg_we = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_we
+    cfg_i = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_i
+    cfg_o = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_o
     
     # No. of input bits
     # n_input = input()
-    n_input = int(math.log({{module.cfg_bitcount}},2))
+    n_input = int(math.log({{instance.model.cfg_bitcount}},2))
 
     # Setting up LUT
     # Set the value of cfd
@@ -65,15 +61,15 @@ def changing_config(dut):
     clk = dut.cfg_clk
 
     # Signals
-    input = dut.bits_in
-    out = dut.out
-    cfg_e = dut.cfg_e
-    cfg_we = dut.cfg_we
-    cfg_i = dut.cfg_i
-    cfg_o = dut.cfg_o
+    input = dut.{{instance.test_hierarchy}}bits_in
+    out = dut.{{instance.test_hierarchy}}out
+    cfg_e = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_e
+    cfg_we = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_we
+    cfg_i = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_i
+    cfg_o = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_o
     
     # No. of input bits
-    n_input = int(math.log({{module.cfg_bitcount}},2))
+    n_input = int(math.log({{instance.model.cfg_bitcount}},2))
 
     # Setting up LUT
     # Set the value of cfd
