@@ -18,8 +18,6 @@ OrderedDict = dict
 
 __all__ = ['FileRenderer']
 
-DEFAULT_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
-
 # ----------------------------------------------------------------------------
 # -- File Renderer -----------------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -28,7 +26,8 @@ class FileRenderer(Object):
 
     __slots__ = ['template_search_paths', 'tasks', '_yosys_synth_script_task']
     def __init__(self, *paths):
-        self.template_search_paths = [DEFAULT_TEMPLATE_SEARCH_PATH]
+        self.template_search_paths = [os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "integration", "templates")]
         self.template_search_paths.extend(paths)
         self.tasks = OrderedDict()
         self._yosys_synth_script_task = None

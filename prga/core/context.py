@@ -15,6 +15,7 @@ from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
 from ..netlist.net.util import NetUtils
 from ..renderer.renderer import FileRenderer
+from ..integration.integration import Integration
 from ..util import Object, ReadonlyMappingProxy, uno
 from ..exception import PRGAAPIError, PRGAInternalError
 
@@ -180,6 +181,7 @@ class Context(Object):
 
         # 5. register built-in designs
         FileRenderer._register_lib(self)
+        Integration._register_lib(self)
 
     # == low-level API =======================================================
     @property
