@@ -222,11 +222,11 @@ def _get_attr_dict_factory(slots = tuple()):
                 return
 
         def __reduce__(self):
-            return AttrDict, (slots, ), {k: getattr(self, k) for k in self.__slots__ if hasattr(self, k)}
+            return AttrDict, (slots, ), {k: v for k, v in iteritems(self)}
 
         def __setstate__(self, state):
             for k, v in iteritems(state):
-                setattr(self, k, v)
+                self[k] = v
 
     # register and return class
     _attr_dict_factories[slots] = _AttrDict
