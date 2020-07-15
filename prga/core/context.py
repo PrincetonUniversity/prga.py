@@ -31,7 +31,7 @@ except ImportError:
 
 __all__ = ['ContextSummary', 'Context']
 
-_VERSION = open(os.path.join(os.path.dirname(__file__), "..", "..", "VERSION"), "r").read().strip()
+_VERSION = open(os.path.join(os.path.dirname(__file__), "..", "VERSION"), "r").read().strip()
 
 # ----------------------------------------------------------------------------
 # -- FPGA Summary ------------------------------------------------------------

@@ -1,9 +1,10 @@
 include MANIFEST.in
-graft tests
-graft prga/rtlgen/templates
-graft prga/ysgen/templates
-graft prga/config/bitchain/design/templates
-graft prga_tools/templates
-graft prga_tools/bitchain/simproj/templates
+include prga/VERSION
+graft prga/cfg/scanchain/templates
+graft prga/cfg/pktchain/templates
+graft prga/renderer/templates
+graft prga/tools/templates
+graft prga/tools/scanchain/simproj/templates
+graft prga/tools/pktchain/simproj/templates
 global-exclude __pycache__
 global-exclude *.pyc

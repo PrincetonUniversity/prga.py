@@ -7,7 +7,7 @@ def read(fname):
 
 setup(
         name = "prga",
-        version = read("VERSION"),
+        version = read("prga/VERSION"),
         author = "Ang Li",
         author_email = "angl@princeton.edu",
         description = "Princeton Reconfigurable Gate Array",
@@ -20,7 +20,6 @@ setup(
             "Programming Language :: Python :: 3.8",
             "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
             ],
-        install_requires = ["future", "jinja2", "lxml", "networkx", "bitarray", "hdlparse", "cocotb"],
-        setup_requires = ["pytest-runner"],
-        tests_require = ["pytest"],
+        install_requires = ["future", "jinja2", "lxml", "networkx", "bitarray", "hdlparse"],
+        extras_require = {"cocotb": ["cocotb"]},
         )
