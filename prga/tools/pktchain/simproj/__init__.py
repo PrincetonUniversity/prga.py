@@ -15,7 +15,7 @@ def def_argparser(name):
     parser.add_argument('-c', '--compiler', type=str, choices=['vcs', 'iverilog'], dest='compiler', default="vcs",
             help="Verilog compiler used to build the simulator")
     parser.add_argument('--fix_io', type=str, dest="io",
-            help="Partial or full assignments of IO pads")
+            help="Partial or full constraints of IOs")
     
     parser.add_argument('-t', '--testbench', type=str, nargs='+', dest="testbench",
             help="Testbench file(s) for behavioral model")

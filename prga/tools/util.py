@@ -13,8 +13,7 @@ import re, argparse
 
 _reprog_width = re.compile('^.*?\[\s*(?P<start>\d+)\s*:\s*(?P<end>\d+)\s*\].*?$')
 
-__all__ = ['find_verilog_top', 'parse_io_bindings', 'parse_parameters', 'create_argparser',
-        'docstring_from_argparser']
+__all__ = ['find_verilog_top', 'parse_parameters', 'create_argparser', 'docstring_from_argparser']
 
 class VerilogPort(Object):
     """A port of a Verilog module.
@@ -91,25 +90,6 @@ def find_verilog_top(files, top = None):
                 low, high = start, start + 1
         ports[port.name] = VerilogPort(port.name, direction, low, high)
     return VerilogModule(mod.name, ports)
-
-def parse_io_bindings(file_):
-    """Parse the IO binding constraint file.
-
-    Args:
-        io_bindings (:obj:`str`):
-
-    Returns:
-        :obj:`Mapping` [:obj:`str` ], :obj:`tuple` [`Position`, :obj:`int`]: Mapping from
-           port name in the behavioral model to \(position, subtile\)
-    """
-    io_bindings = {}
-    for line in open(file_):
-        line = line.split('#')[0].strip()
-        if line == '':
-            continue
-        name, x, y, subtile = line.split()
-        io_bindings[name] = Position(int(x), int(y)), int(subtile)
-    return io_bindings
 
 def parse_parameters(parameters):
     """Parse the parameters defined via command-line arguments.

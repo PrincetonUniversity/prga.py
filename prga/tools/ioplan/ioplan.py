@@ -5,7 +5,6 @@ from prga.compatible import *
 
 from ...netlist.net.common import PortDirection
 from ...core.common import Position, OrientationTuple, IOType
-from ...core.context import Context
 from ...exception import PRGAAPIError, PRGAInternalError
 from ...util import Object, uno
 
@@ -13,19 +12,69 @@ import re
 
 __all__ = ["IOPlanner"]
 
-_reprog_bit = re.compile('^(?P<name>.*?)(?:\[(?P<index>\d+)\])?$')
+_reprog_bit = re.compile('^(?P<name>(?:out:)?.*?)(?:\[(?P<index>\d+)\])?$')
+
+# ----------------------------------------------------------------------------
+# -- IO Constraints List -----------------------------------------------------
+# ----------------------------------------------------------------------------
+class IOConstraints(MutableSequence):
+    """IO constraints of a port.
+
+    Args:
+        low (:obj:`int`): LSB index of the port
+        high (:obj:`int`): MSB + 1 index of the port
+    """
+
+    __slots__ = ["low", "_elements"]
+
+    def __init__(self, low = None, high = None):
+        self.low = uno(low, 0)
+        high = uno(high, self.low + 1)
+        self._elements = [None] * (high - self.low)
+
+    def __getitem__(self, index):
+        return self._elements[index - self.low]
+
+    def __setitem__(self, index, value):
+        self._elements[index - self.low] = value
+
+    def __delitem__(self, index):
+        raise NotImplementedError("Cannot delete from IOConstraints")
+
+    def insert(self, index, value):
+        raise NotImplementedError("Cannot insert to IOConstraints")
+
+    def __len__(self):
+        return len(self._elements)
+
+    def __iter__(self):
+        for i in self._elements:
+            yield i
+
+    def resize(self, low = None, high = None):
+        if low is not None:
+            if low < self.low:
+                self._elements = [None] * (self.low - low) + self._elements
+            elif low > self.low:
+                self._elements = self._elements[low - self.low:]
+            self.low = low
+        if high is not None:
+            if high - self.low > len(self._elements):
+                self._elements += [None] * (high - self.low)
+            elif high - self.low < len(self._elements):
+                self._elements = self._elements[:high - self.low]
 
 # ----------------------------------------------------------------------------
 # -- IO Planner --------------------------------------------------------------
 # ----------------------------------------------------------------------------
 class IOPlanner(Object):
-    """Helper class for I/O assignment.
+    """Helper class for creating I/O constraints.
     
     Args:
         summary (`Context` or `ContextSummary`):
-        start_pos (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Starting position for scanning
-        start_subtile (:obj:`int`): Starting subtile for scanning
-        counterclockwise (:obj:`bool`): If set, scan IO in counter-clockwise order.
+        start_pos (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Starting position for auto-planning
+        start_subtile (:obj:`int`): Starting subtile for auto-planning
+        counterclockwise (:obj:`bool`): If set, auto-plan IO in counter-clockwise order.
     """
 
     __slots__ = ["xmax", "ymax", "avail_nonglobals", "avail_globals", "used", "globals_",
@@ -43,8 +92,10 @@ class IOPlanner(Object):
         self.subtile = subtile
         self.counterclockwise = counterclockwise
 
-        if isinstance(summary, Context):
+        try:
             summary = summary.summary
+        except AttributeError:
+            pass
 
         for io in summary.ios:
             if io.global_ is None:
@@ -139,56 +190,89 @@ class IOPlanner(Object):
         self.subtile += 1
         return io.position, io.subtile
 
+    def reset_scanning(self, position = None, subtile = None, counterclockwise = None):
+        """Reset scanning pointer.
+
+        Args:
+            position (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
+            subtile (:obj:`int`):
+            counterclockwise (:obj:`bool`):
+        """
+        self.position = Position(*uno(position, self.position))
+        self.subtile = uno(subtile, self.subtile)
+        self.counterclockwise = uno(counterclockwise, self.counterclockwise)
+
     @classmethod
     def autoplan(cls, context, mod_top, fixed = None):
-        """Automatically generate an IO assignment.
+        """Automatically generate IO constraints.
 
         Args:
             context (`Context` or `ContextSummary`):
             mod_top (`VerilogModule`): Top-level module of target design
-            fixed (:obj:`Mapping` [:obj:`str`, :obj:`tuple` [`Position`, :obj:`int` ]]): Manually assigned
-                IOs
+            fixed (:obj:`Mapping` [:obj:`str`, `IOConstraints`]): Manually constrained IOs. This mapping could be
+                incomplete
 
         Returns:
-            :obj:`Mapping` [:obj:`str`, :obj:`tuple` [`Position`, :obj:`int` ]]): Mapping from port names
-                to IOs
+            :obj:`Mapping` [:obj:`str`, `IOConstraints`]): Mapping from port names to list of IOs. Output ports are
+                prefixed with "out:" to match VPR's naming convention
         """
-        assigned = {}
         planner = cls(context)
-        # process fixed assignments
-        for name, (position, subtile) in iteritems(uno(fixed, {})):
-            direction = PortDirection.input_
-            if name.startswith('out:'):
-                name = name[4:]
-                direction = PortDirection.output
-            matched = _reprog_bit.match(name)
-            port_name, index = matched.group('name', 'index')
-            index = None if index is None else int(index)
-            if (port := mod_top.ports.get(port_name)) is None:
-                raise PRGAAPIError("Port '{}' not found in module '{}'"
-                        .format(port_name, mod_top.name))
-            elif port.direction is not direction:
-                raise PRGAAPIError("Direction mismatch: port '{}' is {} in behavioral model but {} in IO bindings"
-                        .format(port_name, port.direction.name, direction))
-            elif index is None and (port.low is not None and port.high - port.low > 1):
-                raise PRGAAPIError("Port '{}' is a multi-bit bus and requires an index"
-                        .format(port_name))
-            elif index is not None and (port.low is None or index < port.low or index >= port.high):
-                raise PRGAAPIError("Bit index '{}' is not in port '{}'"
-                        .format(index, port_name))
-            planner.use( position, subtile, direction.case(IOType.ipin, IOType.opin) )
-            assigned[name] = position, subtile
-        # assign IOs
+        # initialize constraints
+        constraints = {}
         for port_name, port in iteritems(mod_top.ports):
             key = port.direction.case("", "out:") + port_name
-            if port.low is None or port.high - port.low == 1:
-                if key in assigned:
+            constraints[key] = IOConstraints(port.low, port.high)
+        # process manual constraints
+        for name, fixed_constraints in iteritems(uno(fixed, {})):
+            if (ios := constraints.get(name)) is None:
+                raise PRGAAPIError("Port '{}' is not found in module '{}'"
+                        .format(name, mod_top.name))
+            for i, c in enumerate(fixed_constraints, fixed_constraints.low):
+                if c is None:
                     continue
-                assigned[key] = planner.pop(port.direction.case(IOType.ipin, IOType.opin))
-            else:
-                for i in range(port.low, port.high):
-                    bit_name = '{}[{}]'.format(key, i)
-                    if bit_name in assigned:
-                        continue
-                    assigned[bit_name] = planner.pop(port.direction.case(IOType.ipin, IOType.opin))
-        return assigned
+                planner.use(*c, IOType.opin if name.startswith("out:") else IOType.ipin)
+                ios[i] = c
+        # complete the constraints
+        for key, ios in iteritems(constraints):
+            for i, c in enumerate(ios, ios.low):
+                if c is not None:
+                    continue
+                ios[i] = planner.pop(IOType.opin if key.startswith("out:") else IOType.ipin)
+        return constraints
+
+    @classmethod
+    def parse_io_constraints(cls, file_):
+        """Parse a partial or complete IO constraint file.
+
+        Args:
+            file_ (:obj:`str` of file-like object):
+
+        Returns:
+            :obj:`Mapping` [:obj:`str`, `IOConstraints`]: Mapping from port names in the behavioral model to
+                IO constraints
+        """
+        constraints = {}
+        if isinstance(file_, basestring):
+            file_ = open(file_)
+        for lineno, line in enumerate(file_):
+            line = line.split("#")[0].strip()
+            if line == '':
+                continue
+            name, x, y, subtile = line.split()
+            try:
+                x, y, subtile = map(int, (x, y, subtile))
+            except ValueError:
+                raise PRGAAPIError("Invalid constraint at line {}".format(lineno + 1))
+            if (matched := _reprog_bit.match(name)) is None:
+                raise PRGAAPIError("Invalid port name at line {}: {}".format(lineno + 1, name))
+            key, index = matched.group("name", "index")
+            if (ios := constraints.get(key)) is None:
+                ios = constraints[key] = IOConstraints(uno(index, 0))
+            elif index is None:
+                raise PRGAAPIError("Conflicting constraint at line {}: {}".format(lineno + 1, name))
+            elif index < ios.low:
+                ios.resize(index)
+            elif index - ios.low > len(ios):
+                ios.resize(high = index + 1)
+            ios[uno(index, 0)] = Position(x, y), subtile
+        return constraints

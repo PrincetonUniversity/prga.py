@@ -20,7 +20,7 @@ _parser = create_argparser(__name__,
         description="Makefile generator for bitchain-style configuration circuitry")
 
 _parser.add_argument('summary', type=str, help="Pickled architecture context summary object")
-_parser.add_argument('io_binding', type=str, help="IO assignment")
+_parser.add_argument('io_constraints', type=str, help="IO constraints")
 _parser.add_argument('testbench_wrapper', type=str, help="Testbench wrapper")
 _parser.add_argument('yosys_script', type=str, help="Design-specific synthesis script")
 _parser.add_argument('-o', '--output', type=argparse.FileType("w"), dest='output',
@@ -52,7 +52,7 @@ _parser.add_argument('-c', '--compiler', type=str, choices=['vcs', 'iverilog'], 
 __doc__ = docstring_from_argparser(_parser)
 
 def generate_scanchain_makefile(summary_f, summary, renderer, ostream, yosys_script,
-        tb_top, tb_sources, behav_top, behav_sources, io_binding, testbench_wrapper, compiler = "vcs",
+        tb_top, tb_sources, behav_top, behav_sources, io_constraints, testbench_wrapper, compiler = "vcs",
         tb_plus_args = None, tb_includes = None, tb_defines = None,
         behav_includes = None, behav_defines = None):
     """Generate Makefile for verification flow."""
@@ -87,7 +87,7 @@ def generate_scanchain_makefile(summary_f, summary, renderer, ostream, yosys_scr
     vpr["channel_width"] = summary.vpr["channel_width"]
     vpr["archdef"] = os.path.join(summary.vpr["arch"])
     vpr["rrgraph"] = os.path.join(summary.vpr["rrg"])
-    vpr["io_binding"] = io_binding
+    vpr["io_constraints"] = io_constraints
 
     # fpga sources
     param["rtl"] = tuple(iter(itervalues(summary.rtl["sources"])))
@@ -111,7 +111,7 @@ if __name__ == '__main__':
     r = FileRenderer(os.path.join(os.path.abspath(os.path.dirname(__file__)), 'templates'))
 
     generate_scanchain_makefile(args.summary, summary, r, ostream, args.yosys_script,
-            tb_top, args.testbench, behav_top, args.model, args.io_binding, args.testbench_wrapper,
+            tb_top, args.testbench, behav_top, args.model, args.io_constraints, args.testbench_wrapper,
             args.compiler,
             args.testbench_plus_args, args.testbench_includes, args.testbench_defines,
             args.model_includes, args.model_defines)

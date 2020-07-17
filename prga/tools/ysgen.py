@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .util import find_verilog_top, parse_io_bindings, parse_parameters, create_argparser, docstring_from_argparser
+from .util import find_verilog_top, parse_parameters, create_argparser, docstring_from_argparser
 from ..core.context import Context
 from ..renderer.renderer import FileRenderer
 

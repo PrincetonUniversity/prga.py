@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from . import def_argparser
 from .ioplan import IOPlanner
-from ..util import find_verilog_top, parse_io_bindings
+from ..util import find_verilog_top
 from ...core.context import Context
 from ...util import enable_stdout_logging
 
@@ -17,9 +17,14 @@ enable_stdout_logging(__name__, logging.INFO)
 
 summary = Context.unpickle(args.summary)
 _logger.info("Architecture context (or summary) parsed")
-assignments = IOPlanner.autoplan(summary, find_verilog_top(args.model, args.model_top),
-        parse_io_bindings(args.fixed) if args.fixed is not None else {})
+io_constraints = IOPlanner.autoplan(summary, find_verilog_top(args.model, args.model_top),
+        IOPlanner.parse_io_constraints(args.fixed) if args.fixed is not None else {})
 ostream = sys.stdout if args.output is None else open(args.output, 'w')
-for name, ((x, y), subtile) in iteritems(assignments):
-    ostream.write("{} {} {} {}\n".format(name, x, y, subtile))
-_logger.info("Assignment generated. Bye")
+for name, ios in iteritems(io_constraints):
+    if len(ios) == 1:
+        (x, y), subtile = ios[0]
+        ostream.write("{} {} {} {}\n".format(name, x, y, subtile))
+    else:
+        for i, ((x, y), subtile) in enumerate(ios, ios.low):
+            ostream.write("{}[{}] {} {} {}\n".format(name, i, x, y, subtile))
+_logger.info("Constraints generated. Bye")

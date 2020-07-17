@@ -6,7 +6,7 @@ from prga.compatible import *
 from . import def_argparser
 from .tbgen import generate_scanchain_testbench_wrapper
 from .mkgen import generate_scanchain_makefile
-from ...util import find_verilog_top, parse_parameters, parse_io_bindings
+from ...util import find_verilog_top, parse_parameters
 from ...ioplan.ioplan import IOPlanner
 from ...ysgen import generate_yosys_script
 from ....core.context import Context
@@ -43,19 +43,24 @@ if args.testbench is None:
 testbench_top = find_verilog_top(args.testbench, args.testbench_top)
 testbench_top.parameters = parse_parameters(args.testbench_parameters) 
 
-_logger.info("Assigning IO ...")
-io_assignments = IOPlanner.autoplan(context.summary, model_top, 
-        parse_io_bindings(args.io) if args.io is not None else {})
+_logger.info("Generating IO constraints ...")
+io_constraints = IOPlanner.autoplan(context.summary, model_top, 
+        IOPlanner.parse_io_constraints(args.io) if args.io is not None else {})
 ostream = open('io.pads', 'w')
-for name, ((x, y), subtile) in iteritems(io_assignments):
-    ostream.write("{} {} {} {}\n".format(name, x, y, subtile))
+for name, ios in iteritems(io_constraints):
+    if len(ios) == 1:
+        (x, y), subtile = ios[0]
+        ostream.write("{} {} {} {}\n".format(name, x, y, subtile))
+    else:
+        for i, ((x, y), subtile) in enumerate(ios, ios.low):
+            ostream.write("{}[{}] {} {} {}\n".format(name, i, x, y, subtile))
 
 _logger.info("Pickling architecture context summary ...")
 context.pickle_summary(args.summary)
 
 _logger.info("Generating testbench wrapper ...")
 wrapper = uno(args.wrapper, '{}_wrapper.v'.format(testbench_top.name))
-generate_scanchain_testbench_wrapper(context, r, wrapper, testbench_top, model_top, io_assignments)
+generate_scanchain_testbench_wrapper(context, r, wrapper, testbench_top, model_top, io_constraints)
 
 _logger.info("Generating design-specific synthesis script ...")
 generate_yosys_script(context.summary, r, args.yosys_script, model_top, args.model)

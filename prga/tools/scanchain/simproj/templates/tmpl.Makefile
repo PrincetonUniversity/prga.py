@@ -51,7 +51,7 @@ YOSYS_SCRIPT := {{ yosys_script }}
 VPR_CHAN_WIDTH := {{ vpr.channel_width }}
 VPR_ARCHDEF := {{ vpr.archdef }}
 VPR_RRGRAPH := {{ vpr.rrgraph }}
-VPR_IOBINDING := {{ vpr.io_binding }}
+VPR_IOBINDING := {{ vpr.io_constraints }}
 {% for f in rtl %}
 	{%- if loop.first %}
 FPGA_RTL := {{ f }}
