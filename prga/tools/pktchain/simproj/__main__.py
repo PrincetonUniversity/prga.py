@@ -7,7 +7,7 @@ from . import def_argparser
 from .tbgen import PktchainTbgen
 from .mkgen import PktchainMkgen
 from ...util import find_verilog_top, parse_parameters, parse_io_bindings, create_argparser
-from ...iobind import iobind
+from ...ioplan.ioplan import IOPlanner
 from ...ysgen import generate_yosys_script
 from ....core.context import Context
 from ....renderer.renderer import FileRenderer
@@ -44,10 +44,10 @@ testbench_top = find_verilog_top(args.testbench, args.testbench_top)
 testbench_top.parameters = parse_parameters(args.testbench_parameters) 
 
 _logger.info("Assigning IO ...")
-io_assignments = iobind(context.summary, model_top, 
+io_assignments = IOPlanner.autoplan(context.summary, model_top, 
         parse_io_bindings(args.io) if args.io is not None else {})
 ostream = open('io.pads', 'w')
-for name, (x, y, subtile) in iteritems(io_assignments):
+for name, ((x, y), subtile) in iteritems(io_assignments):
     ostream.write("{} {} {} {}\n".format(name, x, y, subtile))
 
 _logger.info("Pickling architecture context summary ...")

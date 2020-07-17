@@ -14,7 +14,7 @@ from copy import copy
 from math import ceil
 
 __all__ = ['Dimension', 'Direction', 'Orientation', 'OrientationTuple', 'Corner', 'Position',
-        'NetClass', 'IOType', 'ModuleClass', 'PrimitiveClass', 'PrimitivePortClass', 'ModuleView',
+        'NetClass', 'IOType', 'IO', 'ModuleClass', 'PrimitiveClass', 'PrimitivePortClass', 'ModuleView',
         'Global', 'Segment', 'DirectTunnel', 'BridgeType', 'SegmentID', 'BlockPinID',
         'BlockPortFCValue', 'BlockFCValue', 'SwitchBoxPattern']
 
@@ -277,6 +277,35 @@ class IOType(Enum):
                     .format(self))
 
 # ----------------------------------------------------------------------------
+# -- IO ----------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+class IO(Object):
+    """One IO pad.
+    
+    Args:
+        types (`IOType` or :obj:`Sequence` [`IOType` ]): One or more `IOType` that this IO supports
+        position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this IO
+        subtile (:obj:`int`): Sub-tile ID
+        global_ (`Global`): If set, this IO drives the specified global wire
+
+    Keyword Args:
+        **kwargs: Additional attributes assigned to the IO pad
+    """
+
+    __slots__ = ["types", "position", "subtile", "global_", "__dict__"]
+
+    def __init__(self, types, position, subtile = 0, global_ = None, **kwargs):
+        if isinstance(types, IOType):
+            self.types = (types, )
+        else:
+            self.types = tuple(set(types))
+        self.position = Position(*position)
+        self.subtile = subtile
+        self.global_ = global_
+        for k, v in iteritems(kwargs):
+            setattr(self, k, v)
+
+# ----------------------------------------------------------------------------
 # -- Module Class ------------------------------------------------------------
 # ----------------------------------------------------------------------------
 class ModuleClass(Enum):
@@ -301,6 +330,7 @@ class ModuleClass(Enum):
     # logical-only modules
     switch = 9              #: switch
     cfg = 10                #: configuration modules
+    aux = 11                #: auxiliary modules
 
     @property
     def is_block(self):

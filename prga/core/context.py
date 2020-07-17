@@ -42,7 +42,7 @@ class ContextSummary(Object):
 
     __slots__ = [
             # generic summaries: updated by 'SummaryUpdate'
-            'ios',                  # list of IOType, (x, y), subtile
+            'ios',                  # list of `IO` s
             'active_blocks',        # dict of block keys to active orientations
             'active_primitives',    # set of primitive keys
             'lut_sizes',            # set of LUT sizes
@@ -268,7 +268,7 @@ class Context(Object):
     # == high-level API ======================================================
     # -- Global Wires --------------------------------------------------------
     @property
-    def globals(self):
+    def globals_(self):
         """:obj:`Mapping` [:obj:`str`, `Global` ]: A mapping from names to global wires."""
         return ReadonlyMappingProxy(self._globals)
 

@@ -3,6 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
+from ..core.common import Position
 from ..netlist.net.common import PortDirection
 from ..exception import PRGAAPIError
 from ..util import Object, uno
@@ -98,8 +99,8 @@ def parse_io_bindings(file_):
         io_bindings (:obj:`str`):
 
     Returns:
-        :obj:`Mapping` [:obj:`str` ], :obj:`tuple` [:obj:`int`, :obj:`int`, :obj:`int`]: Mapping from
-           port name in the behavioral model to \(x, y, subtile\)
+        :obj:`Mapping` [:obj:`str` ], :obj:`tuple` [`Position`, :obj:`int`]: Mapping from
+           port name in the behavioral model to \(position, subtile\)
     """
     io_bindings = {}
     for line in open(file_):
@@ -107,7 +108,7 @@ def parse_io_bindings(file_):
         if line == '':
             continue
         name, x, y, subtile = line.split()
-        io_bindings[name] = tuple(map(int, (x, y, subtile)))
+        io_bindings[name] = Position(int(x), int(y)), int(subtile)
     return io_bindings
 
 def parse_parameters(parameters):

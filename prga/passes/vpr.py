@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from .base import AbstractPass
 from ..core.common import (Position, Orientation, ModuleView, Dimension, BlockPinID, SegmentID, BridgeID, BridgeType,
-        Direction, Corner, IOType)
+        Direction, Corner, IOType, IO)
 from ..core.builder.array.array import ArrayBuilder
 from ..netlist.net.common import NetType
 from ..netlist.net.util import NetUtils
@@ -856,20 +856,24 @@ class VPRArchGeneration(_VPRArchGeneration):
     def _update_output_file(self, summary, output_file):
         summary["arch"] = output_file
 
-    def _layout_array(self, array, instance = None):
+    def _layout_array(self, array, globals_, instance = None):
         position = Position(0, 0) if instance is None else ArrayBuilder.hierarchical_position(instance)
         for x, y in product(range(array.width), range(array.height)):
             if (subarray := array.instances.get( (x, y) )) is None:
                 continue
             elif subarray.model.module_class.is_array:
-                self._layout_array(subarray.model, subarray.extend_hierarchy(above = instance))
+                self._layout_array(subarray.model, globals_, subarray.extend_hierarchy(above = instance))
             elif subarray.model.module_class.is_tile:
                 self.active_tiles[subarray.model.key] = True
                 for subtile, i in enumerate(subarray.model._instances.subtiles):
                     if i.model.module_class.is_io_block:
-                        for iotype in (IOType.ipin, IOType.opin):
-                            if iotype.case("inpad", "outpad") in i.model.instances["io"].pins:
-                                self.ios.append( (iotype, position + (x, y), subtile) )
+                        self.ios.append( IO(
+                            tuple(type_ for type_, pin in ((IOType.ipin, "inpad"), (IOType.opin, "outpad"))
+                                if pin in i.model.instances["io"].pins),
+                            position + (x, y),
+                            subtile,
+                            globals_.pop( (position + (x, y), subtile), None ),
+                            ) )
                 attrs = { "priority": 1, "type": subarray.model.name,
                         "x": position.x + x, "y": position.y + y, }
                 if (fasm_prefix := self.fasm.fasm_prefix_for_tile(
@@ -886,9 +890,11 @@ class VPRArchGeneration(_VPRArchGeneration):
 
     def _layout(self, context):
         self.ios = context.summary.ios = []
+        globals_ = { (glb.bound_to_position, glb.bound_to_subtile): glb for glb in itervalues(context.globals_)
+                if glb.bound_to_position is not None and glb.bound_to_subtile is not None }
         with self.xml.element("fixed_layout",
                 {"name": context.top.name, "width": context.top.width, "height": context.top.height}):
-            self._layout_array(context.top)
+            self._layout_array(context.top, globals_)
 
     def _device(self, context):
         # fake device
