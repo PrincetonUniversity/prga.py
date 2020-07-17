@@ -6,6 +6,8 @@ module {{ module.name }} (
     {{ port.direction.case('input', 'output') }} wire [{{ port|length - 1}}:0] {{ port.name }}
     {%- endfor %}
     );
+
+
     {% for instance in itervalues(module.instances) %}
         {%- for pin in itervalues(instance.pins) %}
             {%- if pin.model.direction.is_output %}

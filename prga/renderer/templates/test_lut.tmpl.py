@@ -6,6 +6,7 @@ import math
 from cocotb.result import TestFailure
 from cocotb.binary import BinaryValue
 from cocotb.scoreboard import Scoreboard
+from config import *
 
 def clock_generation(clk,clock_period=10,test_time=10000):
     c= Clock(clk,clock_period)
@@ -31,8 +32,8 @@ def simple_test(dut):
 
     # Setting up LUT
     # Set the value of cfd
-    cfg_e <= 1;
-    cfg_we <= 1;
+    cfg_e <= 1
+    cfg_we <= 1
     cfd = []
     n_bits = 2**n_input
     for _ in range(n_bits):
@@ -41,8 +42,8 @@ def simple_test(dut):
         cfg_i <= bit
         yield RisingEdge(clk)
     
-    cfg_e <= 0;
-    cfg_we <= 0;
+    cfg_e <= 0
+    cfg_we <= 0
     yield RisingEdge(clk)
 
     for i in range(0,n_bits):
@@ -73,8 +74,8 @@ def changing_config(dut):
 
     # Setting up LUT
     # Set the value of cfd
-    cfg_e <= 1;
-    cfg_we <= 1;
+    cfg_e <= 1
+    cfg_we <= 1
     cfd = []
     n_bits = 2**n_input
     for _ in range(n_bits):
@@ -84,8 +85,8 @@ def changing_config(dut):
         yield RisingEdge(clk)
     cfd.reverse()
     
-    cfg_e <= 0;
-    cfg_we <= 0;
+    cfg_e <= 0
+    cfg_we <= 0
     yield RisingEdge(clk)
 
     # Set this to true to change the configuration in the middle of the test

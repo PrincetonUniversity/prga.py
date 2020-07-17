@@ -10,6 +10,10 @@ from ..exception import PRGAInternalError
 from collections import OrderedDict
 import os
 from os import path
+from prga.compatible import *
+from itertools import chain
+from prga.netlist.net.util import NetUtils
+
 __all__ = ['Tester']
 
 # ----------------------------------------------------------------------------
@@ -45,7 +49,7 @@ class Tester(Object, AbstractPass):
         #     print(x)
         #     print(module.instances[x])
         
-        print(module._instances.keys())
+        # print(module._instances.keys())
                     
         queue = []
 
@@ -68,22 +72,22 @@ class Tester(Object, AbstractPass):
         return instance_files
 
 
-    def get_heirarchy(self,module):
-        heirarchy = []
+    # def get_heirarchy(self,module):
+    #     heirarchy = []
 
-        # This function must be made recursive
-        # Send only the primitive heirarchy
-        for instance in itervalues(module.instances):
-            temp = self.get_heirarchy(instance.model)
-            for x in temp:
-                x.insert(0,str(module.name))
-                heirarchy.append(x)
+    #     # This function must be made recursive
+    #     # Send only the primitive heirarchy
+    #     for instance in itervalues(module.instances):
+    #         temp = self.get_heirarchy(instance.model)
+    #         for x in temp:
+    #             x.insert(0,str(module.name))
+    #             heirarchy.append(x)
         
-        # print(heirarchy)
-        if len(heirarchy)==0:
-            heirarchy.insert(0,[str(module.name)])
+    #     # print(heirarchy)
+    #     if len(heirarchy)==0:
+    #         heirarchy.insert(0,[str(module.name)])
         
-        return heirarchy
+    #     return heirarchy
     
     def get_primitives(self,module):
         queue = []
@@ -91,16 +95,43 @@ class Tester(Object, AbstractPass):
 
         # queue.append((module,[str(module.name)]))
         for instance in itervalues(module.instances):
-            queue.append((instance,[str(instance.name)]))
-        
-        while len(queue)!=0 :
-            curr_module, heirarchy = queue.pop(0)
-            if curr_module.model.module_class.is_primitive:
-                primitives.append((curr_module,heirarchy))
-                continue
+            # print(instance)
+            try:
+                # print(instance.cfg_bitoffset)
+                queue.append([instance,[str(instance.name)],instance.cfg_bitoffset])
+            except:
+                queue.append([instance,[str(instance.name)],0])
+                # x = 0+0
+        # print(queue)
+        while len(queue)!=0:
+            curr_module, heirarchy,offset = queue.pop(0)
 
+            if curr_module.model.module_class.is_cluster:
+                primitives.append([curr_module,heirarchy,offset+curr_module.cfg_bitoffset])
+
+            if curr_module.model.module_class.is_primitive:
+                if curr_module.model.primitive_class.is_lut:
+                    primitives.append([curr_module,heirarchy,offset])
+                    continue
+                else:
+                    # primitives.append([curr_module,heirarchy,offset])
+                    primitives.append([curr_module,heirarchy,offset])
+                    continue
+
+            # if module.name == "clb" or module.name == "cluster":    
+            # print(curr_module)
+            # try:
+            #     print(curr_module.cfg_bitoffset)
+            # except:
+            #     x = 0+0
             for instance in itervalues(curr_module.model.instances):
-                queue.append((instance,heirarchy+[str(instance.name)]))
+                # print(instance)
+                try:
+                # print(instance.cfg_bitoffset)
+                    queue.append([instance,[str(instance.name)],offset+instance.cfg_bitcount])
+                except:
+                    queue.append([instance,[str(instance.name)],offset])
+                # queue.append((instance,heirarchy+[str(instance.name)]))
         
         return primitives
 
@@ -115,63 +146,94 @@ class Tester(Object, AbstractPass):
         if not hasattr(module, "test_dir"):
             setattr(module,"test_dir",f)
         
-        print(module.name)
-        print(module.view)
-        print(module.instances.m)
-        # print(f)
-        # print(path.join(f,"Makefile"))
-        # print(path.join(f,"test.py"))
+        # print(module.name)
+        # try:
+        #     print(module.cfg_bitcount)
+        # except:
+        #     print("Does not have bitcount")
+        clocks = []
+        # if module.name == "cluster":
+        for x in iter(ipin for instance in itervalues(module.instances) for ipin in itervalues(instance.pins) if ipin.model.direction.is_input and ipin.model.is_clock):
+            if module._allow_multisource:
+                # print(NetUtils.get_multisource(x))
+                source = NetUtils.get_multisource(x)
+                if source not in clocks:
+                    # print(source.name)
+                    clocks.append(source) 
+            else:
+                source = NetUtils.get_source(x)
+                if source not in clocks:
+                    # print(source.name)
+                    clocks.append(source)
+            # print()
+        # print(clocks)
 
         setattr(module,"verilog_file",path.join(self.rtl_dir,module.name+".v"))
+        setattr(module,"clocks",clocks)
         
         # print(module.verilog_file)
 
         primitives = self.get_primitives(module)
+        # for sink_bus in chain(iter(oport for oport in itervalues(module.ports) if oport.direction.is_output),
+        #              iter(ipin for instance in itervalues(module.instances) for ipin in itervalues(instance.pins) if ipin.model.direction.is_input)):
+        #     for sink_net in sink_bus:
+        #         if module._allow_multisource:
+        #             for src_net in NetUtils.get_multisource(sink_net):
+        #                 conn = NetUtils.get_connection(src_net,sink_net)
+        #                 cfg_bits = conn.get("cfg_bits",tuple())
+        #                 print("Conn::",src_net,"->",sink_net,"::",cfg_bits)
+        setattr(module,"primitives",primitives)
+        instance_files = ' '.join(self.get_instance_file(module))
+        setattr(module,"files",instance_files)
+        setattr(module,"top_level",module.name)
         
-        if len(primitives)!=0:
-            # print(module)
-            # for a,b in primitives:
-            #     print(a,b)
-            #     print(a.model)
-            # print(primitives)
-            # for k,v in module._instances:
-            #     print(k,v)
+        self.renderer.add_top_level_python_test(module, path.join(f,"test.py"), "module.tmpl.py")
+        self.renderer.add_top_level_makefile(module, path.join(f,"Makefile"), "test_base.tmpl")
+        self.renderer.add_python_test(module, path.join(f,"config.py"), "config.py")
 
-            test_dir = path.join(self.tests_dir,"test_" + module.name)
+        # if len(primitives)!=0:
+        #     # print(module)
+        #     for a,b,x in primitives:
+        #         print(a,b,x)
+        #     #     print(a.model)
+        #     # print(primitives)
+        #     # for k,v in module._instances:
+        #     #     print(k,v)
 
-            # for x in self.get_instance_file(module):
-            #     print(x)
+        #     test_dir = path.join(self.tests_dir,"test_" + module.name)
 
-            instance_files = ' '.join(self.get_instance_file(module))
+        #     # for x in self.get_instance_file(module):
+        #     #     print(x)
+
             
-            for primitive,heirarchy in primitives:
-                # print(primitive)
-                # print(heirarchy)
-                primitive_test_dir = path.join(test_dir,"test_" + '_'.join(heirarchy))
-                # Add instances_files for makefile
-                setattr(primitive,"test_hierarchy",'.'.join(heirarchy)+'.')
-                # print(instance_files)
-                setattr(primitive,"files",instance_files)
-                self.renderer.add_makefile(primitive, path.join(primitive_test_dir,"Makefile"), "test_base.tmpl")
+        #     for primitive,heirarchy,_ in primitives:
+        #         # print(primitive)
+        #         # print(heirarchy)
+        #         primitive_test_dir = path.join(test_dir,"test_" + '_'.join(heirarchy))
+        #         # Add instances_files for makefile
+        #         setattr(primitive,"test_hierarchy",'.'.join(heirarchy)+'.')
+        #         # print(instance_files)
+        #         setattr(primitive,"files",instance_files)
+        #         self.renderer.add_makefile(primitive, path.join(primitive_test_dir,"Makefile"), "test_base.tmpl")
                 
-                # Add heirarchy for python test files
-                if len(heirarchy)!=0 :
-                    setattr(primitive,"test_hierarchy",'.'.join(heirarchy)+'.')
-                else:
-                    setattr(primitive,"test_hierarchy",'.')
+        #         # Add heirarchy for python test files
+        #         if len(heirarchy)!=0 :
+        #             setattr(primitive,"test_hierarchy",'.'.join(heirarchy)+'.')
+        #         else:
+        #             setattr(primitive,"test_hierarchy",'.')
 
-                setattr(primitive,"top_level",module.name)
-                # print(primitive.test_hierarchy)
-                # print(getattr(primitive.model, "test_python_template", "test_base.tmpl.py"))
-                # print(primitive.files)
-                # print(primitive.test_hierarchy)
-                # print(primitive.top_level)
-                # print(primitive_test_dir)
-                # print()
-                self.renderer.add_python_test(primitive, path.join(primitive_test_dir,"test.py"), getattr(primitive.model, "test_python_template", "test_base.tmpl.py"))
+        #         setattr(primitive,"top_level",module.name)
+        #         # print(primitive.test_hierarchy)
+        #         # print(getattr(primitive.model, "test_python_template", "test_base.tmpl.py"))
+        #         # print(primitive.files)
+        #         # print(primitive.test_hierarchy)
+        #         # print(primitive.top_level)
+        #         # print(primitive_test_dir)
+        #         # print()
+        #         self.renderer.add_python_test(primitive, path.join(primitive_test_dir,"test.py"), getattr(primitive.model, "test_python_template", "test_base.tmpl.py"))
                 
-                self.renderer.add_python_test(primitive, path.join(primitive_test_dir,"config.py"), "config.py")
-        print()
+        #         self.renderer.add_python_test(primitive, path.join(primitive_test_dir,"config.py"), "config.py")
+        # print()
 
         for instance in itervalues(module.instances):
             self._process_module(instance.model)
