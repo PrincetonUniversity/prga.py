@@ -30,6 +30,9 @@ try:
 except ImportError:
     import pickle
 
+import logging
+_logger = logging.getLogger(__name__)
+
 __all__ = ['ContextSummary', 'Context']
 
 _VERSION = open(os.path.join(os.path.dirname(__file__), "..", "VERSION"), "r").read().strip()
@@ -614,8 +617,10 @@ class Context(Object):
         """
         if isinstance(file_, basestring):
             pickle.dump(self, open(file_, OpenMode.wb))
+            _logger.info("Context pickled to {}".format(file_))
         else:
             pickle.dump(self, file_)
+            _logger.info("Context pickled to {}".format(file_.name))
 
     def pickle_summary(self, file_):
         """Pickle the summary into a binary file.
@@ -625,8 +630,10 @@ class Context(Object):
         """
         if isinstance(file_, basestring):
             pickle.dump(self.summary, open(file_, OpenMode.wb))
+            _logger.info("Context summary pickled to {}".format(file_))
         else:
             pickle.dump(self.summary, file_)
+            _logger.info("Context summary pickled to {}".format(file_.name))
 
     @classmethod
     def unpickle(cls, file_):
@@ -635,6 +642,7 @@ class Context(Object):
         Args:
             file_ (:obj:`str` or file-like object): the pickled file
         """
+        name = file_ if isinstance(file_, basestring) else file_.name
         obj = pickle.load(open(file_, OpenMode.rb) if isinstance(file_, basestring) else file_)
         if isinstance(obj, cls) and (version := getattr(obj, "version", None)) != _VERSION:
             if version is None:
@@ -645,4 +653,6 @@ class Context(Object):
                 raise PRGAAPIError(
                         "The context is pickled by PRGA version {}, not supported by current version {}"
                         .format(version, _VERSION))
+        _logger.info("Context {}unpickled from {}".format(
+            "summary " if isinstance(obj, ContextSummary) else "", name))
         return obj

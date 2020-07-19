@@ -4,7 +4,6 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .protocol import PktchainProtocol
-from .system import PktchainSystem
 from ..scanchain.lib import Scanchain, ScanchainSwitchDatabase, ScanchainFASMDelegate
 from ...core.common import ModuleClass, ModuleView, NetClass, Orientation
 from ...core.context import Context
@@ -15,6 +14,8 @@ from ...netlist.module.util import ModuleUtils
 from ...passes.base import AbstractPass
 from ...passes.vpr import FASMDelegate
 from ...renderer.renderer import FileRenderer
+from ...integration.integration import Integration
+from ...tools.ioplan.ioplan import IOPlanner
 from ...util import Object, uno
 from ...exception import PRGAInternalError, PRGAAPIError
 
@@ -322,89 +323,29 @@ class Pktchain(Scanchain):
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_disassemble"], "ofifo")
             context._database[ModuleView.logical, "pktchain_gatherer"] = mod
 
-        # register pktchain AXILite interface-related stuff
-        if "pktchain_axilite_intf_fe" not in dont_add_logical_primitive:
-            d = "pktchain_axilite_intf_fe"
-            mod = context._database[ModuleView.logical, d] = Module(d,
+        # register pktchain bitstream loader
+        if "pktchain_cfg" not in dont_add_logical_primitive:
+            mod = context._database[ModuleView.logical, "pktchain_cfg"] = Module("pktchain_cfg", 
                     view = ModuleView.logical,
-                    verilog_template = "axilite_intf/" + d + ".tmpl.v")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
-                    "axi_waddr_fifo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
-                    "axi_wdata_fifo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
-                    "axi_raddr_fifo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_tokenfifo"],
-                    "axi_wresp_fifo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
-                    "axi_rresp_fifo")
+                    module_class = ModuleClass.aux,
+                    verilog_template = "pktchain_cfg.tmpl.v")
 
-        if "pktchain_axilite_intf_be_uprot" not in dont_add_logical_primitive:
-            d = "pktchain_axilite_intf_be_uprot"
-            mod = context._database[ModuleView.logical, d] = Module(d,
-                    view = ModuleView.logical,
-                    verilog_template = "axilite_intf/" + d + ".tmpl.v")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"],
-                    "timeout_limit_reg")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
-                    "uerr_fifo")
+            ModuleUtils.create_port(mod, "clk", 1, PortDirection.input_, is_clock = True)
+            Integration._create_intf_cfg(mod, True)
+            ModuleUtils.create_port(mod, "cfg_rst", 1, PortDirection.output)
+            ModuleUtils.create_port(mod, "cfg_e", 1, PortDirection.output)
+            ModuleUtils.create_port(mod, "phit_o_full", 1, PortDirection.input_)
+            ModuleUtils.create_port(mod, "phit_o_wr", 1, PortDirection.output)
+            ModuleUtils.create_port(mod, "phit_o", phit_width, PortDirection.output)
+            ModuleUtils.create_port(mod, "phit_i_full", 1, PortDirection.output)
+            ModuleUtils.create_port(mod, "phit_i_wr", 1, PortDirection.input_)
+            ModuleUtils.create_port(mod, "phit_i", phit_width, PortDirection.input_)
 
-        if not ({"pktchain_frame_disassemble", "pktchain_frame_assemble", "pktchain_axilite_intf_be_cfg"} &
-                dont_add_logical_primitive):
-            d = "pktchain_axilite_intf_be_cfg"
-            mod = context._database[ModuleView.logical, d] = Module(d,
-                    view = ModuleView.logical,
-                    verilog_template = "axilite_intf/" + d + ".tmpl.v")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
-                    "axififo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo_resizer"],
-                    "axififo_resizer")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_disassemble"],
-                    "bsframe_fifo")
-            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_assemble"],
-                    "bsresp_fifo")
-
-        if not ({"pktchain_axilite_intf_fe", "pktchain_axilite_intf_be_uprot", "pktchain_axilite_intf_be_cfg"} &
-                dont_add_logical_primitive):
-            d = "pktchain_axilite_intf"
-            mod = context._database[ModuleView.logical, d] = Module(d,
-                    view = ModuleView.logical,
-                    verilog_template = "axilite_intf/" + d + ".tmpl.v")
-            # create a short alias
-            mcp = ModuleUtils.create_port
-            mit = ModuleUtils.instantiate
-            # ports
-            clk = mcp(mod, "clk", 1, PortDirection.input_, is_clock = True)
-            rst = mcp(mod, "rst", 1, PortDirection.input_)
-            mcp(mod, "uclk", 1, PortDirection.output, is_clock = True)
-            mcp(mod, "urst_n", 1, PortDirection.output)
-            mcp(mod, "cfg_rst",             1,              PortDirection.output),
-            mcp(mod, "cfg_e",               1,              PortDirection.output),
-            mcp(mod, "cfg_phit_o_full",     1,              PortDirection.input_),
-            mcp(mod, "cfg_phit_o_wr",       1,              PortDirection.output),
-            mcp(mod, "cfg_phit_o",          phit_width,     PortDirection.output),
-            mcp(mod, "cfg_phit_i_full",     1,              PortDirection.output),
-            mcp(mod, "cfg_phit_i_wr",       1,              PortDirection.input_),
-            mcp(mod, "cfg_phit_i",          phit_width,     PortDirection.input_),
-            PktchainSystem._create_axilite_intf(mod, "m", PktchainProtocol.AXILiteController.ADDR_WIDTH,
-                    2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3))
-            PktchainSystem._create_axilite_intf(mod, "u", PktchainProtocol.AXILiteController.ADDR_WIDTH,
-                    2 ** (PktchainProtocol.AXILiteController.DATA_WIDTH_LOG2 - 3), is_master = True)
-            # instances
-            mit(mod, context.database[ModuleView.logical, "pktchain_axilite_intf_fe"], "i_fe")
-            mit(mod, context.database[ModuleView.logical, "prga_async_tokenfifo"], "i_cdcq_wresp")
-            mit(mod, context.database[ModuleView.logical, "prga_clkdiv"], "i_clkdiv")
-            mit(mod, context.database[ModuleView.logical, "prga_async_fifo"], "i_cdcq_wreq")
-            mit(mod, context.database[ModuleView.logical, "prga_async_fifo"], "i_cdcq_rreq")
-            mit(mod, context.database[ModuleView.logical, "prga_async_fifo"], "i_cdcq_rresp")
-            mit(mod, context.database[ModuleView.logical, "pktchain_axilite_intf_be_uprot"], "i_uprot")
-            mit(mod, context.database[ModuleView.logical, "pktchain_axilite_intf_be_cfg"], "i_cfg")
-            mit(mod, context.database[ModuleView.logical, "prga_fifo"], "i_wresp_tokenq")
-            mit(mod, context.database[ModuleView.logical, "prga_fifo"], "i_rresp_tokenq")
-            mit(mod, context.database[ModuleView.logical, "prga_fifo"], "i_rresp_dataq")
-            mit(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"], "i_ctrl_cfg")
-            mit(mod, context.database[ModuleView.logical, "prga_fifo"], "i_errq")
-            mit(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"], "i_bsid")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"], "i_rawq")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo_resizer"], "i_resizer")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_ram_1r1w"], "i_tile_status")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_assemble"], "i_brespq")
+            ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "pktchain_frame_disassemble"], "i_frameq")
 
     @classmethod
     def _complete_pktchain_leaf(cls, context, module, instance, iter_instances,
@@ -604,8 +545,8 @@ class Pktchain(Scanchain):
                 }
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
         context._fasm_delegate = PktchainFASMDelegate(context)
-        context._add_verilog_header("pktchain.vh", "pktchain.tmpl.vh")
-        context._add_verilog_header("pktchain_axilite_intf.vh", "axilite_intf/pktchain_axilite_intf.tmpl.vh")
+        context._add_verilog_header("pktchain.vh", "include/pktchain.tmpl.vh")
+        context._add_verilog_header("pktchain_system.vh", "include/pktchain_system.tmpl.vh")
         # define the programming protocol
         context.summary.pktchain["protocol"] = PktchainProtocol
         cls._register_primitives(context, phit_width, cfg_width, dont_add_primitive, dont_add_logical_primitive)
@@ -817,43 +758,53 @@ class Pktchain(Scanchain):
         def passes_after_self(self):
             return ("rtl", )
 
-    class BuildAXILiteSystem(Object, AbstractPass):
-        """Create a system wrapping the fabric with a bitstream controller. 
+    class BuildSystem(Object, AbstractPass):
+        """Create a system wrapping the fabric with the system integration interface."""
 
-        Args:
-            expose_gpio (:obj:`bool`): If set to True, pins of the fabric that are not used in the user AXI4-Lite
-                interface are exposed at the top level
+        __slots__  = ["io_constraints_f", "name"]
 
-        Keyword Args:
-            name (:obj:`str`): Name of the system top module. ``"system"`` by default
-            io_start_pos (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Starting position when searching IO pins
-            io_start_subtile (:obj:`int`): Starting subtile when searching IO pins
-            io_scan_direction (`Orientation`): Starting direction when searching IO pins
-
-        This pass wraps the reconfigurable fabric into a system with AXILite interface. The system contains a
-        bitstream controller and a user protection layer which times out when the fabric does not follow the AXILite
-        protocol. IO pins are automatically assigned for the AXI ports. Use ``io_start_pos``, ``io_start_subtile`` and
-        ``io_scan_direction`` to fine-tune IO assignment.
-        """
-
-        __slots__ = ["expose_gpio", "name", "io_start_pos", "io_start_subtile", "io_scan_direction"]
-
-        def __init__(self, expose_gpio = False, *,
-                name = None, io_start_pos = None, io_start_subtile = 0, io_scan_direction = Orientation.north):
-            self.expose_gpio = expose_gpio
+        def __init__(self, io_constraints_f = "io.pads", *, name = "prga_system"):
+            self.io_constraints_f = io_constraints_f
             self.name = name
-            self.io_start_pos = io_start_pos
-            self.io_start_subtile = io_start_subtile
-            self.io_scan_direction = io_scan_direction
 
         def run(self, context, renderer = None):
-            PktchainSystem.build_system_axilite(context, self.expose_gpio,
-                    name = self.name, io_start_pos = self.io_start_pos, io_start_subtile = self.io_start_subtile,
-                    io_scan_direction = self.io_scan_direction)
+            Integration.build_system(context)
+            # add cfg instance and connect ports/pins
+            system = context.system_top
+            cfg = ModuleUtils.instantiate(system,
+                    context.database[ModuleView.logical, "pktchain_cfg"], "i_cfg")
+            intf = system.instances["i_sysintf"]
+            fabric = system.instances["i_fabric"]
+            NetUtils.connect(system.ports["clk"], cfg.pins["clk"])
+            NetUtils.connect(intf.pins["cfg_rst_n"], cfg.pins["rst_n"])
+            NetUtils.connect(cfg.pins["status"], intf.pins["cfg_status"])
+            NetUtils.connect(cfg.pins["req_rdy"], intf.pins["cfg_req_rdy"])
+            NetUtils.connect(intf.pins["cfg_req_val"], cfg.pins["req_val"])
+            NetUtils.connect(intf.pins["cfg_req_addr"], cfg.pins["req_addr"])
+            NetUtils.connect(intf.pins["cfg_req_strb"], cfg.pins["req_strb"])
+            NetUtils.connect(intf.pins["cfg_req_data"], cfg.pins["req_data"])
+            NetUtils.connect(intf.pins["cfg_resp_rdy"], cfg.pins["resp_rdy"])
+            NetUtils.connect(cfg.pins["resp_val"], intf.pins["cfg_resp_val"])
+            NetUtils.connect(cfg.pins["resp_err"], intf.pins["cfg_resp_err"])
+            NetUtils.connect(cfg.pins["resp_data"], intf.pins["cfg_resp_data"])
+            NetUtils.connect(cfg.pins["cfg_rst"], fabric.pins["cfg_rst"])
+            NetUtils.connect(cfg.pins["cfg_e"], fabric.pins["cfg_e"])
+            NetUtils.connect(cfg.pins["phit_i_full"], fabric.pins["phit_o_full"])
+            NetUtils.connect(fabric.pins["phit_o_wr"], cfg.pins["phit_i_wr"])
+            NetUtils.connect(fabric.pins["phit_o"], cfg.pins["phit_i"])
+            NetUtils.connect(fabric.pins["phit_i_full"], cfg.pins["phit_o_full"])
+            NetUtils.connect(cfg.pins["phit_o_wr"], fabric.pins["phit_i_wr"])
+            NetUtils.connect(cfg.pins["phit_o"], fabric.pins["phit_i"])
+            # generate IO constraints
+            constraints = dict(
+                    **Integration.ioplan_syscon(context),
+                    **Integration.ioplan_ureg(context),
+                    **Integration.ioplan_ccm(context), )
+            IOPlanner.print_io_constraints(constraints, self.io_constraints_f)
 
         @property
         def key(self):
-            return "system.pktchain.build"
+            return "system.pktchain"
 
         @property
         def dependences(self):
@@ -863,38 +814,3 @@ class Pktchain(Scanchain):
         def passes_after_self(self):
             return ("rtl", )
 
-    class GenerateAXILiteIOConstraints(Object, AbstractPass):
-        """Generate the IO constraints file for AXILite system.
-
-        Args:
-            io_constraints_output_file (:obj:`str` or file-like object): Output file for IO constraints
-
-        Keyword Args:
-            addr_width (:obj:`int`): Width of the AXILite address ports
-            data_bytes (:obj:`int`): Width of the AXILite data ports (in 8-bit bytes)
-        """
-
-        __slots__ = ["io_constraints_output_file", "addr_width", "data_bytes"]
-
-        def __init__(self, io_constraints_output_file, *, addr_width = 8, data_bytes = 4):
-            self.io_constraints_output_file = io_constraints_output_file
-            self.addr_width = addr_width
-            self.data_bytes = data_bytes
-
-        def run(self, context, renderer = None):
-            if renderer is None:
-                raise PRGAAPIError("File renderer is required for the Pktchain System Building pass")
-            PktchainSystem.generate_axilite_io_assignment_constraint(context, renderer, 
-                    self.io_constraints_output_file, addr_width = self.addr_width, data_bytes = self.data_bytes)
-
-        @property
-        def key(self):
-            return "system.pktchain.io"
-
-        @property
-        def dependences(self):
-            return ("system.pktchain.build", )
-
-        @property
-        def is_readonly_pass(self):
-            return True

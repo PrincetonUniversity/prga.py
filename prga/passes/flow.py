@@ -73,6 +73,8 @@ class Flow(Object):
             context (`Context`):
             renderer (`FileRenderer`):
         """
+        if not hasattr(context, "_applied_passes"):
+            context._applied_passes = set()
         # 1. resolve dependences/conflicts
         passes = {}
         while self._passes:
@@ -82,9 +84,18 @@ class Flow(Object):
                     # 1.1 is the pass added twice?
                     if pass_.key in passes:
                         raise PRGAAPIError("Pass {} is added twice".format(pass_.key))
-                    # 1.2 any duplicates? 
+                    # 1.2 is the pass already executed?
+                    if pass_.key in context._applied_passes:
+                        raise PRGAAPIError("Pass {} is already applied to the context".format(pass_.key))
+                    # 1.3 any duplicates? 
                     try:
                         duplicate = next(key for key in passes if not self.__key_is_irrelevent(pass_.key, key))
+                        raise PRGAAPIError("Pass {} and {} conflict with each other".format(pass_.key, key))
+                    except StopIteration:
+                        pass
+                    try:
+                        duplicate = next(key for key in context._applied_passes
+                                if not self.__key_is_irrelevent(pass_.key, key))
                         raise PRGAAPIError("Pass {} and {} conflict with each other".format(pass_.key, key))
                     except StopIteration:
                         pass
@@ -95,8 +106,15 @@ class Flow(Object):
                     raise PRGAAPIError("Pass {} and {} conflict with each other".format(pass_.key, key))
                 except StopIteration:
                     pass
+                try:
+                    conflict = next(key for key in context._applied_passes if any(self.__key_is_prefix(rule, key)
+                        for rule in pass_.conflicts))
+                    raise PRGAAPIError("Pass {} and {} conflict with each other".format(pass_.key, key))
+                except StopIteration:
+                    pass
                 # 1.4 are all dependences satisfied?
-                if all(any(self.__key_is_prefix(rule, key) for key in passes)
+                if all(any(self.__key_is_prefix(rule, key) for key in passes) or
+                        any(self.__key_is_prefix(rule, key) for key in context._applied_passes)
                         for rule in pass_.dependences):
                     passes[pass_.key] = pass_
                     updated = i
@@ -136,6 +154,10 @@ class Flow(Object):
             t = time.time()
             pass_.run(context, renderer)
             _logger.info("pass '%s' took %f seconds", pass_.key, time.time() - t)
+            context._applied_passes.add(pass_.key)
         # 4. render all files
         if renderer is not None:
+            _logger.info("Rendering files...")
+            t = time.time()
             renderer.render()
+            _logger.info("File rendering took %f seconds", time.time() - t)
