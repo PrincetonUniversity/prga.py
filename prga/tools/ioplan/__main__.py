@@ -19,12 +19,5 @@ summary = Context.unpickle(args.summary)
 _logger.info("Architecture context (or summary) parsed")
 io_constraints = IOPlanner.autoplan(summary, find_verilog_top(args.model, args.model_top),
         IOPlanner.parse_io_constraints(args.fixed) if args.fixed is not None else {})
-ostream = sys.stdout if args.output is None else open(args.output, 'w')
-for name, ios in iteritems(io_constraints):
-    if len(ios) == 1:
-        (x, y), subtile = ios[0]
-        ostream.write("{} {} {} {}\n".format(name, x, y, subtile))
-    else:
-        for i, ((x, y), subtile) in enumerate(ios, ios.low):
-            ostream.write("{}[{}] {} {} {}\n".format(name, i, x, y, subtile))
+IOPlanner.print_io_constraints(io_constraints, sys.stdout if args.output is None else open(args.output, 'w'))
 _logger.info("Constraints generated. Bye")

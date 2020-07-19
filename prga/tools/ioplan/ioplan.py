@@ -8,11 +8,11 @@ from ...core.common import Position, OrientationTuple, IOType
 from ...exception import PRGAAPIError, PRGAInternalError
 from ...util import Object, uno
 
-import re
+import re, os, sys
 
 __all__ = ["IOPlanner"]
 
-_reprog_bit = re.compile('^(?P<name>(?:out:)?.*?)(?:\[(?P<index>\d+)\])?$')
+_reprog_bit = re.compile('^(?P<out>out:)?(?P<name>.*?)(?:\[(?P<index>\d+)\])?$')
 
 # ----------------------------------------------------------------------------
 # -- IO Constraints List -----------------------------------------------------
@@ -21,13 +21,15 @@ class IOConstraints(MutableSequence):
     """IO constraints of a port.
 
     Args:
+        type_ (`IOType`): Type of IO
         low (:obj:`int`): LSB index of the port
         high (:obj:`int`): MSB + 1 index of the port
     """
 
-    __slots__ = ["low", "_elements"]
+    __slots__ = ["type_", "low", "_elements"]
 
-    def __init__(self, low = None, high = None):
+    def __init__(self, type_, low = None, high = None):
+        self.type_ = type_
         self.low = uno(low, 0)
         high = uno(high, self.low + 1)
         self._elements = [None] * (high - self.low)
@@ -145,13 +147,13 @@ class IOPlanner(Object):
                 raise PRGAInternalError("IO at {}, {} not on edge of the fabric"
                         .format(Position(*self.position), self.subtile))
 
-    def use(self, position, subtile, iotype):
+    def use(self, iotype, position, subtile):
         """Mark the IO at the specified location as used.
 
         Args:
+            iotype (`IOType`):
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
             subtile (:obj:`int`):
-            iotype (`IOType`):
         """
         if (io := self.avail_globals.pop( (position, subtile), None )) is None:
             if (io := self.avail_nonglobals.pop( (position, subtile), None )) is None:
@@ -220,8 +222,7 @@ class IOPlanner(Object):
         # initialize constraints
         constraints = {}
         for port_name, port in iteritems(mod_top.ports):
-            key = port.direction.case("", "out:") + port_name
-            constraints[key] = IOConstraints(port.low, port.high)
+            constraints[port_name] = IOConstraints(port.direction.case(IOType.ipin, IOType.opin), port.low, port.high)
         # process manual constraints
         for name, fixed_constraints in iteritems(uno(fixed, {})):
             if (ios := constraints.get(name)) is None:
@@ -230,14 +231,14 @@ class IOPlanner(Object):
             for i, c in enumerate(fixed_constraints, fixed_constraints.low):
                 if c is None:
                     continue
-                planner.use(*c, IOType.opin if name.startswith("out:") else IOType.ipin)
+                planner.use(ios.type_, *c)
                 ios[i] = c
         # complete the constraints
         for key, ios in iteritems(constraints):
             for i, c in enumerate(ios, ios.low):
                 if c is not None:
                     continue
-                ios[i] = planner.pop(IOType.opin if key.startswith("out:") else IOType.ipin)
+                ios[i] = planner.pop(ios.type_)
         return constraints
 
     @classmethod
@@ -265,9 +266,9 @@ class IOPlanner(Object):
                 raise PRGAAPIError("Invalid constraint at line {}".format(lineno + 1))
             if (matched := _reprog_bit.match(name)) is None:
                 raise PRGAAPIError("Invalid port name at line {}: {}".format(lineno + 1, name))
-            key, index = matched.group("name", "index")
-            if (ios := constraints.get(key)) is None:
-                ios = constraints[key] = IOConstraints(uno(index, 0))
+            out, name, index = matched.group("out", "name", "index")
+            if (ios := constraints.get(name)) is None:
+                ios = constraints[name] = IOConstraints(IOType.opin if out else IOType.ipin, uno(index, 0))
             elif index is None:
                 raise PRGAAPIError("Conflicting constraint at line {}: {}".format(lineno + 1, name))
             elif index < ios.low:
@@ -276,3 +277,23 @@ class IOPlanner(Object):
                 ios.resize(high = index + 1)
             ios[uno(index, 0)] = Position(x, y), subtile
         return constraints
+
+    @classmethod
+    def print_io_constraints(cls, constraints, ostream = sys.stdout):
+        """Print IO constraints.
+
+        Args:
+            constraints (:obj:`Mapping` [:obj:`str`, `IOConstraints` ]):
+            ostream (:obj:`str` or file-like object):
+        """
+        if isinstance(ostream, basestring):
+            makedirs(os.path.dirname(ostream))
+            ostream = open(ostream, "w")
+        for name, ios in iteritems(constraints):
+            key = ios.type_.case(ipin = "", opin = "out:") + name
+            if len(ios) == 1:
+                (x, y), subtile = ios[ios.low]
+                ostream.write("{} {} {} {}\n".format(key, x, y, subtile))
+            else:
+                for i, ((x, y), subtile) in enumerate(ios, ios.low):
+                    ostream.write("{}[{}] {} {} {}\n".format(key, i, x, y, subtile))

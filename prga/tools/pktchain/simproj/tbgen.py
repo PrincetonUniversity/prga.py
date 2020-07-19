@@ -69,10 +69,7 @@ class PktchainTbgen(object):
         impl_info = {'name': fpga_top.name, 'config': []}
         ports = impl_info['ports'] = {}
         for port_name, ios in iteritems(io_constraints):
-            direction = PortDirection.input_
-            if port_name.startswith('out:'):
-                port_name = port_name[4:]
-                direction = PortDirection.output
+            direction = ios.type_.case(PortDirection.input_, PortDirection.output)
             for index, ((x, y), subtile) in enumerate(ios, ios.low):
                 if len(ios) == 1:
                     index = None
