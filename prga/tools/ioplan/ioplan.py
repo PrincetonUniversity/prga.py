@@ -226,6 +226,7 @@ class IOPlanner(Object):
         # process manual constraints
         for name, fixed_constraints in iteritems(uno(fixed, {})):
             if (ios := constraints.get(name)) is None:
+                continue
                 raise PRGAAPIError("Port '{}' is not found in module '{}'"
                         .format(name, mod_top.name))
             for i, c in enumerate(fixed_constraints, fixed_constraints.low):
@@ -267,15 +268,14 @@ class IOPlanner(Object):
             if (matched := _reprog_bit.match(name)) is None:
                 raise PRGAAPIError("Invalid port name at line {}: {}".format(lineno + 1, name))
             out, name, index = matched.group("out", "name", "index")
+            index = int(uno(index, 0))
             if (ios := constraints.get(name)) is None:
-                ios = constraints[name] = IOConstraints(IOType.opin if out else IOType.ipin, uno(index, 0))
-            elif index is None:
-                raise PRGAAPIError("Conflicting constraint at line {}: {}".format(lineno + 1, name))
+                ios = constraints[name] = IOConstraints(IOType.opin if out else IOType.ipin, index)
             elif index < ios.low:
                 ios.resize(index)
-            elif index - ios.low > len(ios):
+            elif index - ios.low >= len(ios):
                 ios.resize(high = index + 1)
-            ios[uno(index, 0)] = Position(x, y), subtile
+            ios[index] = Position(x, y), subtile
         return constraints
 
     @classmethod
@@ -287,7 +287,8 @@ class IOPlanner(Object):
             ostream (:obj:`str` or file-like object):
         """
         if isinstance(ostream, basestring):
-            makedirs(os.path.dirname(ostream))
+            if d := os.path.dirname(ostream):
+                makedirs(d)
             ostream = open(ostream, "w")
         for name, ios in iteritems(constraints):
             key = ios.type_.case(ipin = "", opin = "out:") + name
