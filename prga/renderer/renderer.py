@@ -12,6 +12,7 @@ from ..exception import PRGAInternalError
 
 import os
 import jinja2 as jj
+import fileinput
 
 # In Python 3.7 and above, ``dict`` preserves insertion order and is more performant than ``OrderedDict``
 OrderedDict = dict

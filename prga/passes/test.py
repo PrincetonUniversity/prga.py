@@ -106,18 +106,31 @@ class Tester(Object, AbstractPass):
         while len(queue)!=0:
             curr_module, heirarchy,offset = queue.pop(0)
 
-            if curr_module.model.module_class.is_cluster:
-                primitives.append([curr_module,heirarchy,offset+curr_module.cfg_bitoffset])
+            # if curr_module.model.module_class.is_cluster:
+            #     primitives.append([curr_module,heirarchy,offset+curr_module.cfg_bitoffset])
 
             if curr_module.model.module_class.is_primitive:
-                if curr_module.model.primitive_class.is_lut:
-                    primitives.append([curr_module,heirarchy,offset])
-                    continue
-                else:
-                    # primitives.append([curr_module,heirarchy,offset])
-                    primitives.append([curr_module,heirarchy,offset])
-                    continue
+                for k,v in iteritems(curr_module.pins):
+                    setattr(v,'test_heirarchy','_'.join(heirarchy))
+                    # v.test_heirarchy =0 
+                    # print('_'.join(heirarchy))
+                    # print(v)
+                    print(v.test_heirarchy)
 
+                if curr_module.model.primitive_class.is_flipflop:
+                    D = curr_module.pins['D']
+                    # print(D)
+                    # if module._allow_multisource:
+                    #     print(NetUtils.get_multisource(D))
+                    #     print(NetUtils.get_multisource(D).test_heirarchy)
+                    #     # print(NetUtils.get_multisource(D).parent)
+                    # else:
+                    #     print(NetUtils.get_source(D))
+                    #     print(NetUtils.get_source(D).test_heirarchy)
+                        # print(NetUtils.get_source(D).parent)
+                    setattr(curr_module,"test_heirarchy",'_'.join(heirarchy))
+
+                primitives.append([curr_module,heirarchy,offset])
             # if module.name == "clb" or module.name == "cluster":    
             # print(curr_module)
             # try:
@@ -128,9 +141,9 @@ class Tester(Object, AbstractPass):
                 # print(instance)
                 try:
                 # print(instance.cfg_bitoffset)
-                    queue.append([instance,[str(instance.name)],offset+instance.cfg_bitcount])
+                    queue.append([instance,heirarchy+[str(instance.name)],offset+instance.cfg_bitcount])
                 except:
-                    queue.append([instance,[str(instance.name)],offset])
+                    queue.append([instance,heirarchy+[str(instance.name)],offset])
                 # queue.append((instance,heirarchy+[str(instance.name)]))
         
         return primitives
@@ -146,7 +159,7 @@ class Tester(Object, AbstractPass):
         if not hasattr(module, "test_dir"):
             setattr(module,"test_dir",f)
         
-        # print(module.name)
+        print(module.name)
         # try:
         #     print(module.cfg_bitcount)
         # except:
@@ -190,6 +203,16 @@ class Tester(Object, AbstractPass):
         self.renderer.add_top_level_python_test(module, path.join(f,"test.py"), "module.tmpl.py")
         self.renderer.add_top_level_makefile(module, path.join(f,"Makefile"), "test_base.tmpl")
         self.renderer.add_python_test(module, path.join(f,"config.py"), "config.py")
+        for a,b,x in primitives:
+            print(a,b,x)
+        #     if a.model.module_class.is_primitive and a.model.primitive_class.is_flipflop:
+        #         print(a)
+        #         print(a.pins['D'])
+        #         if module._allow_multisource:
+        #             print(NetUtils.get_multisource(a.pins['D']))
+        #             print(dir(NetUtils.get_multisource(a.pins['D'])))
+        #         else:
+        #             print(NetUtils.get_source(a.pins['D']))
 
         # if len(primitives)!=0:
         #     # print(module)
@@ -233,7 +256,7 @@ class Tester(Object, AbstractPass):
         #         self.renderer.add_python_test(primitive, path.join(primitive_test_dir,"test.py"), getattr(primitive.model, "test_python_template", "test_base.tmpl.py"))
                 
         #         self.renderer.add_python_test(primitive, path.join(primitive_test_dir,"config.py"), "config.py")
-        # print()
+        print()
 
         for instance in itervalues(module.instances):
             self._process_module(instance.model)
