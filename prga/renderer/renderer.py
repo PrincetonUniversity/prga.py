@@ -129,26 +129,8 @@ class FileRenderer(Object):
         self.tasks.setdefault(file_, []).append( (template, parameters) )
 
 
-    def add_makefile(self, instance, file_, template = 'test_base.tmpl', **kwargs):
-        """Add a Verilog rendering task.
-
-        Args:
-            instance (`Abstractg`): The instance to be rendered
-            file_ (:obj:`str` of file-like object): The output file
-            template (:obj:`str`): The template to be used
-            **kwargs: Additional key-value parameters to be passed into the template when rendering
-        """
-        parameters = {
-                "instance": instance,
-                "source2verilog": self._source2verilog,
-                'itervalues': itervalues,
-                'iteritems': iteritems
-                }
-        parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (template, parameters) )
-
     def add_top_level_makefile(self, module, file_, template = 'test_base.tmpl', **kwargs):
-        """Add a Verilog rendering task.
+        """Add a Makefile rendering task.
 
         Args:
             module (`Abstractg`): The module to be rendered
@@ -165,26 +147,8 @@ class FileRenderer(Object):
         parameters.update(kwargs)
         self.tasks.setdefault(file_, []).append( (template, parameters) )
 
-    def add_python_test(self, instance, file_, template = 'test_base.tmpl.py', **kwargs):
-        """Add a Verilog rendering task.
-
-        Args:
-            instance (`Abstractg`): The instance to be rendered
-            file_ (:obj:`str` of file-like object): The output file
-            template (:obj:`str`): The template to be used
-            **kwargs: Additional key-value parameters to be passed into the template when rendering
-        """
-        parameters = {
-                "instance": instance,
-                "source2verilog": self._source2verilog,
-                'itervalues': itervalues,
-                'iteritems': iteritems,
-                }
-        parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (template, parameters) )
-
     def add_top_level_python_test(self, module, file_, template = '=module.tmpl.py', **kwargs):
-        """Add a Verilog rendering task.
+        """Add a Cocotb test bench rendering task.
 
         Args:
             module (`Abstractg`): The module to be rendered

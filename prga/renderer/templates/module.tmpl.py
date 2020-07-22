@@ -17,35 +17,11 @@ def clock_generation(clk,clock_period=10,test_time=10000):
 {% if instance.model.module_class.is_primitive and instance.model.primitive_class.is_lut %}
 @cocotb.coroutine
 def test_{{'_'.join(test_hierarchy)}}(dut): 
-    yield RisingEdge(dut.{{'.'.join(test_hierarchy)}}.cfg_clk)
     {% set bitcount = instance.model.cfg_bitcount %}
-    input = dut.{{'.'.join(test_hierarchy)}}.bits_in
-    out = dut.{{'.'.join(test_hierarchy)}}.out
-    cfg_e = dut.{{'.'.join(test_hierarchy)}}.i_cfg_data.cfg_e
-    cfg_we = dut.{{'.'.join(test_hierarchy)}}.i_cfg_data.cfg_we
-    cfg_i = dut.{{'.'.join(test_hierarchy)}}.i_cfg_data.cfg_i
-    cfg_o = dut.{{'.'.join(test_hierarchy)}}.i_cfg_data.cfg_o
-    cfg_d[{{offset+bitcount-1}}:{{offset}}] = 0
-    cfg_d[{{offset+bitcount-1}}] = 1
-
-    # Setting up LUT
-    # Set the value of cfd
-    cfg_e <= 1
-    cfg_we <= 1
-    
-    yield RisingEdge(dut.{{'.'.join(test_hierarchy)}}.cfg_clk)
-    
-    for i in range({{offset+bitcount-1}},{{offset-1}},-1):
-        cfg_i <= cfg_d[i]
-        yield RisingEdge(dut.{{'.'.join(test_hierarchy)}}.cfg_clk)
-    
-    cfg_e <= 0
-    cfg_we <= 0
-
-    yield RisingEdge(dut.{{'.'.join(test_hierarchy)}}.cfg_clk)
+    input_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(test_hierarchy)}}.bits_in
     while True:
         for i in range(0,{{bitcount}}):
-            input <= i
+            input_{{'_'.join(test_hierarchy)}} <= i
             yield RisingEdge(dut.{{'.'.join(test_hierarchy)}}.cfg_clk)
             # output = out.value.integer
 
@@ -95,6 +71,30 @@ def simple_test(dut):
 
     {%  for instance,test_hierarchy,offset in module.primitives %}
     {% if instance.model.module_class.is_primitive and instance.model.primitive_class.is_lut %}
+    {% set bitcount = instance.model.cfg_bitcount %}
+    input_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(test_hierarchy)}}.bits_in
+    cfg_e_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(test_hierarchy)}}.i_cfg_data.cfg_e
+    cfg_we_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(test_hierarchy)}}.i_cfg_data.cfg_we
+    cfg_i_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(test_hierarchy)}}.i_cfg_data.cfg_i
+    cfg_d[{{offset+bitcount-1}}:{{offset}}] = 0
+    cfg_d[{{offset+bitcount-1}}] = 1
+
+    # Setting up LUT
+    # Set the value of cfd
+    cfg_e_{{'_'.join(test_hierarchy)}} <= 1
+    cfg_we_{{'_'.join(test_hierarchy)}} <= 1
+    
+    yield RisingEdge(dut.{{'.'.join(test_hierarchy)}}.cfg_clk)
+    
+    for i in range({{offset+bitcount-1}},{{offset-1}},-1):
+        cfg_i_{{'_'.join(test_hierarchy)}} <= cfg_d[i]
+        yield RisingEdge(dut.{{'.'.join(test_hierarchy)}}.cfg_clk)
+    
+    cfg_e_{{'_'.join(test_hierarchy)}} <= 0
+    cfg_we_{{'_'.join(test_hierarchy)}} <= 0
+
+    yield RisingEdge(dut.{{'.'.join(test_hierarchy)}}.cfg_clk)
+    
     cocotb.fork(test_{{'_'.join(test_hierarchy)}}(dut))
     {% endif %}
     {% if instance.model.module_class.is_primitive and instance.model.primitive_class.is_flipflop %}
