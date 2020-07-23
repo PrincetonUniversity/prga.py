@@ -71,17 +71,17 @@ class Tester(Object, AbstractPass):
                 queue.append([instance,[str(instance.name)],0])
         
         while len(queue)!=0:
-            curr_module, heirarchy,offset = queue.pop(0)
+            parent, heirarchy,offset = queue.pop(0)
 
-            if curr_module.model.module_class.is_primitive:
-                for k,v in iteritems(curr_module.pins):
-                    setattr(v,'test_heirarchy','_'.join(heirarchy))
- 
-                primitives.append([curr_module,heirarchy,offset])
-
-            for instance in itervalues(curr_module.model.instances):
+            if parent.model.module_class.is_primitive or parent.model.module_class == 9:
                 try:
-                    queue.append([instance,heirarchy+[str(instance.name)],offset+instance.cfg_bitcount])
+                    primitives.append([parent,heirarchy,offset+parent.cfg_bitcount])
+                except:
+                    primitives.append([parent,heirarchy,offset])
+
+            for instance in itervalues(parent.model.instances):
+                try:
+                    queue.append([instance,heirarchy+[str(instance.name)],offset+instance.cfg_bitoffset])
                 except:
                     queue.append([instance,heirarchy+[str(instance.name)],offset])
           
@@ -115,13 +115,10 @@ class Tester(Object, AbstractPass):
         
         primitives = self.get_primitives(module)
         setattr(module,"primitives",primitives)
-        
         instance_files = []
 
         instances_data  = self.get_instance_file(module)
-        # print(instances_data)
         for instance_model,location in instances_data:
-            # instance_files.append(location)
             d = os.path.dirname(path.join(f,instance_model.name+".v"))
             if d:
                 makedirs(d)

@@ -96,7 +96,16 @@ def simple_test(dut):
 
     yield RisingEdge(dut.cfg_clk)
 
+    {%- for instance,test_hierarchy,offset in module.primitives %}
+    {%- if instance.model.module_class.is_primitive and instance.model.primitive_class.is_lut %}
+    {% set bitcount = instance.model.cfg_bitcount %}
+    cfg_d_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(test_hierarchy)}}.i_cfg_data.cfg_d.value.binstr[::-1]
+    for i in range({{offset+bitcount-1}},{{offset-1}},-1):
+        if int(cfg_d[i])!= int(cfg_d_{{'_'.join(test_hierarchy)}}[i-{{offset}}]):
+            raise TestFailure("cfg_d not properly setup for {{'->'.join(test_hierarchy)}}")
+    {% endif -%}
+    {%- if instance.model.module_class.is_primitive and (instance.model.primitive_class.is_lut or instance.model.primitive_class.is_flipflop) %}
+        cocotb.fork(test_{{'_'.join(test_hierarchy)}}(dut))
+    {% endif -%}
 
-    {%- for instance,test_hierarchy,_ in module.primitives %}
-    cocotb.fork(test_{{'_'.join(test_hierarchy)}}(dut))
     {% endfor -%}
