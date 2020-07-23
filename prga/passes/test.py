@@ -119,7 +119,7 @@ class Tester(Object, AbstractPass):
         instance_files = []
 
         instances_data  = self.get_instance_file(module)
-        print(instances_data)
+        # print(instances_data)
         for instance_model,location in instances_data:
             # instance_files.append(location)
             d = os.path.dirname(path.join(f,instance_model.name+".v"))
@@ -130,7 +130,6 @@ class Tester(Object, AbstractPass):
             if verilog_file not in instance_files:
                 instance_files.append('./'+instance_model.name+'.v')
 
-        # instance_files = list(dict.fromkeys(instance_files))
         setattr(module,"files",' '.join(instance_files))
         setattr(module,"top_level",module.name)
         

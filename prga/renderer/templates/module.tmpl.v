@@ -7,7 +7,10 @@ module {{ module.name }} (
     {%- endfor %}
     );
 
-
+    initial begin
+      $dumpvars(1,{{module.name}});
+      $dumpfile("dump_{{module.name}}.vcd");
+    end
     {% for instance in itervalues(module.instances) %}
         {%- for pin in itervalues(instance.pins) %}
             {%- if pin.model.direction.is_output %}
