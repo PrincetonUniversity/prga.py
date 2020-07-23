@@ -108,7 +108,7 @@ module prga_ctrl (
     ) i_bitstream_id (
         .clk                            (clk)
         ,.rst                           (~rst_n)
-        ,.wr                            (bitstream_id_wr)
+        ,.wr                            (bitstream_id_update)
         ,.mask                          (creg_update_strb)
         ,.din                           (creg_update_strb)
         ,.dout                          (bitstream_id)
@@ -400,8 +400,12 @@ module prga_ctrl (
 
                 if (|strb_req_x) begin
                     sax_data[`PRGA_SAX_MSGTYPE_INDEX] = `PRGA_SAX_MSGTYPE_CREG_WRITE;
+                    sax_data[`PRGA_SAX_CREG_STRB_INDEX] = strb_req_x;
+                    sax_data[`PRGA_SAX_CREG_ADDR_INDEX] = addr_req_x;
+                    sax_data[`PRGA_SAX_CREG_DATA_INDEX] = data_req_x;
                 end else begin
                     sax_data[`PRGA_SAX_MSGTYPE_INDEX] = `PRGA_SAX_MSGTYPE_CREG_READ;
+                    sax_data[`PRGA_SAX_CREG_ADDR_INDEX] = addr_req_x;
                 end
             end
         end

@@ -3,6 +3,7 @@
 `define PRGA_PKTCHAIN_SYSTEM_H
 
 `include "prga_system.vh"
+`include "pktchain.vh"
 
 `define PRGA_CREG_ADDR_PKTCHAIN_BITSTREAM_FIFO      `PRGA_CREG_ADDR_WIDTH'h900  //  64b
 

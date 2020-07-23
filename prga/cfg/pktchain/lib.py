@@ -776,6 +776,7 @@ class Pktchain(Scanchain):
             intf = system.instances["i_sysintf"]
             fabric = system.instances["i_fabric"]
             NetUtils.connect(system.ports["clk"], cfg.pins["clk"])
+            NetUtils.connect(system.ports["clk"], fabric.pins["cfg_clk"])
             NetUtils.connect(intf.pins["cfg_rst_n"], cfg.pins["rst_n"])
             NetUtils.connect(cfg.pins["status"], intf.pins["cfg_status"])
             NetUtils.connect(cfg.pins["req_rdy"], intf.pins["cfg_req_rdy"])
@@ -813,4 +814,3 @@ class Pktchain(Scanchain):
         @property
         def passes_after_self(self):
             return ("rtl", )
-

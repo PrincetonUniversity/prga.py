@@ -480,13 +480,7 @@ module prga_uprot (
                 endcase
                 stall_x = ~asx_rdy;
             end
-            OP_X_WRITE_UREG: if (urst_n && ~mprot_inactive && ~uprot_inactive && ureg_ecc_fail) begin
-                asx_val = 1'b1;
-                asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
-                asx_data[`PRGA_EFLAGS_UREG_ECC] = 1'b1;
-                stall_x = 1'b1;
-                deactivate_uprot = asx_rdy;
-            end else begin
+            OP_X_WRITE_UREG: begin
                 asx_val = 1'b1;
                 asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CREG_WRITE_ACK;
                 stall_x = ~asx_rdy;

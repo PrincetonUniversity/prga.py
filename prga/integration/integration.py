@@ -54,7 +54,6 @@ class Integration(object):
                 prefix + "req_data": ModuleUtils.create_port(module, prefix + "req_data", 64, o),
                 prefix + "resp_rdy": ModuleUtils.create_port(module, prefix + "resp_rdy", 1, o),
                 prefix + "resp_val": ModuleUtils.create_port(module, prefix + "resp_val", 1, i),
-                prefix + "resp_err": ModuleUtils.create_port(module, prefix + "resp_err", 1, i),
                 prefix + "resp_data": ModuleUtils.create_port(module, prefix + "resp_data", 64, i),
                 }
 
@@ -94,7 +93,7 @@ class Integration(object):
         i, o = ((PortDirection.output, PortDirection.input_) if slave else
                 (PortDirection.input_, PortDirection.output))
         return {prefix + "rst_n": ModuleUtils.create_port(module, prefix + "rst_n", 1, o),
-                prefix + "status": ModuleUtils.create_port(module, prefix + "status", 1, i),
+                prefix + "status": ModuleUtils.create_port(module, prefix + "status", 2, i),
                 prefix + "req_rdy": ModuleUtils.create_port(module, prefix + "req_rdy", 1, i),
                 prefix + "req_val": ModuleUtils.create_port(module, prefix + "req_val", 1, o),
                 prefix + "req_addr": ModuleUtils.create_port(module, prefix + "req_addr", 12, o),

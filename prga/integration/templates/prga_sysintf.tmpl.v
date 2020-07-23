@@ -80,11 +80,11 @@ module prga_sysintf (
     output wire [`PRGA_CCM_CACHELINE_WIDTH-1:0] ccm_resp_data
     );
 
-    wire ctrl_sax_rdy, ctrl_sax_val, ctrl_asx_rdy, ctrl_asx_val;
-    wire uprot_sax_rdy, uprot_sax_val, uprot_asx_rdy, uprot_asx_val;
-    wire mprot_sax_rdy, mprot_sax_val, mprot_asx_rdy, mprot_asx_val;
-    wire [`PRGA_SAX_DATA_WIDTH-1:0] ctrl_sax_data, uprot_sax_data, mprot_sax_data;
-    wire [`PRGA_ASX_DATA_WIDTH-1:0] ctrl_asx_data, uprot_asx_data, uprot_asx_data;
+    wire sax_ctrl_rdy, ctrl_sax_val, ctrl_asx_rdy, asx_ctrl_val;
+    wire uprot_sax_rdy, sax_uprot_val, asx_uprot_rdy, uprot_asx_val;
+    wire mprot_sax_rdy, sax_mprot_val, asx_mprot_rdy, mprot_asx_val;
+    wire [`PRGA_SAX_DATA_WIDTH-1:0] ctrl_sax_data, sax_uprot_data, sax_mprot_data;
+    wire [`PRGA_ASX_DATA_WIDTH-1:0] asx_ctrl_data, uprot_asx_data, mprot_asx_data;
     wire mprot_inactive, uprot_inactive, urst_n;
     wire [`PRGA_PROT_TIMER_WIDTH-1:0] timeout_limit;
 
@@ -116,12 +116,12 @@ module prga_sysintf (
         ,.cfg_resp_err		                    (cfg_resp_err)
         ,.cfg_resp_data		                    (cfg_resp_data)
 
-        ,.sax_rdy                               (ctrl_sax_rdy)
+        ,.sax_rdy                               (sax_ctrl_rdy)
         ,.sax_val                               (ctrl_sax_val)
         ,.sax_data                              (ctrl_sax_data)
         ,.asx_rdy                               (ctrl_asx_rdy)
-        ,.asx_val                               (ctrl_asx_val)
-        ,.asx_data                              (ctrl_asx_data)
+        ,.asx_val                               (asx_ctrl_val)
+        ,.asx_data                              (asx_ctrl_data)
         );
 
     prga_sax i_sax (
@@ -144,30 +144,30 @@ module prga_sysintf (
 
         ,.aclk                                  (aclk)
         ,.arst_n                                (arst_n)
-        
-        ,.sax_uprot_rdy		                    (sax_uprot_rdy)
-        ,.uprot_sax_val		                    (uprot_sax_val)
-        ,.uprot_sax_data		                (uprot_sax_data)
-        ,.uprot_asx_rdy		                    (uprot_asx_rdy)
-        ,.asx_uprot_val		                    (asx_uprot_val)
-        ,.asx_uprot_data		                (asx_uprot_data)
 
-        ,.sax_mprot_rdy		                    (sax_mprot_rdy)
-        ,.mprot_sax_val		                    (mprot_sax_val)
-        ,.mprot_sax_data		                (mprot_sax_data)
-        ,.mprot_asx_rdy		                    (mprot_asx_rdy)
-        ,.asx_mprot_val		                    (asx_mprot_val)
-        ,.asx_mprot_data		                (asx_mprot_data)
+        ,.asx_uprot_rdy		                    (asx_uprot_rdy)
+        ,.uprot_asx_val		                    (uprot_asx_val)
+        ,.uprot_asx_data		                (uprot_asx_data)
+        ,.uprot_sax_rdy		                    (uprot_sax_rdy)
+        ,.sax_uprot_val		                    (sax_uprot_val)
+        ,.sax_uprot_data		                (sax_uprot_data)
+
+        ,.asx_mprot_rdy		                    (asx_mprot_rdy)
+        ,.mprot_asx_val		                    (mprot_asx_val)
+        ,.mprot_asx_data		                (mprot_asx_data)
+        ,.mprot_sax_rdy		                    (mprot_sax_rdy)
+        ,.sax_mprot_val		                    (sax_mprot_val)
+        ,.sax_mprot_data		                (sax_mprot_data)
         );
 
     prga_uprot i_uprot (
-        .clk                                    (clk)
-        ,.rst_n                                 (rst_n)
+        .clk                                    (aclk)
+        ,.rst_n                                 (arst_n)
 
         ,.sax_rdy                               (uprot_sax_rdy)
-        ,.sax_val                               (uprot_sax_val)
-        ,.sax_data                              (uprot_sax_data)
-        ,.asx_rdy                               (uprot_asx_rdy)
+        ,.sax_val                               (sax_uprot_val)
+        ,.sax_data                              (sax_uprot_data)
+        ,.asx_rdy                               (asx_uprot_rdy)
         ,.asx_val                               (uprot_asx_val)
         ,.asx_data                              (uprot_asx_data)
 
@@ -188,13 +188,13 @@ module prga_sysintf (
         );
 
     prga_mprot i_mprot (
-        .clk                                    (clk)
-        ,.rst_n                                 (rst_n)
+        .clk                                    (aclk)
+        ,.rst_n                                 (arst_n)
 
         ,.sax_rdy                               (mprot_sax_rdy)
-        ,.sax_val                               (mprot_sax_val)
-        ,.sax_data                              (mprot_sax_data)
-        ,.asx_rdy                               (mprot_asx_rdy)
+        ,.sax_val                               (sax_mprot_val)
+        ,.sax_data                              (sax_mprot_data)
+        ,.asx_rdy                               (asx_mprot_rdy)
         ,.asx_val                               (mprot_asx_val)
         ,.asx_data                              (mprot_asx_data)
 

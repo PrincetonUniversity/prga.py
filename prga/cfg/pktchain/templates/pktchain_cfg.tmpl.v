@@ -2,7 +2,7 @@
 `timescale 1ns/1ps
 
 `include "prga_system.vh"
-`include "pktchain.vh"
+`include "pktchain_system.vh"
 
 module pktchain_cfg (
     input wire                                      clk,
@@ -27,14 +27,14 @@ module pktchain_cfg (
     output reg                                      cfg_e,
 
     // configuration output
-    input wire                                      cfg_phit_o_full,
-    output wire                                     cfg_phit_o_wr,
-    output wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0]   cfg_phit_o,
+    input wire                                      phit_o_full,
+    output wire                                     phit_o_wr,
+    output wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0]   phit_o,
 
     // configuration input
-    output wire                                     cfg_phit_i_full,
-    input wire                                      cfg_phit_i_wr,
-    input wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0]    cfg_phit_i
+    output wire                                     phit_i_full,
+    input wire                                      phit_i_wr,
+    input wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0]    phit_i
     );
 
     // =======================================================================
@@ -161,7 +161,7 @@ module pktchain_cfg (
                 ST_CTRL_Q_NORMAL                = 2'h1,
                 ST_CTRL_Q_ERR_SENT              = 2'h2;
 
-    reg [ST_CTRL_WIDTH-1:0]         ctrl_state_q, ctrl_state_q_next;
+    reg [ST_CTRL_Q_WIDTH-1:0]         ctrl_state_q, ctrl_state_q_next;
 
     reg                             req_val_q;
     reg [`PRGA_CREG_ADDR_WIDTH-1:0] req_addr_q;
@@ -365,9 +365,9 @@ module pktchain_cfg (
         ,.frame_full            (frame_o_stall)
         ,.frame_wr              (frame_o_val)
         ,.frame_i               (frame_i)
-        ,.phit_wr               (cfg_phit_o_wr)
-        ,.phit_full             (cfg_phit_o_full)
-        ,.phit_o                (cfg_phit_o)
+        ,.phit_wr               (phit_o_wr)
+        ,.phit_full             (phit_o_full)
+        ,.phit_o                (phit_o)
         );
 
     // =======================================================================
@@ -383,9 +383,9 @@ module pktchain_cfg (
     ) i_brespq (
         .cfg_clk                (clk)
         ,.cfg_rst               (cfg_rst)
-        ,.phit_full             (cfg_phit_i_full)
-        ,.phit_wr               (cfg_phit_i_wr)
-        ,.phit_i                (cfg_phit_i)
+        ,.phit_full             (phit_i_full)
+        ,.phit_wr               (phit_i_wr)
+        ,.phit_i                (phit_i)
         ,.frame_empty           (brespq_empty)
         ,.frame_rd              (~bresp_stall)
         ,.frame_o               (bresp)
@@ -498,7 +498,7 @@ module pktchain_cfg (
                 end
 
                 // end of bitstream?
-                end if (pkt_eob) begin
+                else if (pkt_eob) begin
                     bl_state_next = ST_BL_STBLIZ;
                 end
             end
@@ -576,11 +576,11 @@ module pktchain_cfg (
                     bresp[`PRGA_PKTCHAIN_YPOS_INDEX] < `PRGA_PKTCHAIN_Y_TILES &&
                     bresp[`PRGA_PKTCHAIN_PAYLOAD_INDEX] == 0
                 ) begin
-                    case (bresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX)
+                    case (bresp[`PRGA_PKTCHAIN_MSG_TYPE_INDEX])
                         `PRGA_PKTCHAIN_MSG_TYPE_DATA_ACK: begin
                             pkt_i_state_next = ST_PKT_HDR;
                             tile_status_rd_xpos_candidate[ARB_PKT] = bresp[`PRGA_PKTCHAIN_XPOS_INDEX];
-                            tile_status_rd_ypos = `PRGA_PKTCHAIN_Y_TILES - 1 - resp[`PRGA_PKTCHAIN_YPOS_INDEX];
+                            tile_status_rd_ypos = `PRGA_PKTCHAIN_Y_TILES - 1 - bresp[`PRGA_PKTCHAIN_YPOS_INDEX];
                             tile_status_busy = 1'b1;
                         end
                         `PRGA_PKTCHAIN_MSG_TYPE_ERROR_UNKNOWN_MSG_TYPE,
@@ -600,7 +600,7 @@ module pktchain_cfg (
                     bresp_stall = 1'b0;
 
                     if (bresp[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
-                        pkt_i_payload_next = bresp[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
+                        pkt_i_payload_next = bresp[`PRGA_PKTCHAIN_PAYLOAD_INDEX] - 1;
                         pkt_i_state_next = ST_PKT_PLD_DUMP;
                     end
                 end
@@ -619,10 +619,11 @@ module pktchain_cfg (
                 bresp_stall = 1'b0;
 
                 if (bresp_val) begin
-                    pkt_i_payload_next = pkt_i_payload - 1;
 
-                    if (pkt_i_payload == 1) begin
+                    if (pkt_i_payload == 0) begin
                         pkt_i_state_next = ST_PKT_IDLE;
+                    end else begin
+                        pkt_i_payload_next = pkt_i_payload - 1;
                     end
                 end
             end
@@ -652,7 +653,7 @@ module pktchain_cfg (
                         frame_i_stall = 1'b0;
 
                         if (frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
-                            pkt_o_payload_next = frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
+                            pkt_o_payload_next = frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] - 1;
                             pkt_o_state_next = ST_PKT_PLD_DUMP;
                         end
                     end
@@ -686,7 +687,7 @@ module pktchain_cfg (
                         frame_i_stall = 1'b0;
 
                         if (frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
-                            pkt_o_payload_next = frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
+                            pkt_o_payload_next = frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] - 1;
                             pkt_o_state_next = ST_PKT_PLD_DUMP;
                         end
                     end
@@ -696,7 +697,7 @@ module pktchain_cfg (
                         frame_i_stall = 1'b0;
 
                         if (frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
-                            pkt_o_payload_next = frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
+                            pkt_o_payload_next = frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] - 1;
                             pkt_o_state_next = ST_PKT_PLD_DUMP;
                         end
                     end
@@ -747,16 +748,17 @@ module pktchain_cfg (
 
                 if (frame_o_val) begin
                     if (frame_o_stall) begin
-                        pkt_o_payload_next = frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] + 1;
-                    end else begin
-                        frame_i_stall = 1'b0;
                         pkt_o_payload_next = frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX];
-                    end
-
-                    if (pkt_o_payload_next > 0) begin
                         pkt_o_state_next = ST_PKT_PLD_FWD;
                     end else begin
-                        pkt_o_state_next = ST_PKT_IDLE;
+                        frame_i_stall = 1'b0;
+
+                        if (frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] > 0) begin
+                            pkt_o_payload_next = frame_i[`PRGA_PKTCHAIN_PAYLOAD_INDEX] - 1;
+                            pkt_o_state_next = ST_PKT_PLD_FWD;
+                        end else begin
+                            pkt_o_state_next = ST_PKT_IDLE;
+                        end
                     end
                 end else begin
                     frame_i_stall = 1'b0;
@@ -768,19 +770,21 @@ module pktchain_cfg (
 
                 if (~frame_o_stall) begin
                     frame_i_stall = 1'b0;
-                    pkt_o_payload_next = pkt_o_payload - 1;
 
-                    if (pkt_o_payload == 1) begin
+                    if (pkt_o_payload == 0) begin
                         pkt_o_state_next = ST_PKT_IDLE;
+                    end else begin
+                        pkt_o_payload_next = pkt_o_payload - 1;
                     end
                 end
             end
             ST_PKT_PLD_DUMP: if (frame_i_val) begin
                 frame_i_stall = 1'b0;
-                pkt_o_payload_next = pkt_o_payload - 1;
 
-                if (pkt_o_payload == 1) begin
+                if (pkt_o_payload == 0) begin
                     pkt_o_state_next = ST_PKT_IDLE;
+                end else begin
+                    pkt_o_payload_next = pkt_o_payload - 1;
                 end
             end
         endcase
