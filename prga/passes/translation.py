@@ -45,6 +45,14 @@ class AbstractSwitchDatabase(Abstract):
         """
         raise NotImplementedError
 
+    def get_obuf(self):
+        """Get the output buffer module.
+
+        Returns:
+            `Module` or ``None``:
+        """
+        return None
+
 # ----------------------------------------------------------------------------
 # -- Translation Pass --------------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -140,12 +148,22 @@ class TranslationPass(Object, AbstractPass):
             if i:
                 self._register_u2l(logical, i, ModuleUtils.create_port(
                         logical, '_ipin', 1, PortDirection.input_, net_class = NetClass.io, key = IOType.ipin))
-            if o:
+                if o:
+                    logical_o = ModuleUtils.create_port(
+                            logical, '_opin', 1, PortDirection.output, net_class = NetClass.io, key = IOType.opin)
+                    oe = ModuleUtils.create_port(logical, '_oe', 1, PortDirection.output, net_class = NetClass.io,
+                            key = IOType.oe)
+                    # when oe is unset, output pin should be tied to low
+                    if (obuf_model := context.switch_database.get_obuf()) is None:
+                        self._register_u2l(logical, o, logical_o)
+                    else:
+                        obuf = ModuleUtils.instantiate(logical, obuf_model, "_obuf")
+                        NetUtils.connect(obuf.pins["opin_o"], logical_o)
+                        NetUtils.connect(obuf.pins["oe"], oe)
+                        self._register_u2l(logical, o, obuf.pins["opin_i"])
+            elif o:
                 self._register_u2l(logical, o, ModuleUtils.create_port(
                         logical, '_opin', 1, PortDirection.output, net_class = NetClass.io, key = IOType.opin))
-            if i and o:
-                ModuleUtils.create_port(logical, '_oe', 1, PortDirection.output, net_class = NetClass.io,
-                        key = IOType.oe)
         else:
             logical = Module(module.name, **kwargs)
         # translate ports

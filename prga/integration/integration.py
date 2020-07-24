@@ -215,6 +215,7 @@ class Integration(object):
         cls._create_intf_syscon(sysintf, True)
         cls._create_intf_syscon(sysintf, False, "a")
         cls._create_intf_reg(sysintf, True, "reg_")
+        ModuleUtils.create_port(sysintf, "urst_n", 1, PortDirection.output)
         cls._create_intf_ureg(sysintf, False, "ureg_")
         cls._create_intf_cfg(sysintf, False, "cfg_")
         cls._create_intf_sax(sysintf, True)
@@ -509,7 +510,7 @@ class Integration(object):
             else:
                 NetUtils.connect(sysintf.pins[port_name], port)
         NetUtils.connect(sysintf.pins["aclk"], fabric.pins[(IOType.ipin, ) + constraints["clk"][0]])
-        NetUtils.connect(sysintf.pins["arst_n"], fabric.pins[(IOType.ipin, ) + constraints["rst_n"][0]])
+        NetUtils.connect(sysintf.pins["urst_n"], fabric.pins[(IOType.ipin, ) + constraints["rst_n"][0]])
         for name, ios in iteritems(constraints):
             if name in ("clk", "rst_n"):
                 continue

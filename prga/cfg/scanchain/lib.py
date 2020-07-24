@@ -67,6 +67,12 @@ class ScanchainSwitchDatabase(Object, AbstractSwitchDatabase):
         self.entry._get_or_create_cfg_ports(switch, self.cfg_width)
         return self.context._database.setdefault((ModuleView.logical, key), switch)
 
+    def get_obuf(self):
+        try:
+            return self.context.database[ModuleView.logical, "cfg_obuf"]
+        except KeyError:
+            return None
+
 # ----------------------------------------------------------------------------
 # -- FASM Delegate -----------------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -242,6 +248,27 @@ class Scanchain(object):
                     net_class = NetClass.cfg)
             NetUtils.connect(clk, [ei, eo], fully = True)
             context._database[ModuleView.logical, "cfg_e_reg"] = ereg
+
+        # register OBUF
+        if "cfg_obuf" not in dont_add_logical_primitive:
+            obuf = Module("cfg_obuf",
+                    view = ModuleView.logical,
+                    module_class = ModuleClass.cfg,
+                    cfg_bitcount = 1,
+                    verilog_template = "cfg_obuf.tmpl.v")
+
+            # logical ports
+            oe = ModuleUtils.create_port(obuf, "oe", 1, PortDirection.output, net_class = NetClass.io)
+            opin_i = ModuleUtils.create_port(obuf, "opin_i", 1, PortDirection.input_, net_class = NetClass.user)
+            opin_o = ModuleUtils.create_port(obuf, "opin_o", 1, PortDirection.output, net_class = NetClass.io)
+            NetUtils.connect( opin_i, opin_o, fully = True )
+
+            # configuration data
+            ModuleUtils.instantiate(obuf, cls.get_cfg_data_cell(context, 1), "i_cfg_data")
+
+            # configuration ports
+            cls._get_or_create_cfg_ports(obuf, cfg_width)
+            context._database[ModuleView.logical, obuf.key] = obuf
 
         # register luts
         for i in range(2, 9):
@@ -553,11 +580,12 @@ class Scanchain(object):
         module = uno(logical_module, context.database[ModuleView.logical, context.top.key])
         # special processing needed for IO blocks (output enable)
         if module.module_class.is_io_block:
-            oe = module.ports.get(IOType.oe)
-            if oe is not None:
+            if (oe := module.ports.get(IOType.oe)) is None:
+                pass
+            elif (obuf := module.instances.get("_obuf")) is None:
                 inst = ModuleUtils.instantiate(module,
                         cls.get_cfg_data_cell(context, 1),
-                        '_cfg_oe')
+                        '_obuf')
                 NetUtils.connect(inst.pins["cfg_d"], oe)
         # connecting scanchain ports
         cfg_bitoffset = 0
@@ -669,7 +697,7 @@ class Scanchain(object):
             # 1.1 special process needed for IO blocks (output enable)
             if module.module_class.is_io_block and instance.key == "io":
                 if instance.model.primitive_class.is_multimode:
-                    instance.cfg_bitoffset = logical.instances["_cfg_oe"].cfg_bitoffset
+                    instance.cfg_bitoffset = logical.instances["_obuf"].cfg_bitoffset
                 continue
             # 1.2 for all other instances, look for the corresponding logical instance and annotate cfg_bitoffset
             logical_instance = logical.instances[instance.key]

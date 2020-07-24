@@ -53,6 +53,8 @@ module prga_sysintf (
     output wire                                 arst_n,
 
     // == Generic Register-based Interface ===================================
+    output wire                                 urst_n,
+
     input wire                                  ureg_req_rdy,
     output wire                                 ureg_req_val,
     output wire [`PRGA_CREG_ADDR_WIDTH-1:0]     ureg_req_addr,
@@ -85,7 +87,7 @@ module prga_sysintf (
     wire mprot_sax_rdy, sax_mprot_val, asx_mprot_rdy, mprot_asx_val;
     wire [`PRGA_SAX_DATA_WIDTH-1:0] ctrl_sax_data, sax_uprot_data, sax_mprot_data;
     wire [`PRGA_ASX_DATA_WIDTH-1:0] asx_ctrl_data, uprot_asx_data, mprot_asx_data;
-    wire mprot_inactive, uprot_inactive, urst_n;
+    wire mprot_inactive, uprot_inactive;
     wire [`PRGA_PROT_TIMER_WIDTH-1:0] timeout_limit;
 
     prga_ctrl i_ctrl (
