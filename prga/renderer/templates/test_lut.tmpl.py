@@ -19,16 +19,16 @@ def simple_test(dut):
     clock_generation(dut.cfg_clk)
     clk = dut.cfg_clk
     # Signals
-    input = dut.{{instance.test_hierarchy}}bits_in
-    out = dut.{{instance.test_hierarchy}}out
-    cfg_e = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_e
-    cfg_we = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_we
-    cfg_i = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_i
-    cfg_o = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_o
+    input = dut.{{module.test_hierarchy}}bits_in
+    out = dut.{{module.test_hierarchy}}out
+    cfg_e = dut.{{module.test_hierarchy}}i_cfg_data.cfg_e
+    cfg_we = dut.{{module.test_hierarchy}}i_cfg_data.cfg_we
+    cfg_i = dut.{{module.test_hierarchy}}i_cfg_data.cfg_i
+    cfg_o = dut.{{module.test_hierarchy}}i_cfg_data.cfg_o
     
     # No. of input bits
     # n_input = input()
-    n_input = int(math.log({{instance.model.cfg_bitcount}},2))
+    n_input = int(math.log({{module.cfg_bitcount}},2))
 
     # Setting up LUT
     # Set the value of cfd
@@ -62,15 +62,15 @@ def changing_config(dut):
     clk = dut.cfg_clk
 
     # Signals
-    input = dut.{{instance.test_hierarchy}}bits_in
-    out = dut.{{instance.test_hierarchy}}out
-    cfg_e = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_e
-    cfg_we = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_we
-    cfg_i = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_i
-    cfg_o = dut.{{instance.test_hierarchy}}i_cfg_data.cfg_o
+    input = dut.{{module.test_hierarchy}}bits_in
+    out = dut.{{module.test_hierarchy}}out
+    cfg_e = dut.{{module.test_hierarchy}}i_cfg_data.cfg_e
+    cfg_we = dut.{{module.test_hierarchy}}i_cfg_data.cfg_we
+    cfg_i = dut.{{module.test_hierarchy}}i_cfg_data.cfg_i
+    cfg_o = dut.{{module.test_hierarchy}}i_cfg_data.cfg_o
     
     # No. of input bits
-    n_input = int(math.log({{instance.model.cfg_bitcount}},2))
+    n_input = int(math.log({{module.cfg_bitcount}},2))
 
     # Setting up LUT
     # Set the value of cfd

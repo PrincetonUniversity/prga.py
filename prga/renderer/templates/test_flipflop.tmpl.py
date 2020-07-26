@@ -16,9 +16,9 @@ def simple_test(dut):
     clk = dut.clk
     clock_generation(clk)
     # Signals
-    D = dut.{{instance.test_hierarchy}}D
-    Q = dut.{{instance.test_hierarchy}}Q
-    cfg_e = dut.{{instance.test_hierarchy}}cfg_e
+    D = dut.{{module.test_hierarchy}}D
+    Q = dut.{{module.test_hierarchy}}Q
+    cfg_e = dut.{{module.test_hierarchy}}cfg_e
     
     for _ in range(3):
         yield RisingEdge(clk)

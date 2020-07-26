@@ -294,6 +294,7 @@ class NetUtils(object):
                 except (StopIteration, NetworkXError):
                     sources.append( Const(width = 1) )
             ret = cls.concat(sources)
+            
         if return_none_if_unconnected and ret.bus_type.is_nonref and ret.net_type.is_const and ret.value is None:
             return None
         else:
