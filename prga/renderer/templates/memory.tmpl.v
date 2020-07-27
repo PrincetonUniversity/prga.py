@@ -9,7 +9,7 @@
     // convert 'x' or 'z' to '0' in simulation
     reg internal_we{{ portsuffix }};
     reg [{{ addr_width - 1 }}:0] internal_addr{{ portsuffix }};
-
+    
     always @* begin
         internal_we{{ portsuffix }} = we{{ portsuffix }};
         internal_addr{{ portsuffix }} = addr{{ portsuffix }};

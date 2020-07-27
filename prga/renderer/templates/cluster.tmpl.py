@@ -37,7 +37,7 @@ def test_{{'_'.join(test_hierarchy)}}(dut):
     {%- if instance.model.module_class.is_primitive and instance.model.primitive_class.is_flipflop %}
 @cocotb.coroutine
 def test_{{'_'.join(test_hierarchy)}}(dut): 
-    {%- if module._allow_multisource %}
+    {% if module._allow_multisource %}
         {%- if test_hierarchy|length > 1 %}
     D = dut.{{'.'.join(test_hierarchy[:-1])}}.{{'.'.join(NetUtils.get_multisource(instance.pins['D']).node[::-1])}} 
         {% else %}
@@ -49,7 +49,8 @@ def test_{{'_'.join(test_hierarchy)}}(dut):
         {% else %}
     D = dut.{{'.'.join(NetUtils.get_source(instance.pins['D']).node[::-1])}} 
         {% endif -%}
-    {% endif -%}
+    {% endif %}
+
     Q = dut.{{'.'.join(test_hierarchy)}}.Q
     cfg_e = dut.{{'.'.join(test_hierarchy)}}.cfg_e
     while True:

@@ -87,7 +87,20 @@ class Tester(Object, AbstractPass):
                     queue.append([instance,heirarchy+[str(instance.name)],offset])
           
         return primitives
-    
+  
+    def get_input_ports(self,module):
+        ports = [] 
+        try:
+            module = self.context.database[ModuleView.user,module.key]
+            for k,v in iteritems(module.ports):
+                if v.direction.is_input and not v.is_clock:
+                    ports.append(v)
+                    # print(v)
+            # print(module.ports)
+        except:
+            x = 0+0
+        return ports
+                
     def get_connections(self,module):
         connections = []
         try:
@@ -97,9 +110,12 @@ class Tester(Object, AbstractPass):
                             iter(ipin for instance in itervalues(module.instances) for ipin in itervalues(instance.pins) if ipin.model.direction.is_input and not ipin.model.is_clock)):
                     for sink_net in sink_bus:
                             for src_net in NetUtils.get_multisource(sink_net):
+                                if src_net.net_type == 0:
+                                    continue
                                 # print(src_net,sink_net)
                                 src_var_name = "" 
                                 sink_var_name = "" 
+                                # if src_net.value is not None:
                                 if src_net.bus.net_type == 1:
                                     # print(src_net.bus.name,src_net.index.start,src_net.bus.name)
                                     src_var_name = src_net.bus.name+ "_" + str(src_net.index.start) + "_src"
@@ -119,7 +135,9 @@ class Tester(Object, AbstractPass):
                             iter(ipin for instance in itervalues(module.instances) for ipin in itervalues(instance.pins) if ipin.model.direction.is_input and not ipin.model.is_clock)):
                     for sink_net in sink_bus:
                             for src_net in NetUtils.get_source(sink_net):
-                                # print(src_net,sink_net)
+                                if src_net.net_type == 0:
+                                    continue
+                                    # print(src_net,sink_net)
                                 src_var_name = "" 
                                 sink_var_name = "" 
                                 if src_net.bus.net_type == 1:
@@ -151,10 +169,15 @@ class Tester(Object, AbstractPass):
             setattr(module,"test_dir",f)
         
         print(module.name)
-        if module.name != 'top':
-            connections = self.get_connections(module)
-            setattr(module,"connections",connections)
-
+        connections = self.get_connections(module)
+        # for x in connections:
+        #     print(x)
+        setattr(module,"connections",connections)
+        
+        input_ports = self.get_input_ports(module)
+        setattr(module,"input_ports",input_ports)
+        
+        
         clocks = []
         for x in iter(ipin for instance in itervalues(module.instances) for ipin in itervalues(instance.pins) if ipin.model.direction.is_input and ipin.model.is_clock):
             if module._allow_multisource:

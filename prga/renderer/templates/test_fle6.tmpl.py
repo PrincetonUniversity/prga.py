@@ -119,31 +119,31 @@ def wrapper(dut,test_mode=0):
     
 
     # Signals
-    bits_in = dut.{{instance.test_hierarchy}}bits_in
-    out = dut.{{instance.test_hierarchy}}out
-    cin = dut.{{instance.test_hierarchy}}cin
-    cout = dut.{{instance.test_hierarchy}}cout
-    cfg_e = dut.{{instance.test_hierarchy}}i_cfg_date.cfg_e
-    cfg_we = dut.{{instance.test_hierarchy}}i_cfg_date.cfg_we
-    cfg_i = dut.{{instance.test_hierarchy}}i_cfg_date.cfg_i
-    cfg_o = dut.{{instance.test_hierarchy}}i_cfg_date.cfg_o
+    bits_in = dut.bits_in
+    out = dut.out
+    cin = dut.cin
+    cout = dut.cout
+    cfg_e = dut.i_cfg_date.cfg_e
+    cfg_we = dut.i_cfg_date.cfg_we
+    cfg_i = dut.i_cfg_date.cfg_i
+    cfg_o = dut.i_cfg_date.cfg_o
     
     # Local Parameters
-    LUT5A_DATA_WIDTH = dut.{{instance.test_hierarchy}}LUT5A_DATA_WIDTH.value.integer
-    LUT5B_DATA_WIDTH = dut.{{instance.test_hierarchy}}LUT5B_DATA_WIDTH.value.integer
-    MODE_WIDTH = dut.{{instance.test_hierarchy}}MODE_WIDTH.value.integer
+    LUT5A_DATA_WIDTH = dut.LUT5A_DATA_WIDTH.value.integer
+    LUT5B_DATA_WIDTH = dut.LUT5B_DATA_WIDTH.value.integer
+    MODE_WIDTH = dut.MODE_WIDTH.value.integer
 
-    LUT5A_DATA = dut.{{instance.test_hierarchy}}LUT5A_DATA.value.integer
-    LUT5B_DATA = dut.{{instance.test_hierarchy}}LUT5B_DATA.value.integer
-    ENABLE_FFA = dut.{{instance.test_hierarchy}}ENABLE_FFA.value.integer
-    ENABLE_FFB = dut.{{instance.test_hierarchy}}ENABLE_FFB.value.integer
-    MODE = dut.{{instance.test_hierarchy}}MODE.value.integer
+    LUT5A_DATA = dut.LUT5A_DATA.value.integer
+    LUT5B_DATA = dut.LUT5B_DATA.value.integer
+    ENABLE_FFA = dut.ENABLE_FFA.value.integer
+    ENABLE_FFB = dut.ENABLE_FFB.value.integer
+    MODE = dut.MODE.value.integer
     
-    CIN_FABRIC = dut.{{instance.test_hierarchy}}CIN_FABRIC.value.integer
-    CFG_BITCOUNT = dut.{{instance.test_hierarchy}}CFG_BITCOUNT.value.integer
+    CIN_FABRIC = dut.CIN_FABRIC.value.integer
+    CFG_BITCOUNT = dut.CFG_BITCOUNT.value.integer
 
     # No. of input bits
-    n_input = {{instance.n_input}}
+    n_input = 6
 
     cfg_d = []
 
