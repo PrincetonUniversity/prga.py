@@ -610,6 +610,7 @@ module pktchain_cfg (
                 tile_status_op_candidate[ARB_PKT] = TILE_STATUS_OP_UPDATE;
                 tile_status_din = TILE_STATUS_DONE;
                 pending_tiles_next_candidate[ARB_PKT] = pending_tiles - 1;
+                bresp_stall = 1'b0;
             end else begin
                 pkt_i_state_next = ST_PKT_IDLE;
                 xtra_eflags[`PRGA_EFLAGS_PKTCHAIN_RESP_INVAL] = 1'b1;

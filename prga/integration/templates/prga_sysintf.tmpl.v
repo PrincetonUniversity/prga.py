@@ -23,6 +23,20 @@ module prga_sysintf (
     output wire                                 reg_resp_val,
     output wire [`PRGA_CREG_DATA_WIDTH-1:0]     reg_resp_data,
 
+    // == Generic Cache-coherent interface ===================================
+    input wire                                  ccm_req_rdy,
+    output wire                                 ccm_req_val,
+    output wire [`PRGA_CCM_REQTYPE_WIDTH-1:0]   ccm_req_type,
+    output wire [`PRGA_CCM_ADDR_WIDTH-1:0]      ccm_req_addr,
+    output wire [`PRGA_CCM_DATA_WIDTH-1:0]      ccm_req_data,
+    output wire [`PRGA_CCM_SIZE_WIDTH-1:0]      ccm_req_size,
+
+    output wire                                 ccm_resp_rdy,
+    input wire                                  ccm_resp_val,
+    input wire [`PRGA_CCM_RESPTYPE_WIDTH-1:0]   ccm_resp_type,
+    input wire [`PRGA_CCM_CACHETAG_INDEX]       ccm_resp_addr,  // only used for invalidations
+    input wire [`PRGA_CCM_CACHELINE_WIDTH-1:0]  ccm_resp_data,
+
     // == CTRL <-> CFG ========================================================
     output wire                                 cfg_rst_n,
     input wire [`PRGA_CFG_STATUS_WIDTH-1:0]     cfg_status,
@@ -37,16 +51,6 @@ module prga_sysintf (
     output wire                                 cfg_resp_rdy,
     input wire                                  cfg_resp_err,
     input wire [`PRGA_CREG_DATA_WIDTH-1:0]      cfg_resp_data,
-
-    // == Transducer -> SAX ==================================================
-    output wire                                 sax_rdy,
-    input wire                                  sax_val,
-    input wire [`PRGA_SAX_DATA_WIDTH-1:0]       sax_data,
-
-    // == ASX -> Transducer ==================================================
-    input wire                                  asx_rdy,
-    output wire                                 asx_val,
-    output wire [`PRGA_ASX_DATA_WIDTH-1:0]      asx_data,
 
     // == Application Control Signals ========================================
     output wire                                 aclk,
@@ -67,27 +71,29 @@ module prga_sysintf (
     input wire [`PRGA_ECC_WIDTH-1:0]            ureg_resp_ecc,
 
     // == Generic Cache-coherent interface ===================================
-    output wire                                 ccm_req_rdy,
-    input wire                                  ccm_req_val,
-    input wire [`PRGA_CCM_REQTYPE_WIDTH-1:0]    ccm_req_type,
-    input wire [`PRGA_CCM_ADDR_WIDTH-1:0]       ccm_req_addr,
-    input wire [`PRGA_CCM_DATA_WIDTH-1:0]       ccm_req_data,
-    input wire [`PRGA_CCM_SIZE_WIDTH-1:0]       ccm_req_size,
-    input wire [`PRGA_ECC_WIDTH-1:0]            ccm_req_ecc,
+    output wire                                 uccm_req_rdy,
+    input wire                                  uccm_req_val,
+    input wire [`PRGA_CCM_REQTYPE_WIDTH-1:0]    uccm_req_type,
+    input wire [`PRGA_CCM_ADDR_WIDTH-1:0]       uccm_req_addr,
+    input wire [`PRGA_CCM_DATA_WIDTH-1:0]       uccm_req_data,
+    input wire [`PRGA_CCM_SIZE_WIDTH-1:0]       uccm_req_size,
+    input wire [`PRGA_ECC_WIDTH-1:0]            uccm_req_ecc,
 
-    input wire                                  ccm_resp_rdy,
-    output wire                                 ccm_resp_val,
-    output wire [`PRGA_CCM_RESPTYPE_WIDTH-1:0]  ccm_resp_type,
-    output wire [`PRGA_CCM_CACHETAG_INDEX]      ccm_resp_addr,  // only used for invalidations
-    output wire [`PRGA_CCM_CACHELINE_WIDTH-1:0] ccm_resp_data
+    input wire                                  uccm_resp_rdy,
+    output wire                                 uccm_resp_val,
+    output wire [`PRGA_CCM_RESPTYPE_WIDTH-1:0]  uccm_resp_type,
+    output wire [`PRGA_CCM_CACHETAG_INDEX]      uccm_resp_addr,  // only used for invalidations
+    output wire [`PRGA_CCM_CACHELINE_WIDTH-1:0] uccm_resp_data
     );
 
     wire sax_ctrl_rdy, ctrl_sax_val, ctrl_asx_rdy, asx_ctrl_val;
+    wire sax_transducer_rdy, transducer_sax_val, transducer_asx_rdy, asx_transducer_val;
     wire uprot_sax_rdy, sax_uprot_val, asx_uprot_rdy, uprot_asx_val;
     wire mprot_sax_rdy, sax_mprot_val, asx_mprot_rdy, mprot_asx_val;
-    wire [`PRGA_SAX_DATA_WIDTH-1:0] ctrl_sax_data, sax_uprot_data, sax_mprot_data;
-    wire [`PRGA_ASX_DATA_WIDTH-1:0] asx_ctrl_data, uprot_asx_data, mprot_asx_data;
-    wire mprot_inactive, uprot_inactive;
+    wire [`PRGA_SAX_DATA_WIDTH-1:0] ctrl_sax_data, transducer_sax_data, sax_uprot_data, sax_mprot_data;
+    wire [`PRGA_ASX_DATA_WIDTH-1:0] asx_ctrl_data, asx_transducer_data, uprot_asx_data, mprot_asx_data;
+    wire app_en, app_en_aclk;
+    wire [`PRGA_CREG_DATA_WIDTH-1:0] app_features, app_features_aclk;
     wire [`PRGA_PROT_TIMER_WIDTH-1:0] timeout_limit;
 
     prga_ctrl i_ctrl (
@@ -105,6 +111,9 @@ module prga_sysintf (
 
         ,.aclk                                  (aclk)
         ,.arst_n                                (arst_n)
+        ,.app_en                                (app_en)
+        ,.app_en_aclk                           (app_en_aclk)
+        ,.app_features                          (app_features)
 
         ,.cfg_rst_n		                        (cfg_rst_n)
         ,.cfg_status		                    (cfg_status)
@@ -126,6 +135,34 @@ module prga_sysintf (
         ,.asx_data                              (asx_ctrl_data)
         );
 
+    prga_ccm_transducer i_transducer (
+        .clk                                    (clk)
+        ,.rst_n                                 (rst_n)
+
+        ,.app_en                                (app_en)
+        ,.app_features                          (app_features)
+
+		,.ccm_req_rdy			                (ccm_req_rdy)
+		,.ccm_req_val			                (ccm_req_val)
+		,.ccm_req_type			                (ccm_req_type)
+		,.ccm_req_addr			                (ccm_req_addr)
+		,.ccm_req_data			                (ccm_req_data)
+		,.ccm_req_size			                (ccm_req_size)
+
+		,.ccm_resp_rdy			                (ccm_resp_rdy)
+		,.ccm_resp_val			                (ccm_resp_val)
+		,.ccm_resp_type			                (ccm_resp_type)
+		,.ccm_resp_addr			                (ccm_resp_addr)
+        ,.ccm_resp_data                         (ccm_resp_data)
+
+        ,.sax_rdy		                        (sax_transducer_rdy)
+        ,.sax_val		                        (transducer_sax_val)
+        ,.sax_data		                        (transducer_sax_data)
+        ,.asx_rdy		                        (transducer_asx_rdy)
+        ,.asx_val		                        (asx_transducer_val)
+        ,.asx_data		                        (asx_transducer_data)
+        );
+
     prga_sax i_sax (
         .clk                                    (clk)
         ,.rst_n                                 (rst_n)
@@ -137,12 +174,12 @@ module prga_sysintf (
         ,.asx_ctrl_val		                    (asx_ctrl_val)
         ,.asx_ctrl_data		                    (asx_ctrl_data)
 
-        ,.sax_transducer_rdy		            (sax_rdy)
-        ,.transducer_sax_val		            (sax_val)
-        ,.transducer_sax_data		            (sax_data)
-        ,.transducer_asx_rdy		            (asx_rdy)
-        ,.asx_transducer_val		            (asx_val)
-        ,.asx_transducer_data		            (asx_data)
+        ,.sax_transducer_rdy		            (sax_transducer_rdy)
+        ,.transducer_sax_val		            (transducer_sax_val)
+        ,.transducer_sax_data		            (transducer_sax_data)
+        ,.transducer_asx_rdy		            (transducer_asx_rdy)
+        ,.asx_transducer_val		            (asx_transducer_val)
+        ,.asx_transducer_data		            (asx_transducer_data)
 
         ,.aclk                                  (aclk)
         ,.arst_n                                (arst_n)
@@ -173,9 +210,9 @@ module prga_sysintf (
         ,.asx_val                               (uprot_asx_val)
         ,.asx_data                              (uprot_asx_data)
 
+        ,.app_en                                (app_en_aclk)
+        ,.app_features                          (app_features_aclk)
         ,.timeout_limit                         (timeout_limit)
-        ,.mprot_inactive                        (mprot_inactive)
-        ,.uprot_inactive                        (uprot_inactive)
         ,.urst_n                                (urst_n)
 
         ,.ureg_req_rdy                          (ureg_req_rdy)
@@ -200,24 +237,24 @@ module prga_sysintf (
         ,.asx_val                               (mprot_asx_val)
         ,.asx_data                              (mprot_asx_data)
 
+        ,.app_en                                (app_en_aclk)
+        ,.app_features                          (app_features_aclk)
         ,.timeout_limit                         (timeout_limit)
-        ,.mprot_inactive                        (mprot_inactive)
-        ,.uprot_inactive                        (uprot_inactive)
         ,.urst_n                                (urst_n)
 
-        ,.ccm_req_rdy		                    (ccm_req_rdy)
-        ,.ccm_req_val		                    (ccm_req_val)
-        ,.ccm_req_type		                    (ccm_req_type)
-        ,.ccm_req_addr		                    (ccm_req_addr)
-        ,.ccm_req_data		                    (ccm_req_data)
-        ,.ccm_req_size		                    (ccm_req_size)
-        ,.ccm_req_ecc		                    (ccm_req_ecc)
+        ,.ccm_req_rdy		                    (uccm_req_rdy)
+        ,.ccm_req_val		                    (uccm_req_val)
+        ,.ccm_req_type		                    (uccm_req_type)
+        ,.ccm_req_addr		                    (uccm_req_addr)
+        ,.ccm_req_data		                    (uccm_req_data)
+        ,.ccm_req_size		                    (uccm_req_size)
+        ,.ccm_req_ecc		                    (uccm_req_ecc)
 
-        ,.ccm_resp_rdy		                    (ccm_resp_rdy)
-        ,.ccm_resp_val		                    (ccm_resp_val)
-        ,.ccm_resp_type		                    (ccm_resp_type)
-        ,.ccm_resp_addr		                    (ccm_resp_addr)
-        ,.ccm_resp_data		                    (ccm_resp_data)
+        ,.ccm_resp_rdy		                    (uccm_resp_rdy)
+        ,.ccm_resp_val		                    (uccm_resp_val)
+        ,.ccm_resp_type		                    (uccm_resp_type)
+        ,.ccm_resp_addr		                    (uccm_resp_addr)
+        ,.ccm_resp_data		                    (uccm_resp_data)
         );
 
 endmodule

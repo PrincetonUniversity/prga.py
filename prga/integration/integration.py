@@ -36,51 +36,6 @@ class Integration(object):
                 prefix + "rst_n": ModuleUtils.create_port(module, prefix + "rst_n", 1, o)}
 
     @classmethod
-    def _create_intf_reg(cls, module, slave = False, prefix = ""):
-        """Create register-based interface. By default this creates the master interface that sends register access
-        requests and receives responses.
-
-        Args:
-            module (`Module`):
-            slave (:obj:`bool`): If set, slave interface is added to ``module``
-            prefix (:obj:`str`): Prefix of the port names
-        """
-        i, o = ((PortDirection.output, PortDirection.input_) if slave else
-                (PortDirection.input_, PortDirection.output))
-        return {prefix + "req_rdy": ModuleUtils.create_port(module, prefix + "req_rdy", 1, i),
-                prefix + "req_val": ModuleUtils.create_port(module, prefix + "req_val", 1, o),
-                prefix + "req_addr": ModuleUtils.create_port(module, prefix + "req_addr", 12, o),
-                prefix + "req_strb": ModuleUtils.create_port(module, prefix + "req_strb", 8, o),
-                prefix + "req_data": ModuleUtils.create_port(module, prefix + "req_data", 64, o),
-                prefix + "resp_rdy": ModuleUtils.create_port(module, prefix + "resp_rdy", 1, o),
-                prefix + "resp_val": ModuleUtils.create_port(module, prefix + "resp_val", 1, i),
-                prefix + "resp_data": ModuleUtils.create_port(module, prefix + "resp_data", 64, i),
-                }
-
-    @classmethod
-    def _create_intf_ureg(cls, module, slave = False, prefix = ""):
-        """Create user-defined register-based interface. By default this creates the master interface that sends
-        register access requests and receives responses.
-
-        Args:
-            module (`Module`):
-            slave (:obj:`bool`): If set, slave interface is added to ``module``
-            prefix (:obj:`str`): Prefix of the port names
-        """
-        i, o = ((PortDirection.output, PortDirection.input_) if slave else
-                (PortDirection.input_, PortDirection.output))
-        return {prefix + "req_rdy": ModuleUtils.create_port(module, prefix + "req_rdy", 1, i),
-                prefix + "req_val": ModuleUtils.create_port(module, prefix + "req_val", 1, o),
-                prefix + "req_addr": ModuleUtils.create_port(module, prefix + "req_addr", 12, o),
-                prefix + "req_strb": ModuleUtils.create_port(module, prefix + "req_strb", 8, o),
-                prefix + "req_data": ModuleUtils.create_port(module, prefix + "req_data", 64, o),
-                prefix + "resp_rdy": ModuleUtils.create_port(module, prefix + "resp_rdy", 1, o),
-                prefix + "resp_val": ModuleUtils.create_port(module, prefix + "resp_val", 1, i),
-                prefix + "resp_ecc": ModuleUtils.create_port(module, prefix + "resp_ecc", 1, i),
-                prefix + "resp_data": ModuleUtils.create_port(module, prefix + "resp_data", 64, i),
-                }
-
-    @classmethod
     def _create_intf_cfg(cls, module, slave = False, prefix = ""):
         """Create generic configuration interface. By default this creates the master interface that outputs
         configuration data.
@@ -106,27 +61,33 @@ class Integration(object):
                 }
 
     @classmethod
-    def _create_intf_sax(cls, module, slave = False, prefix = ""):
-        """Create System-Application Crossbar interface. By default this creates the master interface that sends SAX
-        packets and receives ASX packets.
+    def _create_intf_reg(cls, module, slave = False, prefix = "", ecc = False):
+        """Create register-based interface. By default this creates the master interface that sends register access
+        requests and receives responses.
 
         Args:
             module (`Module`):
             slave (:obj:`bool`): If set, slave interface is added to ``module``
             prefix (:obj:`str`): Prefix of the port names
+            ecc (:obj:`bool`): If set, ecc port is added at the response side
         """
         i, o = ((PortDirection.output, PortDirection.input_) if slave else
                 (PortDirection.input_, PortDirection.output))
-        return {prefix + "sax_rdy": ModuleUtils.create_port(module, prefix + "sax_rdy", 1, i),
-                prefix + "sax_val": ModuleUtils.create_port(module, prefix + "sax_val", 1, o),
-                prefix + "sax_data": ModuleUtils.create_port(module, prefix + "sax_data", 144, o),
-                prefix + "asx_rdy": ModuleUtils.create_port(module, prefix + "asx_rdy", 1, o),
-                prefix + "asx_val": ModuleUtils.create_port(module, prefix + "asx_val", 1, i),
-                prefix + "asx_data": ModuleUtils.create_port(module, prefix + "asx_data", 128, i),
-                }
+        d = {}
+        d[prefix + "req_rdy"]       = ModuleUtils.create_port(module, prefix + "req_rdy", 1, i)
+        d[prefix + "req_val"]       = ModuleUtils.create_port(module, prefix + "req_val", 1, o)
+        d[prefix + "req_addr"]      = ModuleUtils.create_port(module, prefix + "req_addr", 12, o)
+        d[prefix + "req_strb"]      = ModuleUtils.create_port(module, prefix + "req_strb", 8, o)
+        d[prefix + "req_data"]      = ModuleUtils.create_port(module, prefix + "req_data", 64, o)
+        d[prefix + "resp_rdy"]      = ModuleUtils.create_port(module, prefix + "resp_rdy", 1, o)
+        d[prefix + "resp_val"]      = ModuleUtils.create_port(module, prefix + "resp_val", 1, i)
+        d[prefix + "resp_data"]     = ModuleUtils.create_port(module, prefix + "resp_data", 64, i)
+        if ecc:
+            d[prefix + "resp_ecc"]  = ModuleUtils.create_port(module, prefix + "resp_ecc", 1, i)
+        return d
 
     @classmethod
-    def _create_intf_ccm(cls, module, slave = False, prefix = ""):
+    def _create_intf_ccm(cls, module, slave = False, prefix = "", ecc = False):
         """Create generic cache-coherent memory interface. By default this creates the master interface that sends
         requests and recieve responses.
 
@@ -134,22 +95,25 @@ class Integration(object):
             module (`Module`):
             slave (:obj:`bool`): If set, slave interface is added to ``module``
             prefix (:obj:`str`): Prefix of the port names
+            ecc (:obj:`bool`): If set, ecc port is added at the request side
         """
         i, o = ((PortDirection.output, PortDirection.input_) if slave else
                 (PortDirection.input_, PortDirection.output))
-        return {prefix + "req_rdy": ModuleUtils.create_port(module, prefix + "req_rdy", 1, i),
-                prefix + "req_val": ModuleUtils.create_port(module, prefix + "req_val", 1, o),
-                prefix + "req_type": ModuleUtils.create_port(module, prefix + "req_type", 2, o),
-                prefix + "req_addr": ModuleUtils.create_port(module, prefix + "req_addr", 40, o),
-                prefix + "req_data": ModuleUtils.create_port(module, prefix + "req_data", 64, o),
-                prefix + "req_size": ModuleUtils.create_port(module, prefix + "req_size", 3, o),
-                prefix + "req_ecc": ModuleUtils.create_port(module, prefix + "req_ecc", 1, o),
-                prefix + "resp_rdy": ModuleUtils.create_port(module, prefix + "resp_rdy", 1, o),
-                prefix + "resp_val": ModuleUtils.create_port(module, prefix + "resp_val", 1, i),
-                prefix + "resp_type": ModuleUtils.create_port(module, prefix + "resp_type", 2, i),
-                prefix + "resp_addr": ModuleUtils.create_port(module, prefix + "resp_addr", 7, i),
-                prefix + "resp_data": ModuleUtils.create_port(module, prefix + "resp_data", 128, i),
-                }
+        d = {}
+        d[prefix + "req_rdy"]	    = ModuleUtils.create_port(module, prefix + "req_rdy", 1, i)
+        d[prefix + "req_val"]	    = ModuleUtils.create_port(module, prefix + "req_val", 1, o)
+        d[prefix + "req_type"]	    = ModuleUtils.create_port(module, prefix + "req_type", 2, o)
+        d[prefix + "req_addr"]	    = ModuleUtils.create_port(module, prefix + "req_addr", 40, o)
+        d[prefix + "req_data"]	    = ModuleUtils.create_port(module, prefix + "req_data", 64, o)
+        d[prefix + "req_size"]	    = ModuleUtils.create_port(module, prefix + "req_size", 3, o)
+        d[prefix + "resp_rdy"]	    = ModuleUtils.create_port(module, prefix + "resp_rdy", 1, o)
+        d[prefix + "resp_val"]	    = ModuleUtils.create_port(module, prefix + "resp_val", 1, i)
+        d[prefix + "resp_type"]	    = ModuleUtils.create_port(module, prefix + "resp_type", 2, i)
+        d[prefix + "resp_addr"]	    = ModuleUtils.create_port(module, prefix + "resp_addr", 7, i)
+        d[prefix + "resp_data"]	    = ModuleUtils.create_port(module, prefix + "resp_data", 128, i)
+        if ecc:
+            d[prefix + "req_ecc"]	= ModuleUtils.create_port(module, prefix + "req_ecc", 1, o)
+        return d
 
     @classmethod
     def _register_lib(cls, context):
@@ -163,21 +127,21 @@ class Integration(object):
 
         # 2. register modules
         # 2.1 modules that we don't need to know about their ports
-        for d in ("prga_ctrl", "prga_ecc_parity", "prga_mprot", "prga_sax", "prga_uprot"):
+        for d in ("prga_ctrl", "prga_ecc_parity", "prga_mprot", "prga_sax", "prga_uprot", "prga_ccm_transducer"):
             context._database[ModuleView.logical, d] = Module(d,
                     view = ModuleView.logical,
                     module_class = ModuleClass.aux,
                     verilog_template = "{}.tmpl.v".format(d))
-        for d in ("prga_l15_transducer", ):
-            context._database[ModuleView.logical, d] = Module(d,
-                    view = ModuleView.logical,
-                    module_class = ModuleClass.aux,
-                    verilog_template = "piton/{}.v".format(d))
-        for d in ("prga_fe_axi4lite", ):
-            context._database[ModuleView.logical, d] = Module(d,
-                    view = ModuleView.logical,
-                    module_class = ModuleClass.aux,
-                    verilog_template = "axi4lite/{}.tmpl.v".format(d))
+        # for d in ("prga_l15_transducer", ):
+        #     context._database[ModuleView.logical, d] = Module(d,
+        #             view = ModuleView.logical,
+        #             module_class = ModuleClass.aux,
+        #             verilog_template = "piton/{}.v".format(d))
+        # for d in ("prga_fe_axi4lite", ):
+        #     context._database[ModuleView.logical, d] = Module(d,
+        #             view = ModuleView.logical,
+        #             module_class = ModuleClass.aux,
+        #             verilog_template = "axi4lite/{}.tmpl.v".format(d))
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
                 context.database[ModuleView.logical, "prga_clkdiv"], "i_clkdiv")
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
@@ -185,27 +149,33 @@ class Integration(object):
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
                 context.database[ModuleView.logical, "prga_byteaddressable_reg"], "i_eflags")
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
+                context.database[ModuleView.logical, "prga_byteaddressable_reg"], "i_app_features")
+        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
                 context.database[ModuleView.logical, "prga_fifo"], "i_tokenq")
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
                 context.database[ModuleView.logical, "prga_fifo"], "i_ctrldataq")
+
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_mprot"],
                 context.database[ModuleView.logical, "prga_ecc_parity"], "i_ecc_checker")
+
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_sax"],
                 context.database[ModuleView.logical, "prga_async_fifo"], "i_sax_fifo")
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_sax"],
                 context.database[ModuleView.logical, "prga_async_fifo"], "i_asx_fifo")
+
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_uprot"],
                 context.database[ModuleView.logical, "prga_ecc_parity"], "i_ecc_checker")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-                context.database[ModuleView.logical, "prga_fifo"], "axi_waddr_fifo")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-                context.database[ModuleView.logical, "prga_fifo"], "axi_wdata_fifo")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-                context.database[ModuleView.logical, "prga_fifo"], "axi_raddr_fifo")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-                context.database[ModuleView.logical, "prga_tokenfifo"], "axi_wresp_fifo")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-                context.database[ModuleView.logical, "prga_fifo"], "axi_rresp_fifo")
+
+        # ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
+        #         context.database[ModuleView.logical, "prga_fifo"], "axi_waddr_fifo")
+        # ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
+        #         context.database[ModuleView.logical, "prga_fifo"], "axi_wdata_fifo")
+        # ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
+        #         context.database[ModuleView.logical, "prga_fifo"], "axi_raddr_fifo")
+        # ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
+        #         context.database[ModuleView.logical, "prga_tokenfifo"], "axi_wresp_fifo")
+        # ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
+        #         context.database[ModuleView.logical, "prga_fifo"], "axi_rresp_fifo")
 
         # 2.2 modules that we do need to know about their ports
         sysintf = context._database[ModuleView.logical, "prga_sysintf"] = Module("prga_sysintf",
@@ -213,14 +183,15 @@ class Integration(object):
                 module_class = ModuleClass.aux,
                 verilog_template = "prga_sysintf.tmpl.v")
         cls._create_intf_syscon(sysintf, True)
-        cls._create_intf_syscon(sysintf, False, "a")
         cls._create_intf_reg(sysintf, True, "reg_")
-        ModuleUtils.create_port(sysintf, "urst_n", 1, PortDirection.output)
-        cls._create_intf_ureg(sysintf, False, "ureg_")
+        cls._create_intf_ccm(sysintf, False, "ccm_")
         cls._create_intf_cfg(sysintf, False, "cfg_")
-        cls._create_intf_sax(sysintf, True)
-        cls._create_intf_ccm(sysintf, True, "ccm_")
+        cls._create_intf_syscon(sysintf, False, "a")
+        ModuleUtils.create_port(sysintf, "urst_n", 1, PortDirection.output)
+        cls._create_intf_reg(sysintf, False, "ureg_", True)
+        cls._create_intf_ccm(sysintf, True, "uccm_", True)
         ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_ctrl"], "i_ctrl")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_ccm_transducer"], "i_transducer")
         ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_sax"], "i_sax")
         ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_uprot"], "i_uprot")
         ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_mprot"], "i_mprot")
@@ -313,19 +284,19 @@ class Integration(object):
         # generate constraints
         for channel in (
                 # Request
-                {   "ccm_req_rdy":      (IOType.ipin, 1),
-                    "ccm_req_val":      (IOType.opin, 1),
-                    "ccm_req_type":     (IOType.opin, 2),
-                    "ccm_req_size":     (IOType.opin, 3),
-                    "ccm_req_ecc":      (IOType.opin, 1), },
-                {   "ccm_req_addr":     (IOType.opin, 40), },
-                {   "ccm_req_data":     (IOType.opin, 64), },
+                {   "uccm_req_rdy":     (IOType.ipin, 1),
+                    "uccm_req_val":     (IOType.opin, 1),
+                    "uccm_req_type":    (IOType.opin, 2),
+                    "uccm_req_size":    (IOType.opin, 3),
+                    "uccm_req_ecc":     (IOType.opin, 1), },
+                {   "uccm_req_addr":    (IOType.opin, 40), },
+                {   "uccm_req_data":    (IOType.opin, 64), },
                 # Response
-                {   "ccm_resp_rdy":     (IOType.opin, 1),
-                    "ccm_resp_val":     (IOType.ipin, 1),
-                    "ccm_resp_type":    (IOType.ipin, 2),
-                    "ccm_resp_addr":    (IOType.ipin, 7), },
-                {   "ccm_resp_data":    (IOType.ipin, 128), },
+                {   "uccm_resp_rdy":    (IOType.opin, 1),
+                    "uccm_resp_val":    (IOType.ipin, 1),
+                    "uccm_resp_type":   (IOType.ipin, 2),
+                    "uccm_resp_addr":   (IOType.ipin, 7), },
+                {   "uccm_resp_data":   (IOType.ipin, 128), },
                 ):
             first = True
             for p, (t, w) in iteritems(channel):
@@ -336,7 +307,7 @@ class Integration(object):
         return constraints
 
     @classmethod
-    def ioplan_ureg(cls, context, data_bytes = 8, addr_width = 12, *,
+    def ioplan_reg(cls, context, data_bytes = 8, addr_width = 12, *,
             start_pos = None, subtile = None, counterclockwise = None, planner = None):
         """Constrain IOs for register-based interface.
 
@@ -364,7 +335,7 @@ class Integration(object):
         # get or create constraints entry
         if (interfaces := getattr(context.summary, "intf", None)) is None:
             interfaces = context.summary.intf = {}
-        interface = interfaces.setdefault(InterfaceClass.ureg, {})
+        interface = interfaces.setdefault(InterfaceClass.reg, {})
         if (interface.setdefault("data_bytes", data_bytes) != data_bytes or
                 interface.setdefault("addr_width", addr_width) != addr_width):
             raise PRGAAPIError("Existing register-based interface is configured (data_bytes: {}, addr_width: {})"
@@ -472,7 +443,7 @@ class Integration(object):
         return constraints
 
     @classmethod
-    def build_system(cls, context, interfaces = (InterfaceClass.ccm, InterfaceClass.ureg), *, name = "prga_system"):
+    def build_system(cls, context, interfaces = (InterfaceClass.ccm, InterfaceClass.reg), *, name = "prga_system"):
         """Create the system top wrapping the reconfigurable fabric.
 
         Args:
@@ -484,13 +455,13 @@ class Integration(object):
         """
 
         system = context.system_top = Module(name, view = ModuleView.logical, module_class = ModuleClass.aux)
-        if set(iter(interfaces)) != {InterfaceClass.ccm, InterfaceClass.ureg}:
-            raise NotImplementedError("The only implemented interface is (ccm, ureg) at the moment")
+        if set(iter(interfaces)) != {InterfaceClass.ccm, InterfaceClass.reg}:
+            raise NotImplementedError("The only implemented interface is (ccm, reg) at the moment")
 
         # create ports
         cls._create_intf_syscon(system, True)
         cls._create_intf_reg(system, True, "reg_")
-        cls._create_intf_sax(system, True)
+        cls._create_intf_ccm(system, False, "ccm_")
 
         # create instances
         fabric = ModuleUtils.instantiate(system, context.database[ModuleView.logical, context.top.key], "i_fabric")
@@ -500,7 +471,7 @@ class Integration(object):
         planner = IOPlanner(context)
         constraints = dict(
                 **cls.ioplan_syscon(context, planner = planner),
-                **cls.ioplan_ureg(context, planner = planner),
+                **cls.ioplan_reg(context, planner = planner),
                 **cls.ioplan_ccm(context, planner = planner))
 
         # connect stuff

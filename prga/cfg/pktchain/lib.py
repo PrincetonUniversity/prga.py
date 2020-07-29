@@ -799,7 +799,7 @@ class Pktchain(Scanchain):
             # generate IO constraints
             constraints = dict(
                     **Integration.ioplan_syscon(context),
-                    **Integration.ioplan_ureg(context),
+                    **Integration.ioplan_reg(context),
                     **Integration.ioplan_ccm(context), )
             IOPlanner.print_io_constraints(constraints, self.io_constraints_f)
 

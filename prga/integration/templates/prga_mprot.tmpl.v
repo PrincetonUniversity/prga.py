@@ -26,10 +26,11 @@ module prga_mprot (
     output reg [`PRGA_ASX_DATA_WIDTH-1:0]       asx_data,
 
     // == Control Signals ====================================================
+    input wire                                  app_en,
+
+    input wire [`PRGA_CREG_DATA_WIDTH-1:0]      app_features,
     input wire [`PRGA_PROT_TIMER_WIDTH-1:0]     timeout_limit,
     input wire                                  urst_n,
-    input wire                                  uprot_inactive,
-    output reg                                  mprot_inactive,
 
     // == Generic Cache-Coherent Memory Interface ============================
     output reg                                  ccm_req_rdy,
@@ -48,6 +49,17 @@ module prga_mprot (
     );
 
     // =======================================================================
+    // -- Extract Related APP Features ---------------------------------------
+    // =======================================================================
+    wire ccm_en, ccm_nc_en, ccm_l1cache_en, ccm_atomic_en, ccm_mthread_en;
+
+    assign ccm_en = app_features[`PRGA_APP_CCM_EN_INDEX];
+    assign ccm_nc_en = app_features[`PRGA_APP_CCM_NC_EN_INDEX];
+    assign ccm_l1cache_en = app_features[`PRGA_APP_CCM_L1CACHE_EN_INDEX];
+    assign ccm_atomic_en = app_features[`PRGA_APP_CCM_ATOMIC_EN_INDEX];
+    assign ccm_mthread_en = app_features[`PRGA_APP_CCM_MTHREAD_EN_INDEX];
+
+    // =======================================================================
     // -- Forward Declarations -----------------------------------------------
     // =======================================================================
 
@@ -55,9 +67,24 @@ module prga_mprot (
     reg                                 sax2asx_val, sax2asx_stall;
     reg [`PRGA_ASX_DATA_WIDTH-1:0]      sax2asx_data;
 
+    // == Feedback signals ==
+    // error_reported is a fast path of ~app_en
+    reg error_reported, report_error;
+
+    always @(posedge clk) begin
+        if (~(rst_n && app_en)) begin
+            error_reported <= 1'b0;
+        end else if (report_error) begin
+            error_reported <= 1'b1;
+        end
+    end
+
     // =======================================================================
     // -- Handling Requests --------------------------------------------------
     // =======================================================================
+
+    wire ccm_intf_en;
+    assign ccm_intf_en = rst_n && app_en && ccm_en && urst_n && ~error_reported;
 
     // == Register All Inputs ==
     reg                                 ccm_req_val_f, ccm_req_stall;
@@ -68,7 +95,7 @@ module prga_mprot (
     reg [`PRGA_ECC_WIDTH-1:0]           ccm_req_ecc_f;
 
     always @(posedge clk) begin
-        if (~rst_n || ~urst_n) begin
+        if (~ccm_intf_en) begin
             ccm_req_val_f   <= 1'b0;
             ccm_req_type_f  <= {`PRGA_CCM_REQTYPE_WIDTH{1'b0} };
             ccm_req_addr_f  <= {`PRGA_CCM_ADDR_WIDTH{1'b0} };
@@ -88,7 +115,7 @@ module prga_mprot (
     end
 
     always @* begin
-        ccm_req_rdy = urst_n && (~ccm_req_val_f || ~ccm_req_stall);
+        ccm_req_rdy = ccm_intf_en && (~ccm_req_val_f || ~ccm_req_stall);
     end
 
     // == ECC Checker ==
@@ -132,86 +159,116 @@ module prga_mprot (
         sax2asx_stall = 1'b1;
         asx_val = 1'b0;
         asx_data = {`PRGA_ASX_DATA_WIDTH {1'b0} };
+        report_error = 1'b0;
 
         case (req_state)
             ST_REQ_RST: begin
-                req_state_next = ST_REQ_ACTIVE;
+                req_state_next = ST_REQ_INACTIVE;
             end
-            ST_REQ_ACTIVE: if (sax2asx_val) begin
-                asx_val = 1'b1;
-                asx_data = sax2asx_data;
-                sax2asx_stall = ~asx_rdy;
-            end else if (urst_n) begin
-                // inactive
-                if (uprot_inactive || mprot_inactive) begin
-                    req_state_next = ST_REQ_INACTIVE;
+            ST_REQ_ACTIVE: begin
+                if (sax2asx_val) begin
+                    asx_val = 1'b1;
+                    asx_data = sax2asx_data;
+
+                    if (asx_rdy) begin
+                        sax2asx_stall = 1'b0;
+
+                        if (sax2asx_data[`PRGA_ASX_MSGTYPE_INDEX] == `PRGA_ASX_MSGTYPE_ERR) begin
+                            report_error = 1'b1;
+                            req_state_next = ST_REQ_INACTIVE;
+                        end
+                    end
                 end
+                
+                if (~ccm_intf_en) begin
+                    req_state_next = ST_REQ_INACTIVE;
+                end else if (~sax2asx_val && ccm_req_val_f) begin
+                    asx_val = 1'b1;
+                    ccm_req_stall = ~asx_rdy;
 
-                // normal requests
-                else if (ccm_req_val_f) begin
-                    case (ccm_req_type_f)
-                        `PRGA_CCM_REQTYPE_LOAD,
-                        `PRGA_CCM_REQTYPE_LOAD_NC,
-                        `PRGA_CCM_REQTYPE_STORE,
-                        `PRGA_CCM_REQTYPE_STORE_NC: begin
-                            asx_val = 1'b1;
+                    if (ccm_req_ecc_fail) begin
+                        asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
+                        asx_data[`PRGA_EFLAGS_CCM_ECC] = 1'b1;
 
-                            if (ccm_req_inval_size) begin
+                        if (asx_rdy) begin
+                            report_error = 1'b1;
+                            req_state_next = ST_REQ_INACTIVE;
+                        end
+                    end else if (ccm_req_inval_size) begin
+                        asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
+                        asx_data[`PRGA_EFLAGS_CCM_INVAL_SIZE] = 1'b1;
+
+                        if (asx_rdy) begin
+                            report_error = 1'b1;
+                            req_state_next = ST_REQ_INACTIVE;
+                        end
+                    end else begin
+                        case (ccm_req_type_f)
+                            `PRGA_CCM_REQTYPE_LOAD: begin
+                                asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CCM_LOAD;
+                                asx_data[`PRGA_ASX_SIZE_INDEX] = ccm_req_size_f;
+                                asx_data[`PRGA_CCM_DATA_WIDTH+:`PRGA_CCM_ADDR_WIDTH] = ccm_req_addr_f;
+                            end
+                            `PRGA_CCM_REQTYPE_STORE: begin
+                                asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CCM_STORE;
+                                asx_data[`PRGA_ASX_SIZE_INDEX] = ccm_req_size_f;
+                                asx_data[`PRGA_CCM_DATA_WIDTH+:`PRGA_CCM_ADDR_WIDTH] = ccm_req_addr_f;
+                                asx_data[0 +: `PRGA_CCM_DATA_WIDTH] = ccm_req_data_f;
+                            end
+                            `PRGA_CCM_REQTYPE_LOAD_NC: if (~ccm_nc_en) begin
                                 asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
-                                asx_data[`PRGA_EFLAGS_CCM_INVAL_SIZE] = 1'b1;
+                                asx_data[`PRGA_EFLAGS_CCM_ILLEGAL_NC_REQ] = 1'b1;
 
                                 if (asx_rdy) begin
-                                    req_state_next = ST_REQ_INACTIVE;
-                                end
-                            end else if (ccm_req_ecc_fail) begin
-                                asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
-                                asx_data[`PRGA_EFLAGS_CCM_ECC] = 1'b1;
-
-                                if (asx_rdy) begin
+                                    report_error = 1'b1;
                                     req_state_next = ST_REQ_INACTIVE;
                                 end
                             end else begin
-
-                                case (ccm_req_type_f)
-                                    `PRGA_CCM_REQTYPE_LOAD: begin
-                                        asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CCM_LOAD;
-                                    end
-                                    `PRGA_CCM_REQTYPE_LOAD_NC: begin
-                                        asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CCM_LOAD_NC;
-                                    end
-                                    `PRGA_CCM_REQTYPE_STORE: begin
-                                        asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CCM_STORE;
-                                        asx_data[0 +: `PRGA_CCM_DATA_WIDTH] = ccm_req_data_f;
-                                    end
-                                    `PRGA_CCM_REQTYPE_STORE_NC: begin
-                                        asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CCM_STORE_NC;
-                                        asx_data[0 +: `PRGA_CCM_DATA_WIDTH] = ccm_req_data_f;
-                                    end
-                                endcase
-
+                                asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CCM_LOAD_NC;
                                 asx_data[`PRGA_ASX_SIZE_INDEX] = ccm_req_size_f;
                                 asx_data[`PRGA_CCM_DATA_WIDTH+:`PRGA_CCM_ADDR_WIDTH] = ccm_req_addr_f;
-                                ccm_req_stall = ~asx_rdy;
                             end
-                        end
-                        default: begin
-                            asx_val = 1'b1;
-                            asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
-                            asx_data[`PRGA_EFLAGS_CCM_INVAL_REQ] = 1'b1;
+                            `PRGA_CCM_REQTYPE_STORE_NC: if (~ccm_nc_en) begin
+                                asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
+                                asx_data[`PRGA_EFLAGS_CCM_ILLEGAL_NC_REQ] = 1'b1;
 
-                            if (asx_rdy) begin
-                                req_state_next = ST_REQ_INACTIVE;
+                                if (asx_rdy) begin
+                                    report_error = 1'b1;
+                                    req_state_next = ST_REQ_INACTIVE;
+                                end
+                            end else begin
+                                asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CCM_STORE_NC;
+                                asx_data[`PRGA_ASX_SIZE_INDEX] = ccm_req_size_f;
+                                asx_data[`PRGA_CCM_DATA_WIDTH+:`PRGA_CCM_ADDR_WIDTH] = ccm_req_addr_f;
+                                asx_data[0 +: `PRGA_CCM_DATA_WIDTH] = ccm_req_data_f;
                             end
-                        end
-                    endcase
+                            default: begin
+                                asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
+                                asx_data[`PRGA_EFLAGS_CCM_INVAL_REQ] = 1'b1;
+
+                                if (asx_rdy) begin
+                                    report_error = 1'b1;
+                                    req_state_next = ST_REQ_INACTIVE;
+                                end
+                            end
+                        endcase
+                    end
                 end
             end
-            ST_REQ_INACTIVE: if (~urst_n) begin
-                req_state_next = ST_REQ_ACTIVE;
-            end else if (sax2asx_val) begin
-                asx_val = 1'b1;
-                asx_data = sax2asx_data;
-                sax2asx_stall = ~asx_rdy;
+            ST_REQ_INACTIVE: begin
+                if (sax2asx_val) begin
+                    asx_val = 1'b1;
+                    asx_data = sax2asx_data;
+
+                    if (asx_rdy) begin
+                        sax2asx_stall = 1'b0;
+                        report_error = asx_data[`PRGA_ASX_MSGTYPE_INDEX] == `PRGA_ASX_MSGTYPE_ERR;
+                    end
+                end
+
+                if (ccm_intf_en && ~(sax2asx_val && asx_data[`PRGA_ASX_MSGTYPE_INDEX] == `PRGA_ASX_MSGTYPE_ERR)) begin
+                    req_state_next = ST_REQ_ACTIVE;
+                end
             end
         endcase
     end
@@ -245,7 +302,7 @@ module prga_mprot (
     reg [`PRGA_PROT_TIMER_WIDTH-1:0] resp_timer;
 
     always @(posedge clk) begin
-        if (~rst_n || ~urst_n) begin
+        if (~ccm_intf_en) begin
             resp_timeout_f <= 1'b0;
             resp_timer <= {`PRGA_PROT_TIMER_WIDTH{1'b0} };
         end else if (~resp_timeout_f) begin
@@ -288,73 +345,56 @@ module prga_mprot (
             ST_RESP_RST: begin
                 resp_state_next = ST_RESP_ACTIVE;
             end
-            ST_RESP_ACTIVE: begin
-                // during reset
-                if (~urst_n) begin
-                    sax_stall = 1'b0;
-                end
+            ST_RESP_ACTIVE: if (~ccm_intf_en) begin
+                resp_state_next = ST_RESP_INACTIVE;
+            end 
 
-                // user register side has reported an error
-                else if (uprot_inactive) begin
+            // response timeout!
+            else if (resp_timeout_f) begin
+                sax2asx_val = 1'b1;
+                sax2asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
+                sax2asx_data[`PRGA_EFLAGS_CCM_TIMEOUT] = 1'b1;
+
+                if (~sax2asx_stall) begin
                     resp_state_next = ST_RESP_INACTIVE;
-                end
-
-                // response timeout!
-                else if (resp_timeout_f) begin
-                    sax2asx_val = 1'b1;
-                    sax2asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
-                    sax2asx_data[`PRGA_EFLAGS_CCM_TIMEOUT] = 1'b1;
-
-                    if (~sax2asx_stall) begin
-                        resp_state_next = ST_RESP_INACTIVE;
-                    end
-                end
-
-                // inactive
-                else if (mprot_inactive) begin
-                    resp_state_next = ST_RESP_INACTIVE;
-                end
-                
-                // SAX message
-                else if (sax_val_f) begin
-                    case (sax_data_f[`PRGA_SAX_MSGTYPE_INDEX])
-                        `PRGA_SAX_MSGTYPE_CCM_LOAD_ACK,
-                        `PRGA_SAX_MSGTYPE_CCM_LOAD_NC_ACK: begin
-                            ccm_resp_val = 1'b1;
-                            ccm_resp_data = sax_data_f[0+:`PRGA_CCM_CACHELINE_WIDTH];
-                            sax_stall = ~ccm_resp_rdy;
-
-                            if (sax_data_f[`PRGA_SAX_MSGTYPE_INDEX] == `PRGA_SAX_MSGTYPE_CCM_LOAD_NC_ACK) begin
-                                ccm_resp_type = `PRGA_CCM_RESPTYPE_LOAD_NC_ACK;
-                            end else begin
-                                ccm_resp_type = `PRGA_CCM_RESPTYPE_LOAD_ACK;
-                            end
-                        end
-                        `PRGA_SAX_MSGTYPE_CCM_STORE_ACK,
-                        `PRGA_SAX_MSGTYPE_CCM_STORE_NC_ACK: begin
-                            ccm_resp_val = 1'b1;
-                            sax_stall = ~ccm_resp_rdy;
-
-                            if (sax_data_f[`PRGA_SAX_MSGTYPE_INDEX] == `PRGA_SAX_MSGTYPE_CCM_STORE_NC_ACK) begin
-                                ccm_resp_type = `PRGA_CCM_RESPTYPE_STORE_NC_ACK;
-                            end else begin
-                                ccm_resp_type = `PRGA_CCM_RESPTYPE_STORE_ACK;
-                            end
-                        end
-                    endcase
                 end
             end
-            ST_RESP_INACTIVE: if (~urst_n) begin
+
+            // SAX message
+            else if (sax_val_f) begin
+                case (sax_data_f[`PRGA_SAX_MSGTYPE_INDEX])
+                    `PRGA_SAX_MSGTYPE_CCM_LOAD_ACK,
+                    `PRGA_SAX_MSGTYPE_CCM_LOAD_NC_ACK: begin
+                        ccm_resp_val = 1'b1;
+                        ccm_resp_data = sax_data_f[0+:`PRGA_CCM_CACHELINE_WIDTH];
+                        sax_stall = ~ccm_resp_rdy;
+
+                        if (sax_data_f[`PRGA_SAX_MSGTYPE_INDEX] == `PRGA_SAX_MSGTYPE_CCM_LOAD_NC_ACK) begin
+                            ccm_resp_type = `PRGA_CCM_RESPTYPE_LOAD_NC_ACK;
+                        end else begin
+                            ccm_resp_type = `PRGA_CCM_RESPTYPE_LOAD_ACK;
+                        end
+                    end
+                    `PRGA_SAX_MSGTYPE_CCM_STORE_ACK,
+                    `PRGA_SAX_MSGTYPE_CCM_STORE_NC_ACK: begin
+                        ccm_resp_val = 1'b1;
+                        sax_stall = ~ccm_resp_rdy;
+
+                        if (sax_data_f[`PRGA_SAX_MSGTYPE_INDEX] == `PRGA_SAX_MSGTYPE_CCM_STORE_NC_ACK) begin
+                            ccm_resp_type = `PRGA_CCM_RESPTYPE_STORE_NC_ACK;
+                        end else begin
+                            ccm_resp_type = `PRGA_CCM_RESPTYPE_STORE_ACK;
+                        end
+                    end
+                endcase
+            end
+            ST_RESP_INACTIVE: if (ccm_intf_en) begin
                 resp_state_next = ST_RESP_ACTIVE;
             end else begin
                 // TODO: handle SAX messages (e.g. invalidation)
                 sax_stall = 1'b0;
             end
         endcase
-    end
-
-    always @* begin
-        mprot_inactive = req_state == ST_REQ_INACTIVE || resp_state == ST_RESP_INACTIVE;
     end
 
 endmodule

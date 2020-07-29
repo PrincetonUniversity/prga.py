@@ -15,5 +15,5 @@ class InterfaceClass(Enum):
 
     syscon = 0          #: common system control signals (clk and rst_n)
     ccm = 1             #: cache-coherent memory interface
-    ureg = 2            #: register-based interface
-    axi4lite = 3        #: AXI4Lite interface
+    reg = 2             #: register-based interface
+    # axi4lite = 3        #: AXI4Lite interface

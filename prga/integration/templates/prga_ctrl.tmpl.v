@@ -26,6 +26,10 @@ module prga_ctrl (
     output wire                                 aclk,
     output reg                                  arst_n,
 
+    output reg                                  app_en,
+    output reg                                  app_en_aclk,
+    output wire [`PRGA_CREG_DATA_WIDTH-1:0]     app_features,
+
     // == CTRL <-> CFG ========================================================
     output reg                                  cfg_rst_n,
     input wire [`PRGA_CFG_STATUS_WIDTH-1:0]     cfg_status,
@@ -110,7 +114,7 @@ module prga_ctrl (
         ,.rst                           (~rst_n)
         ,.wr                            (bitstream_id_update)
         ,.mask                          (creg_update_strb)
-        ,.din                           (creg_update_strb)
+        ,.din                           (creg_update_data)
         ,.dout                          (bitstream_id)
         );
 
@@ -129,6 +133,44 @@ module prga_ctrl (
         ,.din                           (eflags_force ? creg_update_data : (eflags | eflags_set_mask))
         ,.dout                          (eflags)
         );
+
+    // == APP Features ==
+    reg app_features_update;
+
+    prga_byteaddressable_reg #(
+        .NUM_BYTES                      (`PRGA_CREG_DATA_BYTES)
+    ) i_app_features (
+        .clk                            (clk)
+        ,.rst                           (~rst_n)
+        ,.wr                            (app_features_update)
+        ,.mask                          (creg_update_strb)
+        ,.din                           (creg_update_data)
+        ,.dout                          (app_features)
+        );
+
+    // ========================================================================
+    // -- Application Enable --------------------------------------------------
+    // ========================================================================
+
+    reg app_en_set;
+
+    always @(posedge clk) begin
+        if (~rst_n || (|eflags || cfg_status != `PRGA_CFG_STATUS_DONE)) begin
+            app_en <= 1'b0;
+        end else if (app_en_set) begin
+            app_en <= 1'b1;
+        end
+    end
+
+    reg app_en_aclk_s0;
+
+    always @(posedge aclk) begin
+        if (~arst_n) begin
+            {app_en_aclk, app_en_aclk_s0} <= 2'b0;
+        end else begin
+            {app_en_aclk, app_en_aclk_s0} <= {app_en_aclk_s0, app_en};
+        end
+    end
 
     // ========================================================================
     // -- CREG Access Reordering ----------------------------------------------
@@ -150,7 +192,7 @@ module prga_ctrl (
 
     prga_fifo #(
         .DATA_WIDTH                     (CREG_TOKEN_WIDTH)
-        ,.DEPTH_LOG2                    (4)
+        ,.DEPTH_LOG2                    (6)
         ,.LOOKAHEAD                     (1)
     ) i_tokenq (
         .clk                            (clk)
@@ -202,6 +244,7 @@ module prga_ctrl (
     reg                                 val_req_x_next;
 
     // -- X stage variables --
+    reg                                 app_en_x;
     reg                                 val_req_x;
     reg [`PRGA_CREG_ADDR_WIDTH-1:0]     addr_req_x;
     reg [`PRGA_CREG_DATA_WIDTH-1:0]     data_req_x;
@@ -255,9 +298,15 @@ module prga_ctrl (
                             i_tokenq_din = CREG_TOKEN_CTRL_READ;
                         end
                     end
+                    `PRGA_CREG_ADDR_APP_FEATURES: begin
+                        if (|strb_req_t) begin
+                            i_tokenq_din = CREG_TOKEN_SAX_WRITE;
+                        end else begin
+                            i_tokenq_din = CREG_TOKEN_CTRL_READ;
+                        end
+                    end
                     `PRGA_CREG_ADDR_APP_RST,
-                    `PRGA_CREG_ADDR_TIMEOUT,
-                    `PRGA_CREG_ADDR_APP_DWIDTH: begin
+                    `PRGA_CREG_ADDR_TIMEOUT: begin
                         if (|strb_req_t) begin
                             i_tokenq_din = CREG_TOKEN_SAX_WRITE;
                         end else begin
@@ -272,12 +321,14 @@ module prga_ctrl (
                         end
                     end
                 endcase
-            end else begin
+            end else if (app_en && app_features[`PRGA_APP_UREG_EN_INDEX]) begin
                 if (|strb_req_t) begin
                     i_tokenq_din = CREG_TOKEN_SAX_WRITE;
                 end else begin
                     i_tokenq_din = CREG_TOKEN_SAX_READ;
                 end
+            end else begin
+                i_tokenq_din = CREG_TOKEN_CTRL_WRITE;
             end
         end
     end
@@ -287,11 +338,13 @@ module prga_ctrl (
     // == Register Data from T Stage ==
     always @(posedge clk) begin
         if (~rst_n) begin
+            app_en_x    <= 1'b0;
             val_req_x   <= 1'b0;
             addr_req_x  <= {`PRGA_CREG_ADDR_WIDTH {1'b0} };
             data_req_x  <= {`PRGA_CREG_DATA_WIDTH {1'b0} };
             strb_req_x  <= {`PRGA_CREG_DATA_BYTES {1'b0} };
         end else if (~stall_req_x) begin
+            app_en_x    <= app_en && app_features[`PRGA_APP_UREG_EN_INDEX];
             val_req_x   <= val_req_x_next;
             addr_req_x  <= addr_req_t;
             data_req_x  <= data_req_t;
@@ -303,7 +356,7 @@ module prga_ctrl (
     always @* begin
         i_ctrldataq_wr = 1'b0;
         i_ctrldataq_din = {`PRGA_CREG_DATA_WIDTH {1'b0} };
-        stall_req_x = 1'b0;
+        stall_req_x = 1'b1;
 
         cfg_req_val = 1'b0;
         cfg_req_addr = {`PRGA_CREG_ADDR_WIDTH {1'b0} };
@@ -318,6 +371,8 @@ module prga_ctrl (
         creg_update_strb = {`PRGA_CREG_DATA_BYTES {1'b0} };
         bitstream_id_update = 1'b0;
         eflags_force = 1'b0;
+        app_features_update = 1'b0;
+        app_en_set = 1'b0;
 
         if (val_req_x) begin
             if (addr_req_x[`PRGA_CREG_ADDR_WIDTH-1]) begin
@@ -327,21 +382,45 @@ module prga_ctrl (
                             creg_update_data = data_req_x;
                             creg_update_strb = strb_req_x;
                             bitstream_id_update = 1'b1;
+                            stall_req_x = 1'b0;
                         end
                         `PRGA_CREG_ADDR_EFLAGS: begin
                             creg_update_data = data_req_x;
                             creg_update_strb = strb_req_x;
                             eflags_force = 1'b1;
+                            stall_req_x = 1'b0;
                         end
                         `PRGA_CREG_ADDR_ACLK_DIV: begin
                             aclk_div_next = data_req_x[0+:`PRGA_CLKDIV_WIDTH];
+                            stall_req_x = 1'b0;
                         end
                         `PRGA_CREG_ADDR_CFG_STATUS: begin
                             cfg_rst_n_set = 1'b1;
+                            stall_req_x = 1'b0;
                         end
-                        `PRGA_CREG_ADDR_APP_RST,
-                        `PRGA_CREG_ADDR_TIMEOUT,
-                        `PRGA_CREG_ADDR_APP_DWIDTH: begin
+                        `PRGA_CREG_ADDR_APP_FEATURES: begin
+                            creg_update_data = data_req_x;
+                            creg_update_strb = strb_req_x;
+                            app_features_update = 1'b1;
+
+                            sax_val = 1'b1;
+                            sax_data[`PRGA_SAX_MSGTYPE_INDEX] = `PRGA_SAX_MSGTYPE_CREG_WRITE;
+                            sax_data[`PRGA_SAX_CREG_STRB_INDEX] = strb_req_x;
+                            sax_data[`PRGA_SAX_CREG_ADDR_INDEX] = addr_req_x;
+                            sax_data[`PRGA_SAX_CREG_DATA_INDEX] = data_req_x;
+                            stall_req_x = ~sax_rdy;
+                        end
+                        `PRGA_CREG_ADDR_APP_RST: begin
+                            app_en_set = cfg_status == `PRGA_CFG_STATUS_DONE && ~|eflags;
+
+                            sax_val = 1'b1;
+                            sax_data[`PRGA_SAX_MSGTYPE_INDEX] = `PRGA_SAX_MSGTYPE_CREG_WRITE;
+                            sax_data[`PRGA_SAX_CREG_STRB_INDEX] = strb_req_x;
+                            sax_data[`PRGA_SAX_CREG_ADDR_INDEX] = addr_req_x;
+                            sax_data[`PRGA_SAX_CREG_DATA_INDEX] = data_req_x;
+                            stall_req_x = ~sax_rdy;
+                        end
+                        `PRGA_CREG_ADDR_TIMEOUT: begin
                             sax_val = 1'b1;
                             sax_data[`PRGA_SAX_MSGTYPE_INDEX] = `PRGA_SAX_MSGTYPE_CREG_WRITE;
                             sax_data[`PRGA_SAX_CREG_STRB_INDEX] = strb_req_x;
@@ -379,9 +458,13 @@ module prga_ctrl (
                             i_ctrldataq_din[0+:`PRGA_CFG_STATUS_WIDTH] = cfg_status;
                             stall_req_x = i_ctrldataq_full;
                         end
+                        `PRGA_CREG_ADDR_APP_FEATURES: begin
+                            i_ctrldataq_wr = 1'b1;
+                            i_ctrldataq_din = app_features;
+                            stall_req_x = i_ctrldataq_full;
+                        end
                         `PRGA_CREG_ADDR_APP_RST,
-                        `PRGA_CREG_ADDR_TIMEOUT,
-                        `PRGA_CREG_ADDR_APP_DWIDTH: begin
+                        `PRGA_CREG_ADDR_TIMEOUT: begin
                             sax_val = 1'b1;
                             sax_data[`PRGA_SAX_MSGTYPE_INDEX] = `PRGA_SAX_MSGTYPE_CREG_READ;
                             sax_data[`PRGA_SAX_CREG_ADDR_INDEX] = addr_req_x;
@@ -394,7 +477,7 @@ module prga_ctrl (
                         end
                     endcase
                 end
-            end else begin
+            end else if (app_en_x) begin
                 sax_val = 1'b1;
                 stall_req_x = ~sax_rdy;
 
@@ -407,7 +490,11 @@ module prga_ctrl (
                     sax_data[`PRGA_SAX_MSGTYPE_INDEX] = `PRGA_SAX_MSGTYPE_CREG_READ;
                     sax_data[`PRGA_SAX_CREG_ADDR_INDEX] = addr_req_x;
                 end
+            end else begin
+                stall_req_x = 1'b0;
             end
+        end else begin
+            stall_req_x = 1'b0;
         end
     end
 

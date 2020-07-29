@@ -12,21 +12,40 @@
 `define PRGA_CREG_ADDR_EFLAGS           `PRGA_CREG_ADDR_WIDTH'h808  //  64b     64b
 `define PRGA_CREG_ADDR_ACLK_DIV         `PRGA_CREG_ADDR_WIDTH'h810  //  64b     `PRGA_CLKDIV_WIDTH
 `define PRGA_CREG_ADDR_CFG_STATUS       `PRGA_CREG_ADDR_WIDTH'h818  //  64b     `PRGA_CFG_STATUS_WIDTH
+`define PRGA_CREG_ADDR_APP_FEATURES     `PRGA_CREG_ADDR_WIDTH'h820  //  64b     64b
 
 `define PRGA_CREG_ADDR_APP_RST          `PRGA_CREG_ADDR_WIDTH'hC00  //  64b     `PRGA_PROT_TIMER_WIDTH
 `define PRGA_CREG_ADDR_TIMEOUT          `PRGA_CREG_ADDR_WIDTH'hC08  //  64b     `PRGA_PROT_TIMER_WIDTH
-`define PRGA_CREG_ADDR_APP_DWIDTH       `PRGA_CREG_ADDR_WIDTH'hC10  //  64b     `PRGA_APP_DWIDTH_WIDTH
 
 // Error Flags
-`define PRGA_EFLAGS_CCM_ECC             1 << 0
-`define PRGA_EFLAGS_CCM_TIMEOUT         1 << 1
-`define PRGA_EFLAGS_CCM_INVAL_REQ       1 << 2
-`define PRGA_EFLAGS_CCM_INVAL_SIZE      1 << 3
-`define PRGA_EFLAGS_UREG_ECC            1 << 4
-`define PRGA_EFLAGS_UREG_TIMEOUT        1 << 5
-`define PRGA_EFLAGS_CFG_REG_UNDEF       1 << 6
+`define PRGA_EFLAGS_CCM_ECC             0
+`define PRGA_EFLAGS_CCM_TIMEOUT         1
+`define PRGA_EFLAGS_CCM_INVAL_SIZE      2
+`define PRGA_EFLAGS_CCM_INVAL_REQ       3
+`define PRGA_EFLAGS_CCM_ILLEGAL_NC_REQ  4
+`define PRGA_EFLAGS_UREG_ECC            16
+`define PRGA_EFLAGS_UREG_TIMEOUT        17
+`define PRGA_EFLAGS_CFG_REG_UNDEF       24
 
 `define PRGA_CLKDIV_WIDTH               8                           // limit to 1/512 system clock freq
+
+`define PRGA_PROT_TIMER_WIDTH           32
+
+// APP Feature vector
+`define PRGA_APP_UREG_EN_INDEX          0
+
+`define PRGA_APP_UREG_DWIDTH_WIDTH      2
+`define PRGA_APP_UREG_DWIDTH_INDEX      `PRGA_APP_UREG_EN_INDEX+1+:`PRGA_APP_UREG_DWIDTH_WIDTH
+`define PRGA_APP_UREG_DWIDTH_8B         `PRGA_APP_UREG_DWIDTH_WIDTH'h0
+`define PRGA_APP_UREG_DWIDTH_4B         `PRGA_APP_UREG_DWIDTH_WIDTH'h1
+`define PRGA_APP_UREG_DWIDTH_2B         `PRGA_APP_UREG_DWIDTH_WIDTH'h2
+`define PRGA_APP_UREG_DWIDTH_1B         `PRGA_APP_UREG_DWIDTH_WIDTH'h3
+
+`define PRGA_APP_CCM_EN_INDEX           32
+`define PRGA_APP_CCM_NC_EN_INDEX        33
+`define PRGA_APP_CCM_ATOMIC_EN_INDEX    34
+`define PRGA_APP_CCM_L1CACHE_EN_INDEX   35
+`define PRGA_APP_CCM_MTHREAD_EN_INDEX   36
 
 `define PRGA_CFG_STATUS_WIDTH           2
 `define PRGA_CFG_STATUS_STANDBY         `PRGA_CFG_STATUS_WIDTH'h0
@@ -65,14 +84,6 @@
 `define PRGA_CCM_CACHETAG_HIGH          10
 `define PRGA_CCM_CACHETAG_LOW           4
 `define PRGA_CCM_CACHETAG_INDEX         `PRGA_CCM_CACHETAG_HIGH:`PRGA_CCM_CACHETAG_LOW
-
-`define PRGA_PROT_TIMER_WIDTH           32
-
-`define PRGA_APP_DWIDTH_WIDTH           2
-`define PRGA_APP_DWIDTH_8B              `PRGA_APP_DWIDTH_WIDTH'h0
-`define PRGA_APP_DWIDTH_4B              `PRGA_APP_DWIDTH_WIDTH'h1
-`define PRGA_APP_DWIDTH_2B              `PRGA_APP_DWIDTH_WIDTH'h2
-`define PRGA_APP_DWIDTH_1B              `PRGA_APP_DWIDTH_WIDTH'h3
 
 /* System-Application Clock-Domain Crossing Interconnect */
 `define PRGA_SAX_DATA_WIDTH             144
