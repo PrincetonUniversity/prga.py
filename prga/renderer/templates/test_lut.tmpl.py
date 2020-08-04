@@ -8,7 +8,7 @@ from cocotb.binary import BinaryValue
 from cocotb.scoreboard import Scoreboard
 from config import *
 
-def clock_generation(clk,clock_period=10,test_time=10000):
+def clock_generation(clk,clock_period=10,test_time=100000):
     c= Clock(clk,clock_period)
     cocotb.fork(c.start(test_time//clock_period))
     

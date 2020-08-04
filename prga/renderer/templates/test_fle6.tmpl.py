@@ -6,7 +6,7 @@ from cocotb.result import TestFailure,TestSuccess
 # For handling global variables
 import config
 
-def clock_generation(clk,clock_period=10,test_time=10000):
+def clock_generation(clk,clock_period=10,test_time=100000):
     c= Clock(clk,clock_period)
     cocotb.fork(c.start(test_time//clock_period))
 
@@ -24,7 +24,7 @@ def always_posedge(dut):
             config.internal_ff = [config.internal_sum%2,config.internal_sum//2]
 
 @cocotb.coroutine
-def always_star(dut,cfg_d,LUT5A_DATA,LUT5B_DATA,CIN_FABRIC,ENABLE_FFA,ENABLE_FFB):
+def always_star(dut,cfg_d,LUT5A_DATA,LUT5B_DATA,CIN_FABRIC,DISABLE_FFA,DISABLE_FFB):
 
     mode = dut.mode.value.integer
     expected_out = [0,0]
@@ -43,7 +43,7 @@ def always_star(dut,cfg_d,LUT5A_DATA,LUT5B_DATA,CIN_FABRIC,ENABLE_FFA,ENABLE_FFB
 
                 expected_cout = 0
                 
-                if cfg_d[ENABLE_FFA]:
+                if not cfg_d[DISABLE_FFA]:
                     expected_out[0] = config.internal_ff[0]
                 else:
                     expected_out[0] = config.internal_lut[1] if input//32 else config.internal_lut[0]
@@ -62,12 +62,12 @@ def always_star(dut,cfg_d,LUT5A_DATA,LUT5B_DATA,CIN_FABRIC,ENABLE_FFA,ENABLE_FFB
 
             elif mode == 1:
 
-                if cfg_d[ENABLE_FFA]:
+                if not cfg_d[DISABLE_FFA]:
                     expected_out[0] = config.internal_ff[0]
                 else:
                     expected_out[0] = config.internal_lut[0]
                 
-                if cfg_d[ENABLE_FFB]:
+                if not cfg_d[DISABLE_FFB]:
                     expected_out[1] = config.internal_ff[1]
                 else:
                     expected_out[1] = config.internal_lut[1]
@@ -82,12 +82,12 @@ def always_star(dut,cfg_d,LUT5A_DATA,LUT5B_DATA,CIN_FABRIC,ENABLE_FFA,ENABLE_FFB
 
             elif mode == 3:
 
-                if cfg_d[ENABLE_FFA]:
+                if not cfg_d[DISABLE_FFA]:
                     expected_out[0] = config.internal_ff[0]
                 else:
                     expected_out[0] = config.internal_sum%2
                 
-                if cfg_d[ENABLE_FFB]:
+                if not cfg_d[DISABLE_FFB]:
                     expected_out[1] = config.internal_ff[1]
                 else:
                     expected_out[1] = config.internal_sum//2                
@@ -111,7 +111,7 @@ def wrapper(dut,test_mode=0):
     """Wrapper code for test """
     
     clk = dut.clk
-    cfg_clk = dut.i_cfg_date.cfg_clk
+    cfg_clk = dut.i_cfg_data.cfg_clk
     
     clock_generation(cfg_clk)
     clock_generation(clk)
@@ -123,10 +123,10 @@ def wrapper(dut,test_mode=0):
     out = dut.out
     cin = dut.cin
     cout = dut.cout
-    cfg_e = dut.i_cfg_date.cfg_e
-    cfg_we = dut.i_cfg_date.cfg_we
-    cfg_i = dut.i_cfg_date.cfg_i
-    cfg_o = dut.i_cfg_date.cfg_o
+    cfg_e = dut.i_cfg_data.cfg_e
+    cfg_we = dut.i_cfg_data.cfg_we
+    cfg_i = dut.i_cfg_data.cfg_i
+    cfg_o = dut.i_cfg_data.cfg_o
     
     # Local Parameters
     LUT5A_DATA_WIDTH = dut.LUT5A_DATA_WIDTH.value.integer
@@ -135,8 +135,8 @@ def wrapper(dut,test_mode=0):
 
     LUT5A_DATA = dut.LUT5A_DATA.value.integer
     LUT5B_DATA = dut.LUT5B_DATA.value.integer
-    ENABLE_FFA = dut.ENABLE_FFA.value.integer
-    ENABLE_FFB = dut.ENABLE_FFB.value.integer
+    DISABLE_FFA = dut.DISABLE_FFA.value.integer
+    DISABLE_FFB = dut.DISABLE_FFB.value.integer
     MODE = dut.MODE.value.integer
     
     CIN_FABRIC = dut.CIN_FABRIC.value.integer
@@ -177,21 +177,21 @@ def wrapper(dut,test_mode=0):
         test_mode//=2 
         yield RisingEdge(cfg_clk)
     
-    # Set the ENABLE_FFB
-    enable_ffb = random.choice([0,1]) 
-    # enable_ffb = 0 
-    cfg_d.insert(0,enable_ffb)
-    cfg_i <= enable_ffb
+    # Set the DISABLE_FFB
+    disable_ffb = random.choice([0,1]) 
+    # disable_ffb = 0 
+    cfg_d.insert(0,disable_ffb)
+    cfg_i <= disable_ffb
     yield RisingEdge(cfg_clk)
-    dut._log.info("        enable_ffb "+str(enable_ffb))
+    dut._log.info("        disable_ffb "+str(disable_ffb))
 
-    # Set the ENABLE_FFA
-    enable_ffa = random.choice([0,1]) 
-    # enable_ffa = 0 
-    cfg_d.insert(0,enable_ffa)
-    cfg_i <= enable_ffa
+    # Set the DISABLE_FFA
+    disable_ffa = random.choice([0,1]) 
+    # disable_ffa = 0 
+    cfg_d.insert(0,disable_ffa)
+    cfg_i <= disable_ffa
     yield RisingEdge(cfg_clk)
-    dut._log.info("        enable_ffa "+str(enable_ffa))
+    dut._log.info("        disable_ffa "+str(disable_ffa))
     
     # Set the LUTB_DATA
     b_data = random.choice(range(2**LUT5B_DATA_WIDTH - 1))
@@ -219,7 +219,7 @@ def wrapper(dut,test_mode=0):
     yield RisingEdge(cfg_clk)
 
     cocotb.fork(always_posedge(dut))
-    cocotb.fork(always_star(dut,cfg_d,LUT5A_DATA,LUT5B_DATA,CIN_FABRIC,ENABLE_FFA,ENABLE_FFB))
+    cocotb.fork(always_star(dut,cfg_d,LUT5A_DATA,LUT5B_DATA,CIN_FABRIC,DISABLE_FFA,DISABLE_FFB))
 
 
     for i in range(2**n_input):

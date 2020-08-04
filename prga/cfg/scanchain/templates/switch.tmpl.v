@@ -10,7 +10,8 @@ module {{ module.name }} (
     input wire [0:0] cfg_e,
     input wire [0:0] cfg_we,
     input wire [{{ cfg_width - 1 }}:0] cfg_i,
-    output wire [{{ cfg_width - 1 }}:0] cfg_o
+    output wire [{{ cfg_width - 1 }}:0] cfg_o,
+    input wire [0:0] test_clk
     );
 
     wire [{{ module.cfg_bitcount - 1 }}:0] cfg_d;

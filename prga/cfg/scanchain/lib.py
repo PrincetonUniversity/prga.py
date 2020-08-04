@@ -57,7 +57,7 @@ class ScanchainSwitchDatabase(Object, AbstractSwitchDatabase):
             cfg_bitcount = len(bin(width - 1).lstrip('-0b'))
         switch = Module('sw' + str(width), view = ModuleView.logical, key = key,
                 module_class = ModuleClass.switch, cfg_bitcount = cfg_bitcount,
-                allow_multisource = True, verilog_template = "switch.tmpl.v")
+                allow_multisource = True, verilog_template = "switch.tmpl.v",test_python_template="switch.tmpl.py")
         # switch inputs/outputs
         i = ModuleUtils.create_port(switch, 'i', width, PortDirection.input_, net_class = NetClass.switch)
         o = ModuleUtils.create_port(switch, 'o', 1, PortDirection.output, net_class = NetClass.switch)

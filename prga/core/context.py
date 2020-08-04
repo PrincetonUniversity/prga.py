@@ -124,7 +124,9 @@ class Context(Object):
                     view = ModuleView.user,
                     is_cell = True,
                     module_class = ModuleClass.primitive,
-                    primitive_class = PrimitiveClass.lut)
+                    primitive_class = PrimitiveClass.lut,
+                    test_python_template = "test_lut.tmpl.py"
+                    )
             in_ = ModuleUtils.create_port(lut, 'bits_in', i, PortDirection.input_,
                     port_class = PrimitivePortClass.lut_in, vpr_combinational_sinks = ("out", ))
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
@@ -138,7 +140,8 @@ class Context(Object):
                     view = ModuleView.user,
                     is_cell = True,
                     module_class = ModuleClass.primitive,
-                    primitive_class = PrimitiveClass.flipflop)
+                    primitive_class = PrimitiveClass.flipflop,
+                    test_python_template = "test_flipflop.tmpl.py")
             clk = ModuleUtils.create_port(flipflop, 'clk', 1, PortDirection.input_,
                     is_clock = True, port_class = PrimitivePortClass.clock)
             D = ModuleUtils.create_port(flipflop, 'D', 1, PortDirection.input_,

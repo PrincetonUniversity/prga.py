@@ -54,7 +54,7 @@ module fle6 (
     // synopsys translate_on
 
     always @* begin
-        internal_in = in;
+        internal_in = bits_in;
 
         // synopsys translate_off
         // in simulation, force unconnected LUT input to be zeros

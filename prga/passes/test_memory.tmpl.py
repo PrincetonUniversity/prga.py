@@ -1,4 +1,3 @@
-{%- set is_dual = "addr1" in module.ports -%}
 {%- set cfg_bitcount = module.cfg_bitcount -%}
 import cocotb
 from cocotb.triggers import Timer,RisingEdge,Edge,First,NextTimeStep
@@ -25,13 +24,14 @@ def initialise_{{port.name}}(dut):
             {% else  %}
             yield RisingEdge(dut.test_clk)
             {% endif %}
-
             dut.{{port.name}} <= i
 {% endfor %}
 
 {%- for stack_connections in module.stack %}
 @cocotb.test()
 def simple_test_{{loop.index}}(dut):
+
+    cfg_d = bitarray([0]*{{module.cfg_bitcount}})
 
     {% for clock in module.clocks %}
     {{clock.name}} = dut.{{clock.name}}
@@ -41,31 +41,31 @@ def simple_test_{{loop.index}}(dut):
     test_clk = dut.test_clk 
     clock_generation(test_clk,clock_period = 2,test_time=100000)
     
+
     {%- if cfg_bitcount %}
-    cfg_d = bitarray([0]*{{cfg_bitcount}})
     cfg_e = dut.cfg_e
     cfg_we = dut.cfg_we
     cfg_i = dut.cfg_i
     {% endif -%}
     
     {% for instance,test_hierarchy,offset in module.primitives %}
-    {% if instance.model.module_class.is_primitive and instance.model.primitive_class.is_lut %}
+    {%- if instance.model.module_class.is_primitive and instance.model.primitive_class.is_lut %}
     {%- set bitcount = instance.model.cfg_bitcount -%}
     input_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(test_hierarchy)}}.bits_in
     cfg_d[{{offset+bitcount-1}}:{{offset}}] = 0
     cfg_d[{{offset+bitcount-1}}] = 1
-    # {% elif instance.model.module_class == 9 %}
-    # {%- set bitcount = instance.model.cfg_bitcount -%}
-    # cfg_d[{{offset+bitcount-1}}:{{offset}}] = 0
-    # cfg_d[{{offset+bitcount-1}}] = 1    
-    {% endif %}
+    {% endif -%}
     {% endfor %}
 
     {%- for src_var,src,sink_var,sink,cfg_bits in stack_connections %}
+    {%- if module.module_class == 3 and src.bus.net_type == 2 and src.bus.instance.name == "io" and src.bus.node[0] == "inpad" %}
+    {{src_var}} = dut._ipin
+    {% else %}   
     {%- if src.bus.net_type == 1 %}
     {{src_var}} = dut.{{src.bus.name}}
     {% else %}
     {{src_var}} = dut.{{src.bus.instance.name}}.{{src.bus.model.name}}
+    {% endif -%}
     {% endif -%}
 
     {%- if sink.bus.net_type == 1 %}
@@ -102,19 +102,13 @@ def simple_test_{{loop.index}}(dut):
 
 
     {%- for instance,test_hierarchy,offset in module.primitives %}
-    {% if instance.model.module_class.is_primitive and instance.model.primitive_class.is_lut %}
+    {%- if instance.model.module_class.is_primitive and instance.model.primitive_class.is_lut %}
     {% set bitcount = instance.model.cfg_bitcount %}
     cfg_d_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(test_hierarchy)}}.cfg_d.value.binstr[::-1]
     for i in range({{offset+bitcount-1}},{{offset-1}},-1):
         if int(cfg_d[i])!= int(cfg_d_{{'_'.join(test_hierarchy)}}[i-{{offset}}]):
             raise TestFailure("cfg_d not properly setup for {{'->'.join(test_hierarchy)}}")
-    # {% elif instance.model.module_class == 9 %}
-    # {%- set bitcount = instance.model.cfg_bitcount -%}
-    # cfg_d_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(test_hierarchy)}}.cfg_d.value.binstr[::-1]
-    # for i in range({{offset+bitcount-1}},{{offset-1}},-1):
-    #     if int(cfg_d[i])!= int(cfg_d_{{'_'.join(test_hierarchy)}}[i-{{offset}}]):
-    #         raise TestFailure("cfg_d not properly setup for {{'->'.join(test_hierarchy)}}")
-    {% endif %}
+    {% endif -%}
     {% endfor -%}
 
     for _ in range(1000):
