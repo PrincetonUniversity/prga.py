@@ -10,30 +10,29 @@ from ...exception import PRGAIndexError, PRGATypeError
 
 from abc import abstractproperty, abstractmethod
 
-__all__ = ['NetType', 'BusType', 'PortDirection', 'Const']
-
-# ----------------------------------------------------------------------------
-# -- Bus Type ----------------------------------------------------------------
-# ----------------------------------------------------------------------------
-class BusType(Enum):
-    """Enum type for buses."""
-    nonref = 0          #: bus (not a reference)
-
-    # references
-    slice_ = 1          #: a consecutive subset (slice) of a multi-bit bus
-    concat = 2          #: a concatenation of buses and/or subsets
+__all__ = ["NetType", "PortDirection", "Const"]
 
 # ----------------------------------------------------------------------------
 # -- Net Type ----------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class NetType(Enum): 
-    """Enum type for nets."""
-    # constant net types
-    const = 0           #: constant value
+class NetType(Enum):
+    """Enum type for nets and net references."""
 
-    # netlist net types
-    port = 1            #: port in a module
-    pin = 2             #: [hierarchical] pin
+    # persistent net types
+    const = 0           #: constant-value nets
+    port = 1            #: port (input/output of a module) buses
+    pin = 2             #: pin (input/output of an instance in a module) buses
+    bit = 3             #: one single bit in a bus
+
+    # references
+    hierarchical = 4    #: hierarchical pin buses
+    slice_ = 5          #: consecutive subsets (slices) of a bus
+    concat = 6          #: concatenations of buses and/or subsets
+
+    @property
+    def is_reference(self):
+        """:obj:`bool`: Test if this type is a reference."""
+        return self in (NetType.hierarchical, NetType.slice_, NetType.concat)
 
 # ----------------------------------------------------------------------------
 # -- Port Direction ----------------------------------------------------------
@@ -53,24 +52,14 @@ class PortDirection(Enum):
         return self.case(PortDirection.output, PortDirection.input_)
 
 # ----------------------------------------------------------------------------
-# -- Abstract Generic Bus ----------------------------------------------------
+# -- Abstract Net ------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class AbstractGenericBus(Abstract, Sequence):
-    """Abstract class for all buses."""
+class AbstractNet(Abstract, Sequence):
+    """Abstract class for all nets and net references."""
 
     @abstractproperty
-    def bus_type(self):
-        """`BusType`: Type of this bus."""
-        raise NotImplementedError
-
-    @abstractproperty
-    def is_source(self):
-        """:obj:`bool`: Test if this net can be used as drivers of other nets."""
-        raise NotImplementedError
-
-    @abstractproperty
-    def is_sink(self):
-        """:obj:`bool`: Test if this net can be driven by other nets."""
+    def net_type(self):
+        """`NetType`: Type of the net."""
         raise NotImplementedError
 
     def _auto_index(self, index):
@@ -83,8 +72,8 @@ class AbstractGenericBus(Abstract, Sequence):
             else:
                 return slice(index, index + 1)
         elif isinstance(index, slice):
-            if index.step not in (None, 1):
-                raise PRGAIndexError("'step' must be 1 when indexing a net with a slice")
+            if index.step is not None:
+                raise PRGAIndexError("'step' must be ``None`` when indexing a net with a slice")
             elif index.stop is not None and index.start is not None and index.stop <= index.start:
                 if not 0 <= index.stop <= index.start < l:
                     raise PRGAIndexError("Index out of range. {} is {}-bit wide".format(self, l))
@@ -99,158 +88,39 @@ class AbstractGenericBus(Abstract, Sequence):
             raise PRGATypeError("index", "int or slice")
 
 # ----------------------------------------------------------------------------
-# -- Abstract Generic Net ----------------------------------------------------
+# -- Abstract Non-Reference Net ----------------------------------------------
 # ----------------------------------------------------------------------------
-class AbstractGenericNet(AbstractGenericBus):
-    """Abstract class for all nets."""
+class AbstractNonReferenceNet(AbstractNet):
+    """Abstract class for all non-reference nets."""
 
     @abstractproperty
-    def net_type(self):
-        """`NetType`: Type of this net."""
+    def is_source(self):
+        """:obj:`bool`: Test if this net can be used as drivers of other nets."""
         raise NotImplementedError
 
     @abstractproperty
-    def node(self):
-        """:obj:`Hashable`: A hashable value to index this net in the connection graph."""
+    def is_sink(self):
+        """:obj:`bool`: Test if this net can be driven by other nets."""
         raise NotImplementedError
 
     @abstractproperty
     def parent(self):
-        """`AbstractModule`: Parent module of this net."""
+        """`Module`: Parent module of this net."""
         raise NotImplementedError
-
-    @abstractproperty
-    def bus(self):
-        """`AbstractGenericNet`: The bus to which this net belongs to."""
-        raise NotImplementedError
-
-    @abstractproperty
-    def index(self):
-        """:obj:`slice`: Index of this net in the bus."""
-        raise NotImplementedError
-
-    @abstractproperty
-    def is_clock(self):
-        """:obj:`bool`: Test if this net is part of a clock network."""
-        raise NotImplementedError
-
-    # -- implementing properties/methods required by superclass --------------
-    @property
-    def bus_type(self):
-        return BusType.nonref
-
-# ----------------------------------------------------------------------------
-# -- Abstract Port -----------------------------------------------------------
-# ----------------------------------------------------------------------------
-class AbstractPort(AbstractGenericNet):
-    """Abstract class for ports."""
-
-    @abstractproperty
-    def direction(self):
-        """`PortDirection`: Direction of this port."""
-        raise NotImplementedError
-
-    @abstractproperty
-    def key(self):
-        """:obj:`Hashable`: A hashable key to index this port in its parent module's ports mapping."""
-        raise NotImplementedError
-
-    @abstractproperty
-    def name(self):
-        """:obj:`str`: Name of this port"""
-        raise NotImplementedError
-
-    # -- implementing properties/methods required by superclass --------------
-    @property
-    def net_type(self):
-        return NetType.port
-
-    @property
-    def is_source(self):
-        return self.direction.is_input
-
-    @property
-    def is_sink(self):
-        return self.direction.is_output
-
-    @property
-    def node(self):
-        return (self.key, )
-
-    @property
-    def bus(self):
-        return self
-
-    @property
-    def index(self):
-        return slice(0, len(self))
-
-# ----------------------------------------------------------------------------
-# -- Abstract Pin ------------------------------------------------------------
-# ----------------------------------------------------------------------------
-class AbstractPin(AbstractGenericNet):
-    """Abstract class for [hierarchical] pins."""
-
-    @abstractproperty
-    def model(self):
-        """`AbstractPort`: Model port of this pin."""
-        raise NotImplementedError
-
-    @abstractproperty
-    def instance(self):
-        """`AbstractInstance`: [Hierarchical] instances down to the pin in bottom-up order.
-
-        For example, assume 1\) module 'clb' has an instance 'alm0' of module 'alm', and 2\) module 'alm' has an
-        instance 'lutA' of module 'LUT4', and 3\) module 'LUT4' has an input port 'in'. This net can be referred to by
-        a pin, whose model is the port, and the hierarchy is [instance 'lutA', instance 'alm0']."""
-        raise NotImplementedError
-
-    # -- implementing properties/methods required by superclass --------------
-    @property
-    def net_type(self):
-        return NetType.pin
-
-    @property
-    def is_clock(self):
-        return self.model.is_clock
-
-    @property
-    def is_source(self):
-        return not self.instance.is_hierarchical and self.model.is_sink
-
-    @property
-    def is_sink(self):
-        return not self.instance.is_hierarchical and self.model.is_source
-
-    @property
-    def parent(self):
-        return self.instance.parent
-
-    @property
-    def node(self):
-        return self.model.node + self.instance.node
-
-    @property
-    def bus(self):
-        return self
-
-    @property
-    def index(self):
-        return slice(0, len(self))
 
 # ----------------------------------------------------------------------------
 # -- Constant Nets -----------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Const(Object, AbstractGenericNet):
-    """A constant net used as tie-high/low or unconnected status marker for sinks.
+class Const(Object, AbstractNonReferenceNet):
+    """Constant-value nets used as tie-high/low or unconnected status marker for sinks.
 
     Args:
-        value (:obj:`int`): Value of this constant in little-endian. Use ``None`` to represent "unconnected"
+        value (:obj:`int`): Value of this constant. Use ``None`` to represent "unconnected"
         width (:obj:`int`): Number of bits in this net
     """
 
     __singletons = {}
-    __slots__ = ['_key']
+    __slots__ = ['_value', '_width']
 
     # == internal API ========================================================
     def __new__(cls, value = None, width = None):
@@ -267,13 +137,13 @@ class Const(Object, AbstractGenericNet):
         elif value is not None:
             value = value & ((1 << width) - 1)
 
-        key = (NetType.const, value, width)
         try:
-            return cls.__singletons[key]
+            return cls.__singletons[value, width]
         except KeyError:
             obj = super(Const, cls).__new__(cls)
-            obj._key = key
-            return cls.__singletons.setdefault(key, obj)
+            obj._value = value
+            obj._width = width
+            return cls.__singletons.setdefault( (value, width), obj )
 
     def __init__(self, value = None, width = None):
         pass
@@ -282,7 +152,7 @@ class Const(Object, AbstractGenericNet):
         return self
 
     def __getnewargs__(self):
-        return self._key[1:]
+        return (self._value, self._width)
 
     def __repr__(self):
         if self.value is None:
@@ -293,21 +163,13 @@ class Const(Object, AbstractGenericNet):
     # == low-level API =======================================================
     @property
     def value(self):
-        """:obj:`int`: Value of this const net in little-endian."""
-        return self._key[1]
+        """:obj:`int`: Value of this constant net."""
+        return self._value
 
     # -- implementing properties/methods required by superclass --------------
     @property
     def net_type(self):
         return NetType.const
-
-    @property
-    def is_clock(self):
-        return False
-
-    @property
-    def node(self):
-        return self._key
 
     @property
     def is_source(self):
@@ -318,19 +180,11 @@ class Const(Object, AbstractGenericNet):
         return False
 
     @property
-    def bus(self):
-        return self
-
-    @property
-    def index(self):
-        return slice(0, len(self))
-
-    @property
     def parent(self):
-        raise NotImplementedError
+        raise None
 
     def __len__(self):
-        return self._key[2]
+        return self._width
 
     def __getitem__(self, index):
         index = self._auto_index(index)
@@ -344,11 +198,11 @@ class Const(Object, AbstractGenericNet):
 # ----------------------------------------------------------------------------
 # -- Slice Reference of a Bus ------------------------------------------------
 # ----------------------------------------------------------------------------
-class Slice(Object, AbstractGenericNet):
-    """Reference to a consecutive subset of a port/pin/logic bus.
+class Slice(Object, AbstractNet):
+    """Reference to a consecutive subset of a bus.
 
     Args:
-        bus (`AbstractGenericBus`): The referred bus
+        bus (`AbstractNet`): The referenced bus
         index (:obj:`slice`): Index of the bit(s) in the bus.
 
     Do not directly instantiate this class. Index into the bus instead, e.g. ``module.ports[0:4]``
@@ -363,41 +217,14 @@ class Slice(Object, AbstractGenericNet):
 
     def __repr__(self):
         if self.__len__() == 1:
-            return 'Bit({}[{}])'.format(self.bus, self.index.start)
+            return 'BitRef({}[{}])'.format(self.bus, self.index.start)
         else:
             return 'Slice({}[{}:{}])'.format(self.bus, self.index.stop - 1, self.index.start)
 
     # == low-level API =======================================================
     @property
-    def bus_type(self):
-        return BusType.slice_
-
-    @property
     def net_type(self):
-        return self.bus.net_type
-
-    @property
-    def is_source(self):
-        return self.bus.is_source
-
-    @property
-    def is_sink(self):
-        return self.bus.is_sink
-
-    @property
-    def node(self):
-        if self.__len__() == 1:
-            return self.index.start, self.bus.node
-        else:
-            raise PRGAInternalError("Cannot create node for multi-bit {}".format(self))
-
-    @property
-    def is_clock(self):
-        return self.bus.is_clock
-
-    @property
-    def parent(self):
-        return self.bus.parent
+        return NetType.slice_
 
     def __len__(self):
         return self.index.stop - self.index.start
@@ -412,11 +239,11 @@ class Slice(Object, AbstractGenericNet):
 # ----------------------------------------------------------------------------
 # -- A Concatenation of Slices and/or buses ----------------------------------
 # ----------------------------------------------------------------------------
-class Concat(Object, AbstractGenericBus):
+class Concat(Object, AbstractNet):
     """A concatenation of slices and/or buses.
 
     Args:
-        items (:obj:`Sequence` [`AbstractGenericNet` ]): Items to be contenated together
+        items (:obj:`Sequence` [`AbstractNet` ]): Items to be contenated together
 
     Direct instantiation of this class is not recommended. Use `NetUtils.concat` instead.
     """
@@ -432,16 +259,8 @@ class Concat(Object, AbstractGenericBus):
 
     # == low-level API =======================================================
     @property
-    def bus_type(self):
-        return BusType.concat
-
-    @property
-    def is_source(self):
-        return all(i.is_source for i in self.items)
-
-    @property
-    def is_sink(self):
-        return all(i.is_sink for i in self.items)
+    def net_type(self):
+        return NetType.concat
 
     def __len__(self):
         return sum(len(i) for i in self.items)

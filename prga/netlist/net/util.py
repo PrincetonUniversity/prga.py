@@ -5,17 +5,52 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .common import BusType, NetType, AbstractGenericBus, AbstractGenericNet, Const, Slice, Concat
+from .common import NetType, Const, Slice, Concat
 from ...util import Object, uno
 from ...exception import PRGAInternalError, PRGATypeError, PRGAIndexError
 
-from networkx.exception import NetworkXError
-from itertools import product
+from itertools import zip_longest, product
 
 import logging
 _logger = logging.getLogger(__name__)
 
 __all__ = ['NetUtils']
+
+# ----------------------------------------------------------------------------
+# -- Net Connection ----------------------------------------------------------
+# ----------------------------------------------------------------------------
+class NetConnection(Object):
+    """Connection between non-reference nets.
+
+    Args:
+        source (`AbstractNonReferenceNet`): The driver of this connection
+        sink (`AbstractNonReferenceNet`): The drivee of this connection
+
+    Keyword Args:
+        **kwargs: Custom key-value arguments. These attributes are added to ``__dict__`` of this object
+            and accessible as dynamic attributes
+
+    Direct instantiation of this class is not recommended. Use `NetUtils.connect` instead.
+    """
+
+    __slots__ = ["_source", "_sink", "__dict__"]
+
+    def __init__(self, source, sink, **kwargs):
+        self._source = source
+        self._sink = sink
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+    # == low-level API =======================================================
+    @property
+    def source(self):
+        """`AbstractNonReferenceNet`: The driver of this connection."""
+        return self._source
+
+    @property
+    def sink(self):
+        """`AbstractNonReferenceNet`: The drivee of this connection."""
+        return self._sink
 
 # ----------------------------------------------------------------------------
 # -- Net Utilities -----------------------------------------------------------
@@ -24,8 +59,65 @@ class NetUtils(object):
     """A wrapper class for utility functions for nets."""
 
     @classmethod
+    def __concat_same(cls, i, j):
+        """Return the bus ``i`` and ``j`` are the same. Otherwise return ``None``."""
+        if i.net_type is not j.net_type:
+            return None
+        elif i.net_type in (NetType.port, NetType.pin):
+            if i is j:
+                return i
+            else:
+                return None
+        elif i.net_type.is_hierarchical:
+            if i.model is j.model and all(inst_i is inst_j for (inst_i, inst_j) in
+                    zip_longest(i.instance.hierarchy, j.instance.hierarchy)):
+                return i
+            else:
+                return None
+        else:
+            raise PRGAInternalError("Unsupported net type: {}".format(i.net_type))
+
+    @classmethod
+    def __concat_append(cls, l, i):
+        if len(i) == 0:
+            return
+        elif len(l) == 0 or i.net_type in (NetType.port, NetType.pin, NetType.hierarchical):
+            l.append( i )
+        elif i.net_type.is_const:
+            if l[-1].net_type.is_const and (i.value is None) == (l[-1].value is None):
+                if i.value is None:
+                    l[-1] = Const(width = len(l[-1]) + len(i))
+                else:
+                    l[-1] = Const((i.value << len(l[-1])) + l[-1].value, len(l[-1]) + len(i))
+            else:
+                l.append( i )
+        elif i.net_type.is_bit:
+            if (l[-1].net_type.is_bit and (bus := cls.__concat_same(i.bus, l[-1].bus)) and
+                    i.index == l[-1].index + 1):
+                l[-1] = cls._slice(bus, slice(l[-1].index, i.index + 1))
+            elif (l[-1].net_type.is_slice and (bus := cls.__concat_same(i.bus, l[-1].bus)) and
+                    i.index == l[-1].index.stop):
+                l[-1] = cls._slice(bus, slice(l[-1].index.start, i.index + 1))
+            else:
+                l.append( i )
+        elif i.net_type.is_slice:
+            if (l[-1].net_type.is_bit and (bus := cls.__concat_same(i.bus, l[-1].bus)) and
+                    i.index.start == l[-1].index + 1):
+                l[-1] = cls._slice(bus, slice(l[-1].index, i.index.stop))
+            elif (l[-1].net_type.is_slice and (bus := cls.__concat_same(i.bus, l[-1].bus)) and
+                    i.index.start == l[-1].index.stop):
+                l[-1] = cls._slice(bus, slice(l[-1].index.start, i.index.stop))
+            else:
+                l.append( i )
+        elif i.net_type.is_concat:
+            for ii in i.items:
+                cls.__concat_append(l, ii)
+        else:
+            raise PRGAInternalError("Unsupported net type: {}".format(i.net_type))
+
+    @classmethod
     def _slice(cls, bus, index):
-        """`Slice` or `AbstractGenericNet`: Create a slice of ``bus``.
+        """`Slice` or `AbstractNet`: Create a slice of ``bus``.
 
         ``index`` won't be validated, so use with care.
         """
@@ -40,45 +132,52 @@ class NetUtils(object):
 
     @classmethod
     def _reference(cls, net, *, coalesced = False):
-        """Get the node corresponding to ``net`` in its parent module's connection graph.
+        """Get a hashable key for ``net``.
 
         Args:
-            net (`AbstractGenericNet`):
+            net (`AbstractNet`):
 
         Keyword Args:
             coalesced (:obj:`bool`): If not set (by default), ``net`` must be one-bit wide, and this method returns a
-                reference to the bit. If set, ``net`` must be a `BusType.nonref` bus, and this method returns a
-                reference to the bus.
+                reference to the bit. If set, ``net`` must be a `NetType.const`, `NetType.port`, `NetType.pin` or
+                `NetType.hierarchical`, and this method returns a reference to the bus.
         """
-        if coalesced:
-            if not net.bus_type.is_nonref:
-                raise PRGAInternalError("Cannot create coalesced reference for {}".format(net))
+        if net.net_type.is_const:
+            return (NetType.const, net.value, net.width)
+        elif coalesced:
+            if net.net_type.is_port:
+                return (net.key, )
+            elif net.net_type.is_pin or net.net_type.is_hierarchical:
+                return (net.model.key, ) + tuple(i.key for i in net.instance.hierarchy)
             else:
-                return net.node
+                raise PRGAInternalError("Cannot create coalesced reference for {}".format(net))
         elif len(net) != 1:
             raise PRGAInternalError("Cannot create reference for {}: width > 1".format(net))
+        elif net.net_type.is_bit:
+            return (net.index, cls._reference(net.bus, coalesced = True))
+        elif net.net_type.is_slice:
+            return (net.index.start, cls._reference(net.bus, coalesced = True))
         else:
-            return (0, net.node) if net.bus_type.is_nonref else net.node
+            return (0, cls._reference(net, coalesced = True))
 
     @classmethod
-    def _dereference(cls, module, node, *, coalesced = False):
-        """Dereference ``node`` in ``modules``'s connection graph.
+    def _dereference(cls, module, ref, *, coalesced = False):
+        """Dereference ``ref`` in ``module``.
 
         Args:
-            module (`AbstractModule`):
-            node (:obj:`tuple` [:obj:`int`, :obj:`tuple` [:obj:`Hashable`, ... ]]):
+            module (`Module`):
+            ref: Typically generated by `NetUtils._reference`
 
         Keyword Args:
-            coalesced (:obj:`bool`): Set if ``node`` is a reference to a bus
+            coalesced (:obj:`bool`): Set if ``ref`` is a reference to a bus
 
         Return:
-            net (`Port`, `Pin`, `Slice` or `Const`): 
+            net (`AbstractNet`): 
         """
-        # no matter if `coalesced` is set, check if the node refers to a constant net
-        if node[0] is NetType.const:
-            return Const(*node[1:])
-        index, node = (None, node) if coalesced else node
-        net_key, hierarchy = node[0], node[1:]
+        if ref[0] is NetType.const:
+            return Const(*ref[1:])
+        index, ref = (None, ref) if coalesced else ref
+        net_key, hierarchy = ref[0], ref[1:]
         instance = None
         for inst_key in reversed(hierarchy):
             if instance is None:
@@ -92,116 +191,19 @@ class NetUtils(object):
             return bus
 
     @classmethod
-    def _navigate_backwards(cls, module, endpoint, *,
-            path = tuple(),
-            yield_ = lambda module, node: True,
-            stop = lambda module, node: False,
-            skip = lambda module, node: False):
-        """Navigate the connection graph backwards, yielding startpoints and paths from the startpoints to the
-        endpoints.
-        
-        Args:
-            module (`AbstractModule`): Top-level module to perform navigation
-            endpoint (:obj:`Hashable`): Endpoint for the navigation
-
-        Keyword Arguments:
-            path (:obj:`Sequence` [:obj:`Hashable` ]): An additional path appended to any path reported by this
-                method. This is mainly used in recusive calls to this method
-            yield_ (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`bool`): Test if
-                a path should be yielded when reaching this node
-            stop (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`bool`): Test if
-                the navigation should stop at the specified node (i.e. force treating it as a startpoint)
-            skip (:obj:`Function` [`AbstractModule`, :obj:`Hashable` ] -> :obj:`bool`): Test if
-                a node should be ignored when reporting the path
-
-        Yields:
-            path (:obj:`Sequence` [:obj:`Hashable` ]): a path to the endpoint
-        """
-        # 1. disassemble the node
-        idx, net_key = endpoint
-        # 2. check elaboration status and determine in which module to do the navigation
-        model, hierarchy_key = module, tuple()
-        while len(net_key) >= 3 and net_key[2:] not in model._elaborated:
-            done = False
-            for split in range(3, len(net_key) - 1):
-                cur_up, cur_down = net_key[split:], net_key[:split]
-                if cur_up in model._elaborated:
-                    model = model.hierarchy[cur_up].model
-                    hierarchy_key, net_key = cur_up + hierarchy_key, cur_down
-                    done = True
-                    break
-            if not done:
-                model = model.instances[net_key[-1]].model
-                hierarchy_key, net_key = net_key[-1:] + hierarchy_key, net_key[:-1]
-        # 3. move forward
-        while True:
-            while True:
-                try:
-                    nodes = tuple(model._conn_graph.predecessors( 
-                        net_key if model._coalesce_connections else (idx, net_key) ))
-                except NetworkXError:
-                    break
-                if not nodes:
-                    break
-                for node in nodes:
-                    cur = ((idx, node + hierarchy_key) if model._coalesce_connections else 
-                            (node[0], node[1] + hierarchy_key))
-                    next_path = path if skip( module, cur ) else ((cur, ) + path)
-                    if yield_( module, cur ):
-                        yield next_path
-                    if stop( module, cur ) or 'clock' in model._conn_graph.nodes[node]:
-                        continue
-                    for p in cls._navigate_backwards(module, cur,
-                            path = next_path, yield_ = yield_, stop = stop, skip = skip):
-                        yield p
-                return
-            # 4. one more chance if this net is an output pin of a leaf instance (in terms of elaboration)
-            if len(net_key) == 1 or net_key[1:] in model._elaborated:
-                return
-            model, hierarchy_key = model.hierarchy[net_key[1:]].model, net_key[1:] + hierarchy_key
-            net_key = net_key[:1]
-
-    @classmethod
-    def concat(cls, items, *, skip_flatten = False):
-        """`Slice`, `Concat` or other nets: Concatenate the provided iterable of nets. Set ``skip_flatten`` if
-        ``items`` does not contain a `Concat` object."""
-        # flatten the iterable
-        flatten = None
-        if skip_flatten:
-            flatten = items
-        else:
-            flatten = []
-            for i in items:
-                if i.bus_type.is_concat:
-                    for ii in i.items:
-                        flatten.append(ii)
-                else:
-                    flatten.append(i)
+    def concat(cls, items):
+        """`Slice`, `Concat` or other nets: Concatenate the provided iterable of nets."""
         # concatenating
-        concat = []
-        for i in flatten:
-            if len(i) == 0:
-                continue
-            elif len(concat) == 0 or i.net_type is not concat[-1].net_type:
-                concat.append( i )
-            elif i.net_type.is_const:
-                if i.value is None and concat[-1].value is None:
-                    concat[-1] = Const(width = len(concat[-1]) + len(i))
-                elif i.value is not None and concat[-1].value is not None:
-                    concat[-1] = Const((i.value << len(concat[-1])) + concat[-1].value, len(concat[-1]) + len(i))
-                else:
-                    concat.append( i )
-            elif i.bus == concat[-1].bus and i.index.start == concat[-1].index.stop:
-                concat[-1] = cls._slice(i.bus, slice(concat[-1].index.start, i.index.stop))
-            else:
-                concat.append( i )
+        l = []
+        for i in items:
+            cls.__concat_append(l, i)
         # emitting final result
-        if len(concat) == 0:
+        if len(l) == 0:
             return Const()
-        elif len(concat) == 1:
-            return concat[0]
+        elif len(l) == 1:
+            return l[0]
         else:
-            return Concat(tuple(iter(concat)))
+            return Concat(tuple(iter(l)))
 
     @classmethod
     def connect(cls, sources, sinks, *, fully = False, **kwargs):
@@ -213,31 +215,32 @@ class NetUtils(object):
 
         Keyword Args:
             fully (:obj:`bool`): If set, every bit in ``sources`` is connected to all bits in ``sinks``.
-            **kwargs: Custom attibutes assigned all connections
+            **kwargs: Custom attibutes assigned to all connections
         """
         # 1. concat the sources & sinks
         sources, sinks = map(cls.concat, (sources, sinks))
         # 2. get the parent module
-        module = sinks.items[0].parent if sinks.bus_type.is_concat else sinks.parent
-        # 3. if module does not support bitwise connection, recreate the source list and sink list
+        anchor = sinks
+        if anchor.net_type.is_concat:
+            anchor = anchor.items[0]
+        if anchor.net_type.is_slice:
+            anchor = anchor.bus
+        if anchor.net_type in (NetType.const, NetType.hierarchical):
+            raise PRGAInternalError("Cannot connect to {}".format(sinks))
+        elif anchor.net_type not in (NetType.port, NetType.pin, NetType.bit):
+            raise PRGAInternalError("Unsupported net type: {}".format(anchor.net_type))
+        module = anchor.parent
+        # 3. if module does not support bitwise connection
         if module._coalesce_connections:
             if fully:
-                raise PRGAInternalError("'{}' does not support bitwise connections (invalid 'fully' flag)"
+                raise PRGAInternalError("{} does not support bitwise connections (invalid 'fully' flag)"
                         .format(module))
-            source_list, sink_list = [], []
-            for concat, list_ in ( (sources, source_list), (sinks, sink_list) ):
-                if concat.bus_type.is_slice:
-                    raise PRGAInternalError("'{}' does not support bitwise connections ('{}' is a slice)"
-                            .format(module, concat))
-                elif concat.bus_type.is_nonref:
-                    list_.append( concat )
-                else:
-                    for i in concat.items:
-                        if i.bus_type.is_slice:
-                            raise PRGAInternalError("'{}' does not support bitwise connections ('{}' is a slice)"
-                                    .format(module, i))
-                        else:
-                            list_.append( i )
+            for concat, list_ in ( (sources, (source_list := [])), (sinks, (sink_list := [])) ):
+                for item in (concat.items if concat.net_type.is_concat else [concat]):
+                    if item.net_type not in (NetType.port, NetType.pin):
+                        raise PRGAInternalError("{} does not support bitwise connections ({} is not a bus)"
+                            .format(item))
+                    list_.append(item)
             sources, sinks = source_list, sink_list
         # 4. connect!
         if not fully and len(sources) != len(sinks):
@@ -245,97 +248,161 @@ class NetUtils(object):
                     .format(sources, len(sources), sinks, len(sinks)))
         pairs = product(sources, sinks) if fully else zip(sources, sinks)
         for src, sink in pairs:
-            if not src.is_source:
-                raise PRGAInternalError("'{}' is not a valid source".format(src))
+            if src.net_type.is_reference or not src.is_source:
+                raise PRGAInternalError("{} is not a valid source".format(src))
             elif not src.net_type.is_const and src.parent is not module:
                 raise PRGAInternalError("Cannot connect {}: different parent module".format(src))
-            elif not sink.is_sink and not (module.is_cell and src.is_clock and not sink.is_clock):
-                raise PRGAInternalError("'{}' is not a valid sink".format(sink))
+            elif sink.net_type.is_reference or not sink.is_sink:
+                raise PRGAInternalError("{} is not a valid sink".format(sink))
             elif sink.parent is not module:
                 raise PRGAInternalError("Cannot connect {}: different parent module".format(sink))
-            elif sink.is_clock and not src.is_clock:
-                raise PRGAInternalError("{} is a clock but {} is not".format(sink, src))
             elif src.net_type.is_const and src.value is None:
                 continue
-            src_node, sink_node = map(lambda x: cls._reference(x, coalesced = module._coalesce_connections),
-                    (src, sink))
-            if not (module._allow_multisource or
-                    sink_node not in module._conn_graph or 
-                    module._conn_graph.in_degree( sink_node ) == 0 or
-                    next(iter(module._conn_graph.predecessors( sink_node ))) == src_node):
+            if not module._allow_multisource and len(sink._sources):
                 raise PRGAInternalError(
-                        "'{}' does not support multi-source connections. ('{}' is already connected to '{}')"
-                        .format(module, sink, cls.get_source(sink)))
-            module._conn_graph.add_edge( src_node, sink_node, **kwargs )
+                        "{} is already connected to {}. ({} does not support multi-connections)"
+                        .format(sink, next(itervalues(sink._sources)), module))
+            srcref, sinkref = map(lambda x: cls._reference(x, coalesced = module._coalesce_connections), (src, sink))
+            if (conn := sink._sources.get(srcref)) is None:
+                sink._sources[srcref] = src._sinks[sinkref] = NetConnection(src, sink, **kwargs)
+            else:
+                for k, v in iteritems(kwargs):
+                    setattr(conn, k, v)
 
     @classmethod
     def get_source(cls, sink, *, return_none_if_unconnected = False):
-        """Get the source connected to ``sink``. This method is for accessing connections in modules that do not allow
-        multi-source connections only."""
-        ret = None
-        if not sink.is_sink:
+        """Get the source connected to ``sink``. This method is only for accessing connections in modules that do not
+        allow multi-source connections only.
+        
+        Args:
+            sink (`AbstractNet`):
+
+        Keyword Args:
+            return_none_if_unconnected (:obj:`bool`): If set, this method returns ``None`` when ``sink`` is not
+                connected to any sources. Otherwise this method returns a `Const` object.
+
+        Returns:
+            ``AbstractNet`` or ``None``:
+        """
+        if sink.net_type.is_const:
             raise PRGAInternalError("{} is not a valid sink".format(sink))
-        elif sink.parent._allow_multisource:
-            raise PRGAInternalError(
-                    "Module {} allows multi-source connections. Use `NetUtils.get_multisource` instead"
-                    .format(sink.parent))
-        elif sink.parent._coalesce_connections:
-            try:
-                node = next(sink.parent._conn_graph.predecessors( cls._reference(sink.bus, coalesced = True) ))
-                ret = cls._dereference(sink.parent, node, coalesced = True)[sink.index]
-            except (StopIteration, NetworkXError):
-                ret = Const( width = len(sink) )
-        else:
-            sources = []
-            for bit in sink:
+        elif sink.net_type in (NetType.port, NetType.pin, NetType.bit):
+            if not sink.is_sink:
+                raise PRGAInternalError("{} is not a valid sink".format(sink))
+            elif sink.parent._allow_multisource:
+                raise PRGAInternalError(
+                        "Module {} allows multi-source connections. Use `NetUtils.get_multisource` instead"
+                        .format(sink.parent))
+            elif sink.net_type.is_bit or sink.parent._coalesce_connections:
+                it = itervalues(sink._sources)
                 try:
-                    node = next(sink.parent._conn_graph.predecessors( cls._reference(bit) ))
-                    sources.append( cls._dereference(sink.parent, node) )
-                except (StopIteration, NetworkXError):
-                    sources.append( Const(width = 1) )
-            ret = cls.concat(sources)
-        if return_none_if_unconnected and ret.bus_type.is_nonref and ret.net_type.is_const and ret.value is None:
-            return None
+                    conn = next(it)
+                except StopIteration:
+                    if return_none_if_unconnected:
+                        return None
+                    else:
+                        return Const(width = len(sink))
+                try:
+                    next(it)
+                    raise PRGAInternalError( "{} is connected to more than one sources".format(sink))
+                except StopIteration:
+                    pass
+                return conn.source
+            else:
+                source = cls.concat(iter(cls.get_source(bit) for bit in sink))
+                if return_none_if_unconnected and source.net_type.is_const and source.value is None:
+                    return None
+                else:
+                    return source
+        elif sink.net_type.is_hierarchical:
+            raise PRGAInternalError("{} is a hierarchical pin".format(sink))
+        elif sink.net_type.is_slice:
+            if (source := cls.get_source(sink.bus, return_none_if_unconnected = True)) is None:
+                if return_none_if_unconnected:
+                    return None
+                else:
+                    return Const(width = len(sink))
+            else:
+                return source[sink.index]
+        elif sink.net_type.is_concat:
+            return cls.concat(iter(cls.get_source(i) for i in sink.items))
         else:
-            return ret
+            raise PRGAInternalError("Unrecognized NetType: {}".format(sink.net_type))
 
     @classmethod
     def get_multisource(cls, sink):
         """Get the sources connected to ``sink``. This method is for accessing connections in modules that allow
         multi-source connections."""
-        if not sink.is_sink:
+        # validate argument
+        if sink.net_type.is_reference:
+            raise PRGAInternalError("{} is a reference".format(sink))
+        elif not sink.is_sink:
             raise PRGAInternalError("{} is not a sink".format(sink))
         elif len(sink) != 1:
             raise PRGAInternalError("{} is not 1-bit wide".format(sink))
         elif not sink.parent._allow_multisource:
-            raise PRGAInternalError("'{}' does not allow multi-source connections".format(sink.parent))
-        try:
-            return cls.concat( iter(cls._dereference(sink.parent, node) for node in
-                    sink.parent._conn_graph.predecessors( cls._reference(sink) )) )
-        except NetworkXError:
-            return Const()
-    @classmethod
+            raise PRGAInternalError("{} does not allow multi-source connections".format(sink.parent))
+        # convert to bit if this is a single-bit bus
+        if sink.net_type in (NetType.port, NetType.pin):
+            sink = sink[0]
+        # get and return connections
+        return cls.concat(iter(conn.source for conn in itervalues(sink._sources)))
 
-    def get_connection(cls, source, sink):
-        """Get an edittable :obj:`dict` for key-value attributes associated with the edge from ``source`` to
-        ``sink``."""
-        if source.parent is not sink.parent:
-            raise PRGAInternalError("Source net '{}' and sink net '{}' are not in the same module"
-                    .format(source, sink))
-        elif source.parent._coalesce_connections:
-            if not source.bus_type.is_nonref:
-                raise PRGAInternalError("'{}' does not support bitwise connection (source net '{}' is not a nonref bus)"
-                        .format(source.parent, source))
-            elif not sink.bus_type.is_nonref:
-                raise PRGAInternalError("'{}' does not support bitwise connection (sink net '{}' is not a nonref bus)"
-                        .format(source.parent, sink))
-        elif len(source) != 1:
-            raise PRGAInternalError("source net: len({}) != 1".format(source))
-        elif len(sink) != 1:
-            raise PRGAInternalError("sink net: len({}) != 1".format(sink))
-        try:
-            return source.parent._conn_graph.edges[
-                    cls._reference(source, coalesced = source.parent._coalesce_connections),
-                    cls._reference(sink, coalesced = source.parent._coalesce_connections)]
-        except KeyError:
-            return None
+    @classmethod
+    def get_connection(cls, source, sink, *, return_none_if_unconnected = False, skip_validations = False):
+        """Get the connection from ``source`` to ``sink``.
+        
+        Args:
+            source (`AbstractNonReferenceNet`):
+            sink (`AbstractNonReferenceNet`):
+
+        Keyword Args:
+            return_none_if_unconnected (:obj:`bool`): If set, this method returns ``None`` if the specified nets are
+                not connected. Otherwise, this method throws a `PRGAInternalError`.
+            skip_validations (:obj:`bool`): If set, this method skips all validations. This option saves runtime but
+                should be used with care
+
+        Returns:
+            `NetConnection`:
+        """
+        # 0. shortcut
+        if skip_validations:
+            return sink._sources[cls._reference(source, coalesced = sink.parent._coalesce_connections)]
+        # 1. get the parent module
+        module = None
+        if sink.net_type.is_reference:
+            raise PRGAInternalError("{} is a reference".format(sink))
+        elif not sink.is_sink:
+            raise PRGAInternalError("{} is not a valid sink".format(sink))
+        else:
+            module = sink.parent
+        # 2. validate sink
+        if module._coalesce_connections and sink.net_type.is_bit:
+            raise PRGAInternalError("{} does not support bitwise connections ({} is not a bus)"
+                    .format(module, sink))
+        elif not sink.net_type.is_bit:
+            if len(sink) > 1:
+                raise PRGAInternalError("{} is not 1-bit wide".format(sink))
+            sink = sink[0]
+        # 3. validate source
+        if source.net_type.is_reference:
+            raise PRGAInternalError("{} is a reference".format(source))
+        elif not source.is_source:
+            raise PRGAInternalError("{} is not a valid source".format(source))
+        elif not source.net_type.is_const:
+            if source.parent is not module:
+                raise PRGAInternalError("Source = {} and Sink = {} are not in the same module"
+                        .format(source, sink))
+            elif module._coalesce_connections and source.net_type.is_bit:
+                raise PRGAInternalError("{} does not support bitwise connections ({} is not a bus)"
+                        .format(module, source))
+            elif not source.net_type.is_bit:
+                if len(source) > 1:
+                    raise PRGAInternalError("{} is not 1-bit wide".format(source))
+                source = source[0]
+        # 4. get connection
+        conn = sink._sources.get( cls._reference(source, coalesced = module._coalesce_connections) )
+        if conn is not None or return_none_if_unconnected:
+            return conn
+        else:
+            raise PRGAInternalError("{} and {} are not connected".format(source, sink))
