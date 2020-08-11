@@ -4,7 +4,8 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .base import AbstractPass
-from ..core.common import ModuleView,ModuleClass,PrimitiveClass
+from ..core.builder.array.array import ArrayBuilder
+from ..core.common import ModuleView,ModuleClass,PrimitiveClass,Position
 from ..util import Object, uno
 from ..exception import PRGAInternalError
 from collections import OrderedDict
@@ -14,7 +15,9 @@ from prga.compatible import *
 from itertools import chain
 from prga.netlist.net.util import NetUtils
 import networkx as nx
-
+import numpy as np
+import random
+import pdb
 __all__ = ['Tester']
 
 # ----------------------------------------------------------------------------
@@ -126,11 +129,28 @@ class Tester(Object, AbstractPass):
         
         return clocks
 
+    def get_name(self,bus_index):
+        var_name = "" 
+        if bus_index.bus.net_type == 1:
+            var_name = bus_index.bus.name+ "_" + str(bus_index.index.start) + "_port"
+        else:
+            var_name = bus_index.bus.model.name+ "_" + str(bus_index.index.start) + "_"+bus_index.bus.instance.name
+
+        return var_name
+
     def switch_connections(self,module):
         # For modules using switches like cluster and switchbox
             module_temp = self.context.database[0,module.key]
-            stack = [[] for i in range(module.cfg_bitcount+1)]
-            # print(module.cfg_bitcount)
+            num_tests = 0
+            for port in module_temp.ports.values():
+                if port.is_sink:
+                    for sink in port:
+                        if module_temp._allow_multisource:
+                            num_tests = max(len(NetUtils.get_multisource(sink)),num_tests)
+                        else:
+                            num_tests = max(len(NetUtils.get_source(sink)),num_tests)
+            stack = [[] for i in range(num_tests+1)]
+            G = nx.DiGraph()
             # print(module.view)
             # print(stack)
             if module_temp._allow_multisource:
@@ -138,22 +158,13 @@ class Tester(Object, AbstractPass):
                     if port.is_sink:
                         for sink in port:
                             for i,src in enumerate(NetUtils.get_multisource(sink)):
-                                # if src.net_type == 0:
-                                #     continue
-                                src_var_name = "" 
-                                sink_var_name = "" 
-                                # if src_net.value is not None:
-                                if src.bus.net_type == 1:
-                                    src_var_name = src.bus.name+ "_" + str(src.index.start) + "_port"
-                                else:
-                                    src_var_name = src.bus.model.name+ "_" + str(src.index.start) + "_"+src.bus.instance.name
-                                if sink.bus.net_type == 1:
-                                    sink_var_name = sink.bus.name+ "_" + str(sink.index.start) + "_port"
-                                else:
-                                    sink_var_name = sink.bus.model.name+ "_" + str(sink.index.start) + "_"+sink.bus.instance.name
-                                
+                                if src.net_type == 0:
+                                    continue
+                                src_var_name = self.get_name(src) 
+                                sink_var_name = self.get_name(sink) 
                                 conn = NetUtils.get_connection(src,sink)
                                 stack[i].append((src_var_name,src,sink_var_name,sink,conn.get("cfg_bits",tuple())))
+                                G.add_edge(NetUtils._reference(src), NetUtils._reference(sink), cfg_bits =conn.get("cfg_bits",tuple()))
                             #     print("Conn: ",src," -> ",sink," : ",conn.get("cfg_bits",tuple()))
                             # print()
             else:
@@ -161,21 +172,15 @@ class Tester(Object, AbstractPass):
                     if port.is_sink:
                         for sink in port:
                             for i,src in enumerate(NetUtils.get_source(sink)):
-                                # if src.net_type == 0:
-                                #     continue
-                                src_var_name = "" 
-                                sink_var_name = "" 
-                                if src.bus.net_type == 1:
-                                    src_var_name = src.bus.name+ "_" + str(src.index.start) + "_port"
-                                else:
-                                    src_var_name = src.bus.model.name+ "_" + str(src.index.start) + "_"+src.bus.instance.name
-                                if sink.bus.net_type == 1:
-                                    sink_var_name = sink.bus.name+ "_" + str(sink.index.start) + "_port"
-                                else:
-                                    sink_var_name = sink.bus.model.name+ "_" + str(sink.index.start) + "_"+sink.bus.instance.name
+                                if src.net_type == 0:
+                                    continue
                                 
+                                src_var_name = self.get_name(src) 
+                                sink_var_name = self.get_name(sink) 
+
                                 conn = NetUtils.get_connection(src,sink)
                                 stack[i].append((src_var_name,src,sink_var_name,sink,conn.get("cfg_bits",tuple())))
+                                G.add_edge(NetUtils._reference(src), NetUtils._reference(sink), cfg_bits =conn.get("cfg_bits",tuple()))
                             #     print("Conn: ",src," -> ",sink," : ",conn.get("cfg_bits",tuple()))
                             # print()
             
@@ -186,18 +191,13 @@ class Tester(Object, AbstractPass):
             #         print("Conn: ",src," -> ",sink," : ",cfg_bits)
             #     print()
             
-            return stack
+            return stack,G
 
     def get_connections(self,module):
         connections = []
+        G = nx.DiGraph()
         try:
-
-            if module.module_class == ModuleClass.io_block or module.module_class == ModuleClass.switch:
-                module = self.context.database[ModuleView.logical,module.key]
-            else:
-                module = self.context.database[ModuleView.user,module.key]
-
-
+            module = self.context.database[ModuleView.user,module.key]
             if module._allow_multisource:
                 for sink_bus in chain(iter(oport for oport in itervalues(module.ports) if oport.direction.is_output),
                             iter(ipin for instance in itervalues(module.instances) for ipin in itervalues(instance.pins) if ipin.model.direction.is_input and not ipin.model.is_clock)):
@@ -205,26 +205,11 @@ class Tester(Object, AbstractPass):
                             for src_net in NetUtils.get_multisource(sink_net):
                                 if src_net.net_type == 0:
                                     continue
-                                # print(src_net,sink_net)
-                                src_var_name = "" 
-                                sink_var_name = "" 
-                                # if src_net.value is not None:
-                                if src_net.bus.net_type == 1:
-                                    # print(src_net.bus.name,src_net.index.start,src_net.bus.name)
-                                    src_var_name = src_net.bus.name+ "_" + str(src_net.index.start) + "_src"
-                                else:
-                                    # print(src_net.bus.model.name,src_net.index.start,src_net.bus.instance.name,src_net.bus.model.name)
-                                    src_var_name = src_net.bus.model.name+ "_" + str(src_net.index.start) + "_" + src_net.bus.instance.name
+                                src_var_name = self.get_name(src_net) 
+                                sink_var_name = self.get_name(sink_net)
 
-                                if sink_net.bus.net_type == 1:
-                                    sink_var_name = sink_net.bus.name+ "_" + str(sink_net.index.start) + "_sink"
-                                    # print(sink_net.bus.name,sink_net.index.start,sink_net.bus.name)
-                                else:
-                                    sink_var_name = sink_net.bus.model.name+ "_" + str(sink_net.index.start) + "_"+ sink_net.bus.instance.name
-                                    # print(sink_net.bus.model.name,sink_net.index.start,sink_net.bus.instance.name,sink_net.bus.model.name)
                                 connections.append((src_var_name,src_net,sink_var_name,sink_net,tuple()))
-                            #     print("Conn: ",src," -> ",sink," : ",conn.get("cfg_bits",tuple()))
-                            # print()
+                                G.add_edge(NetUtils._reference(src_net), NetUtils._reference(sink_net), cfg_bits = tuple())
             
             else:
                 for sink_bus in chain(iter(oport for oport in itervalues(module.ports) if oport.direction.is_output),
@@ -233,28 +218,15 @@ class Tester(Object, AbstractPass):
                             for src_net in NetUtils.get_source(sink_net):
                                 if src_net.net_type == 0:
                                     continue
-                                    # print(src_net,sink_net)
-                                src_var_name = "" 
-                                sink_var_name = "" 
-                                if src_net.bus.net_type == 1:
-                                    # print(src_net.bus.name,src_net.index.start,src_net.bus.name)
-                                    src_var_name = src_net.bus.name+ "_" + str(src_net.index.start) + "_src"
-                                else:
-                                    # print(src_net.bus.model.name,src_net.index.start,src_net.bus.instance.name,src_net.bus.model.name)
-                                    src_var_name = src_net.bus.model.name+ "_" + str(src_net.index.start) + "_" + src_net.bus.instance.name
-                                if sink_net.bus.net_type == 1:
-                                    sink_var_name = sink_net.bus.name+ "_" + str(sink_net.index.start) + "_sink"
-                                    # print(sink_net.bus.name,sink_net.index.start,sink_net.bus.name)
-                                else:
-                                    sink_var_name = sink_net.bus.model.name+ "_" + str(sink_net.index.start) + "_"+ sink_net.bus.instance.name
-                                    # print(sink_net.bus.model.name,sink_net.index.start,sink_net.bus.instance.name,sink_net.bus.model.name)
+
+                                src_var_name = self.get_name(src_net) 
+                                sink_var_name = self.get_name(sink_net) 
+                                
                                 connections.append((src_var_name,src_net,sink_var_name,sink_net,tuple()))
-                                print("Conn: ",src," -> ",sink," : ",conn.get("cfg_bits",tuple()))
-                            print()
-            
+                                G.add_edge(NetUtils._reference(src_net), NetUtils._reference(sink_net), cfg_bits = tuple())
         except:
             x= 0+0    
-        return connections
+        return connections,G
 
     def _process_module(self, module):
         if module.key in self.visited:
@@ -276,30 +248,28 @@ class Tester(Object, AbstractPass):
         # print(module.module_class)
 
         if module.module_class == ModuleClass.switch_box or module.module_class == ModuleClass.connection_box or module.module_class.is_cluster:
-            stack = self.switch_connections(module)
+            stack,nx_graph = self.switch_connections(module)
             setattr(module,"stack",stack)
+            # for edge in nx_graph.edges(data = True):
+            #     print(edge)
+            self.graphs[module.name] = {'graph':nx_graph,'module':module}
             # for conn in stack:
             #     for src_var,src,sink_var,sink,cfg_bits in conn:
             #         print("Conn: ",src," -> ",sink," : ",cfg_bits)
             #     print()
             
-            # print(stack)
-        # elif module.module_class == ModuleClass.io_block or module.module_class == ModuleClass.switch:
-            # print(module.key)
-            # connections = self.get_connections(module)
-            # setattr(module,"stack",[connections])
-            # for src_var,src,sink_var,sink,cfg_bits in connections:
-            #     if src.bus.net_type == 2:
-            #         if src.bus.instance.name == "io":
-            #             print(src.bus.node[0])
-                # print("Conn: ",src," -> ",sink," : ",cfg_bits) 
         else:
-            connections = self.get_connections(module)
+            connections,nx_graph = self.get_connections(module)
             setattr(module,"stack",[connections])
+            # for edge in nx_graph.edges(data = True):
+            #     print(edge)
+            self.graphs[module.name] = {'graph':nx_graph,'module':module}
+
             # for src_var,src,sink_var,sink,cfg_bits in connections:
             #     print("Conn: ",src," -> ",sink," : ",cfg_bits)
         # setattr(module,"connections",connections)
         
+
         input_ports = self.get_input_ports(module)
         setattr(module,"input_ports",input_ports)
         
@@ -311,8 +281,8 @@ class Tester(Object, AbstractPass):
         
         primitives = self.get_primitives(module)
         setattr(module,"primitives",primitives)
-        for ins,names,offset in primitives:
-            print(ins,offset)
+        # for ins,names,offset in primitives:
+        #     print(ins,offset)
 
         instance_files = []
         instance_files  = self.get_instance_file(module)
@@ -339,10 +309,109 @@ class Tester(Object, AbstractPass):
         self.renderer.add_top_level_makefile(module, path.join(f,"Makefile"), "test_base.tmpl")
         self.renderer.add_top_level_python_test(module, path.join(f,"config.py"), "config.py")
         print()
-
+        
         for instance in itervalues(module.instances):
             self._process_module(instance.model)
 
+    def get_random_input_port(self,instance):
+        input_pins = []
+        for k,v in iteritems(instance.pins):
+            if v.is_sink and not v.is_clock:
+                input_pins.append(v)
+        random.shuffle(input_pins)
+        for sink in input_pins:
+            for sink_net in sink:
+                for src in NetUtils.get_source(sink_net):
+                    print(src,sink_net)
+                print()
+        return input_pins[0]
+        # print(input_pins)
+
+
+    def path_L(self,top,G):
+        # - - - - - - 
+        # | | | | | -
+        # | | | | | -
+        # | | | | | -
+        # | | | | | -
+        # | | | | | -
+        # - represents the path on the FPGA fabric
+        height = top.height
+        width = top.width
+        path = []
+        for i in range(1,width-1):
+            path.append((i,1))
+        for i in range(1,height-1):
+            path.append((width-2,i))
+        path.reverse()
+            
+        print(path)
+        
+        src = path[1]
+        target = path[0]
+        tile_src = [ArrayBuilder.get_hierarchical_root(top, Position(src[0],src[1]),corner = 0)._hierarchy[1],ArrayBuilder.get_hierarchical_root(top, Position(src[0],src[1]),corner = 2)._hierarchy[1],
+                ArrayBuilder.get_hierarchical_root(top, Position(src[0],src[1]),corner = 1)._hierarchy[1],ArrayBuilder.get_hierarchical_root(top, Position(src[0],src[1]),corner = 3)._hierarchy[1],
+                ArrayBuilder.get_hierarchical_root(top, Position(src[0],src[1]))]
+        tile_target = [ArrayBuilder.get_hierarchical_root(top, Position(target[0],target[1]),corner = 0)._hierarchy[1],ArrayBuilder.get_hierarchical_root(top, Position(target[0],target[1]),corner = 2)._hierarchy[1],
+                ArrayBuilder.get_hierarchical_root(top, Position(target[0],target[1]),corner = 1)._hierarchy[1],ArrayBuilder.get_hierarchical_root(top, Position(target[0],target[1]),corner = 3)._hierarchy[1],
+                ArrayBuilder.get_hierarchical_root(top, Position(target[0],target[1]))]
+        
+        connections = [[] for i in range(len(path)-1)]
+        for node in G.nodes:
+            if NetUtils._dereference(top, node).bus.instance in tile_target:
+                loop_path = nx.shortest_path(G, target=node)
+                for k1,v1 in iteritems(loop_path):
+                    for v2 in v1:
+                        if NetUtils._dereference(top, v2).bus.instance in tile_src:
+                            connections[0].append((k1,node))
+                            # print("source",NetUtils._dereference(top, k1).bus)
+                            # print(NetUtils._dereference(top, v2))
+                            # print("target ",NetUtils._dereference(top, node).bus)
+                            # print()
+
+        for i in range(2,len(path)):
+            target = src
+            tile_target = tile_src
+            src = path[i]
+            tile_src = [ArrayBuilder.get_hierarchical_root(top, Position(src[0],src[1]),corner = 0)._hierarchy[1],ArrayBuilder.get_hierarchical_root(top, Position(src[0],src[1]),corner = 2)._hierarchy[1],
+                        ArrayBuilder.get_hierarchical_root(top, Position(src[0],src[1]),corner = 1)._hierarchy[1],ArrayBuilder.get_hierarchical_root(top, Position(src[0],src[1]),corner = 3)._hierarchy[1],
+                        ArrayBuilder.get_hierarchical_root(top, Position(src[0],src[1]))]
+        
+            for node in G.nodes:
+                if NetUtils._dereference(top, node).bus.instance in tile_target:
+                    loop_path = nx.shortest_path(G, target=node)
+                    for k1,v1 in iteritems(loop_path):
+                        for v2 in v1:
+                            if NetUtils._dereference(top, v2).bus.instance in tile_src:
+                                connections[i-1].append((k1,node))        
+        
+        for i in range(1,len(connections)):
+            print(NetUtils._dereference(top, connections[i][0][0]),NetUtils._dereference(top, connections[i][0][1])) 
+
+        # for i in range(len(connections[0])):
+        #     print(NetUtils._dereference(top, connections[0][i][0]))
+        # print()
+        # for j in range(len(connections[1])):
+        #     print(NetUtils._dereference(top, connections[1][j][1]))
+        
+        for index in range(1,len(connections)):
+            for i in range(len(connections[index-1])):
+                for j in range(len(connections[index])):
+                    # if connections[index-1][i][0] == connections[index][j][1]:
+                    #     print("SAME PIN")
+                    try: 
+                        loop_path = nx.shortest_path(G, source = connections[index][j][1], target = connections[index-1][i][0])
+                        # for x in paths:
+                        #     print(x)
+                        # for k1,v1 in iteritems(loop_path):
+                        #     for v2 in v1:
+                        #         print(NetUtils._dereference(top, k1),NetUtils._dereference(top, v2)) 
+                        print(loop_path)
+                    except:
+                        temp = 0
+                    if index==1:
+                        print(NetUtils._dereference(top,  connections[index][j][1]),NetUtils._dereference(top, connections[index-1][i][0])) 
+ 
 
     @property
     def key(self):
@@ -363,6 +432,7 @@ class Tester(Object, AbstractPass):
         top = context.system_top
         self.renderer = renderer
         self.context = context
+        self.graphs = {}
         if top is None:
             raise PRGAInternalError("System top module is not set")
         if not hasattr(context.summary, "rtl"):
@@ -370,3 +440,71 @@ class Tester(Object, AbstractPass):
         self.visited = context.summary.rtl["sources"] = {}
         context.summary.rtl["includes"] = [self.header_output_dir]
         self._process_module(top)
+        top = self.context.database[ModuleView.user,top.key]
+        G = self.graphs['top']['graph']
+
+
+        
+        # tile_66_pins = []
+        # for x in tile_66:
+        #     for k,v in iteritems(x.pins):
+        #         if v.model.direction.is_input and not v.is_clock:
+        #             for net in v:
+        #                 tile_66_pins.append(NetUtils._reference(net))
+        # # print(tile_66)
+        # for node in G.nodes:
+        #     if NetUtils._dereference(top, node).bus.instance in tile_66:
+        #         path = nx.shortest_path(G, target=node)
+        #         for k1,v1 in iteritems(path):
+        #             for v2 in v1:
+        #                 if NetUtils._dereference(top, v2).bus.instance in tile_55:
+        #                     print("source",NetUtils._dereference(top, k1))
+        #                     print(NetUtils._dereference(top, v2))
+        #                     print("target ",NetUtils._dereference(top, node))
+        #                     print()
+
+        tile_61 = [ArrayBuilder.get_hierarchical_root(top, Position(6,1),corner = 0)._hierarchy[1],ArrayBuilder.get_hierarchical_root(top, Position(6,1),corner = 2)._hierarchy[1],
+                    ArrayBuilder.get_hierarchical_root(top, Position(6,1),corner = 1)._hierarchy[1],ArrayBuilder.get_hierarchical_root(top, Position(6,1),corner = 3)._hierarchy[1],
+                    ArrayBuilder.get_hierarchical_root(top, Position(6,1))]
+        tile_41 = [ArrayBuilder.get_hierarchical_root(top, Position(4,1),corner = 0)._hierarchy[1],ArrayBuilder.get_hierarchical_root(top, Position(4,1),corner = 2)._hierarchy[1],
+                    ArrayBuilder.get_hierarchical_root(top, Position(4,1),corner = 1)._hierarchy[1],ArrayBuilder.get_hierarchical_root(top, Position(4,1),corner = 3)._hierarchy[1],
+                    ArrayBuilder.get_hierarchical_root(top, Position(4,1))]
+        
+        routes = [[]]
+
+        for node in G.nodes:
+            if NetUtils._dereference(top, node).bus.instance in tile_61:
+                path = nx.shortest_path(G, target=node)
+                for k1,v1 in iteritems(path):
+                    for v2 in v1:
+                        if NetUtils._dereference(top, v2).bus.instance in tile_41:
+                            src = NetUtils._dereference(top, k1)
+                            sink = NetUtils._dereference(top, node)
+                            src_var_name = self.get_name(src) 
+                            sink_var_name = self.get_name(sink) 
+                                
+                            routes[0].append((src_var_name,src,sink_var_name,sink)) #(src,sink)
+                            # print("source",NetUtils._dereference(top, k1))
+                            # print(NetUtils._dereference(top, v2))
+                            # print("target ",NetUtils._dereference(top, node))
+                            # print()
+
+        top  = self.context._database[ModuleView.logical,top.key]
+        # for x in top.primitives:
+        #     print(x)
+        for i,route in enumerate(routes):
+            setattr(top,"route",route)
+            setattr(top,"start_pin",route[0][1]) # For testing purposes only
+            f = os.path.join(self.tests_dir, "test_route_" + str(i))
+            cfg_bits = [] # the bits which will be used to set up the route
+            for path in route:
+                conn = NetUtils.get_connection(path[1].bus,path[3].bus)
+                for bit in conn.get("cfg_bits",tuple()):
+                    cfg_bits.append((path[1].bus.instance.name,path[1].bus.instance.cfg_bitoffset+bit))
+
+            setattr(top,"cfg_bits",cfg_bits)
+            self.renderer.add_top_level_python_test(top, os.path.join(f,"test.py"), "route.tmpl.py")
+            self.renderer.add_top_level_makefile(top, os.path.join(f,"Makefile"), "test_base.tmpl")
+            self.renderer.add_top_level_python_test(top, os.path.join(f,"config.py"), "config.py")
+        
+        # self.path_L(top,G)
