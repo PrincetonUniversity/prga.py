@@ -5,9 +5,9 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .common import NetType, PortDirection, AbstractNet, AbstractNonReferenceNet
+from .common import NetType, PortDirection, AbstractNet, AbstractNonReferenceNet, Const
 from .util import NetUtils
-from ...util import Object, uno
+from ...util import uno
 from ...exception import PRGAInternalError
 
 __all__ = ["Port", "Pin", "HierarchicalPin"]
@@ -15,7 +15,7 @@ __all__ = ["Port", "Pin", "HierarchicalPin"]
 # ----------------------------------------------------------------------------
 # -- Bit ---------------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class _Bit(Object, AbstractNonReferenceNet):
+class _Bit(AbstractNonReferenceNet):
     """A single, persistent bit in a bus.
 
     Args:
@@ -27,22 +27,27 @@ class _Bit(Object, AbstractNonReferenceNet):
             and accessible as dynamic attributes
     """
 
-    __slots__ = ["_bus", "_index", "_sources", "_sinks", "__dict__"]
+    __slots__ = ["_bus", "_index", "_connections", "__dict__"]
     def __init__(self, bus, index, **kwargs):
         self._bus = bus
         self._index = index
-
-        if self.is_source:
-            self._sinks = {}
-
-        if self.is_sink:
-            self._sources = {}
+        self._connections = {}
 
         for k, v in kwargs.items():
             setattr(self, k, v)
 
     def __repr__(self):
         return 'Bit({}[{}])'.format(self.bus, self.index)
+
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, index):
+        index = self._auto_index(index)
+        if index.stop - index.start == 1:
+            return self
+        else:
+            return Const()
 
     # == low-level API =======================================================
     @property
@@ -69,21 +74,25 @@ class _Bit(Object, AbstractNonReferenceNet):
         return self._bus.is_sink
 
     @property
+    def is_clock(self):
+        return self._bus.is_clock
+
+    @property
     def parent(self):
         return self._bus.parent
 
 # ----------------------------------------------------------------------------
 # -- Port --------------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Port(Object, AbstractNonReferenceNet):
+class Port(AbstractNonReferenceNet):
     """Ports of modules.
 
     Args:
         parent (`Module`): Parent module of this port
         name (:obj:`str`): Name of this port
-        width (:obj:`int` or :obj:`str`): Width of this port, or name of the paramter in the parent module that
-            controls the width of this port
+        width (:obj:`int`): Width of this port
         direction (`PortDirection`): Direction of the port
+        is_clock (:obj:`bool`): Set if this port is a clock
 
     Keyword Args:
         key (:obj:`Hashable`): A hashable key used to index this port in the ports mapping in the parent module.
@@ -92,31 +101,37 @@ class Port(Object, AbstractNonReferenceNet):
             and accessible as dynamic attributes
     """
 
-    __slots__ = ['_parent', '_name', '_width', '_direction', '_key', '_sources', '_sinks', '_bits', '__dict__']
+    __slots__ = ['_parent', '_name', '_width', '_direction', '_is_clock', '_key', '_connections', '_bits', '__dict__']
 
-    def __init__(self, parent, name, width, direction, *, key = None, **kwargs):
-        if isinstance(width, str) and width not in parent.parameters:
-            raise PRGAInternalError("No parameter '{}' found in {}".format(width, parent))
-
+    def __init__(self, parent, name, width, direction, is_clock = False, *, key = None, **kwargs):
         self._parent = parent
         self._name = name
         self._width = width
         self._direction = direction
+        self._is_clock = is_clock
         self._key = uno(key, name)
 
-        if not self.parent._coalesce_connections:
-            self._bits = tuple(_Bit(self, i) for i in range(len(self)))
+        if self._parent.coalesce_connections or len(self) == 1:
+            self._connections = {}
         else:
-            if self.is_source:
-                self._sinks = {}
-            if self.is_sink:
-                self._sources = {}
+            self._bits = tuple(_Bit(self, i) for i in range(len(self)))
 
         for k, v in kwargs.items():
             setattr(self, k, v)
 
     def __repr__(self):
-        return "{}Port({}/{})".format(self._direction.case("In", "Out"), self._parent, self._name)
+        return "{}{}({}/{})".format(self._direction.case("In", "Out"),
+                "Clock" if self._is_clock else "Port", self._parent, self._name)
+
+    def __len__(self):
+        return self._width
+
+    def __getitem__(self, index):
+        index = self._auto_index(index)
+        if not (self._parent.coalesce_connections or len(self) == 1) and index.stop - index.start == 1:
+            return self._bits[index.start]
+        else:
+            return NetUtils._slice(self, index)
 
     # == low-level API =======================================================
     @property
@@ -145,29 +160,20 @@ class Port(Object, AbstractNonReferenceNet):
 
     @property
     def is_source(self):
-        return self.direction.is_input
+        return self._direction.is_input
 
     @property
     def is_sink(self):
-        return self.direction.is_output
+        return self._direction.is_output
 
-    def __len__(self):
-        if isinstance(self._width, str):
-            return self._parent.parameters[self._width]
-        else:
-            return self._width
-
-    def __getitem__(self, index):
-        index = self._auto_index(index)
-        if not self._parent._coalesce_connections and index.stop - index.start == 1:
-            return self._bits[index.start]
-        else:
-            return NetUtils._slice(self, index)
+    @property
+    def is_clock(self):
+        return self._is_clock
 
 # ----------------------------------------------------------------------------
 # -- Pin ---------------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Pin(Object, AbstractNonReferenceNet):
+class Pin(AbstractNonReferenceNet):
     """Pins of instances.
 
     Args:
@@ -179,25 +185,32 @@ class Pin(Object, AbstractNonReferenceNet):
             and accessible as dynamic attributes
     """
 
-    __slots__ = ['_instance', '_model', '_sources', '_sinks', '_bits', '__dict__']
+    __slots__ = ['_instance', '_model', '_connections', '_bits', '__dict__']
 
     def __init__(self, instance, model, **kwargs):
         self._instance = instance
         self._model = model
 
-        if not self.parent._coalesce_connections:
-            self._bits = tuple(_Bit(self, i) for i in range(len(self)))
+        if self._instance.parent.coalesce_connections or len(self) == 1:
+            self._connections = {}
         else:
-            if self.is_source:
-                self._sinks = {}
-            if self.is_sink:
-                self._sources = {}
+            self._bits = tuple(_Bit(self, i) for i in range(len(self)))
 
         for k, v in kwargs.items():
             setattr(self, k, v)
 
     def __repr__(self):
         return "Pin({}/{})".format(self._instance, self._model.name)
+
+    def __len__(self):
+        return len(self._model)
+
+    def __getitem__(self, index):
+        index = self._auto_index(index)
+        if not (self._instance.parent.coalesce_connections or len(self) == 1) and index.stop - index.start == 1:
+            return self._bits[index.start]
+        else:
+            return NetUtils._slice(self, index)
 
     # == low-level API =======================================================
     @property
@@ -221,26 +234,20 @@ class Pin(Object, AbstractNonReferenceNet):
 
     @property
     def is_source(self):
-        return self.direction.is_output
+        return self._model.direction.is_output
 
     @property
     def is_sink(self):
-        return self.direction.is_input
+        return self._model.direction.is_input
 
-    def __len__(self):
-        return len(self._model)
-
-    def __getitem__(self, index):
-        index = self._auto_index(index)
-        if not self._parent._coalesce_connections and index.stop - index.start == 1:
-            return self._bits[index.start]
-        else:
-            return NetUtils._slice(self, index)
+    @property
+    def is_clock(self):
+        return self._model.is_clock
 
 # ----------------------------------------------------------------------------
 # -- Hierarchical Pin Reference ----------------------------------------------
 # ----------------------------------------------------------------------------
-class HierarchicalPin(Object, AbstractNet):
+class HierarchicalPin(AbstractNet):
     """Reference to a pin of a hierarchical instance.
 
     Args:
@@ -257,6 +264,12 @@ class HierarchicalPin(Object, AbstractNet):
     def __repr__(self):
         return "HierPin({}/{})".format(self._instance, self._model.name)
 
+    def __len__(self):
+        return len(self._model)
+
+    def __getitem__(self, index):
+        return NetUtils._slice(self, self._auto_index(index))
+
     # == low-level API =======================================================
     @property
     def instance(self):
@@ -272,9 +285,3 @@ class HierarchicalPin(Object, AbstractNet):
     @property
     def net_type(self):
         return NetType.hierarchical
-
-    def __len__(self):
-        return len(self._model)
-
-    def __getitem__(self, index):
-        return NetUtils._slice(self, self._auto_index(index))

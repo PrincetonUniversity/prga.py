@@ -5,7 +5,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from ...util import Enum, Abstract, Object, uno
+from ...util import Enum, Abstract, uno
 from ...exception import PRGAIndexError, PRGATypeError
 
 from abc import abstractproperty, abstractmethod
@@ -104,6 +104,11 @@ class AbstractNonReferenceNet(AbstractNet):
         raise NotImplementedError
 
     @abstractproperty
+    def is_clock(self):
+        """:obj:`bool`: Test if this net is part of a clock network."""
+        raise NotImplementedError
+
+    @abstractproperty
     def parent(self):
         """`Module`: Parent module of this net."""
         raise NotImplementedError
@@ -111,7 +116,7 @@ class AbstractNonReferenceNet(AbstractNet):
 # ----------------------------------------------------------------------------
 # -- Constant Nets -----------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Const(Object, AbstractNonReferenceNet):
+class Const(AbstractNonReferenceNet):
     """Constant-value nets used as tie-high/low or unconnected status marker for sinks.
 
     Args:
@@ -180,6 +185,10 @@ class Const(Object, AbstractNonReferenceNet):
         return False
 
     @property
+    def is_clock(self):
+        return False
+
+    @property
     def parent(self):
         raise None
 
@@ -198,7 +207,7 @@ class Const(Object, AbstractNonReferenceNet):
 # ----------------------------------------------------------------------------
 # -- Slice Reference of a Bus ------------------------------------------------
 # ----------------------------------------------------------------------------
-class Slice(Object, AbstractNet):
+class Slice(AbstractNet):
     """Reference to a consecutive subset of a bus.
 
     Args:
@@ -239,7 +248,7 @@ class Slice(Object, AbstractNet):
 # ----------------------------------------------------------------------------
 # -- A Concatenation of Slices and/or buses ----------------------------------
 # ----------------------------------------------------------------------------
-class Concat(Object, AbstractNet):
+class Concat(AbstractNet):
     """A concatenation of slices and/or buses.
 
     Args:

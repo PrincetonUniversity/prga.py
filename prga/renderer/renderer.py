@@ -7,7 +7,7 @@ from ..core.common import ModuleView, ModuleClass
 from ..netlist.net.util import NetUtils
 from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
-from ..util import Object, uno
+from ..util import uno
 from ..exception import PRGAInternalError
 
 import os
@@ -23,7 +23,7 @@ DEFAULT_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__fi
 # ----------------------------------------------------------------------------
 # -- File Renderer -----------------------------------------------------------
 # ----------------------------------------------------------------------------
-class FileRenderer(Object):
+class FileRenderer(object):
     """File renderer based on Jinja2."""
 
     __slots__ = ['template_search_paths', 'tasks', '_yosys_synth_script_task']
@@ -35,33 +35,29 @@ class FileRenderer(Object):
 
     @classmethod
     def _net2verilog(cls, net):
-        """:obj:`str`: Render in verilog syntax a slice or a bus ``net``."""
+        """:obj:`str`: Render ``net`` in verilog syntax."""
         if net.net_type.is_const:
             if net.value is None:
                 return "{}'bx".format(len(net))
             else:
                 return "{}'h{:x}".format(len(net), net.value)
+        elif net.net_type.is_concat:
+            return '{' + ', '.join(cls._net2verilog(i) for i in reversed(net.items)) + '}'
+        elif net.net_type.is_slice:
+            return '{}[{}:{}]'.format(cls._net2verilog(net.bus), net.index.stop - 1, net.index.start)
+        elif net.net_type.is_bit:
+            return '{}[{}]'.format(cls._net2verilog(net.bus), net.index)
+        elif net.net_type.is_port:
+            return net.name
+        elif net.net_type.is_pin:
+            return "_{}__{}".format(net.instance.name, net.model.name)
         else:
-            bus, suffix = net, ""
-            if net.bus_type.is_slice:
-                bus = net.bus
-                if len(net) == 1:
-                    suffix = '[{}]'.format(net.index.start)
-                else:
-                    suffix = '[{}:{}]'.format(net.index.stop - 1, net.index.start)
-            if bus.net_type.is_port:
-                return bus.name + suffix
-            else:
-                return "_{}__{}".format(bus.instance.name, bus.model.name) + suffix
+            raise PRGAInternalError("Unsupported net: {}".format(net))
 
     @classmethod
     def _source2verilog(cls, net):
         """:obj:`str`: Render in verilog syntax the concatenation for the nets driving ``net``."""
-        source = NetUtils.get_source(net)
-        if source.bus_type.is_concat:
-            return '{' + ', '.join(cls._net2verilog(i) for i in reversed(source.items)) + '}'
-        else:
-            return cls._net2verilog(source)
+        return cls._net2verilog(NetUtils.get_source(net))
 
     def _get_yosys_script_task(self, script_file = None):
         """Get the specified or most recently added yosys script rending task."""

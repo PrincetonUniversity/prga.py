@@ -12,8 +12,7 @@ import enum
 import logging
 import sys
 
-__all__ = ["ReadonlyMappingProxy", "ReadonlySequenceProxy", "uno", "Abstract", "Object", "Enum",
-        'enable_stdout_logging']
+__all__ = ["ReadonlyMappingProxy", "ReadonlySequenceProxy", "uno", "Abstract", "Enum", 'enable_stdout_logging']
 
 class ReadonlyMappingProxy(Mapping):
     """A read-only proxy of a :obj:`Mapping` implementation object.
@@ -107,6 +106,7 @@ class _InheritDocstringsMeta(ABCMeta):
     """Manually inherit docstrings from superclass. This helps Sphinx for doc generation."""
     def __new__(cls, clsname, bases, attributes):
         dummy = super(_InheritDocstringsMeta, cls).__new__(cls, '_dummy', bases, {})
+        attributes.setdefault('__slots__', [])
         for name, attr in iteritems(attributes):
             if isinstance(attr, property) and attr.fget.__doc__ is None:
                 superproperty = getattr(dummy, name, None)
@@ -125,20 +125,6 @@ class _InheritDocstringsMeta(ABCMeta):
 
 class Abstract(with_metaclass(_InheritDocstringsMeta, object)):
     """Base class for all PRGA abstracts."""
-    pass
-
-class _ForceSlotsMeta(_InheritDocstringsMeta):
-    """Force __slots__ magic."""
-    def __new__(cls, name, bases, attributes):
-        attributes.setdefault('__slots__', tuple())
-        return super(_ForceSlotsMeta, cls).__new__(cls, name, bases, attributes)
-
-class Object(with_metaclass(_ForceSlotsMeta, object)):
-    """Base class for all PRGA objects.
-    
-    This base class forces usage of slots magic to save memory usage as well as prevent silent errors caused by the
-    dynamicity of Python. Dynamicity can be added back by inheriting a class and put ``__dict__`` back to the
-    ``__slots__`` list."""
     pass
 
 class Enum(enum.IntEnum):
