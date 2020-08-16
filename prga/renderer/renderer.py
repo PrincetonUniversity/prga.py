@@ -322,10 +322,23 @@ class FileRenderer(Object):
             d["rule"] = os.path.abspath(rule_script.name)
         script_task[0][1]["memory_techmaps"].append( d )
 
+    def handle_names_with_underscore(self,names):
+        # This function provides support for COCOTB test_bench variables
+        formatted_syntax = []
+        # print(names)
+        for name in names:
+            if name[0] == '_':
+                formatted_syntax.append(str("_id(\""+str(name)+"\", extended=False)"))
+            else:
+                formatted_syntax.append(str(name))
+        # print(formatted_syntax)
+        return formatted_syntax
+
     def render(self):
         """Render all added files and clear the task queue."""
         env = jj.Environment(loader = jj.FileSystemLoader(self.template_search_paths))
         env.globals.update(NetUtils=NetUtils)
+        env.globals.update(handle_names_with_underscore=self.handle_names_with_underscore)
         while self.tasks:
             file_, l = self.tasks.popitem()
             if isinstance(file_, basestring):

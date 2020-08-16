@@ -85,10 +85,10 @@ def simple_test_{{loop.index}}(dut):
     input_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(test_hierarchy)}}.bits_in
     config.cfg_d[{{offset+bitcount-1}}:{{offset}}] = 0
     config.cfg_d[{{offset+bitcount-1}}] = 1
-    {% elif instance.model.module_class == 9 %}
-    {%- set bitcount = instance.model.cfg_bitcount -%}
-    config.cfg_d[{{offset+bitcount-1}}:{{offset}}] = 0
-    config.cfg_d[{{offset+bitcount-1}}] = 1    
+    # {% elif instance.model.module_class == 9 %}
+    # {%- set bitcount = instance.model.cfg_bitcount -%}
+    # config.cfg_d[{{offset+bitcount-1}}:{{offset}}] = 0
+    # config.cfg_d[{{offset+bitcount-1}}] = 1    
     {% endif -%}
     {% endfor %}
 
@@ -134,13 +134,13 @@ def simple_test_{{loop.index}}(dut):
     for i in range({{offset+bitcount-1}},{{offset-1}},-1):
         if int(config.cfg_d[i])!= int(cfg_d_{{'_'.join(test_hierarchy)}}[i-{{offset}}]):
             raise TestFailure("cfg_d not properly setup for {{'->'.join(test_hierarchy)}}")
-    {% elif instance.model.module_class == 9 %}
-    {%- set bitcount = instance.model.cfg_bitcount -%}
-    cfg_d_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(test_hierarchy)}}.cfg_d.value.binstr[::-1]
-    # cfg_d__sw_o = dut._HierarchyObject__get_sub_handle_by_name("_sw_o").cfg_d.value.binstr[::-1]
-    for i in range({{offset+bitcount-1}},{{offset-1}},-1):
-        if int(config.cfg_d[i])!= int(cfg_d_{{'_'.join(test_hierarchy)}}[i-{{offset}}]):
-            raise TestFailure("cfg_d not properly setup for {{'->'.join(test_hierarchy)}}")
+    # {% elif instance.model.module_class == 9 %}
+    # {%- set bitcount = instance.model.cfg_bitcount -%}
+    # cfg_d_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(handle_names_with_underscore(test_hierarchy))}}.cfg_d.value.binstr[::-1]
+    # # cfg_d__sw_o = dut._HierarchyObject__get_sub_handle_by_name("_sw_o").cfg_d.value.binstr[::-1]
+    # for i in range({{offset+bitcount-1}},{{offset-1}},-1):
+    #     if int(config.cfg_d[i])!= int(cfg_d_{{'_'.join(test_hierarchy)}}[i-{{offset}}]):
+    #         raise TestFailure("cfg_d not properly setup for {{'->'.join(test_hierarchy)}}")
     {% endif -%}
     {%- if instance.model.module_class.is_primitive and (instance.model.primitive_class.is_lut or instance.model.primitive_class.is_flipflop) %}
     cocotb.fork(test_{{'_'.join(test_hierarchy)}}(dut))

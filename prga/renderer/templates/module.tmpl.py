@@ -108,11 +108,11 @@ def simple_test_{{loop.index}}(dut):
     for i in range({{offset+bitcount-1}},{{offset-1}},-1):
         if int(cfg_d[i])!= int(cfg_d_{{'_'.join(test_hierarchy)}}[i-{{offset}}]):
             raise TestFailure("cfg_d not properly setup for {{'->'.join(test_hierarchy)}}")
-    # {% elif instance.model.module_class == 9 %}
+    {% elif instance.model.module_class == 9 %}
     # {%- set bitcount = instance.model.cfg_bitcount -%}
-    # cfg_d_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(test_hierarchy)}}.cfg_d.value.binstr[::-1]
+    # cfg_d_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(handle_names_with_underscore(test_hierarchy))}}.cfg_d.value.binstr[::-1]
     # for i in range({{offset+bitcount-1}},{{offset-1}},-1):
-    #     if int(cfg_d[i])!= int(cfg_d_{{'_'.join(test_hierarchy)}}[i-{{offset}}]):
+    #     if int(config.cfg_d[i])!= int(cfg_d_{{'_'.join(test_hierarchy)}}[i-{{offset}}]):
     #         raise TestFailure("cfg_d not properly setup for {{'->'.join(test_hierarchy)}}")
     {% endif %}
     {% endfor -%}

@@ -40,9 +40,6 @@ class VerilogCollection(Object, AbstractPass):
             return
         f = os.path.join(os.path.abspath(self.src_output_dir), module.name + ".v")
         self.visited[module.key] = f
-        print(module.name)
-        print(getattr(module, "verilog_template", "module.tmpl.v"))
-        print()
         self.renderer.add_verilog(module, f, getattr(module, "verilog_template", "module.tmpl.v"))
         for instance in itervalues(module.instances):
             self._process_module(instance.model)
