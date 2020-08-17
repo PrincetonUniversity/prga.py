@@ -36,6 +36,8 @@ class Module(Object):
             Incompatible with ``coalesce_connections``
         coalesce_connections (:obj:`bool`): If set to ``True``, bit-wise connections are not allowed.
             Incompatible with ``allow_multisource``
+        instances (:obj:`MutableMapping` [:obj:`Hashable`, `Instance` ]): Custom instance mapping object. If not
+            specified, an :obj:`OrderedDict` object will be created and used
         **kwargs: Custom key-value arguments. These attributes are added to ``__dict__`` of this object
             and accessible as dynamic attributes
     """
@@ -50,7 +52,8 @@ class Module(Object):
 
     # == internal API ========================================================
     def __init__(self, name, *,
-            key = None, is_cell = False, allow_multisource = False, coalesce_connections = False, **kwargs):
+            key = None, is_cell = False, allow_multisource = False, coalesce_connections = False,
+            instances = None, **kwargs):
 
         if not is_cell and allow_multisource and coalesce_connections:
             raise PRGAInternalError("`allow_multisource` and `coalesce_connections` are incompatible")
@@ -59,7 +62,7 @@ class Module(Object):
         self._key = uno(key, name)
         self._children = OrderedDict()
         self._ports = OrderedDict()
-        self._instances = OrderedDict()
+        self._instances = uno(instances, OrderedDict())
 
         if is_cell:
             self._flags = self.__FLAGS.IS_CELL | self.__FLAGS.ALLOW_MULTISOURCE

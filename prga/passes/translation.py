@@ -6,6 +6,7 @@ from prga.compatible import *
 from .base import AbstractPass
 from ..netlist import PortDirection, Module, ModuleUtils, NetUtils
 from ..core.common import ModuleClass, NetClass, IOType, ModuleView, SegmentID, BlockPinID, Position
+from ..core.builder import ArrayBuilder
 from ..util import Object, uno
 from ..exception import PRGAInternalError, PRGAAPIError
 
@@ -63,44 +64,30 @@ class TranslationPass(AbstractPass):
         self.top = top
         self.create_blackbox_for_undefined_primitives = create_blackbox_for_undefined_primitives
 
-    # @classmethod
-    # def _u2l(cls, logical_model, user_ref):
-    #     # "_logical_cp" mapping is a mapping from user node reference to logical node reference
-    #     # both input and output reference are coalesced if and only if ``user_model`` coalesces connections
-    #     d = getattr(logical_model, "_logical_cp", None)
-    #     if d is None:
-    #         return user_ref
-    #     else:
-    #         return d.get(user_ref, user_ref)
-
-    # @classmethod
-    # def _l2u(cls, logical_model, logical_ref):
-    #     d = getattr(logical_model, "_user_cp", None)
-    #     if d is None:
-    #         return logical_ref
-    #     else:
-    #         return d.get(logical_ref, logical_ref)
-
-    # @classmethod
-    # def _register_u2l(cls, logical_model, user_net, logical_net, coalesced = False):
-    #     user_node = NetUtils._reference(user_net, coalesced = coalesced)
-    #     logical_node = NetUtils._reference(logical_net, coalesced = coalesced)
-    #     # user -> logical
-    #     try:
-    #         d = logical_model._logical_cp
-    #     except AttributeError:
-    #         d = logical_model._logical_cp = {}
-    #     d[user_node] = logical_node
-    #     # logical -> user
-    #     try:
-    #         d = logical_model._user_cp
-    #     except AttributeError:
-    #         d = logical_model._user_cp = {}
-    #     d[logical_node] = user_node
-
     @property
     def key(self):
         return "translation"
+
+    @classmethod
+    def _get_or_create_io(cls, module, iotype, position = Position(0, 0), subtile = 0):
+        if module.module_class.is_io_block:
+            if (port := module.ports.get(iotype)) is None:
+                port = ModuleUtils.create_port(module,
+                        iotype.case("_ipin", "_opin", "_oe"),
+                        1,
+                        iotype.case(PortDirection.input_, PortDirection.output, PortDirection.output),
+                        key = iotype,
+                        net_class = NetClass.io)
+            return port
+        else:
+            if (port := module.ports.get( (iotype, position, subtile) )) is None:
+                port = ModuleUtils.create_port(module,
+                        '{}_x{}y{}_{}'.format(iotype.name, *position, subtile),
+                        1,
+                        iotype.case(PortDirection.input_, PortDirection.output, PortDirection.output),
+                        key = (iotype, position, subtile),
+                        net_class = NetClass.io)
+            return port
 
     def _process_module(self, module, context, *, disable_coalesce = False, is_top = False):
         # shortcut if the module is already processed
@@ -146,8 +133,9 @@ class TranslationPass(AbstractPass):
             elif module.module_class.is_cluster:
                 attrs["net_class"] = NetClass.user
             elif module.module_class.is_block:
-                if hasattr(port, 'global_'):
+                if (global_ := getattr(port, "global_", None)) is not None:
                     attrs["net_class"] = NetClass.global_
+                    attrs["global_"] = global_
                 else:
                     attrs["net_class"] = NetClass.block
             elif module.module_class.is_routing_box:
@@ -167,110 +155,76 @@ class TranslationPass(AbstractPass):
                     disable_coalesce = disable_coalesce or not logical.coalesce_connections)
             logical_instance = ModuleUtils.instantiate(logical, logical_model, instance.name, key = instance.key)
 
-            # for global wires
-            if is_top:
-                raise NotImplementedError
-            else:
-                for pin in itervalues(instance.pins):
-                    if (global_ := getattr(pin.model, "global_", None)) is not None:
-                        if (port := logical.ports.get(global_.name)) is None:
-                            port = ModuleUtils.create_port(logical, global_.name, global_.width, PortDirection.input_,
-                                    net_class = NetClass.global_, global_ = global_)
-                        NetUtils.connect(port, NetUtils._dereference(logical, NetUtils._reference(pin)))
-
-            # for IOs
-            if ((logical.module_class.is_io_block and instance.key == "io") or
-                    (logical.module_class.is_tile and logical_model.module_class.is_io_block)):
-                for iotype in IOType:
-                    if (pin := logical_instance.pins.get(iotype)) is None:
-                        continue
-                    port = None
-                    if logical.module_class.is_io_block:
-                        port = ModuleUtils.create_port(logical,
-                                iotype.case("_ipin", "_opin", "_oe"), 1, pin.model.direction,
-                                key = iotype, net_class = NetClass.io)
-                    else:
-                        port = ModuleUtils.create_port(logical,
-                                '{}_x0y0_{:d}'.format(iotype.name, instance.key), len(pin), pin.model.direction,
-                                key = (iotype, Position(0, 0), instance.key), net_class = NetClass.io)
-                    if port.direction.is_input:
-                        NetUtils.connect(port, pin)
-                    else:
-                        NetUtils.connect(pin, port)
-
-            # # and also IO pins of arrays
-            # elif logical_model.module_class.is_array or logical_model.module_class.is_tile:
-            #     for key, pin in iteritems(logical_instance.pins):
-            #         if not pin.model.net_class.is_io:
-            #             continue
-            #         iotype, pos, subtile = newkey = key[0], key[1] + instance.key, key[2]
-            #         port = ModuleUtils.create_port(logical, "{}_x{}y{}_{:d}".format(iotype.name, *pos, subtile),
-            #                 len(pin), pin.model.direction, key = newkey, net_class = NetClass.io)
-            #         if port.direction.is_input:
-            #             global_ = globals_.pop( port.key[1:], None )
-            #             if global_ is not None:
-            #                 self._register_u2l(logical, global_, port, module.coalesce_connections)
-            #             NetUtils.connect(port, pin)
-            #         else:
-            #             NetUtils.connect(pin, port)
-        # # raise error for unbound globals
-        # for port in itervalues(globals_):
-        #     raise PRGAInternalError("Global wire '{}' bound to subtile {} at {} but no IO input found there"
-        #             .format(port.global_.name, port.global_.bound_to_subtile, port.global_.bound_to_position))
-
         # translate connections
         if module.module_class.is_primitive:
             pass
-        elif module.coalesce_connections:
-            for net in ModuleUtils._iter_nets(module):
-                if net.is_sink:
-                    logical_src, logical_sink = map(lambda x: NetUtils._dereference(logical, NetUtils._reference(x)),
-                            (NetUtils.get_source(net), net))
-                    NetUtils.connect(logical_src, logical_sink)
-        elif module.allow_multisource:
-            for net in ModuleUtils._iter_nets(module):
-                if not net.is_sink:
-                    continue
-                for bit in net:
-                    if len(user_srcs := NetUtils.get_multisource(bit)) == 0:
-                        continue
-                    bitref = NetUtils._reference(bit)
-                    logical_sink = NetUtils._dereference(logical, bitref)
-                    if len(user_srcs) == 1:
-                        NetUtils.connect(NetUtils._dereference(logical, NetUtils._reference(user_srcs)), logical_sink)
-                        continue
-                    switch_model = context.switch_database.get_switch(len(user_srcs), logical)
-                    switch_name = ["_sw"]
-                    if net.net_type.is_pin:
-                        switch_name.append( net.instance.name )
-                        switch_name.append( net.model.name )
-                    else:
-                        switch_name.append( net.name )
-                    if bit.net_type.is_bit:
-                        switch_name.append( str(bit.index) )
-                    switch = ModuleUtils.instantiate(logical, switch_model, "_".join(switch_name),
-                            key = (ModuleClass.switch, bitref))
-                    NetUtils.connect(
-                            tuple(NetUtils._dereference(logical, NetUtils._reference(src)) for src in user_srcs), 
-                            switch.pins["i"])
-                    NetUtils.connect(switch.pins["o"], logical_sink)
-
-                    if bit.net_type.is_bit:
-                        if bit.bus.net_type.is_pin:
-                            switch_name.append( bit.bus.instance.name )
-                            switch_name.append( bit.bus.model.name )
-                        else:
-                            switch_name.append( bit.bus.name )
-                        switch_name.append( str(bit.index) )
         else:
-            for net in ModuleUtils._iter_nets(module):
-                if not net.is_sink:
+            # user connections
+            for usink in ModuleUtils._iter_nets(module):
+                if not usink.is_sink:
                     continue
-                for bit in net:
-                    if (src := NetUtils.get_source(bit, return_none_if_unconnected = True)) is None:
-                        continue
-                    NetUtils.connect(NetUtils._dereference(logical, NetUtils._reference(src)),
-                            NetUtils._dereference(logical, bit))
+                lsink = NetUtils._dereference(logical, NetUtils._reference(usink))
+                if module.coalesce_connections:
+                    NetUtils.connect(NetUtils._dereference(logical, NetUtils._reference(NetUtils.get_source(usink))),
+                            lsink)
+                elif not module.allow_multisource:
+                    NetUtils.connect([NetUtils._dereference(logical, NetUtils._reference(usrc))
+                        for usrc in NetUtils.get_source(usink)], lsink)
+                else:
+                    for i, bit in enumerate(usink):
+                        if len(usrcs := NetUtils.get_multisource(bit)) == 0:
+                            continue
+                        bitref = NetUtils._reference(bit)
+                        if len(usrcs) == 1:
+                            NetUtils.connect(NetUtils._dereference(logical, NetUtils._reference(usrcs)), lsink[i])
+                            continue
+                        switch_model = context.switch_database.get_switch(len(usrcs), logical)
+                        switch_name = ["_sw"]
+                        if usink.net_type.is_pin:
+                            switch_name.append( usink.instance.name )
+                            switch_name.append( usink.model.name )
+                        else:
+                            switch_name.append( usink.name )
+                        if bit.net_type.is_bit:
+                            switch_name.append( str(i) )
+                        switch = ModuleUtils.instantiate(logical, switch_model, "_".join(switch_name),
+                                key = (ModuleClass.switch, bitref))
+                        NetUtils.connect(
+                                [NetUtils._dereference(logical, NetUtils._reference(usrc)) for usrc in usrcs], 
+                                switch.pins["i"])
+                        NetUtils.connect(switch.pins["o"], lsink[i])
+
+            # logical connections
+            for net in ModuleUtils._iter_nets(logical):
+                # global wire?
+                if net.net_type.is_pin and (global_ := getattr(net.model, "global_", None)) is not None:
+                    if not is_top:
+                        if (port := logical.ports.get(global_.name)) is None:
+                            port = ModuleUtils.create_port(logical, global_.name, global_.width,
+                                    PortDirection.input_, net_class = NetClass.global_, global_ = global_)
+                        NetUtils.connect(port, net)
+                    elif ((tile := ArrayBuilder.get_hierarchical_root(module, global_.bound_to_position)) is None or
+                            (iob := tile.model.instances.get(global_.bound_to_subtile)) is None or
+                            'inpad' not in iob.pins):
+                        raise PRGAInternalError("Global wire '{}' bound to subtile {} at {} but no IO input found"
+                                .format(global_.name, global_.bound_to_subtile, global_.bound_to_position))
+                    else:
+                        NetUtils.connect(self._get_or_create_io(logical, IOType.ipin,
+                            global_.bound_to_position, global_.bound_to_subtile), net)
+                # IO?
+                elif net.net_type.is_pin and net.model.net_class.is_io:
+                    port = None
+                    if net.instance.model.module_class.is_primitive:
+                        port = self._get_or_create_io(logical, net.model.key)
+                    elif net.instance.model.module_class.is_io_block:
+                        port = self._get_or_create_io(logical, net.model.key, subtile = net.instance.key)
+                    else:
+                        iotype, pos, subtile = net.model.key
+                        port = self._get_or_create_io(logical, iotype, pos + net.instance.key, subtile)
+                    if port.direction.is_input:
+                        NetUtils.connect(port, net)
+                    else:
+                        NetUtils.connect(net, port)
 
         # add to the database
         context._database[ModuleView.logical, module.key] = logical

@@ -39,6 +39,9 @@ class TimingArc(Object):
         self._min = min_
         self._max = max_
 
+    def __repr__(self):
+        return "TimingArc({}: {} -> {})".format(self.type_.name, self.source, self.sink)
+
     @property
     def type_(self):
         """`TimingArcType`: Type of this timing arc."""
@@ -98,6 +101,9 @@ class NetConnection(Object):
 
         for k, v in kwargs.items():
             setattr(self, k, v)
+
+    def __repr__(self):
+        return "Connection({} -> {})".format(self.source, self.sink)
 
     # == low-level API =======================================================
     @property
@@ -328,12 +334,12 @@ class NetUtils(Object):
             elif len(src) != len(sink):
                 raise PRGAInternalError("Width mismatch: len({}) = {} != len({}) = {}"
                         .format(src, len(src), sink, len(sink)))
-            elif not module.allow_multisource and len(sink._connections):
-                raise PRGAInternalError(
-                        "{} is already connected to {}. ({} does not support multi-connections)"
-                        .format(sink, next(itervalues(sink._connections)), module))
             srcref, sinkref = map(lambda x: cls._reference(x), (src, sink))
             if (conn := sink._connections.get(srcref)) is None:
+                if not module.allow_multisource and len(sink._connections):
+                    raise PRGAInternalError(
+                            "{} is already connected to {}. ({} does not support multi-connections)"
+                            .format(sink, next(iter(itervalues(sink._connections))), module))
                 sink._connections[srcref] = src._connections[sinkref] = NetConnection(src, sink, **kwargs)
             else:
                 for k, v in iteritems(kwargs):

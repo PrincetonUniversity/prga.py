@@ -7,12 +7,7 @@ from .common import (Global, Segment, ModuleClass, PrimitiveClass, PrimitivePort
         DirectTunnel)
 from .builder import (LogicalPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder,
         ClusterBuilder, IOBlockBuilder, LogicBlockBuilder,
-        SwitchBoxBuilder, TileBuilder)
-# from .builder.primitive import LogicalPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder
-# from .builder.block import ClusterBuilder, IOBlockBuilder, LogicBlockBuilder
-# from .builder.box.sbox import SwitchBoxBuilder
-# from .builder.array.tile import TileBuilder
-# from .builder.array.array import ArrayBuilder
+        SwitchBoxBuilder, TileBuilder, ArrayBuilder)
 from ..netlist import TimingArcType, PortDirection, Module, ModuleUtils, NetUtils
 from ..renderer import FileRenderer
 from ..util import Object, ReadonlyMappingProxy, uno

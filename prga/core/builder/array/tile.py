@@ -13,7 +13,6 @@ from ....exception import PRGAInternalError, PRGAAPIError
 
 __all__ = ['TileBuilder']
 
-
 # ----------------------------------------------------------------------------
 # -- Tile Builder ------------------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -210,61 +209,80 @@ class TileBuilder(BaseArrayBuilder):
             `TileBuilder`: Return ``self`` to support chaining, e.g.,
                 ``array = builder.fill().auto_connect().commit()``
         """
+        # two passes
+        # 1. visit CBoxes and connect
         for key, instance in iteritems(self._module.instances):
-            if isinstance(key, int):    # block instance
-                # direct tunnels
-                for tunnel in itervalues(self._context.tunnels):
-                    if tunnel.sink.parent is not instance.model:
-                        continue
-                    # find the sink pin of the tunnel
-                    sink = instance.pins[tunnel.sink.key]
-                    # check if the sink pin is already driven
-                    if (driver := NetUtils.get_source(sink, return_none_if_unconnected = True)) is None:
-                        pass
-                    elif driver.net_type.is_pin:
-                        assert driver.instance.model.module_class.is_connection_box
-                        box = driver.instance.model
-                        src_node = BlockPinID(tunnel.offset, tunnel.source, key)
-                        if (tunnel_src_port := box.ports.get(src_node)) is None:
-                            tunnel_src_port = ModuleUtils.create_port(box, ConnectionBoxBuilder._node_name(src_node),
-                                    len(tunnel.source), driver.model.direction.opposite, key = src_node)
-                            NetUtils.connect(tunnel_src_port, driver.model)
-                        sink = driver.instance.pins[src_node]
+            if isinstance(key, int):
+                continue
+            ori, offset = key
+            for node, box_pin in iteritems(instance.pins):
+                # find the correct connection
+                box_pin_conn = None
+                if node.node_type.is_block:
+                    pin_pos, port, subtile = node
+                    if (block_pos := instance.model.key.position + pin_pos - port.position) == (0, 0):
+                        box_pin_conn = self.instances[subtile].pins[port.key]
+                    elif ((0 <= block_pos.x < self._module.width and 0 <= block_pos.y < self._module.height)
+                            or not box_pin.model.direction.is_input):
+                        raise PRGAInternalError("Invalid block pin node ({})".format(box_pin))
                     else:
-                        continue
-                    # create the source port and connect them
-                    src_node = BlockPinID(tunnel.sink.position + tunnel.offset, tunnel.source, key)
-                    NetUtils.connect(ModuleUtils.create_port(self._module, self._node_name(src_node),
-                        len(tunnel.source), tunnel.sink.direction, key = src_node), sink)
-            else:                       # connection box instance
-                ori, offset = key
-                for node, box_pin in iteritems(instance.pins):
-                    box_pin_conn = None
-                    if node.node_type.is_block:
-                        pin_pos, port, subtile = node
-                        if (block_pos := instance.model.key.position + pin_pos - port.position) == (0, 0):
-                            box_pin_conn = self.instances[subtile].pins[port.key]
-                        elif 0 <= block_pos.x < self._module.width and 0 <= block_pos.y < self._module.height:
-                            continue
-                    elif not node.node_type.is_bridge:
-                        continue
-                    if box_pin_conn is None:
+                        # this must be the input of a direct inter-block tunnel
                         node = node.move(instance.model.key.position)
-                        if (box_pin_conn := self._module.ports.get(node)) is None:
-                            boxpos = None
-                            if node.bridge_type.is_regular_input:
-                                boxpos = instance.model.key.position, Corner.compose(node.orientation,
-                                        instance.model.key.orientation)
-                            elif node.bridge_type.is_cboxout or node.bridge_type.is_cboxout2:
-                                boxpos = instance.model.key.position, Corner.compose(node.orientation.opposite,
-                                        instance.model.key.orientation)
-                            else:
-                                raise PRGAInternalError("Not expecting node {} in tile {}"
-                                        .format(node, self._module))
-                            box_pin_conn = ModuleUtils.create_port(self._module, self._node_name(node),
-                                    len(box_pin), box_pin.model.direction, key = node, boxpos = boxpos)
-                    if box_pin.model.direction.is_input:
-                        self.connect(box_pin_conn, box_pin)
-                    else:
-                        self.connect(box_pin, box_pin_conn)
+                        box_pin_conn = ModuleUtils.create_port(self._module, self._node_name(node),
+                                len(box_pin), box_pin.model.direction, key = node)
+                elif node.node_type.is_bridge:
+                    node = node.move(instance.model.key.position)
+                    if (box_pin_conn := self._module.ports.get(node)) is None:
+                        boxpos = None
+                        if node.bridge_type.is_regular_input:
+                            boxpos = instance.model.key.position, Corner.compose(node.orientation,
+                                    instance.model.key.orientation)
+                        elif node.bridge_type.is_cboxout or node.bridge_type.is_cboxout2:
+                            boxpos = instance.model.key.position, Corner.compose(node.orientation.opposite,
+                                    instance.model.key.orientation)
+                        else:
+                            raise PRGAInternalError("Not expecting node {} in tile {}"
+                                    .format(node, self._module))
+                        box_pin_conn = ModuleUtils.create_port(self._module, self._node_name(node),
+                                len(box_pin), box_pin.model.direction, key = node, boxpos = boxpos)
+                else:
+                    raise PRGAInternalError("Invalid routing node ({})".format(box_pin))
+
+                # connect
+                if box_pin.model.direction.is_input:
+                    self.connect(box_pin_conn, box_pin)
+                else:
+                    self.connect(box_pin, box_pin_conn)
+
+        # 2. visit subblocks and connect
+        for key, instance in iteritems(self._module.instances):
+            if not isinstance(key, int):
+                continue
+            # direct tunnels
+            for tunnel in itervalues(self._context.tunnels):
+                if tunnel.sink.parent is not instance.model:
+                    continue
+                # find the sink pin of the tunnel
+                sink = instance.pins[tunnel.sink.key]
+                # check if the sink pin is already driven
+                if (driver := NetUtils.get_source(sink, return_none_if_unconnected = True)) is None:
+                    pass
+                elif driver.net_type.is_pin:
+                    assert driver.instance.model.module_class.is_connection_box
+                    box = driver.instance.model
+                    src_node = BlockPinID(tunnel.offset, tunnel.source, key)
+                    if (tunnel_src_port := box.ports.get(src_node)) is None:
+                        tunnel_src_port = ModuleUtils.create_port(box, ConnectionBoxBuilder._node_name(src_node),
+                                len(tunnel.source), driver.model.direction.opposite, key = src_node)
+                        NetUtils.connect(tunnel_src_port, driver.model)
+                    sink = driver.instance.pins[src_node]
+                    if NetUtils.get_source(sink, return_none_if_unconnected) is not None:
+                        continue
+                else:
+                    continue
+                # create the source port and connect them
+                src_node = BlockPinID(tunnel.sink.position + tunnel.offset, tunnel.source, key)
+                NetUtils.connect(ModuleUtils.create_port(self._module, self._node_name(src_node),
+                    len(tunnel.source), tunnel.sink.direction, key = src_node), sink)
+
         return self
