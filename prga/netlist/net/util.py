@@ -201,7 +201,7 @@ class NetUtils(Object):
             net (`AbstractNet`):
         """
         if net.net_type.is_const:
-            return (net.value, net.width, NetType.const)
+            return (net.value, len(net), NetType.const)
         elif net.net_type.is_port:
             return (net.key, )
         elif net.net_type in (NetType.pin, NetType.hierarchical):
@@ -304,7 +304,7 @@ class NetUtils(Object):
                         .format(module))
             for concat, list_ in ( (sources, (source_list := [])), (sinks, (sink_list := [])) ):
                 for item in (concat.items if concat.net_type.is_concat else [concat]):
-                    if item.net_type not in (NetType.port, NetType.pin):
+                    if item.net_type not in (NetType.port, NetType.pin, NetType.const):
                         raise PRGAInternalError("{} does not support bitwise connections ({} is not a bus)"
                             .format(item))
                     list_.append(item)
@@ -325,6 +325,9 @@ class NetUtils(Object):
                 raise PRGAInternalError("Cannot connect {}: different parent module".format(sink))
             elif src.net_type.is_const and src.value is None:
                 continue
+            elif len(src) != len(sink):
+                raise PRGAInternalError("Width mismatch: len({}) = {} != len({}) = {}"
+                        .format(src, len(src), sink, len(sink)))
             elif not module.allow_multisource and len(sink._connections):
                 raise PRGAInternalError(
                         "{} is already connected to {}. ({} does not support multi-connections)"

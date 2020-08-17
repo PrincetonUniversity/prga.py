@@ -7,9 +7,7 @@ from .base import BaseRoutingBoxBuilder
 from ...common import (Position, BridgeID, BridgeType, BlockFCValue, ModuleView, ModuleClass, BlockPinID, Direction,
         Orientation, Dimension, BlockPortFCValue)
 from ....algorithm.interconnect import InterconnectAlgorithms
-from ....netlist.net.common import PortDirection
-from ....netlist.module.module import Module
-from ....netlist.module.util import ModuleUtils
+from ....netlist import PortDirection, Module, ModuleUtils
 from ....exception import PRGAAPIError, PRGAInternalError
 from ....util import uno
 
@@ -208,7 +206,9 @@ class ConnectionBoxBuilder(BaseRoutingBoxBuilder):
             otracks = tuple(range(sgmt.width))
             outil = [0] * len(otracks)
             # iterate through instances in the tile
-            for instance in tile._instances.subtiles:
+            for subtile, instance in iteritems(tile.instances):
+                if not isinstance(subtile, int):
+                    continue
                 # iterate through pins
                 for pin in itervalues(instance.pins):
                     if hasattr(pin.model, "global_"):
@@ -260,8 +260,8 @@ class ConnectionBoxBuilder(BaseRoutingBoxBuilder):
         _, orientation, offset = key
         name = name or 'cbox_{}_{}{}'.format(tile.name, orientation.name[0], offset)
         return Module(name,
+                allow_multisource = True,
                 view = ModuleView.user,
-                is_cell = True,
                 module_class = ModuleClass.connection_box,
                 key = key,
                 **kwargs)

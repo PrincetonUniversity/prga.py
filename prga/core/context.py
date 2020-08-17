@@ -6,7 +6,8 @@ from prga.compatible import *
 from .common import (Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView, OrientationTuple,
         DirectTunnel)
 from .builder import (LogicalPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder,
-        ClusterBuilder, IOBlockBuilder, LogicBlockBuilder)
+        ClusterBuilder, IOBlockBuilder, LogicBlockBuilder,
+        SwitchBoxBuilder, TileBuilder)
 # from .builder.primitive import LogicalPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder
 # from .builder.block import ClusterBuilder, IOBlockBuilder, LogicBlockBuilder
 # from .builder.box.sbox import SwitchBoxBuilder

@@ -4,80 +4,15 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from .base import BaseArrayBuilder
-from ..box.cbox import ConnectionBoxBuilder
+from ..box import ConnectionBoxBuilder
 from ...common import (Orientation, OrientationTuple, ModuleView, ModuleClass, Position, BlockFCValue, Corner,
         BlockPortFCValue, BlockPinID)
-from ....netlist.module.module import Module
-from ....netlist.module.instance import Instance
-from ....netlist.module.util import ModuleUtils
-from ....netlist.net.util import NetUtils
+from ....netlist import Module, Instance, ModuleUtils, NetUtils
 from ....util import Object, uno
 from ....exception import PRGAInternalError, PRGAAPIError
 
 __all__ = ['TileBuilder']
 
-# ----------------------------------------------------------------------------
-# -- Tile Instance Mapping ---------------------------------------------------
-# ----------------------------------------------------------------------------
-class _TileInstancesMapping(Object, MutableMapping):
-    """Helper class for ``Tile.instances`` property.
-
-    Args:
-        width (:obj:`int`): Width of the tile/array
-        height (:obj:`int`): Height of the tile/array
-
-    Supported key types:
-        :obj:`int`: Index of a subtile
-        :obj:`tuple` [:obj:`Orientation`, :obj:`int` ]: Orientation of the connection box and the offset
-    """
-
-    __slots__ = ["cboxes", "subtiles"]
-    def __init__(self, width, height):
-        self.cboxes = OrientationTuple(north = [None] * width, east = [None] * height,
-                south = [None] * width, west = [None] * height)
-        self.subtiles = []
-
-    def __getitem__(self, key):
-        try:
-            ori, offset = key
-            if 0 <= offset < len(self.cboxes[ori]) and (i := self.cboxes[ori][offset]) is not None:
-                return i
-        except TypeError:
-            if 0 <= key < len(self.subtiles) and (i := self.subtiles[key]) is not None:
-                return i
-        raise KeyError(key)
-
-    def __setitem__(self, key, value):
-        try:
-            ori, offset = key
-            if not (0 <= offset < len(self.cboxes[ori])):
-                raise PRGAInternalError("Invalid connection box position: ({}, {})"
-                        .format(ori, offset))
-            elif (i := self.cboxes[ori][offset]) is not None:
-                raise PRGAInternalError("Connection box position ({}, {}) already occupied"
-                        .format(ori, offset))
-            else:
-                self.cboxes[ori][offset] = value
-        except TypeError:
-            if key < len(self.subtiles):
-                raise PRGAInternalError("Subtile {} already occupied by {}".format(key, self.subtiles[key])) 
-            elif key > len(self.subtiles):
-                raise PRGAInternalError("Invalid subtile ID: {}".format(key))
-            self.subtiles.append( value )
-
-    def __delitem__(self, key):
-        raise PRGAInternalError("Deleting from a tile instances mapping is not supported")
-
-    def __len__(self):
-        return len(self.subtiles) + sum(1 for l in self.cboxes for i in l if i is not None)
-
-    def __iter__(self):
-        for i in range(len(self.subtiles)):
-            yield i
-        for ori in Orientation:
-            for offset, instance in enumerate(self.cboxes[ori]):
-                if instance is not None:
-                    yield ori, offset
 
 # ----------------------------------------------------------------------------
 # -- Tile Builder ------------------------------------------------------------
@@ -126,9 +61,8 @@ class TileBuilder(BaseArrayBuilder):
             `Module`:
         """
         return Module(name,
-                view = ModuleView.user,
-                instances = _TileInstancesMapping(width, height),
                 coalesce_connections = True,
+                view = ModuleView.user,
                 module_class = ModuleClass.tile,
                 width = width,
                 height = height,
@@ -160,18 +94,14 @@ class TileBuilder(BaseArrayBuilder):
         elif not (model.width == self._module.width and model.height == self._module.height):
             raise PRGAInternalError("The size of block {} ({}x{}) does not fit the size of tile {} ({}x{})"
                     .format(model, model.width, model.height, self._module, self._module.width, self._module.height))
-        elif self._module._instances.subtiles:
+        elif 0 in self._module.instances:
             raise PRGAAPIError("At most one type of subtile per tile. {} is already instantiated in {}"
-                    .format(self._module._instances[0].model, self._module))
-        subtile = len(self._module._instances.subtiles)
+                    .format(self._module.instances[0].model, self._module))
         if reps is None:
-            return ModuleUtils.instantiate(self._module, model, uno(name, "lb_i{}".format(subtile)), key = subtile)
-        elif name is None:
-            return tuple(ModuleUtils.instantiate(self._module, model, "lb_i{}".format(subtile + i),
-                key = subtile + i, vpr_capacity = reps, vpr_subtile = i) for i in range(reps))
+            return ModuleUtils.instantiate(self._module, model, uno(name, "lb_i0"), key = 0)
         else:
-            return tuple(ModuleUtils.instantiate(self._module, model, "{}_i{}".format(name, i),
-                key = subtile + i, vpr_capacity = reps, vpr_subtile = i) for i in range(reps))
+            return tuple(ModuleUtils.instantiate(self._module, model, "{}_i{}".format(uno(name, "lb"), i),
+                key = i, vpr_capacity = reps, vpr_subtile = i) for i in range(reps))
 
     def build_connection_box(self, ori, offset, **kwargs):
         """Build the connection box at the specific position. Corresponding connection box instance is created and
@@ -243,20 +173,20 @@ class TileBuilder(BaseArrayBuilder):
                 # check if a connection box instance is already here
                 if (ori, offset) in self._module.instances:
                     continue
-                key = ConnectionBoxBuilder._cbox_key(self._module, ori, offset)
+                boxkey = ConnectionBoxBuilder._cbox_key(self._module, ori, offset)
                 # check if a connection box is needed here
                 # 1. channel?
-                if self._no_channel(self._module, *key.channel):
+                if self._no_channel(self._module, *boxkey.channel):
                     continue
                 # 2. port?
                 cbox_needed = False
                 blocks_checked = set()
-                for instance in self._module._instances.subtiles:
-                    if instance.model.key in blocks_checked:
+                for key, instance in iteritems(self._module.instances):
+                    if not isinstance(key, int) or instance.model.key in blocks_checked:
                         continue
                     blocks_checked.add(instance.model.key)
                     for port in itervalues(instance.model.ports):
-                        if port.position != key.position or port.orientation not in (ori, None):
+                        if port.position != boxkey.position or port.orientation not in (ori, None):
                             continue
                         elif hasattr(port, 'global_'):
                             continue
@@ -280,31 +210,54 @@ class TileBuilder(BaseArrayBuilder):
             `TileBuilder`: Return ``self`` to support chaining, e.g.,
                 ``array = builder.fill().auto_connect().commit()``
         """
-        # regular nets
-        for ori in Orientation:
-            for offset in range(ori.dimension.case(x = self._module.height, y = self._module.width)):
-                if (box := self.instances.get( (ori, offset) )) is None:
-                    continue
-                for node, box_pin in iteritems(box.pins):
+        for key, instance in iteritems(self._module.instances):
+            if isinstance(key, int):    # block instance
+                # direct tunnels
+                for tunnel in itervalues(self._context.tunnels):
+                    if tunnel.sink.parent is not instance.model:
+                        continue
+                    # find the sink pin of the tunnel
+                    sink = instance.pins[tunnel.sink.key]
+                    # check if the sink pin is already driven
+                    if (driver := NetUtils.get_source(sink, return_none_if_unconnected = True)) is None:
+                        pass
+                    elif driver.net_type.is_pin:
+                        assert driver.instance.model.module_class.is_connection_box
+                        box = driver.instance.model
+                        src_node = BlockPinID(tunnel.offset, tunnel.source, key)
+                        if (tunnel_src_port := box.ports.get(src_node)) is None:
+                            tunnel_src_port = ModuleUtils.create_port(box, ConnectionBoxBuilder._node_name(src_node),
+                                    len(tunnel.source), driver.model.direction.opposite, key = src_node)
+                            NetUtils.connect(tunnel_src_port, driver.model)
+                        sink = driver.instance.pins[src_node]
+                    else:
+                        continue
+                    # create the source port and connect them
+                    src_node = BlockPinID(tunnel.sink.position + tunnel.offset, tunnel.source, key)
+                    NetUtils.connect(ModuleUtils.create_port(self._module, self._node_name(src_node),
+                        len(tunnel.source), tunnel.sink.direction, key = src_node), sink)
+            else:                       # connection box instance
+                ori, offset = key
+                for node, box_pin in iteritems(instance.pins):
                     box_pin_conn = None
                     if node.node_type.is_block:
                         pin_pos, port, subtile = node
-                        if (block_pos := box.model.key.position + pin_pos - port.position) == (0, 0):
+                        if (block_pos := instance.model.key.position + pin_pos - port.position) == (0, 0):
                             box_pin_conn = self.instances[subtile].pins[port.key]
                         elif 0 <= block_pos.x < self._module.width and 0 <= block_pos.y < self._module.height:
                             continue
                     elif not node.node_type.is_bridge:
                         continue
                     if box_pin_conn is None:
-                        node = node.move(box.model.key.position)
+                        node = node.move(instance.model.key.position)
                         if (box_pin_conn := self._module.ports.get(node)) is None:
                             boxpos = None
                             if node.bridge_type.is_regular_input:
-                                boxpos = box.model.key.position, Corner.compose(node.orientation,
-                                        box.model.key.orientation)
+                                boxpos = instance.model.key.position, Corner.compose(node.orientation,
+                                        instance.model.key.orientation)
                             elif node.bridge_type.is_cboxout or node.bridge_type.is_cboxout2:
-                                boxpos = box.model.key.position, Corner.compose(node.orientation.opposite,
-                                        box.model.key.orientation)
+                                boxpos = instance.model.key.position, Corner.compose(node.orientation.opposite,
+                                        instance.model.key.orientation)
                             else:
                                 raise PRGAInternalError("Not expecting node {} in tile {}"
                                         .format(node, self._module))
@@ -314,33 +267,4 @@ class TileBuilder(BaseArrayBuilder):
                         self.connect(box_pin_conn, box_pin)
                     else:
                         self.connect(box_pin, box_pin_conn)
-        for subtile, instance in enumerate(self._module._instances.subtiles):
-            # global nets
-            for pin in itervalues(instance.pins):
-                if (global_ := getattr(pin.model, "global_", None)) is not None:
-                    self.connect(self._get_or_create_global_input(self._module, global_), pin)
-            # direct tunnels
-            for tunnel in itervalues(self._context.tunnels):
-                if tunnel.sink.parent is not instance.model:
-                    continue
-                # find the sink pin of the tunnel
-                sink = instance.pins[tunnel.sink.key]
-                # check if the sink pin is already driven
-                if (driver := NetUtils.get_source(sink, return_none_if_unconnected = True)) is None:
-                    pass
-                elif driver.net_type.is_pin:
-                    assert driver.instance.model.module_class.is_connection_box
-                    box = driver.instance.model
-                    src_node = BlockPinID(tunnel.offset, tunnel.source, subtile)
-                    if (tunnel_src_port := box.ports.get(src_node)) is None:
-                        tunnel_src_port = ModuleUtils.create_port(box, ConnectionBoxBuilder._node_name(src_node),
-                                len(tunnel.source), driver.model.direction.opposite, key = src_node)
-                        NetUtils.connect(tunnel_src_port, driver.model)
-                    sink = driver.instance.pins[src_node]
-                else:
-                    continue
-                # create the source port and connect them
-                src_node = BlockPinID(tunnel.sink.position + tunnel.offset, tunnel.source, subtile)
-                NetUtils.connect(ModuleUtils.create_port(self._module, self._node_name(src_node), len(tunnel.source),
-                    tunnel.sink.direction, key = src_node), sink)
         return self

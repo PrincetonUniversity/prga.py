@@ -137,7 +137,6 @@ class TranslationPass(AbstractPass):
         logical = Module(module.name, **kwargs)
 
         # translate ports
-        globals_ = {}
         for port in itervalues(module.ports):
             attrs = {"key": port.key, "is_clock": port.is_clock}
             if module.module_class.is_primitive:
@@ -157,16 +156,7 @@ class TranslationPass(AbstractPass):
                 else:
                     attrs["net_class"] = NetClass.bridge
             elif module.module_class.is_array or module.module_class.is_tile:
-                if hasattr(port, 'global_'):
-                    if is_top:
-                        if not port.global_.is_bound:
-                            raise PRGAInternalError("Global wire '{}' not bound to an IO block yet"
-                                    .format(port.global_.name))
-                        globals_[port.global_.bound_to_position, port.global_.bound_to_subtile] = port
-                        continue
-                    attrs["net_class"] = NetClass.global_
-                else:
-                    attrs["net_class"] = NetClass.bridge
+                attrs["net_class"] = NetClass.bridge
             if "net_class" not in attrs:
                 raise NotImplementedError("Could not deduct net class of {}".format(port))
             ModuleUtils.create_port(logical, port.name, len(port), port.direction, **attrs)
@@ -177,21 +167,37 @@ class TranslationPass(AbstractPass):
                     disable_coalesce = disable_coalesce or not logical.coalesce_connections)
             logical_instance = ModuleUtils.instantiate(logical, logical_model, instance.name, key = instance.key)
 
-            # # special processing for IO blocks in arrays
-            # if logical_model.module_class.is_io_block:
-            #     for iotype in IOType:
-            #         if (pin := logical_instance.pins.get(iotype)) is None:
-            #             continue
-            #         port = ModuleUtils.create_port(logical,
-            #                 '{}_x0y0_{:d}'.format(iotype.name, instance.key), len(pin), pin.model.direction,
-            #                 key = (iotype, Position(0, 0), instance.key), net_class = NetClass.io)
-            #         if port.direction.is_input:
-            #             global_ = globals_.pop( port.key[1:], None )
-            #             if global_ is not None:
-            #                 self._register_u2l(logical, global_, port, module.coalesce_connections)
-            #             NetUtils.connect(port, pin)
-            #         else:
-            #             NetUtils.connect(pin, port)
+            # for global wires
+            if is_top:
+                raise NotImplementedError
+            else:
+                for pin in itervalues(instance.pins):
+                    if (global_ := getattr(pin.model, "global_", None)) is not None:
+                        if (port := logical.ports.get(global_.name)) is None:
+                            port = ModuleUtils.create_port(logical, global_.name, global_.width, PortDirection.input_,
+                                    net_class = NetClass.global_, global_ = global_)
+                        NetUtils.connect(port, NetUtils._dereference(logical, NetUtils._reference(pin)))
+
+            # for IOs
+            if ((logical.module_class.is_io_block and instance.key == "io") or
+                    (logical.module_class.is_tile and logical_model.module_class.is_io_block)):
+                for iotype in IOType:
+                    if (pin := logical_instance.pins.get(iotype)) is None:
+                        continue
+                    port = None
+                    if logical.module_class.is_io_block:
+                        port = ModuleUtils.create_port(logical,
+                                iotype.case("_ipin", "_opin", "_oe"), 1, pin.model.direction,
+                                key = iotype, net_class = NetClass.io)
+                    else:
+                        port = ModuleUtils.create_port(logical,
+                                '{}_x0y0_{:d}'.format(iotype.name, instance.key), len(pin), pin.model.direction,
+                                key = (iotype, Position(0, 0), instance.key), net_class = NetClass.io)
+                    if port.direction.is_input:
+                        NetUtils.connect(port, pin)
+                    else:
+                        NetUtils.connect(pin, port)
+
             # # and also IO pins of arrays
             # elif logical_model.module_class.is_array or logical_model.module_class.is_tile:
             #     for key, pin in iteritems(logical_instance.pins):
@@ -265,19 +271,6 @@ class TranslationPass(AbstractPass):
                         continue
                     NetUtils.connect(NetUtils._dereference(logical, NetUtils._reference(src)),
                             NetUtils._dereference(logical, bit))
-
-        # special processing for IOs
-        if logical.module_class.is_io_block:
-            for iotype in IOType:
-                if (pin := logical.instances["io"].pins.get(iotype)) is None:
-                    continue
-                port = ModuleUtils.create_port(logical,
-                        iotype.case("_ipin", "_opin", "_oe"), 1, pin.model.direction,
-                        key = iotype, net_class = NetClass.io)
-                if port.direction.is_input:
-                    NetUtils.connect(port, pin)
-                else:
-                    NetUtils.connect(pin, port)
 
         # add to the database
         context._database[ModuleView.logical, module.key] = logical
