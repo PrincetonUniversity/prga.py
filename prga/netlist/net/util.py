@@ -5,8 +5,8 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .common import NetType, Const, Slice, Concat
-from ...util import uno
+from .common import NetType, Const, Slice, Concat, TimingArcType
+from ...util import Object, uno
 from ...exception import PRGAInternalError, PRGATypeError, PRGAIndexError
 
 from itertools import zip_longest, product
@@ -17,9 +17,65 @@ _logger = logging.getLogger(__name__)
 __all__ = ['NetUtils']
 
 # ----------------------------------------------------------------------------
+# -- Timing Arc --------------------------------------------------------------
+# ----------------------------------------------------------------------------
+class TimingArc(Object):
+    """Timing arcs.
+
+    Args:
+        type_ (`TimingArcType`): Type of this timing arc
+        source (`AbstractNonReferenceNet`): The startpoint or clock of this timing arc
+        sink (`AbstractNonReferenceNet`): The endpoint of this timing arc
+        min_ (:obj:`float`): Min value of this arc
+        max_ (:obj:`float`): Max value of this arc
+    """
+
+    __slots__ = ['_type', '_source', '_sink', '_min', '_max']
+
+    def __init__(self, type_, source, sink, min_ = None, max_ = None):
+        self._type = type_
+        self._source = source
+        self._sink = sink
+        self._min = min_
+        self._max = max_
+
+    @property
+    def type_(self):
+        """`TimingArcType`: Type of this timing arc."""
+        return self._type
+
+    @property
+    def source(self):
+        """`AbstractNonReferenceNet`: The startpoint of clock of this timing arc."""
+        return self._source
+
+    @property
+    def sink(self):
+        """`AbstractNonReferenceNet`: The endpoint of this timing arc."""
+        return self._sink
+
+    @property
+    def min_(self):
+        """:obj:`float`: The min value of this timing arc."""
+        return self._min
+
+    @min_.setter
+    def min_(self, v):
+        self._min = v
+
+    @property
+    def max_(self):
+        """:obj:`float`: The max value of this timing arc."""
+        return self._max
+
+    @max_.setter
+    def max_(self, v):
+        self._max = v
+
+# ----------------------------------------------------------------------------
 # -- Net Connection ----------------------------------------------------------
 # ----------------------------------------------------------------------------
-class NetConnection(object):
+class NetConnection(Object):
     """Connection between non-reference nets.
 
     Args:
@@ -33,11 +89,12 @@ class NetConnection(object):
     Direct instantiation of this class is not recommended. Use `NetUtils.connect` or `NetUtils.create_timing_arc` instead.
     """
 
-    __slots__ = ["_source", "_sink", "_max_delay", "_min_delay", "__dict__"]
+    __slots__ = ["_source", "_sink", "_arc", "__dict__"]
 
     def __init__(self, source, sink, **kwargs):
         self._source = source
         self._sink = sink
+        self._arc = TimingArc(TimingArcType.delay, source, sink)
 
         for k, v in kwargs.items():
             setattr(self, k, v)
@@ -54,57 +111,14 @@ class NetConnection(object):
         return self._sink
 
     @property
-    def max_delay(self):
-        """:obj:`float`: Maximum delay of the connection."""
-        try:
-            return self._max_delay
-        except AttributeError:
-            return 0.0
-
-    @max_delay.setter
-    def max_delay(self, v):
-        self._max_delay = v
-
-    @property
-    def min_delay(self):
-        """:obj:`float`: Minimum delay of the connection."""
-        try:
-            return self._min_delay
-        except AttributeError:
-            return 0.0
-
-    @min_delay.setter
-    def min_delay(self, v):
-        self._min_delay = v
-
-# ----------------------------------------------------------------------------
-# -- Timing Arc --------------------------------------------------------------
-# ----------------------------------------------------------------------------
-class TimingArc(object):
-    """Timing arc in a cell module.
-
-    Keyword Args:
-        max_delay (:obj:`float`): Max delay if this timing arc is a combinational path
-        min_delay (:obj:`float`): Min delay if this timing arc is a combinational path
-        max_setup (:obj:`float`): Max setup if this timing arc is a clock-to-startpoint path
-        min_setup (:obj:`float`): Min setup if this timing arc is a clock-to-startpoint path
-        max_hold (:obj:`float`): Max hold if this timing arc is a clock-to-startpoint path
-        min_hold (:obj:`float`): Min hold if this timing arc is a clock-to-startpoint path
-        max_clk2q (:obj:`float`): Max clock-to-Q delay if this timing arc is a clock-to-endpoint path
-        min_clk2q (:obj:`float`): Min clock-to-Q delay if this timing arc is a clock-to-endpoint path
-    """
-
-    __slots__ = ["max_delay", "min_delay", "max_setup", "min_setup",
-            "min_hold", "max_hold", "min_clk2q", "max_clk2q"]
-
-    def __init__(self, **kwargs):
-        for k, v in iteritems(kwargs):
-            setattr(self, k, v)
+    def arc(Self):
+        """`TimingArc`: Timing arc associated with this connection."""
+        return self._arc
 
 # ----------------------------------------------------------------------------
 # -- Net Utilities -----------------------------------------------------------
 # ----------------------------------------------------------------------------
-class NetUtils(object):
+class NetUtils(Object):
     """A wrapper class for utility functions for nets."""
 
     @classmethod
@@ -514,17 +528,21 @@ class NetUtils(object):
             raise PRGAInternalError("{} and {} are not connected".format(source, sink))
 
     @classmethod
-    def create_timing_arc(cls, sources, sinks, *, fully = False, **kwargs):
+    def create_timing_arc(cls, types, sources, sinks, *, fully = False, **kwargs):
         """Create a timing arc from ``sources`` to ``sinks``.
 
         Args:
+            types (`TimingArcType` or :obj:`Sequence` [`TimingArcType` ]): Type(s) of the timing arcs
             sources: a port, a slice of a port, a bit of a port, or an iterable of the items listed above
             sinks: a port, a slice of a port, a bit of a port, or an iterable of the items listed above
 
         Keyword Args:
             fully (:obj:`bool`): If set, timing arc is created from every bit in ``sources`` to all bits in ``sinks``
-            **kwargs: Extra arguments passed to the creation of each timing arc
+            min_ (:obj:`float`): Min value of this arc
+            max_ (:obj:`float`): Max value of this arc
         """
+        if isinstance(types, TimingArcType):
+            types = (types, )
         # 1. concat the sources & sinks
         sources, sinks = map(cls.concat, (sources, sinks))
         # 2. get the parent module
@@ -545,65 +563,81 @@ class NetUtils(object):
             _logger.warning("Width mismatch: len({}) = {} != len({}) = {}"
                     .format(sources, len(sources), sinks, len(sinks)))
         pairs = product(sources, sinks) if fully else zip(sources, sinks)
-        for src, sink in pairs:
-            # we currently don't verify when creating timing arcs. Invalid timing arcs will never be actually used
+        for type_, (src, sink) in product(types, pairs):
+            if type_ in (TimingArcType.setup, TimingArcType.clk2q, TimingArcType.hold) and not src.is_clock:
+                raise PRGAInternalError("Cannot create sequential timing arc from non-clock net: {}".format(src))
             srcref, sinkref = map(lambda x: cls._reference(x), (src, sink))
-            if (arc := sink._connections.get(srcref)) is None:
-                sink._connections[srcref] = src._connections[sinkref] = TimingArc(**kwargs)
+            if (arc := sink._connections.get( (type_, srcref) )) is None:
+                sink._connections[type_, srcref] = src._connections[type_, sinkref] = TimingArc(
+                        type_, src, sink, **kwargs)
             else:
                 for k, v in iteritems(kwargs):
                     setattr(arc, k, v)
 
     @classmethod
-    def get_timing_arc(cls, source, sink, *, skip_validations = False):
-        """Get the timing arc from ``source`` to ``sink``.
-        
+    def get_timing_arc(cls, sources = None, sinks = None, types = TimingArcType, *, skip_validations = False):
+        """Get the timing arc(s) of the specified ``types`` from ``sources`` to ``sinks``.
+
         Args:
-            source (`AbstractNonReferenceNet`):
-            sink (`AbstractNonReferenceNet`):
+            sources: 
+            sinks:
+            types (:obj:`Container` [`TimingArcType` ]):
 
         Keyword Args:
-            skip_validations (:obj:`bool`): If set, this method skips all validations. This option saves runtime but
-                should be used with care
-
-        Returns:
-            `TimingArc`:
+            skip_validations (:obj:`bool`):
         """
-        # 0. shortcut
-        if skip_validations:
-            return sink._connections.get( cls._reference(source) )
-        # 1. get the parent module
-        module = None
-        if sink.net_type.is_reference:
-            raise PRGAInternalError("{} is a reference".format(sink))
-        elif sink.net_type.is_const:
-            raise PRGAInternalError("{} is a const net".format(sink))
-        elif sink.net_type.is_pin:
-            raise PRGAInternalError("{} is a pin".format(sink))
-        else:
-            module = sink.parent
-        if not module.is_cell:
-            raise PRGAInternalError(
-                    "{} is a not cell module. Get connections with `NetUtils.get_connection` instead"
-                    .format(module))
-        # 2. validate sink
-        if len(sink) > 1:
-            raise PRGAInternalError("{} is not 1-bit wide".format(sink))
-        elif sink.net_type.is_port:
-            sink = sink[0]
-        # 3. validate source
-        if source.net_type.is_reference:
-            raise PRGAInternalError("{} is a reference".format(source))
-        elif source.net_type.is_const:
-            raise PRGAInternalError("{} is a const net".format(source))
-        elif source.net_type.is_pin:
-            raise PRGAInternalError("{} is a pin".format(source))
-        elif source.parent is not module:
-            raise PRGAInternalError("Source = {} and Sink = {} are not in the same module"
-                    .format(source, sink))
-        elif len(source) > 1:
-            raise PRGAInternalError("{} is not 1-bit wide".format(source))
-        elif source.net_type.is_port:
-            source = source[0]
-        # 4. get timing arc
-        return sink._connections.get( cls._reference(source) )
+        raise NotImplementedError
+
+    # @classmethod
+    # def get_timing_arc(cls, source, sink, *, skip_validations = False):
+    #     """Get the timing arc from ``source`` to ``sink``.
+    #     
+    #     Args:
+    #         source (`AbstractNonReferenceNet`):
+    #         sink (`AbstractNonReferenceNet`):
+
+    #     Keyword Args:
+    #         skip_validations (:obj:`bool`): If set, this method skips all validations. This option saves runtime but
+    #             should be used with care
+
+    #     Returns:
+    #         `TimingArc`:
+    #     """
+    #     # 0. shortcut
+    #     if skip_validations:
+    #         return sink._connections.get( cls._reference(source) )
+    #     # 1. get the parent module
+    #     module = None
+    #     if sink.net_type.is_reference:
+    #         raise PRGAInternalError("{} is a reference".format(sink))
+    #     elif sink.net_type.is_const:
+    #         raise PRGAInternalError("{} is a const net".format(sink))
+    #     elif sink.net_type.is_pin:
+    #         raise PRGAInternalError("{} is a pin".format(sink))
+    #     else:
+    #         module = sink.parent
+    #     if not module.is_cell:
+    #         raise PRGAInternalError(
+    #                 "{} is a not cell module. Get connections with `NetUtils.get_connection` instead"
+    #                 .format(module))
+    #     # 2. validate sink
+    #     if len(sink) > 1:
+    #         raise PRGAInternalError("{} is not 1-bit wide".format(sink))
+    #     elif sink.net_type.is_port:
+    #         sink = sink[0]
+    #     # 3. validate source
+    #     if source.net_type.is_reference:
+    #         raise PRGAInternalError("{} is a reference".format(source))
+    #     elif source.net_type.is_const:
+    #         raise PRGAInternalError("{} is a const net".format(source))
+    #     elif source.net_type.is_pin:
+    #         raise PRGAInternalError("{} is a pin".format(source))
+    #     elif source.parent is not module:
+    #         raise PRGAInternalError("Source = {} and Sink = {} are not in the same module"
+    #                 .format(source, sink))
+    #     elif len(source) > 1:
+    #         raise PRGAInternalError("{} is not 1-bit wide".format(source))
+    #     elif source.net_type.is_port:
+    #         source = source[0]
+    #     # 4. get timing arc
+    #     return sink._connections.get( cls._reference(source) )

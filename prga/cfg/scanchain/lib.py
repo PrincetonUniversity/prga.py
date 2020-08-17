@@ -3,16 +3,13 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from ...core.common import NetClass, ModuleClass, ModuleView, IOType, PrimitiveClass
+from ...core.common import NetClass, ModuleClass, ModuleView, IOType, PrimitiveClass, PrimitivePortClass
 from ...core.context import Context
-from ...netlist.net.common import PortDirection
-from ...netlist.net.util import NetUtils
-from ...netlist.module.module import Module
-from ...netlist.module.util import ModuleUtils
+from ...netlist import TimingArcType, PortDirection, Module, ModuleUtils, NetUtils
 from ...passes.base import AbstractPass
-from ...passes.translation import AbstractSwitchDatabase, TranslationPass
-from ...passes.vpr import FASMDelegate
-from ...renderer.renderer import FileRenderer
+from ...passes.translation import AbstractSwitchDatabase
+# from ...passes.vpr import FASMDelegate
+from ...renderer import FileRenderer
 from ...util import Object, uno
 from ...exception import PRGAInternalError, PRGAAPIError
 
@@ -30,7 +27,7 @@ ADDITIONAL_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(_
 # ----------------------------------------------------------------------------
 # -- Switch Database ---------------------------------------------------------
 # ----------------------------------------------------------------------------
-class ScanchainSwitchDatabase(Object, AbstractSwitchDatabase):
+class ScanchainSwitchDatabase(AbstractSwitchDatabase):
     """Switch database for scanchain configuration circuitry.
     
     Args:
@@ -55,114 +52,122 @@ class ScanchainSwitchDatabase(Object, AbstractSwitchDatabase):
             cfg_bitcount = (width - 1).bit_length()
         except AttributeError:
             cfg_bitcount = len(bin(width - 1).lstrip('-0b'))
-        switch = Module('sw' + str(width), view = ModuleView.logical, key = key,
-                module_class = ModuleClass.switch, cfg_bitcount = cfg_bitcount,
-                allow_multisource = True, verilog_template = "switch.tmpl.v")
+        switch = Module('sw' + str(width),
+                is_cell = True,
+                view = ModuleView.logical,
+                key = key,
+                module_class = ModuleClass.switch,
+                cfg_bitcount = cfg_bitcount,
+                verilog_template = "switch.tmpl.v")
+
         # switch inputs/outputs
         i = ModuleUtils.create_port(switch, 'i', width, PortDirection.input_, net_class = NetClass.switch)
         o = ModuleUtils.create_port(switch, 'o', 1, PortDirection.output, net_class = NetClass.switch)
-        NetUtils.connect(i, o, fully = True)
-        ModuleUtils.instantiate(switch, Scanchain.get_cfg_data_cell(self.context, cfg_bitcount), "i_cfg_data")
+        NetUtils.create_timing_arc(TimingArcType.delay, i, o, fully = True)
+
         # configuration circuits
         self.entry._get_or_create_cfg_ports(switch, self.cfg_width)
+        ModuleUtils.instantiate(switch, Scanchain.get_cfg_data_cell(self.context, cfg_bitcount), "i_cfg_data")
+        
+        # add to database and return
         return self.context._database.setdefault((ModuleView.logical, key), switch)
 
-# ----------------------------------------------------------------------------
-# -- FASM Delegate -----------------------------------------------------------
-# ----------------------------------------------------------------------------
-class ScanchainFASMDelegate(FASMDelegate):
-    """FASM delegate for scanchain configuration circuitry.
-    
-    Args:
-        context (`Context`):
-    """
-
-    __slots__ = ['context']
-    def __init__(self, context):
-        self.context = context
-
-    def _instance_bitoffset(self, instance):
-        if instance is None:
-            return 0
-        cfg_bitoffset = 0
-        if instance:
-            for i in reversed(instance.hierarchy):
-                if (offset := getattr(i, "cfg_bitoffset", None)) is None:
-                    return None
-                cfg_bitoffset += offset
-        return cfg_bitoffset
-
-    def _features_for_path(self, source, sink, instance = None):
-        # 1. get the cfg bit offset for ``instance``
-        cfg_bitoffset = self._instance_bitoffset(instance)
-        if cfg_bitoffset is None:
-            return tuple()
-        # 2. get the cfg bits for the connection
-        conn = NetUtils.get_connection(source, sink)
-        if conn is None:
-            return tuple()
-        else:
-            return tuple('b{}'.format(cfg_bitoffset + i) for i in conn.get("cfg_bits", tuple()))
-
-    def fasm_mux_for_intrablock_switch(self, source, sink, instance = None):
-        return self._features_for_path(source, sink, instance)
-
-    def fasm_prefix_for_intrablock_module(self, instance):
-        if instance.model.module_class.is_primitive and instance.model.primitive_class.is_lut:
-            return ''
-        offset = getattr(instance.hierarchy[0], "cfg_bitoffset", None)
-        if offset is None:
-            return ''
-        else:
-            return 'b{}'.format(offset)
-
-    def fasm_features_for_mode(self, instance, mode):
-        cfg_bitoffset = self._instance_bitoffset(instance)
-        if cfg_bitoffset is None:
-            return tuple()
-        return tuple("b{}".format(cfg_bitoffset + i) for i in instance.model.modes[mode].cfg_mode_selection)
-
-    def fasm_prefix_for_tile(self, instance):
-        if (cfg_bitoffset := self._instance_bitoffset(instance)) is None:
-            return tuple()
-        retval = []
-        for subtile, blkinst in enumerate(instance.model._instances.subtiles):
-            if (inst_bitoffset := getattr(blkinst, 'cfg_bitoffset', None)) is None:
-                return tuple()
-            retval.append( 'b{}'.format(cfg_bitoffset + inst_bitoffset) )
-        return retval
-
-    def fasm_lut(self, instance):
-        cfg_bitoffset = self._instance_bitoffset(instance)
-        if cfg_bitoffset is None:
-            return ''
-        return 'b{}[{}:0]'.format(str(cfg_bitoffset), instance.model.cfg_bitcount - 1)
-
-    def fasm_params_for_primitive(self, instance):
-        cfg_bitoffset = self._instance_bitoffset(instance)
-        if cfg_bitoffset is None:
-            return {}
-        params = getattr(instance.model, "parameters", None)
-        if params is None:
-            return {}
-        fasm_params = {}
-        for key, value in iteritems(params):
-            settings = value.get("cfg")
-            if settings is None:
-                continue
-            fasm_params[key] = "b{}[{}:0]".format(settings.cfg_bitoffset, settings.cfg_bitcount - 1)
-        return fasm_params
-
-    def fasm_features_for_routing_switch(self, source, sink, instance = None):
-        return self._features_for_path(source, sink, instance)
+# # ----------------------------------------------------------------------------
+# # -- FASM Delegate -----------------------------------------------------------
+# # ----------------------------------------------------------------------------
+# class ScanchainFASMDelegate(FASMDelegate):
+#     """FASM delegate for scanchain configuration circuitry.
+#     
+#     Args:
+#         context (`Context`):
+#     """
+# 
+#     __slots__ = ['context']
+#     def __init__(self, context):
+#         self.context = context
+# 
+#     def _instance_bitoffset(self, instance):
+#         if instance is None:
+#             return 0
+#         cfg_bitoffset = 0
+#         if instance:
+#             for i in reversed(instance.hierarchy):
+#                 if (offset := getattr(i, "cfg_bitoffset", None)) is None:
+#                     return None
+#                 cfg_bitoffset += offset
+#         return cfg_bitoffset
+# 
+#     def _features_for_path(self, source, sink, instance = None):
+#         # 1. get the cfg bit offset for ``instance``
+#         cfg_bitoffset = self._instance_bitoffset(instance)
+#         if cfg_bitoffset is None:
+#             return tuple()
+#         # 2. get the cfg bits for the connection
+#         conn = NetUtils.get_connection(source, sink)
+#         if conn is None:
+#             return tuple()
+#         else:
+#             return tuple('b{}'.format(cfg_bitoffset + i) for i in conn.get("cfg_bits", tuple()))
+# 
+#     def fasm_mux_for_intrablock_switch(self, source, sink, instance = None):
+#         return self._features_for_path(source, sink, instance)
+# 
+#     def fasm_prefix_for_intrablock_module(self, instance):
+#         if instance.model.module_class.is_primitive and instance.model.primitive_class.is_lut:
+#             return ''
+#         offset = getattr(instance.hierarchy[0], "cfg_bitoffset", None)
+#         if offset is None:
+#             return ''
+#         else:
+#             return 'b{}'.format(offset)
+# 
+#     def fasm_features_for_mode(self, instance, mode):
+#         cfg_bitoffset = self._instance_bitoffset(instance)
+#         if cfg_bitoffset is None:
+#             return tuple()
+#         return tuple("b{}".format(cfg_bitoffset + i) for i in instance.model.modes[mode].cfg_mode_selection)
+# 
+#     def fasm_prefix_for_tile(self, instance):
+#         if (cfg_bitoffset := self._instance_bitoffset(instance)) is None:
+#             return tuple()
+#         retval = []
+#         for subtile, blkinst in enumerate(instance.model._instances.subtiles):
+#             if (inst_bitoffset := getattr(blkinst, 'cfg_bitoffset', None)) is None:
+#                 return tuple()
+#             retval.append( 'b{}'.format(cfg_bitoffset + inst_bitoffset) )
+#         return retval
+# 
+#     def fasm_lut(self, instance):
+#         cfg_bitoffset = self._instance_bitoffset(instance)
+#         if cfg_bitoffset is None:
+#             return ''
+#         return 'b{}[{}:0]'.format(str(cfg_bitoffset), instance.model.cfg_bitcount - 1)
+# 
+#     def fasm_params_for_primitive(self, instance):
+#         cfg_bitoffset = self._instance_bitoffset(instance)
+#         if cfg_bitoffset is None:
+#             return {}
+#         params = getattr(instance.model, "parameters", None)
+#         if params is None:
+#             return {}
+#         fasm_params = {}
+#         for key, value in iteritems(params):
+#             settings = value.get("cfg")
+#             if settings is None:
+#                 continue
+#             fasm_params[key] = "b{}[{}:0]".format(settings.cfg_bitoffset, settings.cfg_bitcount - 1)
+#         return fasm_params
+# 
+#     def fasm_features_for_routing_switch(self, source, sink, instance = None):
+#         return self._features_for_path(source, sink, instance)
 
 # ----------------------------------------------------------------------------
 # -- Scanchain Configuration Circuitry Main Entry ----------------------------
 # ----------------------------------------------------------------------------
-class Scanchain(object):
+class Scanchain(Object):
     """Scanchain configuration circuitry entry point."""
 
-    class PrimitiveParameter(namedtuple("PrimitiveParameter", "cfg_bitoffset cfg_bitcount")):
+    class PrimitiveParameter(namedtuple("PrimitiveParameter", "cfg_bitoffset cfg_bitcount", defaults = (1, ))):
         pass
 
     @classmethod
@@ -197,8 +202,6 @@ class Scanchain(object):
                         net_class = NetClass.cfg)
                 ports["cfg_o"] = ModuleUtils.create_port(module, 'cfg_o', cfg_width, PortDirection.output,
                         net_class = NetClass.cfg)
-                if module.is_cell:
-                    NetUtils.connect(cfg_clk, itervalues(ports), fully = True)
                 ports["cfg_clk"] = cfg_clk
                 return ports
 
@@ -210,18 +213,11 @@ class Scanchain(object):
         if not isinstance(dont_add_logical_primitive, set):
             dont_add_logical_primitive = set(iter(dont_add_logical_primitive)) | dont_add_primitive
 
-        # modify dual-mode I/O
-        if True:
-            iopad = context.primitives["iopad"]
-            iopad.cfg_bitcount = 1
-            iopad.modes["inpad"].cfg_mode_selection = tuple()
-            iopad.modes["outpad"].cfg_mode_selection = (0, )
-
         # register chain delimiter
         if "cfg_delim" not in dont_add_logical_primitive:
             delim = Module("cfg_delim",
-                    view = ModuleView.logical,
                     is_cell = True,
+                    view = ModuleView.logical,
                     module_class = ModuleClass.cfg,
                     verilog_template = "cfg_delim.tmpl.v")
             cls._get_or_create_cfg_ports(delim, cfg_width, we_o = True)
@@ -230,8 +226,8 @@ class Scanchain(object):
         # register enable register
         if "cfg_e_reg" not in dont_add_logical_primitive:
             ereg = Module("cfg_e_reg",
-                    view = ModuleView.logical,
                     is_cell = True,
+                    view = ModuleView.logical,
                     module_class = ModuleClass.cfg,
                     verilog_template = "cfg_e_reg.tmpl.v")
             clk = ModuleUtils.create_port(ereg, "cfg_clk", 1, PortDirection.input_,
@@ -240,55 +236,108 @@ class Scanchain(object):
                     net_class = NetClass.cfg)
             eo = ModuleUtils.create_port(ereg, "cfg_e", 1, PortDirection.output,
                     net_class = NetClass.cfg)
-            NetUtils.connect(clk, [ei, eo], fully = True)
             context._database[ModuleView.logical, "cfg_e_reg"] = ereg
 
-        # register luts
+        # register luts (logical view)
         for i in range(2, 9):
             name = "lut" + str(i)
             if name in dont_add_logical_primitive:
                 continue
             lut = Module(name,
+                    is_cell = True,
                     view = ModuleView.logical,
-                    allow_multisource = True,
                     module_class = ModuleClass.primitive,
                     primitive_class = PrimitiveClass.lut,
                     cfg_bitcount = 2 ** i,
                     verilog_template = "lut.tmpl.v")
+
             # user ports
-            in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_, net_class = NetClass.user)
-            out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output, net_class = NetClass.user)
-            NetUtils.connect(in_, out, fully = True)
+            in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_,
+                    net_class = NetClass.user, port_class = PrimitivePortClass.lut_in)
+            out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
+                    net_class = NetClass.user, port_class = PrimitivePortClass.lut_out)
+            NetUtils.create_timing_arc(TimingArcType.delay, in_, out, fully = True)
 
             # configuration data
             ModuleUtils.instantiate(lut, cls.get_cfg_data_cell(context, 2 ** i), "i_cfg_data")
-
-            # configuration ports
             cls._get_or_create_cfg_ports(lut, cfg_width)
+
+            # add to database
             context._database[ModuleView.logical, lut.key] = lut
 
             # modify built-in LUT
             context._database[ModuleView.user, lut.key].cfg_bitcount = 2 ** i
 
-        # register flipflops
+        # register flipflops (logical view)
         if "flipflop" not in dont_add_logical_primitive:
             flipflop = Module('flipflop',
-                    view = ModuleView.logical,
                     is_cell = True,
+                    view = ModuleView.logical,
                     module_class = ModuleClass.primitive,
                     primitive_class = PrimitiveClass.flipflop,
                     verilog_template = "flipflop.tmpl.v")
+
+            # user ports
             clk = ModuleUtils.create_port(flipflop, 'clk', 1, PortDirection.input_,
-                    is_clock = True, net_class = NetClass.user)
+                    is_clock = True, net_class = NetClass.user, port_class = PrimitivePortClass.clock)
             D = ModuleUtils.create_port(flipflop, 'D', 1, PortDirection.input_,
-                    net_class = NetClass.user)
+                    net_class = NetClass.user, port_class = PrimitivePortClass.D)
             Q = ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
-                    net_class = NetClass.user)
-            NetUtils.connect(clk, [D, Q], fully = True)
+                    net_class = NetClass.user, port_class = PrimitivePortClass.Q)
+            NetUtils.create_timing_arc((TimingArcType.setup, TimingArcType.hold), clk, D)
+            NetUtils.create_timing_arc(TimingArcType.clk2q, clk, Q)
 
             # configuration ports
             cls._get_or_create_cfg_ports(flipflop, cfg_width, enable_only = True)
+
+            # add to database
             context._database[ModuleView.logical, flipflop.key] = flipflop
+
+        # register I/O (logical view)
+        for name in ("inpad", "outpad", "iopad"):
+            if name in dont_add_logical_primitive:
+                continue
+            kwargs = {
+                    "is_cell": True,
+                    "view": ModuleView.logical,
+                    "module_class": ModuleClass.primitive,
+                    "verilog_template": name + ".tmpl.v",
+                    }
+            if name == "inpad":
+                kwargs["primitive_class"] = PrimitiveClass.inpad
+                kwargs["cfg_bitcount"] = 1
+            elif name == "outpad":
+                kwargs["primitive_class"] = PrimitiveClass.outpad
+                kwargs["cfg_bitcount"] = 1
+            else:
+                kwargs["primitive_class"] = PrimitiveClass.custom
+                kwargs["cfg_bitcount"] = 2
+            pad = Module(name, **kwargs)
+
+            if name in ("inpad", "iopad"):
+                ui = ModuleUtils.create_port(pad, "inpad", 1, PortDirection.output, net_class = NetClass.user)
+                li = ModuleUtils.create_port(pad, "_ipin", 1, PortDirection.input_,
+                        net_class = NetClass.io, key = IOType.ipin)
+                NetUtils.create_timing_arc(TimingArcType.delay, li, ui)
+            if name in ("outpad", "iopad"):
+                uo = ModuleUtils.create_port(pad, "outpad", 1, PortDirection.input_, net_class = NetClass.user)
+                lo = ModuleUtils.create_port(pad, "_opin", 1, PortDirection.output,
+                        net_class = NetClass.io, key = IOType.opin)
+                NetUtils.create_timing_arc(TimingArcType.delay, uo, lo)
+
+            if name == "iopad":
+                ModuleUtils.create_port(pad, "_oe", 1, PortDirection.output, net_class = NetClass.io, key = IOType.oe)
+                ModuleUtils.instantiate(pad, cls.get_cfg_data_cell(context, 2), "i_cfg_data")
+                userpad = context._database[ModuleView.user, pad.key]
+                userpad.cfg_bitcount = 2
+                userpad.modes["inpad"].cfg_mode_selection = (0, )
+                userpad.modes["outpad"].cfg_mode_selection = (1, )
+            else:
+                ModuleUtils.instantiate(pad, cls.get_cfg_data_cell(context, 1), "i_cfg_data")
+                userpad = context._database[ModuleView.user, pad.key]
+                userpad.cfg_bitcount = 1
+
+            context._database[ModuleView.logical, pad.key] = pad
 
         # register fracturable LUT6
         if not ({"lut5", "lut6", "fraclut6"} & dont_add_primitive):
@@ -318,17 +367,16 @@ class Scanchain(object):
 
             # logical view
             if "fraclut6" not in dont_add_logical_primitive:
-                fraclut6 = fraclut6.build_logical_counterpart(not_cell = True, allow_multisource = True,
-                        cfg_bitcount = 65, verilog_template = "fraclut6.tmpl.v")
+                fraclut6 = fraclut6.build_logical_counterpart(cfg_bitcount = 65, verilog_template = "fraclut6.tmpl.v")
 
-                # combinational paths
-                NetUtils.connect(fraclut6.ports["in"], fraclut6.ports["o6"], fully = True)
-                NetUtils.connect(fraclut6.ports["in"][:5], fraclut6.ports["o5"], fully = True)
+                # timing arcs
+                fraclut6.create_timing_arc(TimingArcType.delay, fraclut6.ports["in"], fraclut6.ports["o6"],
+                        fully = True)
+                fraclut6.create_timing_arc(TimingArcType.delay, fraclut6.ports["in"][:5], fraclut6.ports["o5"],
+                        fully = True)
 
                 # configuration data
-                ModuleUtils.instantiate(fraclut6.module, cls.get_cfg_data_cell(context, 65), "i_cfg_data")
-
-                # configuration ports
+                fraclut6.instantiate(cls.get_cfg_data_cell(context, 65), "i_cfg_data")
                 cls._get_or_create_cfg_ports(fraclut6._module, cfg_width)
 
             fraclut6.commit()
@@ -338,6 +386,7 @@ class Scanchain(object):
             # user view
             mdff = context.build_primitive("mdff",
                     techmap_template = "mdff.techmap.tmpl.v",
+                    verilog_template = "mdff.lib.tmpl.v",
                     premap_commands = (
                         "simplemap t:$dff t:$dffe t:$dffsr",
                         "dffsr2dff",
@@ -345,24 +394,33 @@ class Scanchain(object):
                         "opt -full",
                         ),
                     parameters = {
-                        "ENABLE_CE": {"init": "1'b0", "cfg": cls.PrimitiveParameter(0, 1)},
-                        "ENABLE_SR": {"init": "1'b0", "cfg": cls.PrimitiveParameter(1, 1)},
-                        "SR_SET": {"init": "1'b0", "cfg": cls.PrimitiveParameter(2, 1)},
+                        "ENABLE_CE": {"default": "1'b0", "cfg": cls.PrimitiveParameter(0)},
+                        "ENABLE_SR": {"default": "1'b0", "cfg": cls.PrimitiveParameter(1)},
+                        "SR_SET":   {"default": "1'b0", "cfg": cls.PrimitiveParameter(2)},
                         },
                     cfg_bitcount = 3)
             clk = mdff.create_clock("clk")
+
             p = []
-            p.append(mdff.create_input("D", 1, clock = "clk"))
-            p.append(mdff.create_output("Q", 1, clock = "clk"))
-            p.append(mdff.create_input("ce", 1, clock = "clk"))
-            p.append(mdff.create_input("sr", 1, clock = "clk"))
-            NetUtils.connect(clk, p, fully = True)
+            p.append(mdff.create_input("D", 1))
+            p.append(mdff.create_input("ce", 1))
+            p.append(mdff.create_input("sr", 1))
+            mdff.create_timing_arc((TimingArcType.setup, TimingArcType.hold), clk, p, fully = True)
+
+            q = mdff.create_output("Q", 1)
+            mdff.create_timing_arc(TimingArcType.clk2q, clk, q)
 
             # logical view
             if "mdff" not in dont_add_logical_primitive:
-                mdff = mdff.build_logical_counterpart(not_cell = True, allow_multisource = True,
-                        cfg_bitcount = 3, verilog_template = "mdff.tmpl.v")
-                ModuleUtils.instantiate(mdff.module, cls.get_cfg_data_cell(context, 3), "i_cfg_data")
+                mdff = mdff.build_logical_counterpart(cfg_bitcount = 3, verilog_template = "mdff.tmpl.v")
+
+                # timing arcs
+                mdff.create_timing_arc((TimingArcType.setup, TimingArcType.hold), mdff.ports["clk"],
+                        [mdff.ports["D"], mdff.ports["ce"], mdff.ports["sr"]], fully = True)
+                mdff.create_timing_arc(TimingArcType.clk2q, mdff.ports["clk"], mdff.ports["Q"])
+
+                # configuration data
+                mdff.instantiate(cls.get_cfg_data_cell(context, 3), "i_cfg_data")
                 cls._get_or_create_cfg_ports(mdff._module, cfg_width)
             
             mdff.commit()
@@ -372,25 +430,33 @@ class Scanchain(object):
             # user view
             adder = context.build_primitive("adder",
                     techmap_template = "adder.techmap.tmpl.v",
+                    verilog_template = "adder.lib.tmpl.v",
                     parameters = {
-                        "CIN_FABRIC": {"init": "1'b0", "cfg": cls.PrimitiveParameter(0, 1)},
+                        "CIN_FABRIC": {"default": "1'b0", "cfg": cls.PrimitiveParameter(0)},
                         },
                     cfg_bitcount = 1)
             i, o = [], []
             o.append(adder.create_output("cout", 1))
             o.append(adder.create_output("s", 1))
             o.append(adder.create_output("cout_fabric", 1))
-            i.append(adder.create_input("a", 1, vpr_combinational_sinks = ("cout", "s", "cout_fabric")))
-            i.append(adder.create_input("b", 1, vpr_combinational_sinks = ("cout", "s", "cout_fabric")))
-            i.append(adder.create_input("cin", 1, vpr_combinational_sinks = ("cout", "s", "cout_fabric")))
-            i.append(adder.create_input("cin_fabric", 1, vpr_combinational_sinks = ("cout", "s", "cout_fabric")))
-            NetUtils.connect(i, o, fully = True)
+            i.append(adder.create_input("a", 1))
+            i.append(adder.create_input("b", 1))
+            i.append(adder.create_input("cin", 1))
+            i.append(adder.create_input("cin_fabric", 1))
+            adder.create_timing_arc(TimingArcType.delay, i, o, fully = True)
 
             # logical view
             if "adder" not in dont_add_logical_primitive:
-                adder = adder.build_logical_counterpart(not_cell = True, allow_multisource = True,
-                        cfg_bitcount = 1, verilog_template = "adder.tmpl.v")
-                ModuleUtils.instantiate(adder.module, cls.get_cfg_data_cell(context, 1), "i_cfg_data")
+                adder = adder.build_logical_counterpart(cfg_bitcount = 1, verilog_template = "adder.tmpl.v")
+
+                # timing arcs
+                adder.create_timing_arc(TimingArcType.delay,
+                        [adder.ports["a"], adder.ports["b"], adder.ports["cin"], adder.ports["cin_fabric"]],
+                        [adder.ports["cout"], adder.ports["s"], adder.ports["cout_fabric"]],
+                        fully = True)
+
+                # configuration data
+                adder.instantiate(cls.get_cfg_data_cell(context, 1), "i_cfg_data")
                 cls._get_or_create_cfg_ports(adder._module, cfg_width)
 
             adder.commit()
@@ -450,16 +516,24 @@ class Scanchain(object):
 
             # logical view
             if "fle6" not in dont_add_logical_primitive:
-                fle6 = fle6.build_logical_counterpart(not_cell = True, allow_multisource = True,
-                        cfg_bitcount = 69, verilog_template = "fle6.tmpl.v")
-                ModuleUtils.instantiate(fle6.module, cls.get_cfg_data_cell(context, 69), "i_cfg_data")
+                fle6 = fle6.build_logical_counterpart(cfg_bitcount = 69, verilog_template = "fle6.tmpl.v")
 
-                # combinational paths
-                NetUtils.connect([fle6.ports["in"], fle6.ports["cin"]], [fle6.ports["out"], fle6.ports["cout"]],
+                # timing arcs
+                fle6.create_timing_arc(TimingArcType.delay,
+                        [fle6.ports["in"], fle6.ports["cin"]],
+                        [fle6.ports["out"], fle6.ports["cout"]],
                         fully = True)
-                NetUtils.connect(fle6.ports["clk"], fle6.ports["out"], fully = True)
+                fle6.create_timing_arc((TimingArcType.setup, TimingArcType.hold),
+                        fle6.ports["clk"],
+                        [fle6.ports["in"], fle6.ports["cin"]],
+                        fully = True)
+                fle6.create_timing_arc(TimingArcType.clk2q,
+                        fle6.ports["clk"],
+                        [fle6.ports["out"], fle6.ports["cout"]],
+                        fully = True)
 
                 # configuration ports
+                fle6.instantiate(cls.get_cfg_data_cell(context, 69), "i_cfg_data")
                 cls._get_or_create_cfg_ports(fle6._module, cfg_width)
 
             fle6.commit()
@@ -478,8 +552,8 @@ class Scanchain(object):
         key = ("cfg_data", data_width)
         if (module := context.database.get( (ModuleView.logical, key) )) is None:
             module = Module("cfg_data_d{}".format(data_width),
-                    view = ModuleView.logical,
                     is_cell = True,
+                    view = ModuleView.logical,
                     module_class = ModuleClass.cfg,
                     verilog_template = "cfg_data.tmpl.v",
                     key = key,
@@ -487,7 +561,6 @@ class Scanchain(object):
             cfg_clk = cls._get_or_create_cfg_ports(module, context.summary.scanchain["cfg_width"])["cfg_clk"]
             cfg_d = ModuleUtils.create_port(module, "cfg_d", data_width, PortDirection.output,
                     net_class = NetClass.cfg)
-            NetUtils.connect(cfg_clk, cfg_d, fully = True)
             context._database[ModuleView.logical, key] = module
         return module
 
@@ -510,7 +583,7 @@ class Scanchain(object):
         context = Context("scanchain")
         context.summary.scanchain = {"cfg_width": cfg_width}
         context._switch_database = ScanchainSwitchDatabase(context, cfg_width, cls)
-        context._fasm_delegate = ScanchainFASMDelegate(context)
+        # context._fasm_delegate = ScanchainFASMDelegate(context)
         cls._register_primitives(context, cfg_width, dont_add_primitive, dont_add_logical_primitive)
         return context
 
@@ -738,7 +811,7 @@ class Scanchain(object):
                                 this_cfg_bits += (switch.cfg_bitoffset + digit, )
                         stack.append( (input_, this_cfg_bits) )
 
-    class InjectConfigCircuitry(Object, AbstractPass):
+    class InjectConfigCircuitry(AbstractPass):
         """Automatically inject configuration circuitry.
         
         Keyword Args:

@@ -5,12 +5,12 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from ...util import Enum, Abstract, uno
+from ...util import Enum, Object, uno
 from ...exception import PRGAIndexError, PRGATypeError
 
 from abc import abstractproperty, abstractmethod
 
-__all__ = ["NetType", "PortDirection", "Const"]
+__all__ = ["NetType", "PortDirection", "TimingArcType", "Const"]
 
 # ----------------------------------------------------------------------------
 # -- Net Type ----------------------------------------------------------------
@@ -52,9 +52,20 @@ class PortDirection(Enum):
         return self.case(PortDirection.output, PortDirection.input_)
 
 # ----------------------------------------------------------------------------
+# -- Timing Arc Type ---------------------------------------------------------
+# ----------------------------------------------------------------------------
+class TimingArcType(Enum):
+    """Timing arc types."""
+
+    delay = 0   #: combinational propagation delay
+    setup = 1   #: clock -> sequential startpoint
+    clk2q = 2   #: clock -> sequential endpoint
+    hold = 3    #: clock -> sequential endpoint
+
+# ----------------------------------------------------------------------------
 # -- Abstract Net ------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class AbstractNet(Abstract, Sequence):
+class AbstractNet(Object, Sequence):
     """Abstract class for all nets and net references."""
 
     @abstractproperty
@@ -240,10 +251,7 @@ class Slice(AbstractNet):
 
     def __getitem__(self, index):
         index = self._auto_index(index)
-        if index.stop <= index.start:
-            return Const()
-        else:
-            return type(self)(self.bus, slice(self.index.start + index.start, self.index.start + index.stop))
+        return self.bus[self.index.start + index.start:self.index.start + index.stop]
 
 # ----------------------------------------------------------------------------
 # -- A Concatenation of Slices and/or buses ----------------------------------

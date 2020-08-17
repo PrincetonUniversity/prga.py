@@ -12,7 +12,7 @@ import enum
 import logging
 import sys
 
-__all__ = ["ReadonlyMappingProxy", "ReadonlySequenceProxy", "uno", "Abstract", "Enum", 'enable_stdout_logging']
+__all__ = ["ReadonlyMappingProxy", "ReadonlySequenceProxy", "uno", "Object", "Enum", 'enable_stdout_logging']
 
 class ReadonlyMappingProxy(Mapping):
     """A read-only proxy of a :obj:`Mapping` implementation object.
@@ -123,8 +123,8 @@ class _InheritDocstringsMeta(ABCMeta):
                         pass
         return super(_InheritDocstringsMeta, cls).__new__(cls, clsname, bases, attributes)
 
-class Abstract(with_metaclass(_InheritDocstringsMeta, object)):
-    """Base class for all PRGA abstracts."""
+class Object(with_metaclass(_InheritDocstringsMeta, object)):
+    """Base class for all PRGA objects."""
     pass
 
 class Enum(enum.IntEnum):

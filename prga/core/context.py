@@ -5,16 +5,15 @@ from prga.compatible import *
 
 from .common import (Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView, OrientationTuple,
         DirectTunnel)
-from .builder.primitive import LogicalPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder
-from .builder.block import ClusterBuilder, IOBlockBuilder, LogicBlockBuilder
-from .builder.box.sbox import SwitchBoxBuilder
-from .builder.array.tile import TileBuilder
-from .builder.array.array import ArrayBuilder
-from ..netlist.net.common import PortDirection
-from ..netlist.module.module import Module
-from ..netlist.module.util import ModuleUtils
-from ..netlist.net.util import NetUtils
-from ..renderer.renderer import FileRenderer
+from .builder import (LogicalPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder,
+        ClusterBuilder, IOBlockBuilder, LogicBlockBuilder)
+# from .builder.primitive import LogicalPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder
+# from .builder.block import ClusterBuilder, IOBlockBuilder, LogicBlockBuilder
+# from .builder.box.sbox import SwitchBoxBuilder
+# from .builder.array.tile import TileBuilder
+# from .builder.array.array import ArrayBuilder
+from ..netlist import TimingArcType, PortDirection, Module, ModuleUtils, NetUtils
+from ..renderer import FileRenderer
 from ..util import Object, ReadonlyMappingProxy, uno
 from ..exception import PRGAAPIError, PRGAInternalError
 
@@ -121,38 +120,39 @@ class Context(Object):
         # 1. register built-in modules: LUTs
         for i in range(2, 9):
             lut = Module('lut' + str(i),
-                    view = ModuleView.user,
                     is_cell = True,
+                    view = ModuleView.user,
                     module_class = ModuleClass.primitive,
                     primitive_class = PrimitiveClass.lut)
             in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_,
-                    port_class = PrimitivePortClass.lut_in, vpr_combinational_sinks = ("out", ))
+                    port_class = PrimitivePortClass.lut_in)
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
                     port_class = PrimitivePortClass.lut_out)
-            NetUtils.connect(in_, out, fully = True)
+            NetUtils.create_timing_arc(TimingArcType.delay, in_, out, fully = True)
             database[ModuleView.user, lut.key] = lut
 
         # 2. register built-in modules: D-flipflop
         if True:
             flipflop = Module('flipflop',
-                    view = ModuleView.user,
                     is_cell = True,
+                    view = ModuleView.user,
                     module_class = ModuleClass.primitive,
                     primitive_class = PrimitiveClass.flipflop)
             clk = ModuleUtils.create_port(flipflop, 'clk', 1, PortDirection.input_,
                     is_clock = True, port_class = PrimitivePortClass.clock)
             D = ModuleUtils.create_port(flipflop, 'D', 1, PortDirection.input_,
-                    port_class = PrimitivePortClass.D, clock = "clk")
+                    port_class = PrimitivePortClass.D)
             Q = ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
-                    port_class = PrimitivePortClass.Q, clock = "clk")
-            NetUtils.connect(clk, [D, Q], fully = True)
+                    port_class = PrimitivePortClass.Q)
+            NetUtils.create_timing_arc((TimingArcType.setup, TimingArcType.hold), clk, D)
+            NetUtils.create_timing_arc(TimingArcType.clk2q, clk, Q)
             database[ModuleView.user, flipflop.key] = flipflop
 
         # 3. register built-in modules: I/O
         for class_ in (PrimitiveClass.inpad, PrimitiveClass.outpad):
             pad = Module(class_.name,
-                    view = ModuleView.user,
                     is_cell = True,
+                    view = ModuleView.user,
                     module_class = ModuleClass.primitive,
                     primitive_class = class_)
             if class_.is_inpad:
@@ -244,8 +244,7 @@ class Context(Object):
             name (:obj:`str`): Name of the logical primitive
 
         Keyword Args:
-            not_cell (:obj:`bool`): Set to ``True`` if the logical primitive is not a leaf module, i.e. it may contain
-                sub-modules
+            not_cell (:obj:`bool`): If set, the logical primitive is not a cell module
             **kwargs: Additional attributes to be associated with the primitive
 
         Returns:

@@ -11,7 +11,7 @@ from ..net.common import AbstractNet, NetType
 from ..net.util import NetUtils
 from ..net.bus import Port, Pin, HierarchicalPin
 from ...exception import PRGAInternalError
-from ...util import uno
+from ...util import uno, Object
 
 from itertools import chain, product
 from networkx import NetworkXError, DiGraph
@@ -24,7 +24,7 @@ __all__ = ['ModuleUtils']
 # ----------------------------------------------------------------------------
 # -- Module Utilities --------------------------------------------------------
 # ----------------------------------------------------------------------------
-class ModuleUtils(object):
+class ModuleUtils(Object):
     """A wrapper class for utility functions for modules and instances."""
 
     @classmethod
@@ -36,17 +36,14 @@ class ModuleUtils(object):
                 yield net
         else:
             module, hierarchy = obj.model, obj
-            for net in itervalues(obj.pins):
-                yield net
 
         for i in itervalues(module.instances):
-            if i.model.is_cell:
-                continue
             i = i._extend_hierarchy(above = hierarchy)
-            if blackbox_instance(i):
-                continue
-            for net in cls._iter_nets(i, blackbox_instance):
+            for net in itervalues(i.pins):
                 yield net
+            if not (i.model.is_cell or blackbox_instance(i)):
+                for net in cls._iter_nets(i, blackbox_instance):
+                    yield net
 
     @classmethod
     def _analyze_sink(cls, net):
@@ -107,7 +104,7 @@ class ModuleUtils(object):
         raise NotImplementedError
 
     @classmethod
-    def create_port(cls, module, name, width, direction, is_clock = False, *, key = None, **kwargs):
+    def create_port(cls, module, name, width, direction, *, is_clock = False, key = None, **kwargs):
         """Create a port in ``module``.
 
         Args:
@@ -115,9 +112,9 @@ class ModuleUtils(object):
             name (:obj:`str`): Name of the port
             width (:obj:`int`): Number of bits in the port
             direction (`PortDirection`): Direction of the port
-            is_clock (:obj:`bool`): Mark this port as a clock
 
         Keyword Args:
+            is_clock (:obj:`bool`): Mark this port as a clock
             key (:obj:`Hashable`): A hashable key used to index the port in the ``ports`` mapping the parent module.
                 If not set \(default argument: ``None``\), ``name`` is used by default
             **kwargs: Custom key-value arguments. These attributes are added to ``__dict__`` of the created port
@@ -128,7 +125,7 @@ class ModuleUtils(object):
         """
         if is_clock and width != 1:
             raise PRGAInternalError("Clock port must be 1-bit wide")
-        return module._add_child(Port(module, name, width, direction, is_clock, key = key, **kwargs))
+        return module._add_child(Port(module, name, width, direction, is_clock = is_clock, key = key, **kwargs))
 
     @classmethod
     def instantiate(cls, module, model, name, *, key = None, **kwargs):

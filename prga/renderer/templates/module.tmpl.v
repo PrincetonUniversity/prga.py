@@ -6,30 +6,42 @@ module {{ module.name }} (
     {{ port.direction.case('input', 'output') }} wire [{{ port|length - 1}}:0] {{ port.name }}
     {%- endfor %}
     );
-    {% for instance in itervalues(module.instances) %}
-        {%- for pin in itervalues(instance.pins) %}
-            {%- if pin.model.direction.is_output %}
+    {%- for param, attributes in iteritems(module.parameters|default({})) %}
+    parameter {{ param }} = {{ attributes.default }};
+    {%- endfor %}
+    {% if module.is_cell %}
+    // WARNING:
+    //      {{ module }} is a cell module, therefore its contents are not generated
+    {%- elif module.allow_multisource %}
+    // WARNING:
+    //      {{ module }} allows multi-source connections, therefore its contents
+    //      are not generated
+    {%- else %}
+        {% for instance in itervalues(module.instances) %}
+            {%- for pin in itervalues(instance.pins) %}
+                {%- if pin.model.direction.is_output %}
     wire [{{ pin|length - 1 }}:0] _{{ instance.name }}__{{ pin.model.name }};
-            {%- endif %}
+                {%- endif %}
+            {%- endfor %}
         {%- endfor %}
-    {%- endfor %}
-    {% for instance in itervalues(module.instances) %}
+        {% for instance in itervalues(module.instances) %}
     {{ instance.model.name }} {{ instance.name }} (
-        {%- set pincomma = joiner(",") %}
-        {%- for pin in itervalues(instance.pins) %}{{ pincomma() }}
-            {%- if pin.model.direction.is_input %}
-        .{{ pin.model.name }}({{ source2verilog(pin) }})
-            {%- else %}
+            {%- set pincomma = joiner(",") %}
+            {%- for pin in itervalues(instance.pins) %}{{ pincomma() }}
+                {%- if pin.model.direction.is_input %}
+        .{{ pin.model.name }}({{ source2verilog(pin)|indent(12) }})
+                {%- else %}
         .{{ pin.model.name }}(_{{ instance.name }}__{{ pin.model.name }})
+                {%- endif %}
+            {%- endfor %}
+        );
+        {%- endfor %}
+        {% for port in itervalues(module.ports) %}
+            {%- if port.direction.is_output %}
+    assign {{ port.name }} = {{ source2verilog(port)|default("{}'bx".format(port|length), true)|indent(8) }};
             {%- endif %}
         {%- endfor %}
-        );
-    {%- endfor %}
-    {% for port in itervalues(module.ports) %}
-        {%- if port.direction.is_output %}
-    assign {{ port.name }} = {{ source2verilog(port)|default("{}'bx".format(port|length), true) }};
-        {%- endif %}
-    {%- endfor %}
+    {%- endif %}
 
 endmodule
 

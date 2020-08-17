@@ -4,9 +4,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from ..core.common import ModuleView, ModuleClass
-from ..netlist.net.util import NetUtils
-from ..netlist.module.module import Module
-from ..netlist.module.util import ModuleUtils
+from ..netlist import Module, NetUtils, ModuleUtils
 from ..util import uno
 from ..exception import PRGAInternalError
 
@@ -42,7 +40,7 @@ class FileRenderer(object):
             else:
                 return "{}'h{:x}".format(len(net), net.value)
         elif net.net_type.is_concat:
-            return '{' + ', '.join(cls._net2verilog(i) for i in reversed(net.items)) + '}'
+            return '{' + ',\n'.join(cls._net2verilog(i) for i in reversed(net.items)) + '}'
         elif net.net_type.is_slice:
             return '{}[{}:{}]'.format(cls._net2verilog(net.bus), net.index.stop - 1, net.index.start)
         elif net.net_type.is_bit:
@@ -80,11 +78,13 @@ class FileRenderer(object):
         for d in ("prga_ram_1r1w", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer",
                 "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo"):
             context._database[ModuleView.logical, d] = Module(d,
+                    is_cell = True,
                     view = ModuleView.logical,
                     module_class = ModuleClass.aux,
                     verilog_template = "stdlib/{}.v".format(d))
         for d in ("prga_ram_1r1w_dc", "prga_async_fifo", "prga_async_tokenfifo", "prga_clkdiv"):
             context._database[ModuleView.logical, d] = Module(d,
+                    is_cell = True,
                     view = ModuleView.logical,
                     module_class = ModuleClass.aux,
                     verilog_template = "cdclib/{}.v".format(d))

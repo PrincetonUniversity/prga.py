@@ -6,7 +6,7 @@ module {{ module.name }} (
     {%- endfor %}
     );
     {%- for param, attributes in iteritems(module.parameters|default({})) %}
-    parameter {{ param }} = {{ attributes.init }};
+    parameter {{ param }} = {{ attributes.default }};
     {%- endfor %}
 endmodule
 

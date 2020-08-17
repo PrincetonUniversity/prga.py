@@ -6,7 +6,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from ..net.bus import Pin, HierarchicalPin
-from ...util import uno, Abstract
+from ...util import uno, Object
 from ...exception import PRGAInternalError, PRGATypeError, PRGAIndexError
 
 from abc import abstractproperty, abstractmethod
@@ -54,7 +54,7 @@ class _InstancePinsProxy(Mapping):
 # ----------------------------------------------------------------------------
 # -- Abstract Instance -------------------------------------------------------
 # ----------------------------------------------------------------------------
-class AbstractInstance(Abstract):
+class AbstractInstance(Object):
     """Abstract base class for instances."""
 
     @abstractproperty

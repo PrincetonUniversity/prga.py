@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from .base import AbstractPass
 from ..core.common import ModuleView
-from ..util import Object, uno
+from ..util import uno
 from ..exception import PRGAInternalError, PRGAAPIError
 
 import os
@@ -15,7 +15,7 @@ __all__ = ['VerilogCollection']
 # ----------------------------------------------------------------------------
 # -- Verilog Collection ------------------------------------------------------
 # ----------------------------------------------------------------------------
-class VerilogCollection(Object, AbstractPass):
+class VerilogCollection(AbstractPass):
     """Collecting Verilog rendering tasks.
     
     Args:

@@ -5,12 +5,8 @@ from prga.compatible import *
 
 from .base import BaseBuilder
 from ..common import ModuleClass, NetClass, Position, Orientation, ModuleView
-from ...netlist.net.common import PortDirection
-from ...netlist.net.util import NetUtils
-from ...netlist.module.common import ConnGraph
-from ...netlist.module.module import Module
-from ...netlist.module.util import ModuleUtils
-from ...util import Object, uno
+from ...netlist import PortDirection, Module, NetUtils, ModuleUtils
+from ...util import uno
 from ...exception import PRGAAPIError, PRGAInternalError
 
 __all__ = ['ClusterBuilder', 'LogicBlockBuilder', 'IOBlockBuilder']
@@ -44,11 +40,6 @@ class _BaseClusterLikeBuilder(BaseBuilder):
     def clock(self):
         """`Port`: Clock of the cluster."""
         return self._module.clock
-
-    @property
-    def instances(self):
-        """:obj:`Mapping` [:obj:`Hashable`, `Instance` ]: Proxy to ``module.instances``."""
-        return self._module.instances
 
     def connect(self, sources, sinks, *, fully = False, vpr_pack_patterns = None, **kwargs):
         """Connect ``sources`` to ``sinks``.
@@ -168,7 +159,6 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
         """
         return Module(name,
                 view = ModuleView.user,
-                conn_graph = ConnGraph(edge_attr_slots = ["vpr_pack_patterns"]),
                 allow_multisource = True,
                 module_class = ModuleClass.cluster,
                 clock = None,
@@ -254,9 +244,8 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
             `Module`: The created block
         """
         return Module(name,
-                view = ModuleView.user,
-                conn_graph = ConnGraph(edge_attr_slots = ["vpr_pack_patterns"]),
                 allow_multisource = True,
+                view = ModuleView.user,
                 module_class = ModuleClass.io_block,
                 clock = None,
                 width = 1,
@@ -392,9 +381,8 @@ class LogicBlockBuilder(_BaseClusterLikeBuilder):
             `Module`: The created block
         """
         return Module(name,
-                view = ModuleView.user,
-                conn_graph = ConnGraph(edge_attr_slots = ["vpr_pack_patterns"]),
                 allow_multisource = True,
+                view = ModuleView.user,
                 module_class = ModuleClass.logic_block,
                 clock = None,
                 width = width,

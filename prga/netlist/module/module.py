@@ -6,7 +6,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from ..net.bus import Port
-from ...util import ReadonlyMappingProxy, uno, Enum
+from ...util import ReadonlyMappingProxy, uno, Enum, Object
 from ...exception import PRGAInternalError
 
 from enum import IntFlag
@@ -19,7 +19,7 @@ __all__ = ['Module']
 # ----------------------------------------------------------------------------
 # -- Module ------------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Module(object):
+class Module(Object):
     """A netlist module.
 
     Args:
@@ -31,11 +31,11 @@ class Module(object):
         is_cell (:obj:`bool`): If set to ``True``, this module is created as a cell module. A cell module does not
             contain information about connections. It contains information about timing arcs instead. A cell module
             may still contain sub-instances, but they are only used for tracking the hierarchy. When set, this
-            argument overrides ``allow_multisource`` to ``True`` and ``coalesce_connections`` to ``False``.
+            argument overrides ``allow_multisource`` to ``True`` and ``coalesce_connections`` to ``False``
         allow_multisource (:obj:`bool`): If set to ``True``, a sink net may be driven by multiple source nets.
             Incompatible with ``coalesce_connections``
         coalesce_connections (:obj:`bool`): If set to ``True``, bit-wise connections are not allowed.
-            Incompatible with ``allow_multisource``.
+            Incompatible with ``allow_multisource``
         **kwargs: Custom key-value arguments. These attributes are added to ``__dict__`` of this object
             and accessible as dynamic attributes
     """
@@ -50,8 +50,7 @@ class Module(object):
 
     # == internal API ========================================================
     def __init__(self, name, *,
-            key = None, is_cell = False, allow_multisource = False, coalesce_connections = False,
-            **kwargs):
+            key = None, is_cell = False, allow_multisource = False, coalesce_connections = False, **kwargs):
 
         if not is_cell and allow_multisource and coalesce_connections:
             raise PRGAInternalError("`allow_multisource` and `coalesce_connections` are incompatible")
@@ -127,14 +126,6 @@ class Module(object):
     def instances(self):
         """:obj:`Mapping` [:obj:`Hashable`, `Instance` ]: A mapping from keys to sub-instances in this module."""
         return ReadonlyMappingProxy(self._instances)
-
-    @property
-    def parameters(self):
-        return ReadonlyMappingProxy(self._parameters)
-
-    @property
-    def prototype(self):
-        return None
 
     @property
     def is_cell(self):

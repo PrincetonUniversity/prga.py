@@ -92,9 +92,9 @@ class Port(AbstractNonReferenceNet):
         name (:obj:`str`): Name of this port
         width (:obj:`int`): Width of this port
         direction (`PortDirection`): Direction of the port
-        is_clock (:obj:`bool`): Set if this port is a clock
 
     Keyword Args:
+        is_clock (:obj:`bool`): Set if this port is a clock
         key (:obj:`Hashable`): A hashable key used to index this port in the ports mapping in the parent module.
             If not set \(default argument: ``None``\), ``name`` is used by default
         **kwargs: Custom key-value arguments. These attributes are added to ``__dict__`` of this object
@@ -103,7 +103,7 @@ class Port(AbstractNonReferenceNet):
 
     __slots__ = ['_parent', '_name', '_width', '_direction', '_is_clock', '_key', '_connections', '_bits', '__dict__']
 
-    def __init__(self, parent, name, width, direction, is_clock = False, *, key = None, **kwargs):
+    def __init__(self, parent, name, width, direction, *, is_clock = False, key = None, **kwargs):
         self._parent = parent
         self._name = name
         self._width = width
