@@ -496,7 +496,11 @@ class NetUtils(Object):
         """
         # 0. shortcut
         if skip_validations:
-            return sink._connections[cls._reference(source)]
+            if ((conn := sink._connections.get( cls._reference(source) )) is not None
+                    or return_none_if_unconnected):
+                return conn
+            else:
+                raise PRGAInternalError("{} and {} are not connected".format(source, sink))
         # 1. get the parent module
         module = None
         if sink.net_type.is_reference:
@@ -510,10 +514,11 @@ class NetUtils(Object):
                     "{} is a cell module. Get timing arcs with `NetUtils.get_timing_arc` instead"
                     .format(module))
         # 2. validate sink
-        if module.coalesce_connections and sink.net_type.is_bit:
-            raise PRGAInternalError("{} does not support bitwise connections ({} is not a bus)"
-                    .format(module, sink))
-        elif not sink.net_type.is_bit and len(sink) != 1:
+        if module.coalesce_connections:
+            if sink.net_type not in (NetType.port, NetType.pin):
+                raise PRGAInternalError("{} does not support bitwise connections ({} is not a bus)"
+                        .format(module, sink))
+        elif len(sink) != 1:
             raise PRGAInternalError("{} is not 1-bit wide".format(sink))
         # 3. validate source
         if source.net_type.is_reference:
@@ -524,14 +529,15 @@ class NetUtils(Object):
             if source.parent is not module:
                 raise PRGAInternalError("Source = {} and Sink = {} are not in the same module"
                         .format(source, sink))
-            elif module.coalesce_connections and source.net_type.is_bit:
-                raise PRGAInternalError("{} does not support bitwise connections ({} is not a bus)"
-                        .format(module, source))
-            elif not source.net_type.is_bit and len(source) != 1:
+            elif module.coalesce_connections:
+                if source.net_type not in (NetType.port, NetType.pin):
+                    raise PRGAInternalError("{} does not support bitwise connections ({} is not a bus)"
+                            .format(module, source))
+            elif len(source) != 1:
                 raise PRGAInternalError("{} is not 1-bit wide".format(source))
         # 4. get connection
-        conn = sink._connections.get( cls._reference(source) )
-        if conn is not None or return_none_if_unconnected:
+        if ((conn := sink._connections.get( cls._reference(source) )) is not None
+                or return_none_if_unconnected):
             return conn
         else:
             raise PRGAInternalError("{} and {} are not connected".format(source, sink))
@@ -584,69 +590,98 @@ class NetUtils(Object):
                     setattr(arc, k, v)
 
     @classmethod
-    def get_timing_arc(cls, sources = None, sinks = None, types = TimingArcType, *, skip_validations = False):
-        """Get the timing arc(s) of the specified ``types`` from ``sources`` to ``sinks``.
+    def get_timing_arc(cls, source = None, sink = None, types = TimingArcType):
+        """Get the timing arc(s) of the specified ``types`` from ``source`` to ``sink``.
 
         Args:
-            sources: 
-            sinks:
-            types (:obj:`Container` [`TimingArcType` ]):
+            source (`AbstractNet`): Single-bit net. If not specified, all timing arcs to ``sink`` are returned
+            sink (`AbstractNet`): Single-bit net. If not specified, all timing arcs from ``source`` are returned
+            types (:obj:`Container` [`TimingArcType` ]): Only return the specified types of timing arcs
 
-        Keyword Args:
-            skip_validations (:obj:`bool`):
+        Returns:
+            :obj:`Sequence` [`TimingArc`]: 
         """
-        raise NotImplementedError
 
-    # @classmethod
-    # def get_timing_arc(cls, source, sink, *, skip_validations = False):
-    #     """Get the timing arc from ``source`` to ``sink``.
-    #     
-    #     Args:
-    #         source (`AbstractNonReferenceNet`):
-    #         sink (`AbstractNonReferenceNet`):
+        # quick check
+        if source is None and sink is None:
+            raise PRGAInternalError("At least one of 'source' and 'sink' must be specified")
+        elif len(types) == 0:
+            return tuple()
 
-    #     Keyword Args:
-    #         skip_validations (:obj:`bool`): If set, this method skips all validations. This option saves runtime but
-    #             should be used with care
+        # get parent module
+        refnet = uno(source, sink)
+        if not len(refnet) == 1:    # this also rules out refnet.net_type.is_concat
+            raise PRGAInternalError("{} is not a single-bit net".format(refnet))
+        elif refnet.net_type.is_const:
+            raise PRGAInternalError("{} is a constant net".format(refnet))
+        if refnet.net_type in (NetType.bit, NetType.slice_):
+            refnet = refnet.bus
+        if refnet.net_type.is_hierarchical:
+            raise PRGAInternalError("{} is a hierarchical pin".format(refnet))
+        module = refnet.parent
 
-    #     Returns:
-    #         `TimingArc`:
-    #     """
-    #     # 0. shortcut
-    #     if skip_validations:
-    #         return sink._connections.get( cls._reference(source) )
-    #     # 1. get the parent module
-    #     module = None
-    #     if sink.net_type.is_reference:
-    #         raise PRGAInternalError("{} is a reference".format(sink))
-    #     elif sink.net_type.is_const:
-    #         raise PRGAInternalError("{} is a const net".format(sink))
-    #     elif sink.net_type.is_pin:
-    #         raise PRGAInternalError("{} is a pin".format(sink))
-    #     else:
-    #         module = sink.parent
-    #     if not module.is_cell:
-    #         raise PRGAInternalError(
-    #                 "{} is a not cell module. Get connections with `NetUtils.get_connection` instead"
-    #                 .format(module))
-    #     # 2. validate sink
-    #     if len(sink) > 1:
-    #         raise PRGAInternalError("{} is not 1-bit wide".format(sink))
-    #     elif sink.net_type.is_port:
-    #         sink = sink[0]
-    #     # 3. validate source
-    #     if source.net_type.is_reference:
-    #         raise PRGAInternalError("{} is a reference".format(source))
-    #     elif source.net_type.is_const:
-    #         raise PRGAInternalError("{} is a const net".format(source))
-    #     elif source.net_type.is_pin:
-    #         raise PRGAInternalError("{} is a pin".format(source))
-    #     elif source.parent is not module:
-    #         raise PRGAInternalError("Source = {} and Sink = {} are not in the same module"
-    #                 .format(source, sink))
-    #     elif len(source) > 1:
-    #         raise PRGAInternalError("{} is not 1-bit wide".format(source))
-    #     elif source.net_type.is_port:
-    #         source = source[0]
-    #     # 4. get timing arc
-    #     return sink._connections.get( cls._reference(source) )
+        # validate ``source``
+        if source is not None:
+            # we already know it's 1-bit, non-const and non-hierarchical
+            if not refnet.is_source:
+                raise PRGAInternalError("{} is not a source".format(source))
+
+        # validate ``sink``
+        if sink is not None:
+            if sink.net_type in (NetType.bit, NetType.slice_):
+                refnet = sink.bus
+            else:
+                refnet = sink
+            if source is not None:
+                # we didn't use ``sink`` when choosing parent module
+                if not len(sink) == 1:  # this also rules out sink.net_type.is_concat
+                    raise PRGAInternalError("{} is not a single-bit net".format(sink))
+                elif sink.net_type.is_const:
+                    raise PRGAInternalError("{} is a constant net".format(sink))
+                elif refnet.net_type.is_hierarchical:
+                    raise PRGAInternalError("{} is a hierarchical pin".format(sink))
+                elif refnet.parent is not module:
+                    raise PRGAInternalError("Source = {} and Sink = {} are not in the same module"
+                            .format(source, sink))
+            if not refnet.is_sink:
+                raise PRGAInternalError("{} is not a sink".format(sink))
+
+        # get timing arcs in a cell module
+        if module.is_cell:
+            if source is not None and sink is not None:
+                srcref = NetUtils._reference(source)
+                return tuple(arc for (type_, src), arc in iteritems(sink._connections)
+                        if type_ in types and src == srcref)
+            else:
+                return tuple(arc for (type_, _), arc in iteritems(sink._connections)
+                        if type_ in types)
+        # get connections then get the timing arcs otherwise
+        elif TimingArcType.delay not in types:
+            return tuple()
+        elif module.coalesce_connections:
+            srcbus, srcidx = source, None
+            if source is not None and source.net_type.is_slice:
+                srcbus, srcidx = source.bus, source.index
+            sinkbus, sinkidx = sink, None
+            if sink is not None and sink.net_type.is_slice:
+                sinkbus, sinkidx = sink.bus, sink.index
+
+            if srcidx != sinkidx:
+                return tuple()
+
+            if srcbus is not None and sinkbus is not None:
+                if (conn := cls.get_connection(srcbus, sinkbus,
+                    return_none_if_unconnected = True, skip_validations = True)) is None:
+                    return tuple()
+                else:
+                    return conn.arc,
+            else:
+                net = uno(srcbus, sinkbus)
+                return tuple(conn.arc for conn in itervalues(net._connections))
+        elif source is not None and sink is not None:
+            srcref = NetUtils._reference(source)
+            return tuple(conn.arc for src, conn in iteritems(sink._connections)
+                    if src == srcref)
+        else:
+            net = uno(source, sink)
+            return tuple(conn.arc for _, conn in iteritems(net._connections))

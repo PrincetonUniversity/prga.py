@@ -337,6 +337,9 @@ class Scanchain(Object):
                 userpad = context._database[ModuleView.user, pad.key]
                 userpad.cfg_bitcount = 1
 
+            # configuration ports
+            cls._get_or_create_cfg_ports(pad, cfg_width)
+
             context._database[ModuleView.logical, pad.key] = pad
 
         # register fracturable LUT6
@@ -626,14 +629,6 @@ class Scanchain(Object):
         """
         cfg_width = context.summary.scanchain["cfg_width"]
         module = uno(logical_module, context.database[ModuleView.logical, context.top.key])
-        # special processing needed for IO blocks (output enable)
-        if module.module_class.is_io_block:
-            oe = module.ports.get(IOType.oe)
-            if oe is not None:
-                inst = ModuleUtils.instantiate(module,
-                        cls.get_cfg_data_cell(context, 1),
-                        '_cfg_oe')
-                NetUtils.connect(inst.pins["cfg_d"], oe)
         # connecting scanchain ports
         cfg_bitoffset = 0
         cfg_nets = {}
@@ -649,7 +644,7 @@ class Scanchain(Object):
                 if timing_enclosure(module):
                     ereg = ModuleUtils.instantiate(module,
                             context.database[ModuleView.logical, "cfg_e_reg"],
-                            "_cfg_ereg")
+                            "_i_cfg_ereg")
                     NetUtils.connect(cls._get_or_create_cfg_ports(module, cfg_width, enable_only = True),
                             ereg.pins["cfg_e_i"])
                     cfg_e = cfg_nets["cfg_e"] = ereg.pins["cfg_e"]
@@ -688,7 +683,7 @@ class Scanchain(Object):
                     remainder = cfg_width - (cfg_bitoffset % cfg_width)
                     filler = ModuleUtils.instantiate(module,
                             cls.get_cfg_data_cell(context, remainder),
-                            "_cfg_filler_inst")
+                            "_i_cfg_filler")
                     NetUtils.connect(cls._get_or_create_cfg_ports(module, cfg_width, enable_only = True),
                             filler.pins["cfg_e"])
                     NetUtils.connect(cfg_nets["cfg_clk"], filler.pins["cfg_clk"])
@@ -703,7 +698,7 @@ class Scanchain(Object):
                             net_class = NetClass.cfg)
                 delimiter = ModuleUtils.instantiate(module, 
                         context.database[ModuleView.logical, "cfg_delim"],
-                        "_cfg_delim")
+                        "_i_cfg_delim")
                 NetUtils.connect(cfg_nets["cfg_clk"], delimiter.pins["cfg_clk"])
                 NetUtils.connect(cfg_nets["cfg_e"], delimiter.pins["cfg_e"])
                 NetUtils.connect(cfg_nets["cfg_we"], delimiter.pins["cfg_we"])
@@ -739,77 +734,50 @@ class Scanchain(Object):
         module = uno(user_module, context.top)
         logical = context.database[ModuleView.logical, module.key]
         _annotated = uno(_annotated, set())
+
         # 1. annotate user instances
         for instance in itervalues(module.instances):
-            # 1.1 special process needed for IO blocks (output enable)
-            if module.module_class.is_io_block and instance.key == "io":
-                if instance.model.primitive_class.is_multimode:
-                    instance.cfg_bitoffset = logical.instances["_cfg_oe"].cfg_bitoffset
-                continue
-            # 1.2 for all other instances, look for the corresponding logical instance and annotate cfg_bitoffset
+            # look for the corresponding logical instance and annotate cfg_bitoffset
             logical_instance = logical.instances[instance.key]
             if hasattr(logical_instance, "cfg_bitoffset"):
                 instance.cfg_bitoffset = logical_instance.cfg_bitoffset
                 if not (instance.model.module_class.is_primitive or instance.model.key in _annotated):
                     _annotated.add(instance.model.key)
                     cls.annotate_user_view(context, instance.model, _annotated = _annotated)
+
         # 2. annotate multi-source connections
-        if not module._allow_multisource:
+        if not module.allow_multisource:
             return
-        assert not module._coalesce_connections and not logical._coalesce_connections
-        assert not logical._allow_multisource
-        nets = None
-        if module.module_class.is_io_block:
-            nets = chain(
-                    iter(port for port in itervalues(logical.ports)
-                        if not (port.net_class.is_cfg or port.key is IOType.oe)),
-                    iter(pin for inst_key in module.instances if inst_key != "io"
-                        for pin in itervalues(logical.instances[inst_key].pins)))
-        else:
-            nets = chain(
-                    iter(port for port in itervalues(logical.ports) if not port.net_class.is_cfg),
-                    iter(pin for inst_key in module.instances
-                        for pin in itervalues(logical.instances[inst_key].pins)))
-        for logical_bus in nets:
-            if not logical_bus.is_sink:
+        assert not module.coalesce_connections and not logical.coalesce_connections
+        assert not logical.allow_multisource
+        for logical_bus in ModuleUtils._iter_nets(logical):
+            if logical_bus.net_type.is_port and not logical_bus.net_class.is_user:
+                continue
+            elif logical_bus.net_type.is_pin and not logical_bus.model.net_class.is_user:
+                continue
+            elif not logical_bus.is_sink:
                 continue
             for logical_sink in logical_bus:
-                user_tail = TranslationPass._l2u(logical, NetUtils._reference(logical_sink))
-                if user_tail not in module._conn_graph:
-                    continue
-                    # raise PRGAInternalError("No user-counterpart found for logical net {}".format(logical_sink))
+                user_tail = NetUtils._dereference(module, NetUtils._reference(logical_sink))
                 stack = [(logical_sink, tuple())]
                 while stack:
                     head, cfg_bits = stack.pop()
-                    predecessors = tuple(logical._conn_graph.predecessors(NetUtils._reference(head)))
-                    if len(predecessors) == 0:
+
+                    # check source driving head
+                    if (prev := NetUtils.get_source(head)).net_type.is_const:
                         continue
-                    elif len(predecessors) > 1:
-                        raise PRGAInternalError("Multiple sources found for logical net{}".format(head))
-                    user_head = TranslationPass._l2u(logical, predecessors[0])
-                    if user_head in module._conn_graph:
-                        edge = module._conn_graph.edges.get( (user_head, user_tail) )
-                        if edge is None:
-                            raise PRGAInternalError(("No connection found from user net {} to {}. "
-                                "Logical path exists from {} to {}")
-                                .format( NetUtils._dereference(module, user_head),
-                                    NetUtils._dereference(module, user_tail),
-                                    NetUtils._dereference(logical, predecessors[0]),
-                                    logical_sink ))
-                        edge["cfg_bits"] = cfg_bits
-                        continue
-                    prev = NetUtils._dereference(logical, predecessors[0])
-                    if prev.net_type.is_const:
-                        continue
-                    elif prev.net_type.is_port or not prev.bus.model.net_class.is_switch:
-                        raise PRGAInternalError("No user-counterpart found for logical net {}".format(prev))
-                    switch = prev.bus.instance
-                    for idx, input_ in enumerate(switch.pins["i"]):
-                        this_cfg_bits = cfg_bits
-                        for digit in range(idx.bit_length()):
-                            if (idx & (1 << digit)):
-                                this_cfg_bits += (switch.cfg_bitoffset + digit, )
-                        stack.append( (input_, this_cfg_bits) )
+                    elif prev.net_type.is_pin and prev.model.net_class.is_switch:
+                        # switch output
+                        switch = prev.instance
+                        for idx, input_ in enumerate(switch.pins['i']):
+                            this_cfg_bits = cfg_bits
+                            for digit in range(idx.bit_length()):
+                                if (idx & (1 << digit)):
+                                    this_cfg_bits += (switch.cfg_bitoffset + digit, )
+                            stack.append( (input_, this_cfg_bits) )
+                    else:
+                        user_head = NetUtils._dereference(module, NetUtils._reference(prev))
+                        NetUtils.get_connection(user_head, user_tail).cfg_bits = cfg_bits
 
     class InjectConfigCircuitry(AbstractPass):
         """Automatically inject configuration circuitry.

@@ -247,6 +247,55 @@ class ModuleUtils(Object):
         # 2. return
         return g
 
-    @classmethod
-    def reduce_timing_graph(cls, module):
-        raise NotImplementedError
+    # @classmethod
+    # def reduce_timing_graph(cls, module, *,
+    #         blackbox_instance = lambda i: False,
+    #         node_key = lambda n: NetUtils._reference(n),
+    #         node_attrs = lambda n: {},
+    #         edge_attrs = lambda p: {}):
+    #     """Create a timing graph for ``module``.
+
+    #     Args:
+    #         module (`Module`):
+
+    #     Keyword Args:
+    #         blackbox_instance (:obj:`Function` [`AbstractInstance` ] -> :obj:`bool`): A function testing if an
+    #             instance should be blackboxed during elaboration. If ``True`` is returned, everything inside the
+    #             instance is ignored.
+    #         node_key (:obj:`Function` [`AbstractNet` ] -> :obj:`Hashable`):
+    #             A function that returns a hasable key to be used as the node ID in the graph. If ``None`` is returned,
+    #             the net and all paths starting from/ending at it are not added to the graph. Paths passing through the
+    #             net may be added depending on the endpoints of the paths. This function might be called multiple times
+    #             upon the same net and should be deterministic
+    #         node_attrs (:obj:`Function` [`AbstractNet` ] -> :obj:`dict`):
+    #             A function that returns additional attributes for a [hierarchical] net. This function is called only
+    #             once when a node with a valid key is created. ``"net"`` is a reserved key whose corresponding value is
+    #             the corresponding net object.
+    #         edge_attrs (:obj:`Function` [:obj:`Sequence` [`AbstractNet` ]] -> :obj:`dict`):
+    #             A function that returns additional attributes for a path. This function is called only once when an edge
+    #             with valid endpoints is created. ``"path"`` is a reserved key whose corresponding value is a sequence
+    #             of nets that this path includes, from the startpoint to the endpoint, inclusively.
+
+    #     Returns:
+    #         `networkx.DiGraph`_:
+
+    #     .. _networkx.DiGraph: https://networkx.github.io/documentation/stable/reference/classes/digraph.html
+    #     """
+    #     # build graph
+    #     g = DiGraph()
+    #     for bus in cls._iter_nets(module, blackbox_instance):
+    #         for net in bus:
+    #             if (node := node_key(net)) is None or node in g:
+    #                 continue
+    #             # create node && add attributes
+    #             if "net" in (attrs := node_attrs(net)):
+    #                 raise PRGAInternalError("'net' is a reserved attribute for a node")
+    #             g.add_node(node, net = net, **attrs)
+    #             # DFS:    head net, endpoint, path(end to start, will be reversed when added to the graph)
+    #             stack = [(net,      node,      (net, ))]
+    #             while stack:
+    #                 head_net, endpoint, path = stack.pop()
+    #                 # 1.1 set up the environment for analyzing `head_net`
+    #                 sink, hierarchy = cls._analyze_sink(head_net)
+    #                 # 1.2 get timing arc(s)
+    #                 # TODO
