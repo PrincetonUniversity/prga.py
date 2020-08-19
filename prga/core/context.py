@@ -124,7 +124,7 @@ class Context(Object):
                     port_class = PrimitivePortClass.lut_in)
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
                     port_class = PrimitivePortClass.lut_out)
-            NetUtils.create_timing_arc(TimingArcType.delay, in_, out, fully = True)
+            NetUtils.create_timing_arc(TimingArcType.comb_matrix, in_, out)
             database[ModuleView.user, lut.key] = lut
 
         # 2. register built-in modules: D-flipflop
@@ -140,8 +140,8 @@ class Context(Object):
                     port_class = PrimitivePortClass.D)
             Q = ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
                     port_class = PrimitivePortClass.Q)
-            NetUtils.create_timing_arc((TimingArcType.setup, TimingArcType.hold), clk, D)
-            NetUtils.create_timing_arc(TimingArcType.clk2q, clk, Q)
+            NetUtils.create_timing_arc(TimingArcType.seq_end, clk, D)
+            NetUtils.create_timing_arc(TimingArcType.seq_start, clk, Q)
             database[ModuleView.user, flipflop.key] = flipflop
 
         # 3. register built-in modules: I/O

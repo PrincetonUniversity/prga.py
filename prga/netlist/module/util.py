@@ -7,7 +7,7 @@ from prga.compatible import *
 
 from .module import Module
 from .instance import Instance
-from ..net.common import AbstractNet, NetType
+from ..net.common import AbstractNet, NetType, TimingArcType
 from ..net.util import NetUtils
 from ..net.bus import Port, Pin, HierarchicalPin
 from ...exception import PRGAInternalError
@@ -247,55 +247,98 @@ class ModuleUtils(Object):
         # 2. return
         return g
 
-    # @classmethod
-    # def reduce_timing_graph(cls, module, *,
-    #         blackbox_instance = lambda i: False,
-    #         node_key = lambda n: NetUtils._reference(n),
-    #         node_attrs = lambda n: {},
-    #         edge_attrs = lambda p: {}):
-    #     """Create a timing graph for ``module``.
+    @classmethod
+    def reduce_timing_graph(cls, module, *,
+            blackbox_instance = lambda i: False,
+            node_key = lambda n: NetUtils._reference(n),
+            node_attrs = lambda n: {},
+            edge_attrs = lambda p: {}):
+        """Create a timing graph for ``module``.
 
-    #     Args:
-    #         module (`Module`):
+        Args:
+            module (`Module`):
 
-    #     Keyword Args:
-    #         blackbox_instance (:obj:`Function` [`AbstractInstance` ] -> :obj:`bool`): A function testing if an
-    #             instance should be blackboxed during elaboration. If ``True`` is returned, everything inside the
-    #             instance is ignored.
-    #         node_key (:obj:`Function` [`AbstractNet` ] -> :obj:`Hashable`):
-    #             A function that returns a hasable key to be used as the node ID in the graph. If ``None`` is returned,
-    #             the net and all paths starting from/ending at it are not added to the graph. Paths passing through the
-    #             net may be added depending on the endpoints of the paths. This function might be called multiple times
-    #             upon the same net and should be deterministic
-    #         node_attrs (:obj:`Function` [`AbstractNet` ] -> :obj:`dict`):
-    #             A function that returns additional attributes for a [hierarchical] net. This function is called only
-    #             once when a node with a valid key is created. ``"net"`` is a reserved key whose corresponding value is
-    #             the corresponding net object.
-    #         edge_attrs (:obj:`Function` [:obj:`Sequence` [`AbstractNet` ]] -> :obj:`dict`):
-    #             A function that returns additional attributes for a path. This function is called only once when an edge
-    #             with valid endpoints is created. ``"path"`` is a reserved key whose corresponding value is a sequence
-    #             of nets that this path includes, from the startpoint to the endpoint, inclusively.
+        Keyword Args:
+            blackbox_instance (:obj:`Function` [`AbstractInstance` ] -> :obj:`bool`): A function testing if an
+                instance should be blackboxed during elaboration. If ``True`` is returned, all connections or timing
+                arcs inside the instance are ignored
+            node_key (:obj:`Function` [`AbstractNet` ] -> :obj:`Hashable`):
+                A function that returns a hasable key to be used as the node ID in the graph. If ``None`` is returned,
+                the net and all paths starting from/ending at it are not added to the graph. Paths passing through the
+                net may be added depending on the endpoints of the paths. This function might be called multiple times
+                upon the same net and should be deterministic
+            node_attrs (:obj:`Function` [`AbstractNet` ] -> :obj:`dict`):
+                A function that returns additional attributes for a [hierarchical] net. This function is called only
+                once when a node with a valid key is created. ``"net"`` is a reserved key whose corresponding value is
+                the net object.
+            edge_attrs (:obj:`Function` [:obj:`Sequence` [`AbstractNet` ]] -> :obj:`dict`):
+                A function that returns additional attributes for a path. This function is called only once when an edge
+                with valid endpoints is created. ``"path"`` is a reserved key whose corresponding value is a sequence
+                of nets that this path includes, from the startpoint to the endpoint, inclusively.
 
-    #     Returns:
-    #         `networkx.DiGraph`_:
+        Returns:
+            `networkx.DiGraph`_:
 
-    #     .. _networkx.DiGraph: https://networkx.github.io/documentation/stable/reference/classes/digraph.html
-    #     """
-    #     # build graph
-    #     g = DiGraph()
-    #     for bus in cls._iter_nets(module, blackbox_instance):
-    #         for net in bus:
-    #             if (node := node_key(net)) is None or node in g:
-    #                 continue
-    #             # create node && add attributes
-    #             if "net" in (attrs := node_attrs(net)):
-    #                 raise PRGAInternalError("'net' is a reserved attribute for a node")
-    #             g.add_node(node, net = net, **attrs)
-    #             # DFS:    head net, endpoint, path(end to start, will be reversed when added to the graph)
-    #             stack = [(net,      node,      (net, ))]
-    #             while stack:
-    #                 head_net, endpoint, path = stack.pop()
-    #                 # 1.1 set up the environment for analyzing `head_net`
-    #                 sink, hierarchy = cls._analyze_sink(head_net)
-    #                 # 1.2 get timing arc(s)
-    #                 # TODO
+        Notes:
+            The current implementation ignores sequential timing arcs
+
+        .. _networkx.DiGraph: https://networkx.github.io/documentation/stable/reference/classes/digraph.html
+        """
+        # build graph
+        g = DiGraph()
+        for bus in cls._iter_nets(module, blackbox_instance):
+            for net in bus:
+                if (node := node_key(net)) is None or node in g:
+                    continue
+                # create node && add attributes
+                if "net" in (attrs := node_attrs(net)):
+                    raise PRGAInternalError("'net' is a reserved attribute for a node")
+                g.add_node(node, net = net, **attrs)
+                # DFS:    head net, endpoint, path(end to start, will be reversed when added to the graph)
+                stack = [(net,      node,      (net, ))]
+                while stack:
+                    head_net, endpoint, path = stack.pop()
+                    # 1.1 set up the environment for analyzing `head_net`
+                    sink, hierarchy = cls._analyze_sink(head_net)
+                    if hierarchy is not None and blackbox_instance(hierarchy):
+                        continue
+                    # 1.2 get timing arc(s)
+                    srcs = []
+                    sinkbus, sinkidx = ((sink.bus, sink.index) if sink.net_type.is_bit or sink.net_type.is_slice
+                            else (sink, None))
+                    if sinkbus.parent.coalesce_connections:
+                        for arc in NetUtils.get_timing_arcs(sink = sinkbus,
+                                types = (TimingArcType.comb_bitwise, TimingArcType.comb_matrix)):
+                            if arc.type_.is_comb_bitwise:
+                                srcs.append(arc.source if sinkidx is None else arc.source[sinkidx])
+                            else:
+                                srcs.extend(arc.source)
+                    else:
+                        for arc in NetUtils.get_timing_arcs(sink = sink):
+                            srcs.append(arc.source)
+                    # 1.3 iterate the source(s)
+                    for src in srcs:
+                        # 1.3.1 attach hierarchy to the source
+                        src = cls._attach_hierarchy(src, hierarchy)
+                        # 1.3.2 check if this is a valid startpoint
+                        if (startpoint := node_key(src)) is not None:
+                            # Yes it is. Add the node if it's not already added
+                            if startpoint not in g:
+                                if "net" in (attrs := node_attrs(net)):
+                                    raise PRGAInternalError("'net' is a reserved attribute for a node")
+                                g.add_node(startpoint, net = src, **attrs)
+                            # add the edge, too
+                            if g.has_edge(startpoint, endpoint):
+                                raise PRGAInternalError("Bad reducing: multiple paths from {} to {}"
+                                        .format(src, path[0]))
+                            path = (src, ) + tuple(reversed(path))
+                            if "path" in (attrs := edge_attrs(path)):
+                                raise PRGAInternalError("'path' is a reserved attribute for an edge")
+                            g.add_edge(startpoint, endpoint, path = path, **attrs)
+                            # put it in the DFS stack
+                            stack.append( (src, startpoint, (src, )) )
+                        else:
+                            # No it is not. Keep searching
+                            stack.append( (src, endpoint, path + (src, )) )
+        # 2. return
+        return g

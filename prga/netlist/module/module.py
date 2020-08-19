@@ -31,7 +31,7 @@ class Module(Object):
         is_cell (:obj:`bool`): If set to ``True``, this module is created as a cell module. A cell module does not
             contain information about connections. It contains information about timing arcs instead. A cell module
             may still contain sub-instances, but they are only used for tracking the hierarchy. When set, this
-            argument overrides ``allow_multisource`` to ``True`` and ``coalesce_connections`` to ``False``
+            argument overrides ``allow_multisource`` to ``False`` and ``coalesce_connections`` to ``True``
         allow_multisource (:obj:`bool`): If set to ``True``, a sink net may be driven by multiple source nets.
             Incompatible with ``coalesce_connections``
         coalesce_connections (:obj:`bool`): If set to ``True``, bit-wise connections are not allowed.
@@ -65,7 +65,7 @@ class Module(Object):
         self._instances = uno(instances, OrderedDict())
 
         if is_cell:
-            self._flags = self.__FLAGS.IS_CELL | self.__FLAGS.ALLOW_MULTISOURCE
+            self._flags = self.__FLAGS.IS_CELL | self.__FLAGS.COALESCE_CONNECTIONS
         elif allow_multisource:
             self._flags = self.__FLAGS.ALLOW_MULTISOURCE
         elif coalesce_connections:

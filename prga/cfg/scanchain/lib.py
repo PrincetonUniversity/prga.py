@@ -15,7 +15,7 @@ from ...exception import PRGAInternalError, PRGAAPIError
 
 import os
 from collections import namedtuple
-from itertools import chain
+from itertools import chain, product
 
 import logging
 _logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ class ScanchainSwitchDatabase(AbstractSwitchDatabase):
         # switch inputs/outputs
         i = ModuleUtils.create_port(switch, 'i', width, PortDirection.input_, net_class = NetClass.switch)
         o = ModuleUtils.create_port(switch, 'o', 1, PortDirection.output, net_class = NetClass.switch)
-        NetUtils.create_timing_arc(TimingArcType.delay, i, o, fully = True)
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, i, o)
 
         # configuration circuits
         self.entry._get_or_create_cfg_ports(switch, self.cfg_width)
@@ -256,7 +256,7 @@ class Scanchain(Object):
                     net_class = NetClass.user, port_class = PrimitivePortClass.lut_in)
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
                     net_class = NetClass.user, port_class = PrimitivePortClass.lut_out)
-            NetUtils.create_timing_arc(TimingArcType.delay, in_, out, fully = True)
+            NetUtils.create_timing_arc(TimingArcType.comb_matrix, in_, out)
 
             # configuration data
             ModuleUtils.instantiate(lut, cls.get_cfg_data_cell(context, 2 ** i), "i_cfg_data")
@@ -284,8 +284,8 @@ class Scanchain(Object):
                     net_class = NetClass.user, port_class = PrimitivePortClass.D)
             Q = ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
                     net_class = NetClass.user, port_class = PrimitivePortClass.Q)
-            NetUtils.create_timing_arc((TimingArcType.setup, TimingArcType.hold), clk, D)
-            NetUtils.create_timing_arc(TimingArcType.clk2q, clk, Q)
+            NetUtils.create_timing_arc(TimingArcType.seq_end, clk, D)
+            NetUtils.create_timing_arc(TimingArcType.seq_start, clk, Q)
 
             # configuration ports
             cls._get_or_create_cfg_ports(flipflop, cfg_width, enable_only = True)
@@ -318,12 +318,12 @@ class Scanchain(Object):
                 ui = ModuleUtils.create_port(pad, "inpad", 1, PortDirection.output, net_class = NetClass.user)
                 li = ModuleUtils.create_port(pad, "_ipin", 1, PortDirection.input_,
                         net_class = NetClass.io, key = IOType.ipin)
-                NetUtils.create_timing_arc(TimingArcType.delay, li, ui)
+                NetUtils.create_timing_arc(TimingArcType.comb_bitwise, li, ui)
             if name in ("outpad", "iopad"):
                 uo = ModuleUtils.create_port(pad, "outpad", 1, PortDirection.input_, net_class = NetClass.user)
                 lo = ModuleUtils.create_port(pad, "_opin", 1, PortDirection.output,
                         net_class = NetClass.io, key = IOType.opin)
-                NetUtils.create_timing_arc(TimingArcType.delay, uo, lo)
+                NetUtils.create_timing_arc(TimingArcType.comb_bitwise, uo, lo)
 
             if name == "iopad":
                 ModuleUtils.create_port(pad, "_oe", 1, PortDirection.output, net_class = NetClass.io, key = IOType.oe)
@@ -373,10 +373,8 @@ class Scanchain(Object):
                 fraclut6 = fraclut6.build_logical_counterpart(cfg_bitcount = 65, verilog_template = "fraclut6.tmpl.v")
 
                 # timing arcs
-                fraclut6.create_timing_arc(TimingArcType.delay, fraclut6.ports["in"], fraclut6.ports["o6"],
-                        fully = True)
-                fraclut6.create_timing_arc(TimingArcType.delay, fraclut6.ports["in"][:5], fraclut6.ports["o5"],
-                        fully = True)
+                fraclut6.create_timing_arc(TimingArcType.comb_matrix, fraclut6.ports["in"], fraclut6.ports["o6"])
+                fraclut6.create_timing_arc(TimingArcType.comb_matrix, fraclut6.ports["in"], fraclut6.ports["o5"])
 
                 # configuration data
                 fraclut6.instantiate(cls.get_cfg_data_cell(context, 65), "i_cfg_data")
@@ -408,19 +406,20 @@ class Scanchain(Object):
             p.append(mdff.create_input("D", 1))
             p.append(mdff.create_input("ce", 1))
             p.append(mdff.create_input("sr", 1))
-            mdff.create_timing_arc((TimingArcType.setup, TimingArcType.hold), clk, p, fully = True)
+            for i in p:
+                mdff.create_timing_arc(TimingArcType.seq_end, clk, i)
 
             q = mdff.create_output("Q", 1)
-            mdff.create_timing_arc(TimingArcType.clk2q, clk, q)
+            mdff.create_timing_arc(TimingArcType.seq_start, clk, q)
 
             # logical view
             if "mdff" not in dont_add_logical_primitive:
                 mdff = mdff.build_logical_counterpart(cfg_bitcount = 3, verilog_template = "mdff.tmpl.v")
 
                 # timing arcs
-                mdff.create_timing_arc((TimingArcType.setup, TimingArcType.hold), mdff.ports["clk"],
-                        [mdff.ports["D"], mdff.ports["ce"], mdff.ports["sr"]], fully = True)
-                mdff.create_timing_arc(TimingArcType.clk2q, mdff.ports["clk"], mdff.ports["Q"])
+                for i in (mdff.ports["D"], mdff.ports["ce"], mdff.ports["sr"]):
+                    mdff.create_timing_arc(TimingArcType.seq_end, mdff.ports["clk"], i)
+                mdff.create_timing_arc(TimingArcType.seq_start, mdff.ports["clk"], mdff.ports["Q"])
 
                 # configuration data
                 mdff.instantiate(cls.get_cfg_data_cell(context, 3), "i_cfg_data")
@@ -438,25 +437,27 @@ class Scanchain(Object):
                         "CIN_FABRIC": {"default": "1'b0", "cfg": cls.PrimitiveParameter(0)},
                         },
                     cfg_bitcount = 1)
-            i, o = [], []
-            o.append(adder.create_output("cout", 1))
-            o.append(adder.create_output("s", 1))
-            o.append(adder.create_output("cout_fabric", 1))
-            i.append(adder.create_input("a", 1))
-            i.append(adder.create_input("b", 1))
-            i.append(adder.create_input("cin", 1))
-            i.append(adder.create_input("cin_fabric", 1))
-            adder.create_timing_arc(TimingArcType.delay, i, o, fully = True)
+            inputs, outputs = [], []
+            outputs.append(adder.create_output("cout", 1))
+            outputs.append(adder.create_output("s", 1))
+            outputs.append(adder.create_output("cout_fabric", 1))
+            inputs.append(adder.create_input("a", 1))
+            inputs.append(adder.create_input("b", 1))
+            inputs.append(adder.create_input("cin", 1))
+            inputs.append(adder.create_input("cin_fabric", 1))
+            for i, o in product(inputs, outputs):
+                adder.create_timing_arc(TimingArcType.comb_bitwise, i, o)
 
             # logical view
             if "adder" not in dont_add_logical_primitive:
                 adder = adder.build_logical_counterpart(cfg_bitcount = 1, verilog_template = "adder.tmpl.v")
 
                 # timing arcs
-                adder.create_timing_arc(TimingArcType.delay,
-                        [adder.ports["a"], adder.ports["b"], adder.ports["cin"], adder.ports["cin_fabric"]],
-                        [adder.ports["cout"], adder.ports["s"], adder.ports["cout_fabric"]],
-                        fully = True)
+                for i, o in product(
+                        (adder.ports["a"], adder.ports["b"], adder.ports["cin"], adder.ports["cin_fabric"]),
+                        (adder.ports["cout"], adder.ports["s"], adder.ports["cout_fabric"]),
+                        ):
+                    adder.create_timing_arc(TimingArcType.comb_bitwise, i, o)
 
                 # configuration data
                 adder.instantiate(cls.get_cfg_data_cell(context, 1), "i_cfg_data")
@@ -522,18 +523,15 @@ class Scanchain(Object):
                 fle6 = fle6.build_logical_counterpart(cfg_bitcount = 69, verilog_template = "fle6.tmpl.v")
 
                 # timing arcs
-                fle6.create_timing_arc(TimingArcType.delay,
-                        [fle6.ports["in"], fle6.ports["cin"]],
-                        [fle6.ports["out"], fle6.ports["cout"]],
-                        fully = True)
-                fle6.create_timing_arc((TimingArcType.setup, TimingArcType.hold),
-                        fle6.ports["clk"],
-                        [fle6.ports["in"], fle6.ports["cin"]],
-                        fully = True)
-                fle6.create_timing_arc(TimingArcType.clk2q,
-                        fle6.ports["clk"],
-                        [fle6.ports["out"], fle6.ports["cout"]],
-                        fully = True)
+                for i, o in product(
+                        (fle6.ports["in"], fle6.ports["cin"]),
+                        (fle6.ports["out"], fle6.ports["cout"]),
+                        ):
+                    fle6.create_timing_arc(TimingArcType.comb_matrix, i, o)
+                for p in (fle6.ports["in"], fle6.ports["cin"]):
+                    fle6.create_timing_arc(TimingArcType.seq_end, fle6.ports["clk"], p)
+                for p in (fle6.ports["out"], fle6.ports["cout"]):
+                    fle6.create_timing_arc(TimingArcType.seq_start, fle6.ports["clk"], p)
 
                 # configuration ports
                 fle6.instantiate(cls.get_cfg_data_cell(context, 69), "i_cfg_data")
@@ -750,34 +748,57 @@ class Scanchain(Object):
             return
         assert not module.coalesce_connections and not logical.coalesce_connections
         assert not logical.allow_multisource
-        for logical_bus in ModuleUtils._iter_nets(logical):
-            if logical_bus.net_type.is_port and not logical_bus.net_class.is_user:
-                continue
-            elif logical_bus.net_type.is_pin and not logical_bus.model.net_class.is_user:
-                continue
-            elif not logical_bus.is_sink:
-                continue
-            for logical_sink in logical_bus:
-                user_tail = NetUtils._dereference(module, NetUtils._reference(logical_sink))
-                stack = [(logical_sink, tuple())]
-                while stack:
-                    head, cfg_bits = stack.pop()
+        # reduce timing graph
+        g = ModuleUtils.reduce_timing_graph(logical,
+                blackbox_instance = lambda i: not i.model.module_class.is_switch,
+                node_key = (lambda n: NetUtils._reference(n) if (bus.model if
+                    (bus := n.bus if n.net_type.is_bit or n.net_type.is_slice else n).net_type.is_pin
+                        else bus).net_class.is_user else None))
+        # iterate paths
+        for startpoint, endpoint, path in g.edges(data="path"):
+            cfg_bits = []
+            for net in path:
+                if (net.net_type.is_bit
+                        and net.bus.net_type.is_pin
+                        and net.bus.model.direction.is_input
+                        and net.bus.instance.model.module_class.is_switch):
+                    switch = net.bus.instance
+                    for digit in range(net.index.bit_length()):
+                        if (net.index & (1 << digit)):
+                            cfg_bits.append(switch.cfg_bitoffset + digit)
+            conn = NetUtils.get_connection(NetUtils._dereference(module, startpoint),
+                    NetUtils._dereference(module, endpoint), skip_validations = True)
+            conn.cfg_bits = tuple(cfg_bits)
 
-                    # check source driving head
-                    if (prev := NetUtils.get_source(head)).net_type.is_const:
-                        continue
-                    elif prev.net_type.is_pin and prev.model.net_class.is_switch:
-                        # switch output
-                        switch = prev.instance
-                        for idx, input_ in enumerate(switch.pins['i']):
-                            this_cfg_bits = cfg_bits
-                            for digit in range(idx.bit_length()):
-                                if (idx & (1 << digit)):
-                                    this_cfg_bits += (switch.cfg_bitoffset + digit, )
-                            stack.append( (input_, this_cfg_bits) )
-                    else:
-                        user_head = NetUtils._dereference(module, NetUtils._reference(prev))
-                        NetUtils.get_connection(user_head, user_tail).cfg_bits = cfg_bits
+
+        # for logical_bus in ModuleUtils._iter_nets(logical):
+        #     if logical_bus.net_type.is_port and not logical_bus.net_class.is_user:
+        #         continue
+        #     elif logical_bus.net_type.is_pin and not logical_bus.model.net_class.is_user:
+        #         continue
+        #     elif not logical_bus.is_sink:
+        #         continue
+        #     for logical_sink in logical_bus:
+        #         user_tail = NetUtils._dereference(module, NetUtils._reference(logical_sink))
+        #         stack = [(logical_sink, tuple())]
+        #         while stack:
+        #             head, cfg_bits = stack.pop()
+
+        #             # check source driving head
+        #             if (prev := NetUtils.get_source(head)).net_type.is_const:
+        #                 continue
+        #             elif prev.net_type.is_pin and prev.model.net_class.is_switch:
+        #                 # switch output
+        #                 switch = prev.instance
+        #                 for idx, input_ in enumerate(switch.pins['i']):
+        #                     this_cfg_bits = cfg_bits
+        #                     for digit in range(idx.bit_length()):
+        #                         if (idx & (1 << digit)):
+        #                             this_cfg_bits += (switch.cfg_bitoffset + digit, )
+        #                     stack.append( (input_, this_cfg_bits) )
+        #             else:
+        #                 user_head = NetUtils._dereference(module, NetUtils._reference(prev))
+        #                 NetUtils.get_connection(user_head, user_tail).cfg_bits = cfg_bits
 
     class InjectConfigCircuitry(AbstractPass):
         """Automatically inject configuration circuitry.

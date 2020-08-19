@@ -97,20 +97,21 @@ class _BasePrimitiveBuilder(BaseBuilder):
                 .format(self._module))
         return ModuleUtils.create_port(self._module, name, width, PortDirection.output, **kwargs)
 
-    def create_timing_arc(self, types, sources, sinks, *, fully = False, **kwargs):
-        """Create timing arcs from ``sources`` to ``sinks``.
-        
+    def create_timing_arc(self, type_, source, sink, *, max_ = None, min_ = None):
+        """Create a ``type_``-typed timing arc from ``source`` to ``sink``.
+
         Args:
-            types (`TimingArcType` or :obj:`Sequence` [`TimingArcType` ]): Type(s) of the timing arcs
-            sources: An input port, a subset of an input port, or a list of input ports/subsets
-            sinks: An output port, a subset of an output port, or a list of output ports/subsets
+            types (`TimingArcType`): Type of the timing arc
+            source (`Port`): An input port or a clock in the current module
+            sink (`Port`): A port in the current module
 
         Keyword Args:
-            fully (:obj:`bool`): If set, timing arc is created from every bit in ``sources`` to all bits in ``sinks``
-            min_ (:obj:`float`): Min value of this arc
-            max_ (:obj:`float`): Max value of this arc
+            max_, min_: Refer to `TimingArc` for more information
+
+        Returns:
+            `TimingArc`: The created timing arc
         """
-        NetUtils.create_timing_arc(types, sources, sinks, fully = fully, **kwargs)
+        return NetUtils.create_timing_arc(type_, source, sink, max_ = max_, min_ = min_)
 
 # ----------------------------------------------------------------------------
 # -- Builder for Logical Views of Single-Mode Primitives ---------------------
@@ -293,8 +294,10 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
                 port_class = PrimitivePortClass.data_in2))
             outputs.append(ModuleUtils.create_port(m, "out2", data_width, o,
                 port_class = PrimitivePortClass.data_out2))
-        NetUtils.create_timing_arc((TimingArcType.setup, TimingArcType.hold), clk, inputs, fully = True)
-        NetUtils.create_timing_arc(TimingArcType.clk2q, clk, outputs, fully = True)
+        for i in inputs:
+            NetUtils.create_timing_arc(TimingArcType.seq_end, clk, i)
+        for o in outputs:
+            NetUtils.create_timing_arc(TimingArcType.seq_start, clk, o)
         return m
 
     def commit(self, *, dont_create_logical_counterpart = False):

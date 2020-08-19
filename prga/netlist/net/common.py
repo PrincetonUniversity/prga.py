@@ -57,10 +57,11 @@ class PortDirection(Enum):
 class TimingArcType(Enum):
     """Timing arc types."""
 
-    delay = 0   #: combinational propagation delay
-    setup = 1   #: clock -> sequential startpoint
-    clk2q = 2   #: clock -> sequential endpoint
-    hold = 3    #: clock -> sequential endpoint
+    comb_1bit = 0           #: combinational propagation delay between two single-bit nets
+    comb_bitwise = 1        #: combinational propagation delay of a bitwise timing arc
+    comb_matrix = 2         #: combinational propagation delay of an all-to-all timing arc
+    seq_start = 3           #: clock -> sequential startpoint(s), i.e., clk2q
+    seq_end = 4             #: clock -> sequential endpoint(s), i.e., setup & hold
 
 # ----------------------------------------------------------------------------
 # -- Abstract Net ------------------------------------------------------------
