@@ -697,9 +697,14 @@ class VPRArchGeneration(_VPRArchGeneration):
                     if not isinstance(subtile, int):
                         continue
                     if i.model.module_class.is_io_block:
-                        for iotype in (IOType.ipin, IOType.opin):
-                            if iotype in i.pins:
-                                self.ios.append( (iotype, position + (x, y), subtile) )
+                        io = i.model.instances["io"].model
+                        if io.primitive_class.is_multimode:
+                            self.ios.append( (IOType.ipin, position + (x, y), subtile) )
+                            self.ios.append( (IOType.opin, position + (x, y), subtile) )
+                        elif io.primitive_class.is_inpad:
+                            self.ios.append( (IOType.ipin, position + (x, y), subtile) )
+                        else:
+                            self.ios.append( (IOType.opin, position + (x, y), subtile) )
                 attrs = { "priority": 1, "type": subarray.model.name, "x": position.x + x, "y": position.y + y, }
                 if fasm_prefix := self.fasm.fasm_prefix_for_tile(subarray._extend_hierarchy(above = hierarchy)):
                     with self.xml.element('single', attrs), self.xml.element("metadata"):

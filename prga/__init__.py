@@ -20,6 +20,10 @@ __all__.extend([
     "BridgeType", "SegmentID", "BlockPinID", "BlockPortFCValue", "BlockFCValue", "SwitchBoxPattern",
     ])
 
+# Context
+from .core.context import Context
+__all__.extend(["Context"])
+
 # Configuration Circuitry Entry Points
 from .cfg.scanchain.lib import Scanchain
 # from .cfg.pktchain.lib import Pktchain

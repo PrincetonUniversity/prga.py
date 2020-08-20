@@ -73,7 +73,7 @@ def iobind(summary, mod_top, fixed = None):
                     .format(index, port_name))
         elif not assignment in available[port.direction]:
             raise PRGAAPIError("Conflicting or invalid assignment at ({}, {}, {})"
-                    .format(x, y, subtile))
+                    .format(*assignment))
         available[port.direction].remove( assignment )
         available[port.direction.opposite].discard( assignment )
         assigned[port.direction.case("", "out:") + name] = assignment

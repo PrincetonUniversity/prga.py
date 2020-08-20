@@ -51,7 +51,7 @@ def bitgen_scanchain(bitstream_size     # bitstream size
     # process features
     for lineno, line in enumerate(istream):
         segments = line.strip().split('.')
-        if segments[-1] == 'ignored':
+        if '__none__' in segments:
             continue
         base = sum(int(segment[1:]) for segment in segments[:-1])
         if '[' in segments[-1]:
