@@ -11,7 +11,7 @@ from ..net.common import AbstractNet, NetType, TimingArcType
 from ..net.util import NetUtils
 from ..net.bus import Port, Pin, HierarchicalPin
 from ...exception import PRGAInternalError
-from ...util import uno, Object
+from ...util import uno, Object, Enum
 
 from itertools import chain, product
 from networkx import NetworkXError, DiGraph
@@ -20,6 +20,75 @@ import logging
 _logger = logging.getLogger(__name__)
 
 __all__ = ['ModuleUtils']
+
+# ----------------------------------------------------------------------------
+# -- Memory-optimized Connection Graph ---------------------------------------
+# ----------------------------------------------------------------------------
+class _MemOptNodeDict(MutableMapping):
+
+    class _Placeholder(Enum):
+        _ = 0
+
+    __slots__ = ['_dict']
+
+    def __init__(self):
+        self._dict = {}
+
+    def __getitem__(self, k):
+        try:
+            idx, key = k
+            try:
+                v = self._dict[key][idx]
+            except (KeyError, IndexError):
+                raise KeyError(k)
+            if v is self._Placeholder._:
+                raise KeyError(k)
+            return v
+        except (ValueError, TypeError):
+            return self._dict[k]
+
+    def __setitem__(self, k, v):
+        try:
+            idx, key = k
+            if idx >= (len(l) if (l := self._dict.get(key)) is not None else 0):
+                if l is None:
+                    l = self._dict[key] = []
+                l.extend(self._Placeholder._ for _ in range(idx - len(l)))
+                l.append(v)
+            else:
+                l[idx] = v
+        except (ValueError, TypeError):
+            self._dict[k] = v
+
+    def __delitem__(self, k):
+        try:
+            idx, key = k
+            if (l := self._dict.get(key)) is None:
+                raise ValueError    # fall through
+            elif not 0 <= idx < len(l) or l[idx] is self._Placeholder._:
+                raise KeyError(k)
+            else:
+                l[idx] = self._Placeholder._
+        except (ValueError, TypeError):
+            del self._dict[k]
+
+    def __len__(self):
+        return sum(1 for _ in iter(self))
+
+    def __iter__(self):
+        for key, l in iteritems(self._dict):
+            try:
+                for k, v in l.items():
+                    yield k
+            except AttributeError:
+                for idx, item in enumerate(l):
+                    if item is not self._Placeholder._:
+                        yield idx, k
+
+class _MemOptDiGraph(DiGraph):
+
+    node_dict_factory = _MemOptNodeDict
+    adjlist_outer_dict_factory = _MemOptNodeDict
 
 # ----------------------------------------------------------------------------
 # -- Module Utilities --------------------------------------------------------
@@ -180,7 +249,8 @@ class ModuleUtils(Object):
             edge_attrs (:obj:`Function` [:obj:`Sequence` [`AbstractNet` ]] -> :obj:`dict`):
                 A function that returns additional attributes for a path. This function is called only once when an edge
                 with valid endpoints is created. ``"path"`` is a reserved key whose corresponding value is a sequence
-                of nets that this path includes, from the startpoint to the endpoint, inclusively.
+                of nets that this path includes, from the startpoint to the endpoint, inclusively. If ``None`` is
+                returned, the edge is not added to the graph
 
         Returns:
             `networkx.DiGraph`_:
@@ -209,7 +279,8 @@ class ModuleUtils(Object):
                     # 1.1 set up the environment for analyzing `head_net`
                     sink, hierarchy = cls._analyze_sink(head_net)
                     # 1.2 determine if we should keep on searching
-                    if not sink.is_sink or sink.parent.is_cell:
+                    if not sink.is_sink or sink.parent.is_cell or (hierarchy is not None and
+                            blackbox_instance(hierarchy)):
                         # Top-level input port, or a cell output pin
                         continue
                     # 1.3 validate parent module
@@ -228,7 +299,7 @@ class ModuleUtils(Object):
                         if (startpoint := node_key(src)) is not None:
                             # Yes it is. Add the node if it's not already added
                             if startpoint not in g:
-                                if "net" in (attrs := node_attrs(net)):
+                                if "net" in (attrs := node_attrs(src)):
                                     raise PRGAInternalError("'net' is a reserved attribute for a node")
                                 g.add_node(startpoint, net = src, **attrs)
                             # add the edge, too
@@ -236,9 +307,10 @@ class ModuleUtils(Object):
                                 raise PRGAInternalError("Bad reducing: multiple paths from {} to {}"
                                         .format(src, path[0]))
                             path = (src, ) + tuple(reversed(path))
-                            if "path" in (attrs := edge_attrs(path)):
-                                raise PRGAInternalError("'path' is a reserved attribute for an edge")
-                            g.add_edge(startpoint, endpoint, path = path, **attrs)
+                            if (attrs := edge_attrs(path)) is not None:
+                                if "path" in attrs:
+                                    raise PRGAInternalError("'path' is a reserved attribute for an edge")
+                                g.add_edge(startpoint, endpoint, path = path, **attrs)
                             # put it in the DFS stack
                             stack.append( (src, startpoint, (src, )) )
                         else:
@@ -274,7 +346,8 @@ class ModuleUtils(Object):
             edge_attrs (:obj:`Function` [:obj:`Sequence` [`AbstractNet` ]] -> :obj:`dict`):
                 A function that returns additional attributes for a path. This function is called only once when an edge
                 with valid endpoints is created. ``"path"`` is a reserved key whose corresponding value is a sequence
-                of nets that this path includes, from the startpoint to the endpoint, inclusively.
+                of nets that this path includes, from the startpoint to the endpoint, inclusively. If ``None`` is
+                returned, the edge is not added to the graph
 
         Returns:
             `networkx.DiGraph`_:
@@ -324,7 +397,7 @@ class ModuleUtils(Object):
                         if (startpoint := node_key(src)) is not None:
                             # Yes it is. Add the node if it's not already added
                             if startpoint not in g:
-                                if "net" in (attrs := node_attrs(net)):
+                                if "net" in (attrs := node_attrs(src)):
                                     raise PRGAInternalError("'net' is a reserved attribute for a node")
                                 g.add_node(startpoint, net = src, **attrs)
                             # add the edge, too
@@ -332,9 +405,10 @@ class ModuleUtils(Object):
                                 raise PRGAInternalError("Bad reducing: multiple paths from {} to {}"
                                         .format(src, path[0]))
                             path = (src, ) + tuple(reversed(path))
-                            if "path" in (attrs := edge_attrs(path)):
-                                raise PRGAInternalError("'path' is a reserved attribute for an edge")
-                            g.add_edge(startpoint, endpoint, path = path, **attrs)
+                            if (attrs := edge_attrs(path)) is not None:
+                                if "path" in (attrs := edge_attrs(path)):
+                                    raise PRGAInternalError("'path' is a reserved attribute for an edge")
+                                g.add_edge(startpoint, endpoint, path = path, **attrs)
                             # put it in the DFS stack
                             stack.append( (src, startpoint, (src, )) )
                         else:

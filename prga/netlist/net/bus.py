@@ -281,6 +281,11 @@ class HierarchicalPin(AbstractNet):
         """`Port`: The port in the model of `Pin.instance` that this pin corresponds to."""
         return self._model
 
+    @property
+    def parent(self):
+        """`Module`: Parent module of this net."""
+        return self._instance.parent
+
     # -- implementing properties/methods required by superclass --------------
     @property
     def net_type(self):

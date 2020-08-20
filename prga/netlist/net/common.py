@@ -242,17 +242,22 @@ class Slice(AbstractNet):
         else:
             return 'Slice({}[{}:{}])'.format(self.bus, self.index.stop - 1, self.index.start)
 
-    # == low-level API =======================================================
-    @property
-    def net_type(self):
-        return NetType.slice_
-
     def __len__(self):
         return self.index.stop - self.index.start
 
     def __getitem__(self, index):
         index = self._auto_index(index)
         return self.bus[self.index.start + index.start:self.index.start + index.stop]
+
+    # == low-level API =======================================================
+    @property
+    def net_type(self):
+        return NetType.slice_
+
+    @property
+    def parent(self):
+        """`Module`: Parent module of this net."""
+        return self.bus.parent
 
 # ----------------------------------------------------------------------------
 # -- A Concatenation of Slices and/or buses ----------------------------------

@@ -232,7 +232,7 @@ class NetUtils(Object):
         elif net.net_type in (NetType.pin, NetType.hierarchical):
             return (net.model.key, ) + tuple(i.key for i in net.instance.hierarchy)
         elif net.net_type.is_bit or net.net_type.is_slice:
-            return (net.index, ) + cls._reference(net.bus)
+            return (net.index, cls._reference(net.bus))
         else:
             raise PRGAInternalError("Cannot create reference for {}".format(net))
 
@@ -247,10 +247,16 @@ class NetUtils(Object):
         Return:
             net (`AbstractNet`): 
         """
-        if ref[-1] is NetType.const:
+        # special cases
+        if len(ref) == 3 and ref[-1] is NetType.const:
             return Const(*ref[:2])
+        elif len(ref) == 2 and isinstance(ref[0], int) and isinstance(ref[1], tuple):
+            try:
+                return cls._dereference(module, ref[1])[ref[0]]
+            except (KeyError, IndexError):
+                pass
         instance = []
-        for inst_key in reversed(ref[2:]):
+        for inst_key in reversed(ref[1:]):
             instance.append(instance[-1].model.instances[inst_key] if len(instance)
                     else module.instances[inst_key])
         if len(instance) == 0:
@@ -259,20 +265,6 @@ class NetUtils(Object):
             instance = instance[0]
         else:
             instance = instance[0]._extend_hierarchy(below = tuple(reversed(instance[1:])))
-        if len(ref) > 1:
-            # Take an educated guess if this reference is a bit/slice
-            if isinstance(ref[0], int) or isinstance(ref[0], slice):
-                try:
-                    if instance is None:
-                        return module.ports[ref[1]][ref[0]]
-                    else:
-                        return instance.pins[ref[1]][ref[0]]
-                except KeyError:
-                    pass
-            if instance is None:
-                instance = module.instances[ref[1]]
-            else:
-                instance = instance._extend_hierarchy(below = instance.model.instances[ref[1]])
         if instance is None:
             return module.ports[ref[0]]
         else:

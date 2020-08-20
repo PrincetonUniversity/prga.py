@@ -6,16 +6,13 @@ from prga.compatible import *
 from .base import AbstractPass
 from ..core.common import (Position, Orientation, ModuleView, Dimension, BlockPinID, SegmentID, BridgeID, BridgeType,
         Direction, Corner, IOType)
-from ..core.builder.array.array import ArrayBuilder
-from ..netlist.net.common import NetType
-from ..netlist.net.util import NetUtils
-from ..netlist.module.common import ConnGraph
-from ..netlist.module.util import ModuleUtils
+from ..core.builder import ArrayBuilder
+from ..netlist import NetType, TimingArcType, NetUtils, ModuleUtils
 from ..util import Object, uno
 from ..xml import XMLGenerator
 from ..exception import PRGAInternalError, PRGAAPIError
 
-import os
+import os, time
 import networkx as nx
 from itertools import product, chain
 from collections import namedtuple
@@ -247,7 +244,7 @@ TimingDelegate._default_switches = (TimingDelegate.Switch("default", 1e-11), )
 # ----------------------------------------------------------------------------
 # -- Base Class for VPR arch.xml Generation ----------------------------------
 # ----------------------------------------------------------------------------
-class _VPRArchGeneration(Object, AbstractPass):
+class _VPRArchGeneration(AbstractPass):
     """Base generator for VPR's architecture description XML."""
 
     __slots__ = [
@@ -267,25 +264,25 @@ class _VPRArchGeneration(Object, AbstractPass):
 
     @classmethod
     def _net2vpr(cls, net, parent_name = None, bitwise = False):
-        if net.bus_type.is_concat:
+        if net.net_type.is_concat:
             return " ".join(cls._net2vpr(i, parent_name, bitwise) for i in net.items)
         elif net.net_type.is_const:
             raise PRGAInternalError("Cannot express constant nets in VPR")
         elif bitwise and len(net) > 1:
             return " ".join(cls._net2vpr(i, parent_name) for i in net)
         prefix, suffix = None, ""
+        if net.net_type.is_bit:
+            suffix = '[{}]'.format(net.index)
+            net = net.bus
+        elif net.net_type.is_slice:
+            suffix = '[{}:{}]'.format(net.index.stop - 1, net.index.start)
+            net = net.bus
         if net.net_type.is_port:
-            prefix = '{}.{}'.format(parent_name or net.parent.name, net.bus.name)
-        elif hasattr(net.bus.instance, "vpr_num_pb"):
-            prefix = '{}[{}].{}'.format(net.bus.instance.key[0],
-                    net.bus.instance.key[1], net.bus.model.name)
+            prefix = '{}.{}'.format(parent_name or net.parent.name, net.name)
+        elif hasattr(net.instance, "vpr_num_pb"):
+            prefix = '{}[{}].{}'.format(*net.instance.key, net.model.name)
         else:
-            prefix = '{}.{}'.format(net.bus.instance.name, net.bus.model.name)
-        if net.bus_type.is_slice:
-            if net.index.stop == net.index.start + 1:
-                suffix = '[{}]'.format(net.index.start)
-            else:
-                suffix = '[{}:{}]'.format(net.index.stop - 1, net.index.start)
+            prefix = '{}.{}'.format(net.instance.name, net.model.name)
         return prefix + suffix
 
     def _tile(self, context, tile):
@@ -294,8 +291,10 @@ class _VPRArchGeneration(Object, AbstractPass):
                 "height": tile.height}
         with self.xml.element("tile", attrs):
             skip = 0
-            for subtile, i in enumerate(tile._instances.subtiles):
-                if skip:
+            for subtile, i in iteritems(tile.instances):
+                if not isinstance(subtile, int):
+                    continue
+                elif skip:
                     skip -= 1
                     continue
                 capacity = getattr(i, "vpr_capacity", 1)
@@ -344,28 +343,24 @@ class _VPRArchGeneration(Object, AbstractPass):
                         self.xml.element_leaf("site", {"pb_type": block.name, "pin_mapping": "direct"})
 
     def _interconnect(self, sink, instance = None, parent_name = None):
-        sources = NetUtils.get_multisource(sink)
+        sources = NetUtils.concat(s for s in NetUtils.get_multisource(sink) if not s.net_type.is_const)
         if len(sources) == 0:
             return
         type_ = "direct" if len(sources) == 1 else "mux"
         # get a unique name for the interconnect
         name = [type_]
-        if sink.bus.parent.module_class.is_mode:
-            name.append( sink.bus.parent.key )
-        if sink.net_type.is_pin:
-            if sink.bus_type.is_slice:
-                name.append( sink.bus.instance.name )
-                name.append( sink.bus.model.name )
-                name.append( str(sink.index.start) )
-            else:
-                name.append( sink.instance.name )
-                name.append( sink.model.name )
+        if sink.parent.module_class.is_mode:
+            name.append( sink.parent.key )
+        sinkbus, index = sink, None
+        if sink.net_type.is_bit:
+            sinkbus, index = sink.bus, sink.index
+        if sinkbus.net_type.is_pin:
+            name.append( sinkbus.instance.name )
+            name.append( sinkbus.model.name )
         else:
-            if sink.bus_type.is_slice:
-                name.append( sink.bus.name )
-                name.append( str(sink.index.start) )
-            else:
-                name.append( sink.name )
+            name.append( sinkbus.name )
+        if index is not None:
+            name.append( str(index) )
         # generate XML tag
         fasm_muxes = {}
         with self.xml.element(type_, {
@@ -382,28 +377,27 @@ class _VPRArchGeneration(Object, AbstractPass):
                 elif len(sources) > 1:
                     fasm_muxes[src_vpr] = 'ignored'
                 # pack pattern
-                conn = NetUtils.get_connection(src, sink)
-                if conn is None:
+                if (conn := NetUtils.get_connection(src, sink)) is None:
                     continue
-                pack_patterns = conn.get("vpr_pack_patterns", tuple())
+                pack_patterns = getattr(conn, "vpr_pack_patterns", tuple())
                 for pack_pattern in pack_patterns:
                     self.xml.element_leaf("pack_pattern", {
                         "name": pack_pattern,
                         "in_port": self._net2vpr(src, parent_name),
-                        "out_port": self._net2vpr(sink, parent_name),
+                        "out_port": sink_vpr,
                         })
-                # timing
-                max_, min_ = self.timing.vpr_delay_of_intrablock_switch(src, sink, instance)
-                if not (max_ is None and min_ is None):
-                    attrs = {
-                            "in_port": self._net2vpr(src, parent_name),
-                            "out_port": self._net2vpr(sink, parent_name),
-                            }
-                    if max_ is not None:
-                        attrs["max"] = max_
-                    if min_ is not None:
-                        attrs["min"] = min_
-                    self.xml.element_leaf("delay_constant", attrs)
+                # FIXME: timing
+                # max_, min_ = self.timing.vpr_delay_of_intrablock_switch(src, sink, instance)
+                # if not (max_ is None and min_ is None):
+                #     attrs = {
+                #             "in_port": self._net2vpr(src, parent_name),
+                #             "out_port": self._net2vpr(sink, parent_name),
+                #             }
+                #     if max_ is not None:
+                #         attrs["max"] = max_
+                #     if min_ is not None:
+                #         attrs["min"] = min_
+                #     self.xml.element_leaf("delay_constant", attrs)
             if not all(fasm_mux.startswith("ignored") for fasm_mux in itervalues(fasm_muxes)):
                 with self.xml.element("metadata"):
                     self.xml.element_leaf("meta", {"name": "fasm_mux"},
@@ -432,10 +426,10 @@ class _VPRArchGeneration(Object, AbstractPass):
                     with self.xml.element('metadata'):
                         self.xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefix)
             return
-        bitwise_timing = True
+        # bitwise_timing = True
         if primitive.primitive_class.is_lut:
             self.lut_sizes.add( len(primitive.ports['in']) )
-            bitwise_timing = False
+            # bitwise_timing = False
             attrs.update({"blif_model": ".names", "class": "lut"})
         elif primitive.primitive_class.is_flipflop:
             attrs.update({"blif_model": ".latch", "class": "flipflop"})
@@ -445,12 +439,12 @@ class _VPRArchGeneration(Object, AbstractPass):
             attrs.update({"blif_model": ".output"})
         elif primitive.primitive_class.is_memory:
             self.active_primitives.add( primitive.key )
-            bitwise_timing = False
+            # bitwise_timing = False
             attrs.update({"class": "memory",
                 "blif_model": ".subckt " + getattr(primitive, "vpr_model", primitive.name), })
         elif primitive.primitive_class.is_custom:
             self.active_primitives.add( primitive.key )
-            bitwise_timing = getattr(primitive, "vpr_bitwise_timing", True)
+            # bitwise_timing = getattr(primitive, "vpr_bitwise_timing", True)
             attrs.update({
                 "blif_model": ".subckt " + getattr(primitive, "vpr_model", primitive.name), })
         parent_name = attrs["name"]
@@ -458,105 +452,120 @@ class _VPRArchGeneration(Object, AbstractPass):
             # 1. emit ports
             for port in itervalues(primitive.ports):
                 attrs = {'name': port.name, 'num_pins': len(port)}
-                port_class = getattr(port, 'port_class', None)
-                if port_class is not None:
+                if (port_class := getattr(port, 'port_class', None)) is not None:
                     attrs['port_class'] = port_class.name
                 self.xml.element_leaf(
                         'clock' if port.is_clock else port.direction.case('input', 'output'),
                         attrs)
             # 2. timing
             for port in itervalues(primitive.ports):
-                if port.is_clock:
-                    continue
-                outputs_with_comb_path = set()
-                if port.direction.is_input:
-                    # combinational sinks
-                    for sink_name in getattr(port, "vpr_combinational_sinks", tuple()):
-                        sink = primitive.ports[sink_name]
-                        outputs_with_comb_path.add(sink)
-                        delay, max_of_max, min_of_min = {}, None, None
-                        for srcbit, sinkbit in product(port, sink):
-                            max_, min_ = self.timing.vpr_delay_of_primitive_path(srcbit, sinkbit, instance)
-                            delay[NetUtils._reference(srcbit), NetUtils._reference(sinkbit)] = max_, min_
-                            if max_ is not None and (max_of_max is None or max_ > max_of_max):
-                                max_of_max = max_
-                            if min_ is not None and (min_of_min is None or min_ < min_of_min):
-                                min_of_min = min_
-                        if max_of_max is None:
-                            raise PRGAInternalError("Max delay required for comb. path from '{}' to '{}' in '{}'"
-                                    .format(port, sink, instance))
-                        if bitwise_timing:
-                            for srcbit, sinkbit in product(port, sink):
-                                max_, min_ = delay[NetUtils._reference(srcbit), NetUtils._reference(sinkbit)]
-                                min_ = uno(min_, min_of_min)
-                                attrs = {"max": uno(max_, max_of_max),
-                                        "in_port": self._net2vpr(srcbit, parent_name),
-                                        "out_port": self._net2vpr(sinkbit, parent_name), }
-                                if min_ is not None:
-                                    attrs["min"] = min_
-                                self.xml.element_leaf("delay_constant", attrs)
-                        else:
-                            attrs = {"max": max_of_max,
-                                    "in_port": self._net2vpr(port, parent_name),
-                                    "out_port": self._net2vpr(sink, parent_name), }
-                            if min_of_min is not None:
-                                attrs["min"] = min_of_min
-                            self.xml.element_leaf("delay_constant", attrs)
-                # clocked?
-                if hasattr(port, "clock"):
-                    clock = primitive.ports[port.clock]
-                    # setup & hold
-                    if port.direction.is_input or port in outputs_with_comb_path:
-                        setup, max_setup = [], None
-                        for i, bit in enumerate(port):
-                            this_setup = self.timing.vpr_setup_time_of_primitive_port(bit, instance)
-                            setup.append(this_setup)
-                            if this_setup is not None and (max_setup is None or this_setup > max_setup):
-                                max_setup = this_setup
-                        if max_setup is None:
-                            raise PRGAInternalError("Setup time required for seq. endpoint '{}' in '{}'"
-                                    .format(port, instance))
-                        if bitwise_timing:
-                            for i, bit in enumerate(port):
-                                self.xml.element_leaf("T_setup", {
-                                    "port": self._net2vpr(bit, parent_name),
-                                    "value": uno(setup[i], max_setup),
-                                    "clock": clock.name, })
-                        else:
-                            self.xml.element_leaf("T_setup", {
-                                "port": self._net2vpr(port, parent_name),
-                                "value": max_setup,
-                                "clock": clock.name, })
-                    # clk2q
-                    if port.direction.is_output or getattr(port, "vpr_combinational_sinks", False):
-                        clk2q, max_of_max, min_of_min = [], None, None
-                        for i, bit in enumerate(port):
-                            max_, min_ = self.timing.vpr_clk2q_time_of_primitive_port(port, instance)
-                            clk2q.append( (max_, min_) )
-                            if max_ is not None and (max_of_max is None or max_ > max_of_max):
-                                max_of_max = max_
-                            if min_ is not None and (min_of_min is None or min_ < min_of_min):
-                                min_of_min = min_
-                        if max_of_max is None:
-                            raise PRGAInternalError("Max clk-to-Q time required for seq. startpoint '{}' in '{}'"
-                                    .format(port, instance))
-                        if bitwise_timing:
-                            for i, bit in enumerate(port):
-                                max_, min_ = clk2q[i]
-                                min_ = uno(min_, min_of_min)
-                                attrs = {"max": uno(max_, max_of_max),
-                                        "port": self._net2vpr(bit, parent_name),
-                                        "clock": clock.name, }
-                                if min_ is not None:
-                                    attrs["min"] = min_
-                                self.xml.element_leaf("T_clock_to_Q", attrs)
-                        else:
-                            attrs = {"max": max_of_max,
-                                    "port": self._net2vpr(port, parent_name),
-                                    "clock": clock.name, }
-                            if min_of_min is not None:
-                                attrs["min"] = min_of_min
-                            self.xml.element_leaf("T_clock_to_Q", attrs)
+                for arc in NetUtils.get_timing_arcs(sink = port):
+                    # FIXME: fake timing here
+                    if arc.type_.is_comb_bitwise or arc.type_.is_comb_matrix:
+                        self.xml.element_leaf("delay_constant", {"max": 1e-10,
+                            "in_port": self._net2vpr(arc.source, parent_name),
+                            "out_port": self._net2vpr(arc.sink, parent_name)})
+                    elif arc.type_.is_seq_start:
+                        self.xml.element_leaf("T_clock_to_Q", {"max": 1e-10,
+                            "port": self._net2vpr(arc.sink, parent_name),
+                            "clock": arc.source.name})
+                    elif arc.type_.is_seq_end:
+                        self.xml.element_leaf("T_setup", {"value": 1e-10,
+                            "port": self._net2vpr(arc.sink, parent_name),
+                            "clock": arc.source.name})
+
+                # if port.is_clock:
+                #     continue
+                # outputs_with_comb_path = set()
+                # if port.direction.is_input:
+                #     # TODO
+                #     # combinational sinks
+                #     for sink_name in getattr(port, "vpr_combinational_sinks", tuple()):
+                #         sink = primitive.ports[sink_name]
+                #         outputs_with_comb_path.add(sink)
+                #         delay, max_of_max, min_of_min = {}, None, None
+                #         for srcbit, sinkbit in product(port, sink):
+                #             max_, min_ = self.timing.vpr_delay_of_primitive_path(srcbit, sinkbit, instance)
+                #             delay[NetUtils._reference(srcbit), NetUtils._reference(sinkbit)] = max_, min_
+                #             if max_ is not None and (max_of_max is None or max_ > max_of_max):
+                #                 max_of_max = max_
+                #             if min_ is not None and (min_of_min is None or min_ < min_of_min):
+                #                 min_of_min = min_
+                #         if max_of_max is None:
+                #             raise PRGAInternalError("Max delay required for comb. path from '{}' to '{}' in '{}'"
+                #                     .format(port, sink, instance))
+                #         if bitwise_timing:
+                #             for srcbit, sinkbit in product(port, sink):
+                #                 max_, min_ = delay[NetUtils._reference(srcbit), NetUtils._reference(sinkbit)]
+                #                 min_ = uno(min_, min_of_min)
+                #                 attrs = {"max": uno(max_, max_of_max),
+                #                         "in_port": self._net2vpr(srcbit, parent_name),
+                #                         "out_port": self._net2vpr(sinkbit, parent_name), }
+                #                 if min_ is not None:
+                #                     attrs["min"] = min_
+                #                 self.xml.element_leaf("delay_constant", attrs)
+                #         else:
+                #             attrs = {"max": max_of_max,
+                #                     "in_port": self._net2vpr(port, parent_name),
+                #                     "out_port": self._net2vpr(sink, parent_name), }
+                #             if min_of_min is not None:
+                #                 attrs["min"] = min_of_min
+                #             self.xml.element_leaf("delay_constant", attrs)
+                # # clocked?
+                # if hasattr(port, "clock"):
+                #     clock = primitive.ports[port.clock]
+                #     # setup & hold
+                #     if port.direction.is_input or port in outputs_with_comb_path:
+                #         setup, max_setup = [], None
+                #         for i, bit in enumerate(port):
+                #             this_setup = self.timing.vpr_setup_time_of_primitive_port(bit, instance)
+                #             setup.append(this_setup)
+                #             if this_setup is not None and (max_setup is None or this_setup > max_setup):
+                #                 max_setup = this_setup
+                #         if max_setup is None:
+                #             raise PRGAInternalError("Setup time required for seq. endpoint '{}' in '{}'"
+                #                     .format(port, instance))
+                #         if bitwise_timing:
+                #             for i, bit in enumerate(port):
+                #                 self.xml.element_leaf("T_setup", {
+                #                     "port": self._net2vpr(bit, parent_name),
+                #                     "value": uno(setup[i], max_setup),
+                #                     "clock": clock.name, })
+                #         else:
+                #             self.xml.element_leaf("T_setup", {
+                #                 "port": self._net2vpr(port, parent_name),
+                #                 "value": max_setup,
+                #                 "clock": clock.name, })
+                #     # clk2q
+                #     if port.direction.is_output or getattr(port, "vpr_combinational_sinks", False):
+                #         clk2q, max_of_max, min_of_min = [], None, None
+                #         for i, bit in enumerate(port):
+                #             max_, min_ = self.timing.vpr_clk2q_time_of_primitive_port(port, instance)
+                #             clk2q.append( (max_, min_) )
+                #             if max_ is not None and (max_of_max is None or max_ > max_of_max):
+                #                 max_of_max = max_
+                #             if min_ is not None and (min_of_min is None or min_ < min_of_min):
+                #                 min_of_min = min_
+                #         if max_of_max is None:
+                #             raise PRGAInternalError("Max clk-to-Q time required for seq. startpoint '{}' in '{}'"
+                #                     .format(port, instance))
+                #         if bitwise_timing:
+                #             for i, bit in enumerate(port):
+                #                 max_, min_ = clk2q[i]
+                #                 min_ = uno(min_, min_of_min)
+                #                 attrs = {"max": uno(max_, max_of_max),
+                #                         "port": self._net2vpr(bit, parent_name),
+                #                         "clock": clock.name, }
+                #                 if min_ is not None:
+                #                     attrs["min"] = min_
+                #                 self.xml.element_leaf("T_clock_to_Q", attrs)
+                #         else:
+                #             attrs = {"max": max_of_max,
+                #                     "port": self._net2vpr(port, parent_name),
+                #                     "clock": clock.name, }
+                #             if min_of_min is not None:
+                #                 attrs["min"] = min_of_min
+                #             self.xml.element_leaf("T_clock_to_Q", attrs)
             # 3. FASM parameters
             fasm_params = self.fasm.fasm_params_for_primitive(instance)
             if fasm_params or fasm_prefix:
@@ -577,12 +586,12 @@ class _VPRArchGeneration(Object, AbstractPass):
         # 1. emit cluster/primitive instances
         fasm_luts = {}
         for sub in itervalues(module.instances):
-            hierarchical = sub.extend_hierarchy(above = instance)
+            hierarchical = sub._extend_hierarchy(above = instance)
             vpr_num_pb = getattr(sub, "vpr_num_pb", None)
             if vpr_num_pb is not None:
                 if sub.key[1] != 0:
                     continue
-                group = tuple( module.instances[sub.key[0], i].extend_hierarchy(above = instance)
+                group = tuple( module.instances[sub.key[0], i]._extend_hierarchy(above = instance)
                         for i in range(vpr_num_pb) )
                 sub_prefix = tuple(self.fasm.fasm_prefix_for_intrablock_module(i) for i in group)
                 if any(sub_prefix):
@@ -615,8 +624,7 @@ class _VPRArchGeneration(Object, AbstractPass):
                             fasm_luts['{}[0]'.format(sub.name)] = 'ignored[{}:0]'.format(2 ** len(sub.pins["in"]) - 1)
         # 2. emit interconnect
         with self.xml.element('interconnect'):
-            for net in chain(itervalues(module.ports),
-                    iter(pin for inst in itervalues(module.instances) for pin in itervalues(inst.pins))):
+            for net in ModuleUtils._iter_nets(module):
                 if not net.is_sink:
                     continue
                 for sink in net:
@@ -678,8 +686,12 @@ class _VPRArchGeneration(Object, AbstractPass):
                     attrs = {"name": port.name}
                     if port.is_clock:
                         attrs["is_clock"] = "1"
-                    elif getattr(port, "clock", None) is not None:
-                        attrs["clock"] = port.clock
+                    else:
+                        for arc in NetUtils.get_timing_arcs(sink = port,
+                                types = (TimingArcType.seq_start, TimingArcType.seq_end)):
+                            if "clock" in attrs:
+                                raise PRGAInternalError("{} is clocked by multiple clocks".format(port))
+                            attrs["clock"] = arc.source.name
                     self.xml.element_leaf("port", attrs)
             with self.xml.element("input_ports"):
                 for port in itervalues(primitive.ports):
@@ -689,10 +701,17 @@ class _VPRArchGeneration(Object, AbstractPass):
                     if port.is_clock:
                         attrs["is_clock"] = "1"
                     else:
-                        if getattr(port, "clock", None) is not None:
-                            attrs["clock"] = port.clock
-                        if getattr(port, "vpr_combinational_sinks", False):
-                            attrs["combinational_sink_ports"] = " ".join(port.vpr_combinational_sinks)
+                        for arc in NetUtils.get_timing_arcs(sink = port,
+                                types = (TimingArcType.seq_start, TimingArcType.seq_end)):
+                            if "clock" in attrs:
+                                raise PRGAInternalError("{} is clocked by multiple clocks".format(port))
+                            attrs["clock"] = arc.source.name
+                        sinks = []
+                        for arc in NetUtils.get_timing_arcs(source = port,
+                                types = (TimingArcType.comb_bitwise, TimingArcType.comb_matrix)):
+                            sinks.append(arc.sink.name)
+                        if sinks:
+                            attrs["combinational_sink_ports"] = " ".join(sinks)
                     self.xml.element_leaf("port", attrs)
 
     def _direct(self, tunnel):
@@ -776,34 +795,59 @@ class _VPRArchGeneration(Object, AbstractPass):
                 self._device(context)
             # switches: based on timing delegate
             with xml.element("switchlist"):
-                for switch in self.timing.vpr_switches:
-                    xml.element_leaf("switch", {
-                        "type": "mux",      # type forced to mux
-                        "name": switch.name,
-                        "R": switch.R,
-                        "Cin": switch.Cin,
-                        "Cout": switch.Cout,
-                        "Tdel": switch.Tdel,
-                        "mux_trans_size": switch.mux_trans_size,
-                        "buf_size": switch.buf_size,
-                        })
+                # FIXME: fake switch
+                xml.element_leaf("switch", {
+                    "type": "mux",
+                    "name": "default",
+                    "R": 0.,
+                    "Cin": 0.,
+                    "Cout": 0.,
+                    "Tdel": 1e-10,
+                    "mux_trans_size": 0.,
+                    "buf_size": 0.,
+                    })
+                # for switch in self.timing.vpr_switches:
+                #     xml.element_leaf("switch", {
+                #         "type": "mux",      # type forced to mux
+                #         "name": switch.name,
+                #         "R": switch.R,
+                #         "Cin": switch.Cin,
+                #         "Cout": switch.Cout,
+                #         "Tdel": switch.Tdel,
+                #         "mux_trans_size": switch.mux_trans_size,
+                #         "buf_size": switch.buf_size,
+                #         })
             # segments:
             with xml.element("segmentlist"):
                 for segment in itervalues(context.segments):
-                    segment = self.timing.vpr_segment(segment)
+                    # FIXME: fake segment timing
                     with xml.element('segment', {
                         'name': segment.name,
-                        'freq': segment.freq,
+                        'freq': 1.,
                         'length': segment.length,
-                        'type': 'unidir',   # type forced to unidir
-                        'Rmetal': segment.Rmetal,
-                        'Cmetal': segment.Cmetal,
+                        'type': 'unidir',
+                        'Rmetal': 0.,
+                        'Cmetal': 0.,
                         }):
-                        xml.element_leaf('mux', {'name': segment.mux})
+                        xml.element_leaf('mux', {'name': 'default'})
                         xml.element_leaf('sb', {'type': 'pattern'},
-                                ' '.join(map(str, segment.sb_pattern)))
+                                ' '.join(map(str, [1 for _ in range(segment.length + 1)])))
                         xml.element_leaf('cb', {'type': 'pattern'},
-                                ' '.join(map(str, segment.cb_pattern)))
+                                ' '.join(map(str, [1 for _ in range(segment.length)])))
+                    # segment = self.timing.vpr_segment(segment)
+                    # with xml.element('segment', {
+                    #     'name': segment.name,
+                    #     'freq': segment.freq,
+                    #     'length': segment.length,
+                    #     'type': 'unidir',   # type forced to unidir
+                    #     'Rmetal': segment.Rmetal,
+                    #     'Cmetal': segment.Cmetal,
+                    #     }):
+                    #     xml.element_leaf('mux', {'name': segment.mux})
+                    #     xml.element_leaf('sb', {'type': 'pattern'},
+                    #             ' '.join(map(str, segment.sb_pattern)))
+                    #     xml.element_leaf('cb', {'type': 'pattern'},
+                    #             ' '.join(map(str, segment.cb_pattern)))
             # clean up
             del xml
 
@@ -862,18 +906,20 @@ class VPRArchGeneration(_VPRArchGeneration):
             if (subarray := array.instances.get( (x, y) )) is None:
                 continue
             elif subarray.model.module_class.is_array:
-                self._layout_array(subarray.model, subarray.extend_hierarchy(above = instance))
+                self._layout_array(subarray.model, subarray._extend_hierarchy(above = instance))
             elif subarray.model.module_class.is_tile:
                 self.active_tiles[subarray.model.key] = True
-                for subtile, i in enumerate(subarray.model._instances.subtiles):
+                for subtile, i in iteritems(subarray.model.instances):
+                    if not isinstance(subtile, int):
+                        continue
                     if i.model.module_class.is_io_block:
                         for iotype in (IOType.ipin, IOType.opin):
-                            if iotype.case("inpad", "outpad") in i.model.instances["io"].pins:
+                            if iotype in i.pins:
                                 self.ios.append( (iotype, position + (x, y), subtile) )
                 attrs = { "priority": 1, "type": subarray.model.name,
                         "x": position.x + x, "y": position.y + y, }
                 if (fasm_prefix := self.fasm.fasm_prefix_for_tile(
-                    subarray.extend_hierarchy(above = instance) )):
+                    subarray._extend_hierarchy(above = instance) )):
                     with self.xml.element('single', attrs), self.xml.element("metadata"):
                         self.xml.element_leaf("meta", {"name": "fasm_prefix"},
                                 "\n".join(fasm_prefix))
@@ -893,7 +939,9 @@ class VPRArchGeneration(_VPRArchGeneration):
     def _device(self, context):
         # fake device
         self.xml.element_leaf('sizing', {'R_minW_nmos': '0.0', 'R_minW_pmos': '0.0'})
-        self.xml.element_leaf('connection_block', {'input_switch_name': self.timing.vpr_switches[0].name})
+        # FIXME
+        self.xml.element_leaf('connection_block', {'input_switch_name': "default"})
+        # self.xml.element_leaf('connection_block', {'input_switch_name': self.timing.vpr_switches[0].name})
         self.xml.element_leaf('area', {'grid_logic_tile_area': '0.0'})
         self.xml.element_leaf('switch_block', {'type': 'wilton', 'fs': '3'})
         self.xml.element_leaf('default_fc',
@@ -1013,8 +1061,11 @@ class VPRScalableArchGeneration(_VPRArchGeneration):
         # fake device
         self.xml.element_leaf('sizing', self.delegate.device.get("sizing",
             {'R_minW_nmos': 0., 'R_minW_pmos': 0.}))
+        # FIXME
         self.xml.element_leaf('connection_block', self.delegate.device.get("connection_block",
-            {'input_switch_name': self.timing.vpr_switches[0].name}))
+            {'input_switch_name': "default"}))
+        # self.xml.element_leaf('connection_block', self.delegate.device.get("connection_block",
+        #     {'input_switch_name': self.timing.vpr_switches[0].name}))
         self.xml.element_leaf('area', self.delegate.device.get("area",
             {'grid_logic_tile_area': 0.}))
         self.xml.element_leaf('switch_block', self.delegate.device.get("switch_block",
@@ -1028,7 +1079,7 @@ class VPRScalableArchGeneration(_VPRArchGeneration):
 # ----------------------------------------------------------------------------
 # -- VPR rrg.xml Generation --------------------------------------------------
 # ----------------------------------------------------------------------------
-class VPR_RRG_Generation(Object, AbstractPass):
+class VPR_RRG_Generation(AbstractPass):
     """Generate VPR's routing resource graph XML.
     
     Args:
@@ -1129,50 +1180,58 @@ class VPR_RRG_Generation(Object, AbstractPass):
 
     def _construct_conn_graph(self, top):
         node_id = 0
-        def create_node(m, n):
+
+        def node_key(n):
+            if n.net_type.is_port:
+                return None
+            elif n.instance.model.module_class.is_routing_box:
+                if n.model.key.node_type.is_segment:
+                    pos = ArrayBuilder.hierarchical_position(n.instance)
+                    # adjust for Sbox corner and track orientation
+                    pos += n.instance.hierarchy[0].key[1].case( (0, 0), (-1, 0), (0, -1), (-1, -1) )
+                    pos += n.model.key.orientation.case( (0, 1), (1, 0), (0, 0), (0, 0) )
+                    if not n.model.key.orientation.dimension.case(self.chanx, self.chany)[pos.x][pos.y]:
+                        return None
+                return NetUtils._reference(n)
+            elif n.instance.model.module_class.is_block:
+                return NetUtils._reference(n)
+            else:
+                return None
+
+        def node_attrs(n):
             nonlocal node_id
-            # guess node type
-            if isinstance(n[0], SegmentID):
-                pos, corner = n[1]
-                # adjust for switch box corner
-                pos += corner.case( (0, 0), (-1, 0), (0, -1), (-1, -1) )
-                # adjust for track orientation
-                pos += n[0].orientation.case( (0, 1), (1, 0), (0, 0), (0, 0) )
-                # adjust for hierarchy
-                pos = sum(n[2:], pos)
-                if n[0].orientation.dimension.case(self.chanx, self.chany)[pos.x][pos.y]:
-                    d = {"id": node_id, "type": n[0].orientation.dimension.case("CHANX", "CHANY")}
-                    node_id += n[0].prototype.width
+            if n.instance.model.module_class.is_routing_box:
+                if n.model.key.node_type.is_segment:
+                    d = {"id": node_id, "type": n.model.key.orientation.dimension.case("CHANX", "CHANY")}
+                    node_id += n.model.key.prototype.width
                     return d
                 else:
-                    return None
-            elif isinstance(n[0], BlockPinID):
-                ori, offset = n[1]
-                return {} if isinstance(ori, Orientation) else None
-            elif isinstance(n[0], BridgeID):
-                ori_or_pos, offset_or_corner = n[1]
-                return {} if isinstance(ori_or_pos, Orientation) or isinstance(offset_or_corner, Corner) else None
-            elif len(n) > 1 and isinstance(n[1], int):
-                net = NetUtils._dereference(m, n, coalesced = True)
-                d = {"srcsink_id": node_id, "type": net.model.direction.case("IPIN", "OPIN")}
-                if getattr(net.model, "vpr_equivalent_pins", False):
+                    return {}
+            else:
+                d = {"srcsink_id": node_id, "type": n.model.direction.case("IPIN", "OPIN")}
+                if getattr(n.model, "vpr_equivalent_pins", False):
                     d.update({"id": node_id + 1, "equivalent": True})
-                    node_id += 1 + len(net)
+                    node_id += 1 + len(n)
                 else:
-                    d["id"] = node_id + len(net)
-                    node_id += 2 * len(net)
+                    d["id"] = node_id + len(n)
+                    node_id += 2 * len(n)
                 return d
-        self.conn_graph = ModuleUtils.reduce_timing_graph(top,
-                graph = ConnGraph(coalesce_connections = True,
-                    node_attr_slots = ("id", "srcsink_id", "type", "equivalent")),
+
+        _logger.info("Start constructing coarse-grained routing graph for VPR RRG generation")
+        t = time.time()
+        self.conn_graph = ModuleUtils.reduce_conn_graph(top,
+                coalesce_connections = True,
                 blackbox_instance = lambda i: i.model.module_class.is_block or i.model.module_class.is_routing_box,
-                create_node = create_node,
-                create_edge = None,
-                coalesce_connections = True)
+                node_key = node_key,
+                node_attrs = node_attrs
+                )
+        t = time.time() - t
+        _logger.info("Completed constructing coarse-grained routing graph for VPR RRG generation")
+        _logger.info("Construction took %f seconds", t)
 
     def _tile_pinlist(self, pin, srcsink_ptc, iopin_ptc):
         subtile_name = pin.parent.name
-        if len(pin.parent._instances.subtiles) > 1:
+        if 1 in pin.parent.instances:
             subtile_name += "[{}]".format(pin.instance.key)
         if getattr(pin.model, "vpr_equivalent_pins", False):
             with self.xml.element("pin_class", {"type": pin.model.direction.case("INPUT", "OUTPUT")}):
@@ -1195,7 +1254,9 @@ class VPR_RRG_Generation(Object, AbstractPass):
         with self.xml.element("block_type", {
             "name": tile.name, "width": tile.width, "height": tile.height, "id": self.tile2id[tile.key]}):
             srcsink_ptc, iopin_ptc = 0, 0
-            for subtile, i in enumerate(tile._instances.subtiles):
+            for subtile, i in iteritems(tile.instances):
+                if not isinstance(subtile, int):
+                    continue
                 tilepin2ptc.append( OrderedDict() )
                 for pin in itervalues(i.pins):
                     if pin.model.direction.is_input and not pin.model.is_clock:
@@ -1248,8 +1309,10 @@ class VPR_RRG_Generation(Object, AbstractPass):
     def _edge(self, src_id, sink_id, head_pin_bit = None, tail_pin_bit = None, delay = 0.0, fasm_features = tuple(),
             switch_id = None):
         if switch_id is None:
-            switch = self.timing.vpr_interblock_routing_switch(head_pin_bit, tail_pin_bit, delay)
-            switch_id = self.switch2id[switch.name]
+            # FIXME:
+            # switch = self.timing.vpr_interblock_routing_switch(head_pin_bit, tail_pin_bit, delay)
+            # switch_id = self.switch2id[switch.name]
+            switch_id = 1
         attrs = {"src_node": src_id,
                 "sink_node": sink_id,
                 "switch_id": switch_id,
@@ -1262,16 +1325,25 @@ class VPR_RRG_Generation(Object, AbstractPass):
             self.xml.element_leaf("edge", attrs)
 
     def _edge_box_output(self, head_pin_bit, tail_pin_bit, tail_pkg, fasm_features = tuple(), delay = 0.0):
-        sink_port_bit = head_pin_bit.bus.model[head_pin_bit.index]
-        for src_port_bit in NetUtils.get_multisource(sink_port_bit):
-            this_fasm = fasm_features + self.fasm.fasm_features_for_routing_switch(src_port_bit, sink_port_bit,
-                    head_pin_bit.bus.instance)
-            this_delay = delay + self.timing.vpr_delay_of_routing_switch(src_port_bit, sink_port_bit)
-            self._edge_box_input(head_pin_bit.bus.instance.pins[src_port_bit.bus.key][src_port_bit.index],
-                    tail_pin_bit, tail_pkg, this_fasm, this_delay)
+        sink, hierarchy = ModuleUtils._analyze_sink(head_pin_bit)
+        for src in NetUtils.get_multisource(sink):
+            this_fasm = fasm_features + self.fasm.fasm_features_for_routing_switch(src, sink, hierarchy)
+            # FIXME: timing
+            # this_delay = delay + self.timing.vpr_delay_of_routing_switch(src_port_bit, sink_port_bit)
+            self._edge_box_input(ModuleUtils._attach_hierarchy(src, hierarchy),
+                    tail_pin_bit, tail_pkg, this_fasm, delay)
 
     def _edge_box_input(self, head_pin_bit, tail_pin_bit, tail_pkg, fasm_features = tuple(), delay = 0.0):
-        head_idx, head_node = NetUtils._reference(head_pin_bit)
+        head_idx, head_node, parent = None, None, None
+
+        if head_pin_bit.net_type in (NetType.slice_, NetType.bit):
+            head_idx, head_node = NetUtils._reference(head_pin_bit)
+            if isinstance(head_idx, slice):
+                head_idx = head_idx.start
+            parent = head_pin_bit.bus.parent
+        else:
+            head_idx, head_node = 0, NetUtils._reference(head_pin_bit)
+            parent = head_pin_bit.parent
 
         try:
             predit = self.conn_graph.predecessors(head_node)
@@ -1279,12 +1351,15 @@ class VPR_RRG_Generation(Object, AbstractPass):
         except (nx.NetworkXError, StopIteration):
             return
 
-        head_pin_bit = NetUtils._dereference(head_pin_bit.parent, pred_node, coalesced = True)[head_idx]
+        head_pin_bus = NetUtils._dereference(parent, pred_node)
+        head_pin_bit = head_pin_bus[head_idx]
+
         pred_data = self.conn_graph.nodes[pred_node]
         if (id_ := pred_data.get("id")) is None:
             self._edge_box_output(head_pin_bit, tail_pin_bit, tail_pkg, fasm_features, delay)
             return
-        elif tail_pkg[0] in ("CHANX", "CHANY"):                     # ??? -> track
+
+        if tail_pkg[0] in ("CHANX", "CHANY"):                     # ??? -> track
             tail_id, tail_lower, tail_higher, tail_ori = tail_pkg[1:]
             tail_start = tail_ori.direction.case(tail_lower, tail_higher)
             if pred_data["type"] in ("CHANX", "CHANY"):             # track -> track
@@ -1303,7 +1378,7 @@ class VPR_RRG_Generation(Object, AbstractPass):
                         self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
                         return
             else:                                                   # block pin -> track
-                head_chan, head_ori, _ = self._analyze_blockpin(head_pin_bit.bus)
+                head_chan, head_ori, _ = self._analyze_blockpin(head_pin_bus)
                 dim = head_ori.dimension.perpendicular
                 if dim is tail_ori.dimension and head_chan == tail_start:
                     self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
@@ -1325,7 +1400,7 @@ class VPR_RRG_Generation(Object, AbstractPass):
         # runtime-generated data
         self.tile2id = OrderedDict()
         self.tilepin2ptc = OrderedDict()
-        self.blockpin2ptc = OrderedDict()
+        # self.blockpin2ptc = OrderedDict()
         self.switch2id = OrderedDict()
         self.sgmt2id = OrderedDict()
         self.sgmt2ptc = OrderedDict()
@@ -1374,13 +1449,17 @@ class VPR_RRG_Generation(Object, AbstractPass):
                 with xml.element('switch', {'id': 0, 'type': 'mux', 'name': '__vpr_delayless_switch__', }):
                     xml.element_leaf('timing', {'R': 0., 'Cin': 0., 'Cout': 0., 'Tdel': 0., })
                     xml.element_leaf('sizing', {'mux_trans_size': 0., 'buf_size': 0., })
-                for switch in self.timing.vpr_switches:
-                    id_ = self.switch2id[switch.name] = len(self.switch2id) + 1
-                    with xml.element('switch', {'id': id_, 'type': 'mux', 'name': switch.name, }):
-                        xml.element_leaf('timing',
-                                {'R': switch.R, 'Cin': switch.Cin, 'Cout': switch.Cout, 'Tdel': switch.Tdel, })
-                        xml.element_leaf('sizing',
-                                {'mux_trans_size': switch.mux_trans_size, 'buf_size': switch.buf_size, })
+                # FIXME: fake switches
+                with xml.element('switch', {'id': 1, 'type': 'mux', 'name': 'default', }):
+                    xml.element_leaf('timing', {'R': 0., 'Cin': 0., 'Cout': 0., 'Tdel': 1e-10, })
+                    xml.element_leaf('sizing', {'mux_trans_size': 0., 'buf_size': 0., })
+                # for switch in self.timing.vpr_switches:
+                #     id_ = self.switch2id[switch.name] = len(self.switch2id) + 1
+                #     with xml.element('switch', {'id': id_, 'type': 'mux', 'name': switch.name, }):
+                #         xml.element_leaf('timing',
+                #                 {'R': switch.R, 'Cin': switch.Cin, 'Cout': switch.Cout, 'Tdel': switch.Tdel, })
+                #         xml.element_leaf('sizing',
+                #                 {'mux_trans_size': switch.mux_trans_size, 'buf_size': switch.buf_size, })
             # segments
             with xml.element('segments'):
                 ptc = 0
@@ -1389,8 +1468,10 @@ class VPR_RRG_Generation(Object, AbstractPass):
                     self.sgmt2ptc[name] = ptc
                     ptc += 2 * sgmt.width * sgmt.length
                     with self.xml.element("segment", {"name": name, "id": i}):
-                        sgmt = self.timing.vpr_segment(sgmt)
-                        self.xml.element_leaf("timing", {"R_per_meter": sgmt.Rmetal, "C_per_meter": sgmt.Cmetal})
+                        # FIXME: fake segment
+                        self.xml.element_leaf("timing", {"R_per_meter": "0.0", "C_per_meter": "0.0"})
+                        # sgmt = self.timing.vpr_segment(sgmt)
+                        # self.xml.element_leaf("timing", {"R_per_meter": sgmt.Rmetal, "C_per_meter": sgmt.Cmetal})
             # block types
             with xml.element('block_types'):
                 xml.element_leaf("block_type", {"id": 0, "name": "EMPTY", "width": 1, "height": 1})
@@ -1419,10 +1500,11 @@ class VPR_RRG_Generation(Object, AbstractPass):
                                     track_dir = ori.direction,
                                     xhigh = higher.x,
                                     yhigh = higher.y,
-                                    segment = self.timing.vpr_segment(segment),
+                                    # segment = self.timing.vpr_segment(segment),
+                                    segment = segment,
                                     )
                     else:                                       # block pin
-                        pin = NetUtils._dereference(context.top, node, coalesced = True)
+                        pin = data["net"]
                         _, ori, pos = self._analyze_blockpin(pin)
                         blkinst = pin.instance.hierarchy[0]
                         tilepin2ptc = self.tilepin2ptc[blkinst.parent.key]
@@ -1458,9 +1540,11 @@ class VPR_RRG_Generation(Object, AbstractPass):
             # edges
             with xml.element("rr_edges"):
                 for sink_node, sink_data in self.conn_graph.nodes(data = True):
-                    if (type_ := sink_data.get("type")) in ("CHANX", "CHANY"):
+                    if (type_ := sink_data.get("type")) is None:
+                        continue
+                    elif type_ in ("CHANX", "CHANY"):
                         # 1. get the pin
-                        sink_pin = NetUtils._dereference(context.top, sink_node, coalesced = True)
+                        sink_pin = sink_data["net"]
                         # 2. prepare the tail package
                         ori, lower, higher, _ = self._analyze_track(sink_node)
                         # 3. emit edges
@@ -1470,7 +1554,7 @@ class VPR_RRG_Generation(Object, AbstractPass):
                                     (type_,      sink_data["id"] + i, lower,     higher,     ori))
                     elif type_ == "IPIN":
                         # 1. get the pin
-                        sink_pin = NetUtils._dereference(context.top, sink_node, coalesced = True)
+                        sink_pin = NetUtils._dereference(context.top, sink_node)
                         # 2. prepare the tail package
                         chan, ori, _ = self._analyze_blockpin(sink_pin)
                         iopin_id = sink_data["id"]
@@ -1486,7 +1570,7 @@ class VPR_RRG_Generation(Object, AbstractPass):
                                     (type_,      iopin_id + i, chan,     ori.dimension.perpendicular))
                     elif type_ == "OPIN":
                         # 1. get the pin
-                        sink_pin = NetUtils._dereference(context.top, sink_node, coalesced = True)
+                        sink_pin = NetUtils._dereference(context.top, sink_node)
                         # 2. emit SOURCE -> OPIN edges
                         iopin_id = sink_data["id"]
                         srcsink_id = sink_data["srcsink_id"]

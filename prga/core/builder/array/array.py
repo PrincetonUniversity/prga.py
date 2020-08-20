@@ -44,10 +44,10 @@ class _ArrayInstancesMapping(Object, MutableMapping):
     def __getitem__(self, key):
         try:
             (x, y), corner = key
-        except TypeError:
+        except (TypeError, ValueError):
             try:
                 (x, y), corner = key, None
-            except TypeError:
+            except (TypeError, ValueError):
                 raise KeyError(key)
         if self.__validate_position(x, y):
             if corner is not None and isinstance((i := self.sboxes[x][y][corner]), Instance):

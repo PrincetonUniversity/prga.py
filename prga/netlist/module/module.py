@@ -92,16 +92,19 @@ class Module(Object):
         if child.parent is not self:
             raise PRGAInternalError("{} is not the parent of {}".format(self, child))
         # check name conflict
-        if child.name in self._children:
+        if (conflict := self._children.get(child.name)) is not None:
             raise PRGAInternalError("Name '{}' taken by {} in {}"
-                    .format(child.name, self._children[child.name], self))
+                    .format(child.name, conflict, self))
         # check key conflict
-        d = self._ports if isinstance(child, Port) else self._instances
-        if child.key in d:
+        elif ((conflict := self._ports.get(child.key)) is not None or
+                (conflict := self._instances.get(child.key)) is not None):
             raise PRGAInternalError("Key '{}' taken by {} in {}"
-                    .format(child.key, d[child.key], self))
+                    .format(child.key, conflict, self))
         # add child and return
-        return self._children.setdefault(child.name, d.setdefault(child.key, child))
+        if isinstance(child, Port):
+            return self._children.setdefault(child.name, self._ports.setdefault(child.key, child))
+        else:
+            return self._children.setdefault(child.name, self._instances.setdefault(child.key, child))
 
     # == low-level API =======================================================
     @property
