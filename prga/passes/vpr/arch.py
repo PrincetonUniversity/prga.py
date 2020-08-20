@@ -173,7 +173,7 @@ class _VPRArchGeneration(AbstractPass):
             if any(itervalues(fasm_muxes)):
                 with self.xml.element("metadata"):
                     self.xml.element_leaf("meta", {"name": "fasm_mux"},
-                            '\n'.join('{} : {}'.format(src, fasm_mux or FASM_NONE)
+                            '\n'.join('{} : {}'.format(src, ", ".join(fasm_mux) or FASM_NONE)
                                 for src, fasm_mux in iteritems(fasm_muxes)))
 
     def _leaf_pb_type(self, instance):
@@ -211,7 +211,7 @@ class _VPRArchGeneration(AbstractPass):
                         if fasm_prefixes:
                             self.xml.element_leaf("meta", {"name": "fasm_prefix"}, fasm_prefixes)
                         if fasm_features:
-                            self.xml.element_leaf("meta", {"name": "fasm_features"}, fasm_features)
+                            self.xml.element_leaf("meta", {"name": "fasm_features"}, " ".join(fasm_features))
             return
         # bitwise_timing = True
         if primitive.primitive_class.is_lut:
@@ -267,7 +267,7 @@ class _VPRArchGeneration(AbstractPass):
                     if fasm_prefixes:
                         self.xml.element_leaf("meta", {"name": "fasm_prefix"}, fasm_prefixes)
                     if fasm_features:
-                        self.xml.element_leaf("meta", {"name": "fasm_features"}, fasm_features)
+                        self.xml.element_leaf("meta", {"name": "fasm_features"}, " ".join(fasm_features))
                     if any(itervalues(fasm_params)):
                         self.xml.element_leaf("meta", {"name": "fasm_params"},
                             '\n'.join("{} = {}".format(p or FASM_NONE, param)
@@ -428,7 +428,7 @@ class _VPRArchGeneration(AbstractPass):
                 if fasm_prefixes:
                     self.xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefixes)
                 if fasm_features:
-                    self.xml.element_leaf('meta', {'name': 'fasm_features'}, fasm_features)
+                    self.xml.element_leaf('meta', {'name': 'fasm_features'}, " ".join(fasm_features))
                 if any(itervalues(fasm_luts)):
                     self.xml.element_leaf('meta', {'name': 'fasm_type'},
                             'LUT' if len(fasm_luts) == 1 else 'SPLIT_LUT')
@@ -706,9 +706,10 @@ class VPRArchGeneration(_VPRArchGeneration):
                         else:
                             self.ios.append( (IOType.opin, position + (x, y), subtile) )
                 attrs = { "priority": 1, "type": subarray.model.name, "x": position.x + x, "y": position.y + y, }
-                if fasm_prefix := self.fasm.fasm_prefix_for_tile(subarray._extend_hierarchy(above = hierarchy)):
+                if any(fasm_prefix := self.fasm.fasm_prefix_for_tile(subarray._extend_hierarchy(above = hierarchy))):
                     with self.xml.element('single', attrs), self.xml.element("metadata"):
-                        self.xml.element_leaf("meta", {"name": "fasm_prefix"}, fasm_prefix)
+                        self.xml.element_leaf("meta", {"name": "fasm_prefix"},
+                                " ".join(prefix or FASM_NONE for prefix in fasm_prefix))
                 else:
                     self.xml.element_leaf("single", attrs)
 

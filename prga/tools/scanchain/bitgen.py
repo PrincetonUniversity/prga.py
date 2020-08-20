@@ -6,6 +6,7 @@ from prga.compatible import *
 from ..util import create_argparser, docstring_from_argparser
 from ...core.context import Context
 from ...core.common import ModuleView
+from ...passes.vpr.arch import FASM_NONE
 from ...util import enable_stdout_logging
 
 import re   # for the simple FASM, regexp processing is good enough
@@ -51,7 +52,7 @@ def bitgen_scanchain(bitstream_size     # bitstream size
     # process features
     for lineno, line in enumerate(istream):
         segments = line.strip().split('.')
-        if '__none__' in segments:
+        if FASM_NONE in segments:
             continue
         base = sum(int(segment[1:]) for segment in segments[:-1])
         if '[' in segments[-1]:

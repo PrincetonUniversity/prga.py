@@ -27,9 +27,9 @@ class FASMDelegate(Object):
             hierarchy (`AbstractInstance`): Hierarchy of ``src`` and ``sink`` in the block.
         
         Returns:
-            :obj:`str`: "fasm_mux" value
+            :obj:`Sequence` [:obj:`str` ]: "fasm_mux" values
         """
-        return None
+        return tuple()
 
     def fasm_params_for_primitive(self, instance = None):
         """Get the "fasm_params" strings for hierarchical primitive ``instance``.
@@ -41,7 +41,7 @@ class FASMDelegate(Object):
             :obj:`Mapping` [:obj:`str`, :obj:`str` ]: "fasm_param" feature mapping for the primitive instance
 
         Notes:
-            This method is called **ONLY ONCE** for multi-"vpr_pb" instances.
+            This method is called **ONLY ONCE** for multi-"num_pb" instances.
         """
         return {}
 
@@ -56,7 +56,7 @@ class FASMDelegate(Object):
             :obj:`str`: "fasm_prefix" value
 
         Notes:
-            This method is called for **EACH** multi-"vpr_pb" instances.
+            This method is called for **EACH** multi-"num_pb" instances.
         """
         return None
 
@@ -68,12 +68,12 @@ class FASMDelegate(Object):
             hierarchy (`AbstractInstance`):
 
         Returns:
-            :obj:`str`: "fasm_features" value
+            :obj:`Sequence` [:obj:`str` ]: "fasm_features" values
 
         Notes:
-            This method is called **ONLY ONCE** for multi-"vpr_pb" instances.
+            This method is called **ONLY ONCE** for multi-"num_pb" instances.
         """
-        return None
+        return tuple()
 
     def fasm_lut(self, instance):
         """Get the "fasm_lut" strings for hierarchical LUT ``instance``.
@@ -87,7 +87,7 @@ class FASMDelegate(Object):
         Notes:
             This method is called for **EACH** multi-"vpr_pb" instances.
         """
-        return {}
+        return None
 
     def fasm_prefix_for_tile(self, instance = None):
         """Get the prefix for tile ``instance``.
@@ -96,9 +96,9 @@ class FASMDelegate(Object):
             instance (`AbstractInstance`):
 
         Returns:
-            :obj:`str`: "fasm_prefix" value
+            :obj:`Sequence` [:obj:`str` ]: "fasm_prefix" values
         """
-        return None
+        return tuple()
 
     def fasm_features_for_interblock_switch(self, source, sink, hierarchy = None):
         """Get the "fasm_features" string for the connection from ``source`` to ``sink``.
@@ -109,9 +109,9 @@ class FASMDelegate(Object):
             hierarchy (`AbstractInstance`): Hierarchy of ``src`` and ``sink`` in the routing box
         
         Returns:
-            :obj:`str`: "fasm_features" value
+            :obj:`Sequence` [:obj:`str` ]: "fasm_features" values
         """
-        return None
+        return tuple()
 
 # ----------------------------------------------------------------------------
 # -- Scalable Architecture Delegate ------------------------------------------

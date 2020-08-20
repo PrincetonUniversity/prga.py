@@ -8,7 +8,7 @@ from ...core.context import Context
 from ...netlist import TimingArcType, PortDirection, Module, ModuleUtils, NetUtils
 from ...passes.base import AbstractPass
 from ...passes.translation import AbstractSwitchDatabase
-from ...passes.vpr import FASMDelegate, FASM_NONE
+from ...passes.vpr import FASMDelegate
 from ...renderer import FileRenderer
 from ...util import Object, uno
 from ...exception import PRGAInternalError, PRGAAPIError
@@ -108,7 +108,7 @@ class ScanchainFASMDelegate(FASMDelegate):
             return tuple('b{}'.format(cfg_bitoffset + i) for i in getattr(conn, "cfg_bits", tuple()))
 
     def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy = None):
-        return " ".join(self._features_for_path(source, sink, hierarchy))
+        return self._features_for_path(source, sink, hierarchy)
 
     def fasm_params_for_primitive(self, instance):
         if (cfg_bitoffset := self._instance_bitoffset(instance)) is None:
@@ -138,7 +138,7 @@ class ScanchainFASMDelegate(FASMDelegate):
         elif (cfg_bitoffset := self._instance_bitoffset(hierarchy)) is None:
             return None
         else:
-            return ' '.join("b{}".format(cfg_bitoffset + i) for i in module.cfg_mode_selection)
+            return tuple("b{}".format(cfg_bitoffset + i) for i in module.cfg_mode_selection)
 
     def fasm_lut(self, instance):
         if (cfg_bitoffset := self._instance_bitoffset(instance)) is None:
@@ -154,14 +154,13 @@ class ScanchainFASMDelegate(FASMDelegate):
             if not isinstance(subtile, int):
                 continue
             elif subtile >= len(retval):
-                retval.extend(FASM_NONE for _ in range(subtile - len(retval) + 1))
+                retval.extend(None for _ in range(subtile - len(retval) + 1))
             if (inst_bitoffset := getattr(blkinst, 'cfg_bitoffset', None)) is not None:
                 retval[subtile] = 'b{}'.format(cfg_bitoffset + inst_bitoffset)
-        if any(v != FASM_NONE for v in retval):
-            return ' '.join(retval)
+        return tuple(retval)
 
     def fasm_features_for_interblock_switch(self, source, sink, hierarchy = None):
-        return " ".join(self._features_for_path(source, sink, hierarchy))
+        return self._features_for_path(source, sink, hierarchy)
 
 # ----------------------------------------------------------------------------
 # -- Scanchain Configuration Circuitry Main Entry ----------------------------

@@ -8,14 +8,11 @@ from .system import PktchainSystem
 from ..scanchain.lib import Scanchain, ScanchainSwitchDatabase, ScanchainFASMDelegate
 from ...core.common import ModuleClass, ModuleView, NetClass, Orientation
 from ...core.context import Context
-from ...netlist.net.common import PortDirection, Const
-from ...netlist.net.util import NetUtils
-from ...netlist.module.module import Module
-from ...netlist.module.util import ModuleUtils
+from ...netlist import PortDirection, Const, Module, NetUtils, ModuleUtils
 from ...passes.base import AbstractPass
 from ...passes.vpr import FASMDelegate
-from ...renderer.renderer import FileRenderer
-from ...util import Object, uno
+from ...renderer import FileRenderer
+from ...util import uno
 from ...exception import PRGAInternalError, PRGAAPIError
 
 import os
@@ -50,21 +47,24 @@ class PktchainFASMDelegate(ScanchainFASMDelegate):
         if (tile_bitoffset := getattr(instance.hierarchy[0], "cfg_bitoffset", None)) is None:
             return tuple()
         retval = []
-        for subtile, blkinst in enumerate(instance.model._instances.subtiles):
-            if (inst_bitoffset := getattr(blkinst, "cfg_bitoffset", None)) is None:
-                return tuple()
-            retval.append( 'x{}.y{}.b{}'.format(*self._instance_chainoffset(instance),
-                tile_bitoffset + inst_bitoffset) )
-        return retval
+        for subtile, blkinst in iteritems(instance.model.instances):
+            if not isinstance(subtile, int):
+                continue
+            elif subtile >= len(retval):
+                retval.extend(None for _ in range(subtile - len(retval) + 1))
+            if (inst_bitoffset := getattr(blkinst, "cfg_bitoffset", None)) is not None:
+                retval[subtile] = 'x{}.y{}.b{}'.format(*self._instance_chainoffset(instance),
+                        tile_bitoffset + inst_bitoffset)
+        return tuple(retval)
 
-    def fasm_features_for_routing_switch(self, source, sink, instance = None):
+    def fasm_features_for_interblock_switch(self, source, sink, hierarchy = None):
         inst_for_chain, inst_for_offset = None, None
-        if instance.model.module_class.is_connection_box:
-            inst_for_chain = instance.shrink_hierarchy(slice(1, None))
-            inst_for_offset = instance.shrink_hierarchy(slice(None, 2))
+        if hierarchy.model.module_class.is_connection_box:
+            inst_for_chain = hierarchy._shrink_hierarchy(low = 1)
+            inst_for_offset = hierarchy._shrink_hierarchy(high = 2)
         else:
-            inst_for_chain = instance
-            inst_for_offset = instance.hierarchy[0]
+            inst_for_chain = hierarchy
+            inst_for_offset = hierarchy.hierarchy[0]
         return tuple( 'x{}.y{}.{}'.format(*self._instance_chainoffset(inst_for_chain), f)
                 for f in self._features_for_path(source, sink, inst_for_offset) )
 
@@ -201,8 +201,8 @@ class Pktchain(Scanchain):
         # register pktchain clasp
         if "pktchain_clasp" not in dont_add_logical_primitive:
             mod = Module("pktchain_clasp",
-                    view = ModuleView.logical,
                     is_cell = True,
+                    view = ModuleView.logical,
                     module_class = ModuleClass.cfg,
                     cfg_width = cfg_width,
                     verilog_template = "pktchain_clasp.tmpl.v")
@@ -212,6 +212,7 @@ class Pktchain(Scanchain):
         # register pktchain router input fifo
         if "pktchain_frame_assemble" not in dont_add_logical_primitive:
             mod = Module("pktchain_frame_assemble",
+                    is_cell = True,
                     view = ModuleView.logical,
                     module_class = ModuleClass.cfg,
                     verilog_template = "pktchain_frame_assemble.tmpl.v")
@@ -224,6 +225,7 @@ class Pktchain(Scanchain):
         # register pktchain router output fifo
         if "pktchain_frame_disassemble" not in dont_add_logical_primitive:
             mod = Module("pktchain_frame_disassemble",
+                    is_cell = True,
                     view = ModuleView.logical,
                     module_class = ModuleClass.cfg,
                     verilog_template = "pktchain_frame_disassemble.tmpl.v")
@@ -238,6 +240,7 @@ class Pktchain(Scanchain):
         if not ({"pktchain_clasp", "pktchain_frame_assemble", "pktchain_frame_disassemble", "pktchain_router"} &
                 dont_add_logical_primitive):
             mod = Module("pktchain_router",
+                    is_cell = True,
                     view = ModuleView.logical,
                     module_class = ModuleClass.cfg,
                     verilog_template = "pktchain_router.tmpl.v")
@@ -268,6 +271,7 @@ class Pktchain(Scanchain):
         if not ({"pktchain_dispatcher", "pktchain_frame_assemble", "pktchain_frame_disassemble"} &
                 dont_add_logical_primitive):
             mod = Module("pktchain_dispatcher",
+                    is_cell = True,
                     view = ModuleView.logical,
                     module_class = ModuleClass.cfg,
                     verilog_template = "pktchain_dispatcher.tmpl.v")
@@ -297,6 +301,7 @@ class Pktchain(Scanchain):
         if not ({"pktchain_gatherer", "pktchain_frame_assemble", "pktchain_frame_disassemble"} &
                 dont_add_logical_primitive):
             mod = Module("pktchain_gatherer",
+                    is_cell = True,
                     view = ModuleView.logical,
                     module_class = ModuleClass.cfg,
                     verilog_template = "pktchain_gatherer.tmpl.v")
@@ -326,6 +331,7 @@ class Pktchain(Scanchain):
         if "pktchain_axilite_intf_fe" not in dont_add_logical_primitive:
             d = "pktchain_axilite_intf_fe"
             mod = context._database[ModuleView.logical, d] = Module(d,
+                    is_cell = True,
                     view = ModuleView.logical,
                     verilog_template = "axilite_intf/" + d + ".tmpl.v")
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
@@ -342,6 +348,7 @@ class Pktchain(Scanchain):
         if "pktchain_axilite_intf_be_uprot" not in dont_add_logical_primitive:
             d = "pktchain_axilite_intf_be_uprot"
             mod = context._database[ModuleView.logical, d] = Module(d,
+                    is_cell = True,
                     view = ModuleView.logical,
                     verilog_template = "axilite_intf/" + d + ".tmpl.v")
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_byteaddressable_reg"],
@@ -353,6 +360,7 @@ class Pktchain(Scanchain):
                 dont_add_logical_primitive):
             d = "pktchain_axilite_intf_be_cfg"
             mod = context._database[ModuleView.logical, d] = Module(d,
+                    is_cell = True,
                     view = ModuleView.logical,
                     verilog_template = "axilite_intf/" + d + ".tmpl.v")
             ModuleUtils.instantiate(mod, context.database[ModuleView.logical, "prga_fifo"],
@@ -368,6 +376,7 @@ class Pktchain(Scanchain):
                 dont_add_logical_primitive):
             d = "pktchain_axilite_intf"
             mod = context._database[ModuleView.logical, d] = Module(d,
+                    is_cell = True,
                     view = ModuleView.logical,
                     verilog_template = "axilite_intf/" + d + ".tmpl.v")
             # create a short alias
@@ -781,7 +790,7 @@ class Pktchain(Scanchain):
         else:
             super(Pktchain, cls).annotate_user_view(context, module, _annotated = _annotated)
 
-    class InjectConfigCircuitry(Object, AbstractPass):
+    class InjectConfigCircuitry(AbstractPass):
         """Automatically inject configuration circuitry.
         
         Keyword Args:
@@ -817,7 +826,7 @@ class Pktchain(Scanchain):
         def passes_after_self(self):
             return ("rtl", )
 
-    class BuildAXILiteSystem(Object, AbstractPass):
+    class BuildAXILiteSystem(AbstractPass):
         """Create a system wrapping the fabric with a bitstream controller. 
 
         Args:
@@ -863,7 +872,7 @@ class Pktchain(Scanchain):
         def passes_after_self(self):
             return ("rtl", )
 
-    class GenerateAXILiteIOConstraints(Object, AbstractPass):
+    class GenerateAXILiteIOConstraints(AbstractPass):
         """Generate the IO constraints file for AXILite system.
 
         Args:

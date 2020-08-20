@@ -276,7 +276,7 @@ class TileBuilder(BaseArrayBuilder):
                                 len(tunnel.source), driver.model.direction.opposite, key = src_node)
                         NetUtils.connect(tunnel_src_port, driver.model)
                     sink = driver.instance.pins[src_node]
-                    if NetUtils.get_source(sink, return_none_if_unconnected) is not None:
+                    if NetUtils.get_source(sink, return_none_if_unconnected = True) is not None:
                         continue
                 else:
                     continue

@@ -26,10 +26,10 @@ __all__.extend(["Context"])
 
 # Configuration Circuitry Entry Points
 from .cfg.scanchain.lib import Scanchain
-# from .cfg.pktchain.lib import Pktchain
+from .cfg.pktchain.lib import Pktchain
 __all__.extend([
     "Scanchain",
-    # "Pktchain",
+    "Pktchain",
     ])
 
 # Flow Manager and Passes

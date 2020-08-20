@@ -351,7 +351,9 @@ class NetUtils(Object):
                     raise PRGAInternalError(
                             "{} is already connected to {}. ({} does not support multi-connections)"
                             .format(sink, next(iter(itervalues(sink._connections))), module))
-                sink._connections[srcref] = src._connections[sinkref] = NetConnection(src, sink, **kwargs)
+                conn = sink._connections[srcref] = NetConnection(src, sink, **kwargs)
+                if not src.net_type.is_const:
+                    src._connections[srcref] = conn
             else:
                 for k, v in iteritems(kwargs):
                     setattr(conn, k, v)

@@ -269,10 +269,7 @@ class VPR_RRG_Generation(AbstractPass):
     def _edge_box_output(self, head_pin_bit, tail_pin_bit, tail_pkg, fasm_features = tuple(), delay = 0.0):
         sink, hierarchy = ModuleUtils._analyze_sink(head_pin_bit)
         for src in NetUtils.get_multisource(sink):
-            if (this_fasm := self.fasm.fasm_features_for_interblock_switch(src, sink, hierarchy)):
-                this_fasm = fasm_features + tuple(this_fasm.split())
-            else:
-                this_fasm = fasm_features
+            this_fasm = fasm_features + self.fasm.fasm_features_for_interblock_switch(src, sink, hierarchy)
             # FIXME: timing
             # this_delay = delay + self.timing.vpr_delay_of_routing_switch(src_port_bit, sink_port_bit)
             self._edge_box_input(ModuleUtils._attach_hierarchy(src, hierarchy), tail_pin_bit, tail_pkg,
