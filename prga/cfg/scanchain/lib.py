@@ -8,7 +8,7 @@ from ...core.context import Context
 from ...netlist import TimingArcType, PortDirection, Module, ModuleUtils, NetUtils
 from ...passes.base import AbstractPass
 from ...passes.translation import AbstractSwitchDatabase
-from ...passes.vpr import FASMDelegate
+from ...passes.vpr import FASMDelegate, FASM_NONE
 from ...renderer import FileRenderer
 from ...util import Object, uno
 from ...exception import PRGAInternalError, PRGAAPIError
@@ -97,59 +97,23 @@ class ScanchainFASMDelegate(FASMDelegate):
                 cfg_bitoffset += offset
         return cfg_bitoffset
 
-    def _features_for_path(self, source, sink, instance = None):
-        # 1. get the cfg bit offset for ``instance``
-        cfg_bitoffset = self._instance_bitoffset(instance)
-        if cfg_bitoffset is None:
+    def _features_for_path(self, source, sink, hierarchy = None):
+        # 1. get the cfg bit offset for ``hierarchy``
+        if (cfg_bitoffset := self._instance_bitoffset(hierarchy)) is None:
             return tuple()
         # 2. get the cfg bits for the connection
-        if (conn := NetUtils.get_connection(source, sink)) is None:
+        elif (conn := NetUtils.get_connection(source, sink)) is None:
             return tuple()
         else:
             return tuple('b{}'.format(cfg_bitoffset + i) for i in getattr(conn, "cfg_bits", tuple()))
 
-    def fasm_mux_for_intrablock_switch(self, source, sink, instance = None):
-        return self._features_for_path(source, sink, instance)
-
-    def fasm_prefix_for_intrablock_module(self, instance):
-        if instance.model.module_class.is_primitive and instance.model.primitive_class.is_lut:
-            return ''
-        offset = getattr(instance.hierarchy[0], "cfg_bitoffset", None)
-        if offset is None:
-            return ''
-        else:
-            return 'b{}'.format(offset)
-
-    def fasm_features_for_mode(self, instance, mode):
-        cfg_bitoffset = self._instance_bitoffset(instance)
-        if cfg_bitoffset is None:
-            return tuple()
-        return tuple("b{}".format(cfg_bitoffset + i) for i in instance.model.modes[mode].cfg_mode_selection)
-
-    def fasm_prefix_for_tile(self, instance):
-        if (cfg_bitoffset := self._instance_bitoffset(instance)) is None:
-            return tuple()
-        retval = []
-        for subtile, blkinst in iteritems(instance.model.instances):
-            if not isinstance(subtile, int):
-                continue
-            elif (inst_bitoffset := getattr(blkinst, 'cfg_bitoffset', None)) is None:
-                return tuple()
-            retval.append( 'b{}'.format(cfg_bitoffset + inst_bitoffset) )
-        return retval
-
-    def fasm_lut(self, instance):
-        cfg_bitoffset = self._instance_bitoffset(instance)
-        if cfg_bitoffset is None:
-            return ''
-        return 'b{}[{}:0]'.format(str(cfg_bitoffset), instance.model.cfg_bitcount - 1)
+    def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy = None):
+        return " ".join(self._features_for_path(source, sink, hierarchy))
 
     def fasm_params_for_primitive(self, instance):
-        cfg_bitoffset = self._instance_bitoffset(instance)
-        if cfg_bitoffset is None:
+        if (cfg_bitoffset := self._instance_bitoffset(instance)) is None:
             return {}
-        params = getattr(instance.model, "parameters", None)
-        if params is None:
+        elif (params := getattr(instance.model, "parameters", None)) is None:
             return {}
         fasm_params = {}
         for key, value in iteritems(params):
@@ -158,8 +122,46 @@ class ScanchainFASMDelegate(FASMDelegate):
             fasm_params[key] = "b{}[{}:0]".format(settings.cfg_bitoffset, settings.cfg_bitcount - 1)
         return fasm_params
 
-    def fasm_features_for_routing_switch(self, source, sink, instance = None):
-        return self._features_for_path(source, sink, instance)
+    def fasm_prefix_for_intrablock_module(self, module, hierarchy = None):
+        if (module.module_class.is_primitive and module.primitive_class.is_lut) or module.module_class.is_mode:
+            return None
+        elif hierarchy is None:
+            return None
+        elif (offset := getattr(hierarchy.hierarchy[0], "cfg_bitoffset", None)) is None:
+            return None
+        else:
+            return 'b{}'.format(offset)
+
+    def fasm_features_for_intrablock_module(self, module, hierarchy = None):
+        if not module.module_class.is_mode:
+            return None
+        elif (cfg_bitoffset := self._instance_bitoffset(hierarchy)) is None:
+            return None
+        else:
+            return ' '.join("b{}".format(cfg_bitoffset + i) for i in module.cfg_mode_selection)
+
+    def fasm_lut(self, instance):
+        if (cfg_bitoffset := self._instance_bitoffset(instance)) is None:
+            return None
+        else:
+            return 'b{}[{}:0]'.format(str(cfg_bitoffset), instance.model.cfg_bitcount - 1)
+
+    def fasm_prefix_for_tile(self, instance):
+        if (cfg_bitoffset := self._instance_bitoffset(instance)) is None:
+            return None
+        retval = []
+        for subtile, blkinst in iteritems(instance.model.instances):
+            if not isinstance(subtile, int):
+                continue
+            elif subtile >= len(retval):
+                retval.extend(FASM_NONE for _ in range(subtile - len(retval) + 1))
+            if (inst_bitoffset := getattr(blkinst, 'cfg_bitoffset', None)) is not None:
+                retval[subtile] = 'b{}'.format(cfg_bitoffset + inst_bitoffset)
+        if any(v != FASM_NONE for v in retval):
+            return ' '.join(retval)
+
+    def fasm_features_for_interblock_switch(self, source, sink, hierarchy = None):
+        return " ".join(self._features_for_path(source, sink, hierarchy))
 
 # ----------------------------------------------------------------------------
 # -- Scanchain Configuration Circuitry Main Entry ----------------------------

@@ -11,9 +11,6 @@ from ...exception import PRGAInternalError, PRGATypeError, PRGAIndexError
 
 from abc import abstractproperty, abstractmethod
 
-# In Python 3.7 and above, ``dict`` preserves insertion order and is more performant than ``OrderedDict``
-OrderedDict = dict
-
 __all__ = ['Instance', 'HierarchicalInstance']
 
 # ----------------------------------------------------------------------------

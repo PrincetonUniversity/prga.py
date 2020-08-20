@@ -11,9 +11,6 @@ from ..exception import PRGAInternalError
 import os
 import jinja2 as jj
 
-# In Python 3.7 and above, ``dict`` preserves insertion order and is more performant than ``OrderedDict``
-OrderedDict = dict
-
 __all__ = ['FileRenderer']
 
 DEFAULT_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
@@ -104,12 +101,12 @@ class FileRenderer(object):
         # add headers
         context._add_verilog_header("prga_utils.vh", "stdlib/include/prga_utils.tmpl.vh")
 
-    def add_verilog(self, module, file_, template = 'module.tmpl.v', **kwargs):
+    def add_verilog(self, file_, module, template = 'module.tmpl.v', **kwargs):
         """Add a Verilog rendering task.
 
         Args:
-            module (`Module`): The module to be rendered
             file_ (:obj:`str` of file-like object): The output file
+            module (`Module`): The module to be rendered
             template (:obj:`str`): The template to be used
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
@@ -177,7 +174,7 @@ class FileRenderer(object):
                 "module": module,
                 }
         parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (uno(template, "blackbox.lib.tmpl.v"), parameters) )
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
         script_task = self._get_yosys_script_task(script_file)
         if not isinstance(file_, basestring):
             file_ = os.path.abspath(file_.name)

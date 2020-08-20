@@ -11,9 +11,6 @@ from ...exception import PRGAInternalError
 
 from enum import IntFlag
 
-# In Python 3.7 and above, ``dict`` preserves insertion order and is more performant than ``OrderedDict``
-OrderedDict = dict
-
 __all__ = ['Module']
 
 # ----------------------------------------------------------------------------
@@ -44,7 +41,7 @@ class Module(Object):
 
     __slots__ = ["_name", "_key", "_children", "_ports", "_instances", "_flags", "__dict__"]
 
-    class __FLAGS(IntFlag):
+    class _FLAGS(IntFlag):
         NONE = 0
         IS_CELL = 1 << 0
         ALLOW_MULTISOURCE = 1 << 1
@@ -65,13 +62,13 @@ class Module(Object):
         self._instances = uno(instances, OrderedDict())
 
         if is_cell:
-            self._flags = self.__FLAGS.IS_CELL | self.__FLAGS.COALESCE_CONNECTIONS
+            self._flags = self._FLAGS.IS_CELL | self._FLAGS.COALESCE_CONNECTIONS
         elif allow_multisource:
-            self._flags = self.__FLAGS.ALLOW_MULTISOURCE
+            self._flags = self._FLAGS.ALLOW_MULTISOURCE
         elif coalesce_connections:
-            self._flags = self.__FLAGS.COALESCE_CONNECTIONS
+            self._flags = self._FLAGS.COALESCE_CONNECTIONS
         else:
-            self._flags = self.__FLAGS.NONE
+            self._flags = self._FLAGS.NONE
 
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
@@ -136,14 +133,14 @@ class Module(Object):
     @property
     def is_cell(self):
         """:obj:`bool`: Test if this module is a cell module."""
-        return bool(self._flags & self.__FLAGS.IS_CELL)
+        return bool(self._flags & self._FLAGS.IS_CELL)
 
     @property
     def allow_multisource(self):
         """:obj:`bool`: Test if sink nets in this module can be driven by more than one source nets."""
-        return bool(self._flags & self.__FLAGS.ALLOW_MULTISOURCE)
+        return bool(self._flags & self._FLAGS.ALLOW_MULTISOURCE)
 
     @property
     def coalesce_connections(self):
         """:obj:`bool`: Test if bit-wise connections are disallowed in this module."""
-        return bool(self._flags & self.__FLAGS.COALESCE_CONNECTIONS)
+        return bool(self._flags & self._FLAGS.COALESCE_CONNECTIONS)
