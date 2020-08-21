@@ -81,7 +81,7 @@ class FileRenderer(Object):
         """
         # register designs
         for d in ("prga_ram_1r1w", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer",
-                "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo"):
+                "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo", "prga_valrdy_buf"):
             context._database[ModuleView.logical, d] = Module(d,
                     view = ModuleView.logical,
                     verilog_template = "stdlib/{}.v".format(d))

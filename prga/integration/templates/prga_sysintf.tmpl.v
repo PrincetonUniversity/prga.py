@@ -9,81 +9,87 @@
 
 module prga_sysintf (
     // == System Control Signals ==============================================
-    input wire                                  clk,
-    input wire                                  rst_n,
+    input wire                                      clk,
+    input wire                                      rst_n,
 
     // == Generic Register-based Interface ====================================
-    output wire                                 reg_req_rdy,
-    input wire                                  reg_req_val,
-    input wire [`PRGA_CREG_ADDR_WIDTH-1:0]      reg_req_addr,
-    input wire [`PRGA_CREG_DATA_BYTES-1:0]      reg_req_strb,
-    input wire [`PRGA_CREG_DATA_WIDTH-1:0]      reg_req_data,
+    output wire                                     reg_req_rdy,
+    input wire                                      reg_req_val,
+    input wire [`PRGA_CREG_ADDR_WIDTH-1:0]          reg_req_addr,
+    input wire [`PRGA_CREG_DATA_BYTES-1:0]          reg_req_strb,
+    input wire [`PRGA_CREG_DATA_WIDTH-1:0]          reg_req_data,
 
-    input wire                                  reg_resp_rdy,
-    output wire                                 reg_resp_val,
-    output wire [`PRGA_CREG_DATA_WIDTH-1:0]     reg_resp_data,
+    input wire                                      reg_resp_rdy,
+    output wire                                     reg_resp_val,
+    output wire [`PRGA_CREG_DATA_WIDTH-1:0]         reg_resp_data,
 
     // == Generic Cache-coherent interface ===================================
-    input wire                                  ccm_req_rdy,
-    output wire                                 ccm_req_val,
-    output wire [`PRGA_CCM_REQTYPE_WIDTH-1:0]   ccm_req_type,
-    output wire [`PRGA_CCM_ADDR_WIDTH-1:0]      ccm_req_addr,
-    output wire [`PRGA_CCM_DATA_WIDTH-1:0]      ccm_req_data,
-    output wire [`PRGA_CCM_SIZE_WIDTH-1:0]      ccm_req_size,
+    input wire                                      ccm_req_rdy,
+    output wire                                     ccm_req_val,
+    output wire [`PRGA_CCM_REQTYPE_WIDTH-1:0]       ccm_req_type,
+    output wire [`PRGA_CCM_ADDR_WIDTH-1:0]          ccm_req_addr,
+    output wire [`PRGA_CCM_DATA_WIDTH-1:0]          ccm_req_data,
+    output wire [`PRGA_CCM_SIZE_WIDTH-1:0]          ccm_req_size,
+    output wire [`PRGA_CCM_THREADID_WIDTH-1:0]      ccm_req_threadid,
+    output wire [`PRGA_CCM_AMO_OPCODE_WIDTH-1:0]    ccm_req_amo_opcode,
 
-    output wire                                 ccm_resp_rdy,
-    input wire                                  ccm_resp_val,
-    input wire [`PRGA_CCM_RESPTYPE_WIDTH-1:0]   ccm_resp_type,
-    input wire [`PRGA_CCM_CACHETAG_INDEX]       ccm_resp_addr,  // only used for invalidations
-    input wire [`PRGA_CCM_CACHELINE_WIDTH-1:0]  ccm_resp_data,
+    output wire                                     ccm_resp_rdy,
+    input wire                                      ccm_resp_val,
+    input wire [`PRGA_CCM_RESPTYPE_WIDTH-1:0]       ccm_resp_type,
+    input wire [`PRGA_CCM_THREADID_WIDTH-1:0]       ccm_resp_threadid,
+    input wire [`PRGA_CCM_CACHETAG_INDEX]           ccm_resp_addr,  // only used for invalidations
+    input wire [`PRGA_CCM_CACHELINE_WIDTH-1:0]      ccm_resp_data,
 
     // == CTRL <-> CFG ========================================================
-    output wire                                 cfg_rst_n,
-    input wire [`PRGA_CFG_STATUS_WIDTH-1:0]     cfg_status,
+    output wire                                     cfg_rst_n,
+    input wire [`PRGA_CFG_STATUS_WIDTH-1:0]         cfg_status,
 
-    input wire                                  cfg_req_rdy,
-    output wire                                 cfg_req_val,
-    output wire [`PRGA_CREG_ADDR_WIDTH-1:0]     cfg_req_addr,
-    output wire [`PRGA_CREG_DATA_BYTES-1:0]     cfg_req_strb,
-    output wire [`PRGA_CREG_DATA_WIDTH-1:0]     cfg_req_data,
+    input wire                                      cfg_req_rdy,
+    output wire                                     cfg_req_val,
+    output wire [`PRGA_CREG_ADDR_WIDTH-1:0]         cfg_req_addr,
+    output wire [`PRGA_CREG_DATA_BYTES-1:0]         cfg_req_strb,
+    output wire [`PRGA_CREG_DATA_WIDTH-1:0]         cfg_req_data,
 
-    input wire                                  cfg_resp_val,
-    output wire                                 cfg_resp_rdy,
-    input wire                                  cfg_resp_err,
-    input wire [`PRGA_CREG_DATA_WIDTH-1:0]      cfg_resp_data,
+    input wire                                      cfg_resp_val,
+    output wire                                     cfg_resp_rdy,
+    input wire                                      cfg_resp_err,
+    input wire [`PRGA_CREG_DATA_WIDTH-1:0]          cfg_resp_data,
 
     // == Application Control Signals ========================================
-    output wire                                 aclk,
-    output wire                                 arst_n,
+    output wire                                     aclk,
+    output wire                                     arst_n,
 
     // == Generic Register-based Interface ===================================
-    output wire                                 urst_n,
+    output wire                                     urst_n,
 
-    input wire                                  ureg_req_rdy,
-    output wire                                 ureg_req_val,
-    output wire [`PRGA_CREG_ADDR_WIDTH-1:0]     ureg_req_addr,
-    output wire [`PRGA_CREG_DATA_BYTES-1:0]     ureg_req_strb,
-    output wire [`PRGA_CREG_DATA_WIDTH-1:0]     ureg_req_data,
+    input wire                                      ureg_req_rdy,
+    output wire                                     ureg_req_val,
+    output wire [`PRGA_CREG_ADDR_WIDTH-1:0]         ureg_req_addr,
+    output wire [`PRGA_CREG_DATA_BYTES-1:0]         ureg_req_strb,
+    output wire [`PRGA_CREG_DATA_WIDTH-1:0]         ureg_req_data,
 
-    output wire                                 ureg_resp_rdy,
-    input wire                                  ureg_resp_val,
-    input wire [`PRGA_CREG_DATA_WIDTH-1:0]      ureg_resp_data,
-    input wire [`PRGA_ECC_WIDTH-1:0]            ureg_resp_ecc,
+    output wire                                     ureg_resp_rdy,
+    input wire                                      ureg_resp_val,
+    input wire [`PRGA_CREG_DATA_WIDTH-1:0]          ureg_resp_data,
+    input wire [`PRGA_ECC_WIDTH-1:0]                ureg_resp_ecc,
 
     // == Generic Cache-coherent interface ===================================
-    output wire                                 uccm_req_rdy,
-    input wire                                  uccm_req_val,
-    input wire [`PRGA_CCM_REQTYPE_WIDTH-1:0]    uccm_req_type,
-    input wire [`PRGA_CCM_ADDR_WIDTH-1:0]       uccm_req_addr,
-    input wire [`PRGA_CCM_DATA_WIDTH-1:0]       uccm_req_data,
-    input wire [`PRGA_CCM_SIZE_WIDTH-1:0]       uccm_req_size,
-    input wire [`PRGA_ECC_WIDTH-1:0]            uccm_req_ecc,
+    output wire                                     uccm_req_rdy,
+    input wire                                      uccm_req_val,
+    input wire [`PRGA_CCM_REQTYPE_WIDTH-1:0]        uccm_req_type,
+    input wire [`PRGA_CCM_ADDR_WIDTH-1:0]           uccm_req_addr,
+    input wire [`PRGA_CCM_DATA_WIDTH-1:0]           uccm_req_data,
+    input wire [`PRGA_CCM_SIZE_WIDTH-1:0]           uccm_req_size,
+    input wire [`PRGA_CCM_THREADID_WIDTH-1:0]       uccm_req_threadid,
+    input wire [`PRGA_CCM_AMO_OPCODE_WIDTH-1:0]     uccm_req_amo_opcode,
+    input wire [`PRGA_ECC_WIDTH-1:0]                uccm_req_ecc,
 
-    input wire                                  uccm_resp_rdy,
-    output wire                                 uccm_resp_val,
-    output wire [`PRGA_CCM_RESPTYPE_WIDTH-1:0]  uccm_resp_type,
-    output wire [`PRGA_CCM_CACHETAG_INDEX]      uccm_resp_addr,  // only used for invalidations
-    output wire [`PRGA_CCM_CACHELINE_WIDTH-1:0] uccm_resp_data
+    input wire                                      uccm_resp_rdy,
+    output wire                                     uccm_resp_val,
+    output wire [`PRGA_CCM_RESPTYPE_WIDTH-1:0]      uccm_resp_type,
+    output wire [`PRGA_CCM_THREADID_WIDTH-1:0]      uccm_resp_threadid,
+    output wire [`PRGA_CCM_CACHETAG_INDEX]          uccm_resp_addr,  // only used for invalidations
+    output wire [`PRGA_CCM_CACHELINE_WIDTH-1:0]     uccm_resp_data
     );
 
     wire sax_ctrl_rdy, ctrl_sax_val, ctrl_asx_rdy, asx_ctrl_val;
@@ -148,10 +154,13 @@ module prga_sysintf (
 		,.ccm_req_addr			                (ccm_req_addr)
 		,.ccm_req_data			                (ccm_req_data)
 		,.ccm_req_size			                (ccm_req_size)
+        ,.ccm_req_threadid                      (ccm_req_threadid)
+        ,.ccm_req_amo_opcode                    (ccm_req_amo_opcode)
 
 		,.ccm_resp_rdy			                (ccm_resp_rdy)
 		,.ccm_resp_val			                (ccm_resp_val)
 		,.ccm_resp_type			                (ccm_resp_type)
+        ,.ccm_resp_threadid                     (ccm_resp_threadid)
 		,.ccm_resp_addr			                (ccm_resp_addr)
         ,.ccm_resp_data                         (ccm_resp_data)
 
@@ -248,11 +257,14 @@ module prga_sysintf (
         ,.ccm_req_addr		                    (uccm_req_addr)
         ,.ccm_req_data		                    (uccm_req_data)
         ,.ccm_req_size		                    (uccm_req_size)
+        ,.ccm_req_threadid                      (uccm_req_threadid)
+        ,.ccm_req_amo_opcode                    (uccm_req_amo_opcode)
         ,.ccm_req_ecc		                    (uccm_req_ecc)
 
         ,.ccm_resp_rdy		                    (uccm_resp_rdy)
         ,.ccm_resp_val		                    (uccm_resp_val)
         ,.ccm_resp_type		                    (uccm_resp_type)
+        ,.ccm_resp_threadid                     (uccm_resp_threadid)
         ,.ccm_resp_addr		                    (uccm_resp_addr)
         ,.ccm_resp_data		                    (uccm_resp_data)
         );

@@ -18,14 +18,17 @@
 `define PRGA_CREG_ADDR_TIMEOUT          `PRGA_CREG_ADDR_WIDTH'hC08  //  64b     `PRGA_PROT_TIMER_WIDTH
 
 // Error Flags
-`define PRGA_EFLAGS_CCM_ECC             0
-`define PRGA_EFLAGS_CCM_TIMEOUT         1
-`define PRGA_EFLAGS_CCM_INVAL_SIZE      2
-`define PRGA_EFLAGS_CCM_INVAL_REQ       3
-`define PRGA_EFLAGS_CCM_ILLEGAL_NC_REQ  4
-`define PRGA_EFLAGS_UREG_ECC            16
-`define PRGA_EFLAGS_UREG_TIMEOUT        17
-`define PRGA_EFLAGS_CFG_REG_UNDEF       24
+`define PRGA_EFLAGS_CCM_ECC                 0
+`define PRGA_EFLAGS_CCM_TIMEOUT             1
+`define PRGA_EFLAGS_CCM_INVAL_REQ           2
+`define PRGA_EFLAGS_CCM_INVAL_SIZE          3
+`define PRGA_EFLAGS_CCM_INVAL_AMO_OPCODE    4
+`define PRGA_EFLAGS_CCM_ILLEGAL_NC_REQ      5
+`define PRGA_EFLAGS_CCM_ILLEGAL_AMO_REQ     6
+`define PRGA_EFLAGS_CCM_ILLEGAL_MT_REQ      7   // illegal multi-thread request
+`define PRGA_EFLAGS_UREG_ECC                16
+`define PRGA_EFLAGS_UREG_TIMEOUT            17
+`define PRGA_EFLAGS_CFG_REG_UNDEF           24
 
 `define PRGA_CLKDIV_WIDTH               8                           // limit to 1/512 system clock freq
 
@@ -66,20 +69,38 @@
 `define PRGA_CCM_SIZE_8B                `PRGA_CCM_SIZE_WIDTH'b100
 `define PRGA_CCM_SIZE_CACHELINE         `PRGA_CCM_SIZE_WIDTH'b111   // only used for cacheable load
 
-`define PRGA_CCM_THREAD_WIDTH           1                           // 2 threads
-`define PRGA_CCM_THREAD_COUNT           (1 << `PRGA_CCM_THREAD_WIDTH)
+`define PRGA_CCM_THREADID_WIDTH         1                           // 2 threads
+`define PRGA_CCM_THREAD_COUNT           (1 << `PRGA_CCM_THREADID_WIDTH)
 
-`define PRGA_CCM_REQTYPE_WIDTH          2
+`define PRGA_CCM_REQTYPE_WIDTH          3
 `define PRGA_CCM_REQTYPE_LOAD           `PRGA_CCM_REQTYPE_WIDTH'h0
 `define PRGA_CCM_REQTYPE_STORE          `PRGA_CCM_REQTYPE_WIDTH'h1
 `define PRGA_CCM_REQTYPE_LOAD_NC        `PRGA_CCM_REQTYPE_WIDTH'h2
 `define PRGA_CCM_REQTYPE_STORE_NC       `PRGA_CCM_REQTYPE_WIDTH'h3
+`define PRGA_CCM_REQTYPE_AMO            `PRGA_CCM_REQTYPE_WIDTH'h4
 
-`define PRGA_CCM_RESPTYPE_WIDTH         2
+`define PRGA_CCM_RESPTYPE_WIDTH         3
 `define PRGA_CCM_RESPTYPE_LOAD_ACK      `PRGA_CCM_RESPTYPE_WIDTH'h0
 `define PRGA_CCM_RESPTYPE_STORE_ACK     `PRGA_CCM_RESPTYPE_WIDTH'h1
 `define PRGA_CCM_RESPTYPE_LOAD_NC_ACK   `PRGA_CCM_RESPTYPE_WIDTH'h2
 `define PRGA_CCM_RESPTYPE_STORE_NC_ACK  `PRGA_CCM_RESPTYPE_WIDTH'h3
+`define PRGA_CCM_RESPTYPE_AMO_ACK       `PRGA_CCM_RESPTYPE_WIDTH'h4
+
+`define PRGA_CCM_AMO_OPCODE_WIDTH       4
+`define PRGA_CCM_AMO_OPCODE_NONE        4'b0000
+`define PRGA_CCM_AMO_OPCODE_LR          4'b0001
+`define PRGA_CCM_AMO_OPCODE_SC          4'b0010
+`define PRGA_CCM_AMO_OPCODE_SWAP        4'b0011
+`define PRGA_CCM_AMO_OPCODE_ADD         4'b0100
+`define PRGA_CCM_AMO_OPCODE_AND         4'b0101
+`define PRGA_CCM_AMO_OPCODE_OR          4'b0110
+`define PRGA_CCM_AMO_OPCODE_XOR         4'b0111
+`define PRGA_CCM_AMO_OPCODE_MAX         4'b1000
+`define PRGA_CCM_AMO_OPCODE_MAXU        4'b1001
+`define PRGA_CCM_AMO_OPCODE_MIN         4'b1010
+`define PRGA_CCM_AMO_OPCODE_MINU        4'b1011
+`define PRGA_CCM_AMO_OPCODE_CAS1        4'b1100
+`define PRGA_CCM_AMO_OPCODE_CAS2        4'b1101
 
 `define PRGA_CCM_CACHETAG_HIGH          10
 `define PRGA_CCM_CACHETAG_LOW           4
@@ -102,7 +123,7 @@
     *
     *     143   138 137                           112 83  76 75     64 63   0 
     *    +---------+---------------------------------+------+---------+------+
-    *    | msgtype |               ---               | strb | address | data |
+    *    | msgtype |                ---              | strb | address | data |
     *    +---------+---------------------------------+------+---------+------+
     *
     */
@@ -114,11 +135,11 @@
 `define PRGA_SAX_MSGTYPE_CCM_LOAD_NC_ACK        `PRGA_SAX_MSGTYPE_WIDTH'h01
 `define PRGA_SAX_MSGTYPE_CCM_STORE_ACK          `PRGA_SAX_MSGTYPE_WIDTH'h02
 `define PRGA_SAX_MSGTYPE_CCM_STORE_NC_ACK       `PRGA_SAX_MSGTYPE_WIDTH'h03
+`define PRGA_SAX_MSGTYPE_CCM_AMO_ACK            `PRGA_SAX_MSGTYPE_WIDTH'h04
 `define PRGA_SAX_MSGTYPE_CREG_READ              `PRGA_SAX_MSGTYPE_WIDTH'h20
 `define PRGA_SAX_MSGTYPE_CREG_WRITE             `PRGA_SAX_MSGTYPE_WIDTH'h21
-`define PRGA_SAX_MSGTYPE_APP_RSTLOCK            `PRGA_SAX_MSGTYPE_WIDTH'h30
 
-`define PRGA_SAX_THREAD_INDEX           137
+`define PRGA_SAX_THREADID_INDEX         137
 `define PRGA_SAX_SIZE_INDEX             136:134
 
 `define PRGA_SAX_CREG_DATA_INDEX        63:0
@@ -130,24 +151,24 @@
     *
     *   CCM Load/Store Messages
     *
-    *     127   122   121    120  118 117 104 103    64 63     0 
-    *    +---------+--------+--------+-------+---------+--------+
-    *    | msgtype | thread |  size  |   -   | address |  data  |
-    *    +---------+--------+--------+-------+---------+--------+
+    *     127   122   121    120  118 117  114 113 104 103    64 63     0 
+    *    +---------+--------+--------+--------+-------+---------+--------+
+    *    | msgtype | thread |  size  | amo op |   -   | address |  data  |
+    *    +---------+--------+--------+--------+-------+---------+--------+
     *
     *   CREG/UREG Messages
     *
-    *     127   122 121                              64 63     0  
-    *    +---------+-----------------------------------+--------+
-    *    | msgtype |                ---                |  data  |
-    *    +---------+-----------------------------------+--------+
+    *     127   122 121                                       64 63     0  
+    *    +---------+--------------------------------------------+--------+
+    *    | msgtype |                     ---                    |  data  |
+    *    +---------+--------------------------------------------+--------+
     *
     *   Error Messages
     *
-    *     127   122 121                              64 63     0 
-    *    +---------+-----------------------------------+--------+
-    *    | msgtype |                ---                | eflags |
-    *    +---------+-----------------------------------+--------+
+    *     127   122 121                                       64 63     0 
+    *    +---------+--------------------------------------------+--------+
+    *    | msgtype |                     ---                    | eflags |
+    *    +---------+--------------------------------------------+--------+
     */
 
 `define PRGA_ASX_MSGTYPE_WIDTH          6
@@ -157,11 +178,13 @@
 `define PRGA_ASX_MSGTYPE_CCM_LOAD_NC            `PRGA_ASX_MSGTYPE_WIDTH'h01
 `define PRGA_ASX_MSGTYPE_CCM_STORE              `PRGA_ASX_MSGTYPE_WIDTH'h02
 `define PRGA_ASX_MSGTYPE_CCM_STORE_NC           `PRGA_ASX_MSGTYPE_WIDTH'h03
+`define PRGA_ASX_MSGTYPE_CCM_AMO                `PRGA_ASX_MSGTYPE_WIDTH'h04
 `define PRGA_ASX_MSGTYPE_CREG_READ_ACK          `PRGA_ASX_MSGTYPE_WIDTH'h10
 `define PRGA_ASX_MSGTYPE_CREG_WRITE_ACK         `PRGA_ASX_MSGTYPE_WIDTH'h11
 `define PRGA_ASX_MSGTYPE_ERR                    `PRGA_ASX_MSGTYPE_WIDTH'h3F
 
-`define PRGA_ASX_THREAD_INDEX           121
+`define PRGA_ASX_THREADID_INDEX         121
 `define PRGA_ASX_SIZE_INDEX             120:118
+`define PRGA_ASX_AMO_OPCODE_INDEX       117:114
     
 `endif /* PRGA_SYSTEM_VH */

@@ -100,19 +100,22 @@ class Integration(object):
         i, o = ((PortDirection.output, PortDirection.input_) if slave else
                 (PortDirection.input_, PortDirection.output))
         d = {}
-        d[prefix + "req_rdy"]	    = ModuleUtils.create_port(module, prefix + "req_rdy", 1, i)
-        d[prefix + "req_val"]	    = ModuleUtils.create_port(module, prefix + "req_val", 1, o)
-        d[prefix + "req_type"]	    = ModuleUtils.create_port(module, prefix + "req_type", 2, o)
-        d[prefix + "req_addr"]	    = ModuleUtils.create_port(module, prefix + "req_addr", 40, o)
-        d[prefix + "req_data"]	    = ModuleUtils.create_port(module, prefix + "req_data", 64, o)
-        d[prefix + "req_size"]	    = ModuleUtils.create_port(module, prefix + "req_size", 3, o)
-        d[prefix + "resp_rdy"]	    = ModuleUtils.create_port(module, prefix + "resp_rdy", 1, o)
-        d[prefix + "resp_val"]	    = ModuleUtils.create_port(module, prefix + "resp_val", 1, i)
-        d[prefix + "resp_type"]	    = ModuleUtils.create_port(module, prefix + "resp_type", 2, i)
-        d[prefix + "resp_addr"]	    = ModuleUtils.create_port(module, prefix + "resp_addr", 7, i)
-        d[prefix + "resp_data"]	    = ModuleUtils.create_port(module, prefix + "resp_data", 128, i)
+        d[prefix + "req_rdy"]	        = ModuleUtils.create_port(module, prefix + "req_rdy", 1, i)
+        d[prefix + "req_val"]	        = ModuleUtils.create_port(module, prefix + "req_val", 1, o)
+        d[prefix + "req_type"]	        = ModuleUtils.create_port(module, prefix + "req_type", 3, o)
+        d[prefix + "req_addr"]	        = ModuleUtils.create_port(module, prefix + "req_addr", 40, o)
+        d[prefix + "req_data"]	        = ModuleUtils.create_port(module, prefix + "req_data", 64, o)
+        d[prefix + "req_size"]	        = ModuleUtils.create_port(module, prefix + "req_size", 3, o)
+        d[prefix + "req_threadid"]      = ModuleUtils.create_port(module, prefix + "req_threadid", 1, o)
+        d[prefix + "req_amo_opcode"]    = ModuleUtils.create_port(module, prefix + "req_amo_opcode", 4, o)
+        d[prefix + "resp_rdy"]	        = ModuleUtils.create_port(module, prefix + "resp_rdy", 1, o)
+        d[prefix + "resp_val"]	        = ModuleUtils.create_port(module, prefix + "resp_val", 1, i)
+        d[prefix + "resp_type"]	        = ModuleUtils.create_port(module, prefix + "resp_type", 3, i)
+        d[prefix + "resp_addr"]	        = ModuleUtils.create_port(module, prefix + "resp_addr", 7, i)
+        d[prefix + "resp_data"]	        = ModuleUtils.create_port(module, prefix + "resp_data", 128, i)
+        d[prefix + "resp_threadid"]     = ModuleUtils.create_port(module, prefix + "resp_threadid", 1, i)
         if ecc:
-            d[prefix + "req_ecc"]	= ModuleUtils.create_port(module, prefix + "req_ecc", 1, o)
+            d[prefix + "req_ecc"]	    = ModuleUtils.create_port(module, prefix + "req_ecc", 1, o)
         return d
 
     @classmethod
@@ -132,16 +135,16 @@ class Integration(object):
                     view = ModuleView.logical,
                     module_class = ModuleClass.aux,
                     verilog_template = "{}.tmpl.v".format(d))
-        # for d in ("prga_l15_transducer", ):
-        #     context._database[ModuleView.logical, d] = Module(d,
-        #             view = ModuleView.logical,
-        #             module_class = ModuleClass.aux,
-        #             verilog_template = "piton/{}.v".format(d))
-        # for d in ("prga_fe_axi4lite", ):
-        #     context._database[ModuleView.logical, d] = Module(d,
-        #             view = ModuleView.logical,
-        #             module_class = ModuleClass.aux,
-        #             verilog_template = "axi4lite/{}.tmpl.v".format(d))
+        for d in ("prga_l15_transducer", ):
+            context._database[ModuleView.logical, d] = Module(d,
+                    view = ModuleView.logical,
+                    module_class = ModuleClass.aux,
+                    verilog_template = "piton/{}.v".format(d))
+        for d in ("prga_fe_axi4lite", ):
+            context._database[ModuleView.logical, d] = Module(d,
+                    view = ModuleView.logical,
+                    module_class = ModuleClass.aux,
+                    verilog_template = "axi4lite/{}.tmpl.v".format(d))
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
                 context.database[ModuleView.logical, "prga_clkdiv"], "i_clkdiv")
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
@@ -166,16 +169,20 @@ class Integration(object):
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_uprot"],
                 context.database[ModuleView.logical, "prga_ecc_parity"], "i_ecc_checker")
 
-        # ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-        #         context.database[ModuleView.logical, "prga_fifo"], "axi_waddr_fifo")
-        # ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-        #         context.database[ModuleView.logical, "prga_fifo"], "axi_wdata_fifo")
-        # ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-        #         context.database[ModuleView.logical, "prga_fifo"], "axi_raddr_fifo")
-        # ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-        #         context.database[ModuleView.logical, "prga_tokenfifo"], "axi_wresp_fifo")
-        # ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-        #         context.database[ModuleView.logical, "prga_fifo"], "axi_rresp_fifo")
+        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
+                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_awaddr")
+        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
+                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_wdata")
+        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
+                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_araddr")
+        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
+                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_bresp")
+        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
+                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_rresp")
+        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
+                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_creq")
+        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
+                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_cresp")
 
         # 2.2 modules that we do need to know about their ports
         sysintf = context._database[ModuleView.logical, "prga_sysintf"] = Module("prga_sysintf",
@@ -284,19 +291,22 @@ class Integration(object):
         # generate constraints
         for channel in (
                 # Request
-                {   "uccm_req_rdy":     (IOType.ipin, 1),
-                    "uccm_req_val":     (IOType.opin, 1),
-                    "uccm_req_type":    (IOType.opin, 2),
-                    "uccm_req_size":    (IOType.opin, 3),
-                    "uccm_req_ecc":     (IOType.opin, 1), },
-                {   "uccm_req_addr":    (IOType.opin, 40), },
-                {   "uccm_req_data":    (IOType.opin, 64), },
+                {   "uccm_req_rdy":         (IOType.ipin, 1),
+                    "uccm_req_val":         (IOType.opin, 1),
+                    "uccm_req_type":        (IOType.opin, 3),
+                    "uccm_req_size":        (IOType.opin, 3),
+                    "uccm_req_threadid":    (IOType.opin, 1),
+                    "uccm_req_amo_opcode":  (IOType.opin, 4),
+                    "uccm_req_ecc":         (IOType.opin, 1), },
+                {   "uccm_req_addr":        (IOType.opin, 40), },
+                {   "uccm_req_data":        (IOType.opin, 64), },
                 # Response
-                {   "uccm_resp_rdy":    (IOType.opin, 1),
-                    "uccm_resp_val":    (IOType.ipin, 1),
-                    "uccm_resp_type":   (IOType.ipin, 2),
-                    "uccm_resp_addr":   (IOType.ipin, 7), },
-                {   "uccm_resp_data":   (IOType.ipin, 128), },
+                {   "uccm_resp_rdy":        (IOType.opin, 1),
+                    "uccm_resp_val":        (IOType.ipin, 1),
+                    "uccm_resp_type":       (IOType.ipin, 3),
+                    "uccm_resp_threadid":   (IOType.ipin, 1),
+                    "uccm_resp_addr":       (IOType.ipin, 7), },
+                {   "uccm_resp_data":       (IOType.ipin, 128), },
                 ):
             first = True
             for p, (t, w) in iteritems(channel):

@@ -187,7 +187,8 @@ module prga_sax (
                 `PRGA_ASX_MSGTYPE_CCM_LOAD,
                 `PRGA_ASX_MSGTYPE_CCM_LOAD_NC,
                 `PRGA_ASX_MSGTYPE_CCM_STORE,
-                `PRGA_ASX_MSGTYPE_CCM_STORE_NC: begin
+                `PRGA_ASX_MSGTYPE_CCM_STORE_NC,
+                `PRGA_ASX_MSGTYPE_CCM_AMO: begin
                     asx_dst = TRANSDUCER;
                     asx_fifo_rd = ~asx_transducer_val || transducer_asx_rdy;
                 end
@@ -287,7 +288,8 @@ module prga_sax (
                 `PRGA_SAX_MSGTYPE_CCM_LOAD_ACK,
                 `PRGA_SAX_MSGTYPE_CCM_LOAD_NC_ACK,
                 `PRGA_SAX_MSGTYPE_CCM_STORE_ACK,
-                `PRGA_SAX_MSGTYPE_CCM_STORE_NC_ACK: begin
+                `PRGA_SAX_MSGTYPE_CCM_STORE_NC_ACK,
+                `PRGA_SAX_MSGTYPE_CCM_AMO_ACK: begin
                     sax_dst = MPROT;
                     sax_fifo_rd = ~sax_mprot_val || mprot_sax_rdy;
                 end

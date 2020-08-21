@@ -22,10 +22,13 @@ module prga_ccm_transducer (
     output reg [`PRGA_CCM_ADDR_WIDTH-1:0]       ccm_req_addr,
     output reg [`PRGA_CCM_DATA_WIDTH-1:0]       ccm_req_data,
     output reg [`PRGA_CCM_SIZE_WIDTH-1:0]       ccm_req_size,
+    output reg [`PRGA_CCM_THREADID_WIDTH-1:0]   ccm_req_threadid,
+    output reg [`PRGA_CCM_AMO_OPCODE_WIDTH-1:0] ccm_req_amo_opcode,
 
     output reg                                  ccm_resp_rdy,
     input wire                                  ccm_resp_val,
     input wire [`PRGA_CCM_RESPTYPE_WIDTH-1:0]   ccm_resp_type,
+    input wire [`PRGA_CCM_THREADID_WIDTH-1:0]   ccm_resp_threadid,
     input wire [`PRGA_CCM_CACHETAG_INDEX]       ccm_resp_addr,  // only used for invalidations
     input wire [`PRGA_CCM_CACHELINE_WIDTH-1:0]  ccm_resp_data,
 
@@ -55,6 +58,8 @@ module prga_ccm_transducer (
         ccm_req_addr = asx_data[`PRGA_CCM_DATA_WIDTH+:`PRGA_CCM_ADDR_WIDTH];
         ccm_req_data = asx_data[0+:`PRGA_CCM_DATA_WIDTH];
         ccm_req_size = asx_data[`PRGA_ASX_SIZE_INDEX];
+        ccm_req_threadid = asx_data[`PRGA_ASX_THREADID_INDEX];
+        ccm_req_amo_opcode = `PRGA_CCM_AMO_OPCODE_NONE;
 
         case (asx_data[`PRGA_ASX_MSGTYPE_INDEX])
             `PRGA_ASX_MSGTYPE_CCM_LOAD: begin
@@ -68,6 +73,10 @@ module prga_ccm_transducer (
             end
             `PRGA_ASX_MSGTYPE_CCM_STORE_NC: begin
                 ccm_req_type = `PRGA_CCM_REQTYPE_STORE_NC;
+            end
+            `PRGA_ASX_MSGTYPE_CCM_AMO: begin
+                ccm_req_type = `PRGA_CCM_REQTYPE_AMO;
+                ccm_req_amo_opcode = asx_data[`PRGA_ASX_AMO_OPCODE_INDEX];
             end
             default: begin
                 ccm_req_type = {`PRGA_CCM_REQTYPE_WIDTH {1'b0} };
@@ -85,21 +94,25 @@ module prga_ccm_transducer (
 
         sax_val = ccm_intf_en && ccm_resp_val;
         sax_data = {`PRGA_SAX_DATA_WIDTH {1'b0} };
+        sax_data[`PRGA_SAX_THREADID_INDEX] = ccm_resp_threadid;
 
         case (ccm_resp_type)
-            `PRGA_CCM_REQTYPE_LOAD: begin
+            `PRGA_CCM_RESPTYPE_LOAD_ACK: begin
                 sax_data[`PRGA_SAX_MSGTYPE_INDEX] = `PRGA_SAX_MSGTYPE_CCM_LOAD_ACK;
                 sax_data[0+:`PRGA_CCM_CACHELINE_WIDTH] = ccm_resp_data;
             end
-            `PRGA_CCM_REQTYPE_LOAD_NC: begin
+            `PRGA_CCM_RESPTYPE_LOAD_NC_ACK: begin
                 sax_data[`PRGA_SAX_MSGTYPE_INDEX] = `PRGA_SAX_MSGTYPE_CCM_LOAD_NC_ACK;
                 sax_data[0+:`PRGA_CCM_CACHELINE_WIDTH] = ccm_resp_data;
             end
-            `PRGA_CCM_REQTYPE_STORE: begin
+            `PRGA_CCM_RESPTYPE_STORE_ACK: begin
                 sax_data[`PRGA_SAX_MSGTYPE_INDEX] = `PRGA_SAX_MSGTYPE_CCM_STORE_ACK;
             end
-            `PRGA_CCM_REQTYPE_STORE_NC: begin
+            `PRGA_CCM_RESPTYPE_STORE_NC_ACK: begin
                 sax_data[`PRGA_SAX_MSGTYPE_INDEX] = `PRGA_SAX_MSGTYPE_CCM_STORE_NC_ACK;
+            end
+            `PRGA_CCM_RESPTYPE_AMO_ACK: begin
+                sax_data[`PRGA_SAX_MSGTYPE_INDEX] = `PRGA_SAX_MSGTYPE_CCM_AMO_ACK;
             end
         endcase
     end

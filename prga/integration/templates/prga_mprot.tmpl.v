@@ -39,11 +39,14 @@ module prga_mprot (
     input wire [`PRGA_CCM_ADDR_WIDTH-1:0]       ccm_req_addr,
     input wire [`PRGA_CCM_DATA_WIDTH-1:0]       ccm_req_data,
     input wire [`PRGA_CCM_SIZE_WIDTH-1:0]       ccm_req_size,
+    input wire [`PRGA_CCM_THREADID_WIDTH-1:0]   ccm_req_threadid,
+    input wire [`PRGA_CCM_AMO_OPCODE_WIDTH-1:0] ccm_req_amo_opcode,
     input wire [`PRGA_ECC_WIDTH-1:0]            ccm_req_ecc,
 
     input wire                                  ccm_resp_rdy,
     output reg                                  ccm_resp_val,
     output reg [`PRGA_CCM_RESPTYPE_WIDTH-1:0]   ccm_resp_type,
+    output reg [`PRGA_CCM_THREADID_WIDTH-1:0]   ccm_resp_threadid,
     output reg [`PRGA_CCM_CACHETAG_INDEX]       ccm_resp_addr,  // only used for invalidations
     output reg [`PRGA_CCM_CACHELINE_WIDTH-1:0]  ccm_resp_data
     );
@@ -87,30 +90,36 @@ module prga_mprot (
     assign ccm_intf_en = rst_n && app_en && ccm_en && urst_n && ~error_reported;
 
     // == Register All Inputs ==
-    reg                                 ccm_req_val_f, ccm_req_stall;
-    reg [`PRGA_CCM_REQTYPE_WIDTH-1:0]   ccm_req_type_f;
-    reg [`PRGA_CCM_ADDR_WIDTH-1:0]      ccm_req_addr_f;
-    reg [`PRGA_CCM_DATA_WIDTH-1:0]      ccm_req_data_f;
-    reg [`PRGA_CCM_SIZE_WIDTH-1:0]      ccm_req_size_f;
-    reg [`PRGA_ECC_WIDTH-1:0]           ccm_req_ecc_f;
+    reg                                     ccm_req_val_f, ccm_req_stall;
+    reg [`PRGA_CCM_REQTYPE_WIDTH-1:0]       ccm_req_type_f;
+    reg [`PRGA_CCM_ADDR_WIDTH-1:0]          ccm_req_addr_f;
+    reg [`PRGA_CCM_DATA_WIDTH-1:0]          ccm_req_data_f;
+    reg [`PRGA_CCM_SIZE_WIDTH-1:0]          ccm_req_size_f;
+    reg [`PRGA_CCM_THREADID_WIDTH-1:0]      ccm_req_threadid_f;
+    reg [`PRGA_CCM_AMO_OPCODE_WIDTH-1:0]    ccm_req_amo_opcode_f;
+    reg [`PRGA_ECC_WIDTH-1:0]               ccm_req_ecc_f;
 
     always @(posedge clk) begin
         if (~ccm_intf_en) begin
-            ccm_req_val_f   <= 1'b0;
-            ccm_req_type_f  <= {`PRGA_CCM_REQTYPE_WIDTH{1'b0} };
-            ccm_req_addr_f  <= {`PRGA_CCM_ADDR_WIDTH{1'b0} };
-            ccm_req_data_f  <= {`PRGA_CCM_DATA_WIDTH{1'b0} };
-            ccm_req_size_f  <= {`PRGA_CCM_SIZE_WIDTH{1'b0} };
-            ccm_req_ecc_f   <= {`PRGA_ECC_WIDTH{1'b0} };
+            ccm_req_val_f           <= 1'b0;
+            ccm_req_type_f          <= {`PRGA_CCM_REQTYPE_WIDTH {1'b0} };
+            ccm_req_addr_f          <= {`PRGA_CCM_ADDR_WIDTH {1'b0} };
+            ccm_req_data_f          <= {`PRGA_CCM_DATA_WIDTH {1'b0} };
+            ccm_req_size_f          <= {`PRGA_CCM_SIZE_WIDTH {1'b0} };
+            ccm_req_threadid_f      <= {`PRGA_CCM_THREADID_WIDTH {1'b0} };
+            ccm_req_amo_opcode_f    <= `PRGA_CCM_AMO_OPCODE_NONE;
+            ccm_req_ecc_f           <= {`PRGA_ECC_WIDTH {1'b0} };
         end else if (ccm_req_rdy && ccm_req_val) begin
-            ccm_req_val_f   <= 1'b1;
-            ccm_req_type_f  <= ccm_req_type;
-            ccm_req_addr_f  <= ccm_req_addr;
-            ccm_req_data_f  <= ccm_req_data;
-            ccm_req_size_f  <= ccm_req_size;
-            ccm_req_ecc_f   <= ccm_req_ecc;
+            ccm_req_val_f           <= 1'b1;
+            ccm_req_type_f          <= ccm_req_type;
+            ccm_req_addr_f          <= ccm_req_addr;
+            ccm_req_data_f          <= ccm_req_data;
+            ccm_req_size_f          <= ccm_req_size;
+            ccm_req_threadid_f      <= ccm_req_threadid;
+            ccm_req_amo_opcode_f    <= ccm_req_amo_opcode;
+            ccm_req_ecc_f           <= ccm_req_ecc;
         end else if (~ccm_req_stall) begin
-            ccm_req_val_f   <= 1'b0;
+            ccm_req_val_f           <= 1'b0;
         end
     end
 
@@ -119,13 +128,20 @@ module prga_mprot (
     end
 
     // == ECC Checker ==
+    localparam ECC_CHECKER_WIDTH = (`PRGA_CCM_REQTYPE_WIDTH +
+                                   `PRGA_CCM_ADDR_WIDTH +
+                                   `PRGA_CCM_DATA_WIDTH +
+                                   `PRGA_CCM_SIZE_WIDTH +
+                                   `PRGA_CCM_THREADID_WIDTH +
+                                   `PRGA_CCM_AMO_OPCODE_WIDTH);
+
     wire                                ccm_req_ecc_fail;
     {{ module.instances.i_ecc_checker.model.name }} #(
-        .DATA_WIDTH                     (`PRGA_CCM_REQTYPE_WIDTH + `PRGA_CCM_ADDR_WIDTH + `PRGA_CCM_DATA_WIDTH + `PRGA_CCM_SIZE_WIDTH)
+        .DATA_WIDTH                     (ECC_CHECKER_WIDTH)
     ) i_ecc_checker (
         .clk                            (clk)
         ,.rst_n                         (rst_n)
-        ,.data                          ({ccm_req_type_f, ccm_req_addr_f, ccm_req_data_f, ccm_req_size_f})
+        ,.data                          ({ccm_req_type_f, ccm_req_addr_f, ccm_req_data_f, ccm_req_size_f, ccm_req_threadid_f, ccm_req_amo_opcode_f})
         ,.ecc                           (ccm_req_ecc_f)
         ,.fail                          (ccm_req_ecc_fail)
         );
@@ -137,6 +153,22 @@ module prga_mprot (
                                 ccm_req_size_f == `PRGA_CCM_SIZE_4B ||
                                 ccm_req_size_f == `PRGA_CCM_SIZE_8B ||
                                 ccm_req_size_f == `PRGA_CCM_SIZE_CACHELINE);
+
+    // == Validate AMO Opcode ==
+    wire                                ccm_req_inval_amo_opcode;
+    assign ccm_req_inval_amo_opcode = ~(ccm_req_amo_opcode_f == `PRGA_CCM_AMO_OPCODE_LR ||
+                                      ccm_req_amo_opcode_f == `PRGA_CCM_AMO_OPCODE_SC ||
+                                      ccm_req_amo_opcode_f == `PRGA_CCM_AMO_OPCODE_SWAP ||
+                                      ccm_req_amo_opcode_f == `PRGA_CCM_AMO_OPCODE_ADD ||
+                                      ccm_req_amo_opcode_f == `PRGA_CCM_AMO_OPCODE_AND ||
+                                      ccm_req_amo_opcode_f == `PRGA_CCM_AMO_OPCODE_OR ||
+                                      ccm_req_amo_opcode_f == `PRGA_CCM_AMO_OPCODE_XOR ||
+                                      ccm_req_amo_opcode_f == `PRGA_CCM_AMO_OPCODE_MAX ||
+                                      ccm_req_amo_opcode_f == `PRGA_CCM_AMO_OPCODE_MAXU ||
+                                      ccm_req_amo_opcode_f == `PRGA_CCM_AMO_OPCODE_MIN ||
+                                      ccm_req_amo_opcode_f == `PRGA_CCM_AMO_OPCODE_MINU ||
+                                      ccm_req_amo_opcode_f == `PRGA_CCM_AMO_OPCODE_CAS1 ||
+                                      ccm_req_amo_opcode_f == `PRGA_CCM_AMO_OPCODE_CAS2);
 
     // == Check and Send Messages ==
     localparam  ST_REQ_RST          = 2'h0,
@@ -202,15 +234,25 @@ module prga_mprot (
                             report_error = 1'b1;
                             req_state_next = ST_REQ_INACTIVE;
                         end
+                    end else if (~ccm_mthread_en && |ccm_req_threadid_f) begin
+                        asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
+                        asx_data[`PRGA_EFLAGS_CCM_ILLEGAL_MT_REQ] = 1'b1;
+
+                        if (asx_rdy) begin
+                            report_error = 1'b1;
+                            req_state_next = ST_REQ_INACTIVE;
+                        end
                     end else begin
                         case (ccm_req_type_f)
                             `PRGA_CCM_REQTYPE_LOAD: begin
                                 asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CCM_LOAD;
+                                asx_data[`PRGA_ASX_THREADID_INDEX] = ccm_req_threadid_f;
                                 asx_data[`PRGA_ASX_SIZE_INDEX] = ccm_req_size_f;
                                 asx_data[`PRGA_CCM_DATA_WIDTH+:`PRGA_CCM_ADDR_WIDTH] = ccm_req_addr_f;
                             end
                             `PRGA_CCM_REQTYPE_STORE: begin
                                 asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CCM_STORE;
+                                asx_data[`PRGA_ASX_THREADID_INDEX] = ccm_req_threadid_f;
                                 asx_data[`PRGA_ASX_SIZE_INDEX] = ccm_req_size_f;
                                 asx_data[`PRGA_CCM_DATA_WIDTH+:`PRGA_CCM_ADDR_WIDTH] = ccm_req_addr_f;
                                 asx_data[0 +: `PRGA_CCM_DATA_WIDTH] = ccm_req_data_f;
@@ -225,6 +267,7 @@ module prga_mprot (
                                 end
                             end else begin
                                 asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CCM_LOAD_NC;
+                                asx_data[`PRGA_ASX_THREADID_INDEX] = ccm_req_threadid_f;
                                 asx_data[`PRGA_ASX_SIZE_INDEX] = ccm_req_size_f;
                                 asx_data[`PRGA_CCM_DATA_WIDTH+:`PRGA_CCM_ADDR_WIDTH] = ccm_req_addr_f;
                             end
@@ -238,7 +281,32 @@ module prga_mprot (
                                 end
                             end else begin
                                 asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CCM_STORE_NC;
+                                asx_data[`PRGA_ASX_THREADID_INDEX] = ccm_req_threadid_f;
                                 asx_data[`PRGA_ASX_SIZE_INDEX] = ccm_req_size_f;
+                                asx_data[`PRGA_CCM_DATA_WIDTH+:`PRGA_CCM_ADDR_WIDTH] = ccm_req_addr_f;
+                                asx_data[0 +: `PRGA_CCM_DATA_WIDTH] = ccm_req_data_f;
+                            end
+                            `PRGA_CCM_REQTYPE_AMO: if (~(ccm_nc_en && ccm_atomic_en)) begin
+                                asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
+                                asx_data[`PRGA_EFLAGS_CCM_ILLEGAL_AMO_REQ] = 1'b1;
+
+                                if (asx_rdy) begin
+                                    report_error = 1'b1;
+                                    req_state_next = ST_REQ_INACTIVE;
+                                end
+                            end else if (ccm_req_inval_amo_opcode) begin
+                                asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
+                                asx_data[`PRGA_EFLAGS_CCM_INVAL_AMO_OPCODE] = 1'b1;
+
+                                if (asx_rdy) begin
+                                    report_error = 1'b1;
+                                    req_state_next = ST_REQ_INACTIVE;
+                                end
+                            end else begin
+                                asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_CCM_AMO;
+                                asx_data[`PRGA_ASX_THREADID_INDEX] = ccm_req_threadid_f;
+                                asx_data[`PRGA_ASX_SIZE_INDEX] = ccm_req_size_f;
+                                asx_data[`PRGA_ASX_AMO_OPCODE_INDEX] = ccm_req_amo_opcode_f;
                                 asx_data[`PRGA_CCM_DATA_WIDTH+:`PRGA_CCM_ADDR_WIDTH] = ccm_req_addr_f;
                                 asx_data[0 +: `PRGA_CCM_DATA_WIDTH] = ccm_req_data_f;
                             end
@@ -338,6 +406,7 @@ module prga_mprot (
 
         ccm_resp_val = 1'b0;
         ccm_resp_type = {`PRGA_CCM_RESPTYPE_WIDTH {1'b0} };
+        ccm_resp_threadid = {`PRGA_CCM_THREADID_WIDTH {1'b0} };
         ccm_resp_addr = { (`PRGA_CCM_CACHETAG_HIGH - `PRGA_CCM_CACHETAG_LOW + 1) {1'b0} };
         ccm_resp_data = {`PRGA_CCM_CACHELINE_WIDTH {1'b0} };
 
@@ -366,6 +435,7 @@ module prga_mprot (
                     `PRGA_SAX_MSGTYPE_CCM_LOAD_ACK,
                     `PRGA_SAX_MSGTYPE_CCM_LOAD_NC_ACK: begin
                         ccm_resp_val = 1'b1;
+                        ccm_resp_threadid = sax_data_f[`PRGA_SAX_THREADID_INDEX];
                         ccm_resp_data = sax_data_f[0+:`PRGA_CCM_CACHELINE_WIDTH];
                         sax_stall = ~ccm_resp_rdy;
 
@@ -378,6 +448,7 @@ module prga_mprot (
                     `PRGA_SAX_MSGTYPE_CCM_STORE_ACK,
                     `PRGA_SAX_MSGTYPE_CCM_STORE_NC_ACK: begin
                         ccm_resp_val = 1'b1;
+                        ccm_resp_threadid = sax_data_f[`PRGA_SAX_THREADID_INDEX];
                         sax_stall = ~ccm_resp_rdy;
 
                         if (sax_data_f[`PRGA_SAX_MSGTYPE_INDEX] == `PRGA_SAX_MSGTYPE_CCM_STORE_NC_ACK) begin
@@ -385,6 +456,13 @@ module prga_mprot (
                         end else begin
                             ccm_resp_type = `PRGA_CCM_RESPTYPE_STORE_ACK;
                         end
+                    end
+                    `PRGA_SAX_MSGTYPE_CCM_AMO_ACK: begin
+                        ccm_resp_val = 1'b1;
+                        ccm_resp_type = `PRGA_CCM_RESPTYPE_AMO_ACK;
+                        ccm_resp_threadid = sax_data_f[`PRGA_SAX_THREADID_INDEX];
+                        ccm_resp_data = sax_data_f[0+:`PRGA_CCM_CACHELINE_WIDTH];
+                        sax_stall = ~ccm_resp_rdy;
                     end
                 endcase
             end

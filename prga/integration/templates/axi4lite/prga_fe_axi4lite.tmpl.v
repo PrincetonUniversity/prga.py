@@ -42,155 +42,127 @@ module prga_fe_axi4lite #(
 
     // == Generic CREG/UREG Interface ========================================
     input wire                                  creg_req_rdy,
-    output reg                                  creg_req_val,
-    output reg [`PRGA_CREG_ADDR_WIDTH-1:0]      creg_req_addr,
-    output reg [`PRGA_CREG_DATA_BYTES-1:0]      creg_req_strb,
-    output reg [`PRGA_CREG_DATA_WIDTH-1:0]      creg_req_data,
+    output wire                                 creg_req_val,
+    output wire [`PRGA_CREG_ADDR_WIDTH-1:0]     creg_req_addr,
+    output wire [`PRGA_CREG_DATA_BYTES-1:0]     creg_req_strb,
+    output wire [`PRGA_CREG_DATA_WIDTH-1:0]     creg_req_data,
 
-    output reg                                  creg_resp_rdy,
+    output wire                                 creg_resp_rdy,
     input wire                                  creg_resp_val,
-    input wire [`PRGA_CREG_DATA_WIDTH-1:0]      creg_resp_data,
+    input wire [`PRGA_CREG_DATA_WIDTH-1:0]      creg_resp_data
     );
 
-    wire m_AWVALID_f, m_WVALID_f, m_ARVALID_f, m_BREADY_f, m_RREADY_f;
-    wire [`PRGA_CREG_ADDR_WIDTH-1:0] m_AWADDR_f, m_ARADDR_f;
-    wire [`PRGA_CREG_DATA_WIDTH-1:0] m_WDATA_f;
-    wire [`PRGA_CREG_DATA_BYTES-1:0] m_WSTRB_f;
+    // == Buffer Input/Output ==
+    wire awvalid, wvalid, bready, arvalid, rready, creq_rdy, cresp_val;
+    reg awready, wready, bvalid, arready, rvalid, creq_val, cresp_rdy;
+    wire [`PRGA_CREG_ADDR_WIDTH-1:0] awaddr, araddr;
+    reg [`PRGA_CREG_ADDR_WIDTH-1:0] creq_addr;
+    wire [`PRGA_CREG_DATA_WIDTH-1:0] wdata, cresp_data;
+    wire [`PRGA_CREG_DATA_BYTES-1:0] wstrb;
+    reg [`PRGA_CREG_DATA_BYTES-1:0] creq_strb;
 
-    reg m_AWREADY_p, m_WREADY_p, m_ARREADY_p, m_BVALID_p, m_RVALID_p;
-    reg [`PRGA_CREG_DATA_WIDTH-1:0] m_RDATA_p;
+    prga_valrdy_buf #(
+        .DECOUPLED          (1)
+        ,.DATA_WIDTH        (`PRGA_CREG_ADDR_WIDTH)
+    ) i_awaddr (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.rdy_o             (m_AWREADY)
+        ,.val_i             (m_AWVALID)
+        ,.data_i            (m_AWADDR)
+        ,.rdy_i             (awready)
+        ,.val_o             (awvalid)
+        ,.data_o            (awaddr)
+        );
 
-    assign m_BRESP = 2'h0;     // AXI OKAY
-    assign m_RRESP = 2'h0;     // AXI OKAY
+    prga_valrdy_buf #(
+        .DECOUPLED          (1)
+        ,.DATA_WIDTH        (`PRGA_CREG_DATA_WIDTH + `PRGA_CREG_DATA_BYTES)
+    ) i_wdata (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.rdy_o             (m_WREADY)
+        ,.val_i             (m_WVALID)
+        ,.data_i            ({m_WSTRB, m_WDATA})
+        ,.rdy_i             (wready)
+        ,.val_o             (wvalid)
+        ,.data_o            ({wstrb, wdata})
+        );
 
-    generate
-        if (NO_INTF_BUFFER) begin
-            assign m_AWVALID_f = m_AWVALID;
-            assign m_AWADDR_f = m_AWADDR;
-            assign m_WVALID_f = m_WVALID;
-            assign m_WDATA_f = m_WDATA;
-            assign m_WSTRB_f = m_WSTRB;
-            assign m_ARVALID_f = m_ARVALID;
-            assign m_ARADDR_f = m_ARADDR;
-            assign m_BREADY_f = m_BREADY;
-            assign m_RREADY_f = m_RREADY;
-            assign m_AWREADY = m_AWREADY_p;
-            assign m_WREADY = m_WREADY_p;
-            assign m_ARREADY = m_ARREADY_p;
-            assign m_BVALID = m_BVALID_p;
-            assign m_RVALID = m_RVALID_p;
-            assign m_RDATA = m_RDATA_p;
-        else begin
-            // AXI write request FIFOs
-            wire axi_waddr_fifo_full, axi_waddr_fifo_empty;
+    prga_valrdy_buf #(
+        .DECOUPLED          (1)
+        ,.DATA_WIDTH        (`PRGA_CREG_ADDR_WIDTH)
+    ) i_araddr (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.rdy_o             (m_ARREADY)
+        ,.val_i             (m_ARVALID)
+        ,.data_i            (m_ARADDR)
+        ,.rdy_i             (arready)
+        ,.val_o             (arvalid)
+        ,.data_o            (araddr)
+        );
 
-            prga_fifo #(
-                .DATA_WIDTH                 (`PRGA_CREG_ADDR_WIDTH)
-                ,.DEPTH_LOG2                (1)
-                ,.LOOKAHEAD                 (1)
-            ) axi_waddr_fifo (
-                .clk                        (clk)
-                ,.rst                       (rst)
-                ,.full                      (axi_waddr_fifo_full)
-                ,.wr                        (m_AWVALID)
-                ,.din                       (m_AWADDR)
-                ,.empty                     (axi_waddr_fifo_empty)
-                ,.rd                        (m_AWVALID_f && m_AWREADY_p)
-                ,.dout                      (m_AWADDR_f)
-                );
+    prga_valrdy_buf #(
+        .DECOUPLED          (1)
+        ,.DATA_WIDTH        (2)
+    ) i_bresp (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.rdy_o             (bready)
+        ,.val_i             (bvalid)
+        ,.data_i            (2'b0)
+        ,.rdy_i             (m_BREADY)
+        ,.val_o             (m_BVALID)
+        ,.data_o            (m_BRESP)
+        );
 
-            assign m_AWREADY = ~axi_waddr_fifo_full;
-            assign m_AWVALID_f = ~axi_waddr_fifo_empty;
+    prga_valrdy_buf #(
+        .DECOUPLED          (1)
+        ,.DATA_WIDTH        (`PRGA_CREG_DATA_WIDTH + 2)
+    ) i_rresp (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.rdy_o             (rready)
+        ,.val_i             (rvalid)
+        ,.data_i            ({cresp_data, 2'b0})
+        ,.rdy_i             (m_RREADY)
+        ,.val_o             (m_RVALID)
+        ,.data_o            ({m_RDATA, m_RRESP})
+        );
 
-            wire axi_wdata_fifo_full, axi_wdata_fifo_empty;
+    prga_valrdy_buf #(
+        .REGISTERED         (0)
+        ,.DATA_WIDTH        (`PRGA_CREG_ADDR_WIDTH + `PRGA_CREG_DATA_WIDTH + `PRGA_CREG_DATA_BYTES)
+    ) i_creq (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.rdy_o             (creq_rdy)
+        ,.val_i             (creq_val)
+        ,.data_i            ({creq_addr, wdata, creq_strb})
+        ,.rdy_i             (creg_req_rdy)
+        ,.val_o             (creg_req_val)
+        ,.data_o            ({creg_req_addr, creg_req_data, creg_req_strb})
+        );
 
-            prga_fifo #(
-                .DATA_WIDTH                 (`PRGA_CREG_DATA_BYTES + `PRGA_CREG_DATA_WIDTH)
-                ,.DEPTH_LOG2                (1)
-                ,.LOOKAHEAD                 (1)
-            ) axi_wdata_fifo (
-                .clk                        (clk)
-                ,.rst                       (rst)
-                ,.full                      (axi_wdata_fifo_full)
-                ,.wr                        (m_WVALID)
-                ,.din                       ({m_WSTRB, m_WDATA})
-                ,.empty                     (axi_wdata_fifo_empty)
-                ,.rd                        (m_WVALID_f && m_WREADY_p)
-                ,.dout                      ({m_WSTRB_f, m_WDATA_f})
-                );
+    prga_valrdy_buf #(
+        .REGISTERED         (0)
+        ,.DATA_WIDTH        (`PRGA_CREG_DATA_WIDTH)
+    ) i_cresp (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.rdy_o             (creg_resp_rdy)
+        ,.val_i             (creg_resp_val)
+        ,.data_i            (creg_resp_data)
+        ,.rdy_i             (cresp_rdy)
+        ,.val_o             (cresp_val)
+        ,.data_o            (cresp_data)
+        );
 
-            assign m_WREADY = ~axi_wdata_fifo_full;
-            assign m_WVALID_f = ~axi_wdata_fifo_empty;
-
-            // AXI read request FIFOs
-            wire axi_raddr_fifo_full, axi_raddr_fifo_empty;
-
-            prga_fifo #(
-                .DATA_WIDTH                 (`PRGA_CREG_ADDR_WIDTH)
-                ,.DEPTH_LOG2                (1)
-                ,.LOOKAHEAD                 (1)
-            ) axi_raddr_fifo (
-                .clk                        (clk)
-                ,.rst                       (rst)
-                ,.full                      (axi_raddr_fifo_full)
-                ,.wr                        (m_ARVALID)
-                ,.din                       (m_ARADDR)
-                ,.empty                     (axi_raddr_fifo_empty)
-                ,.rd                        (m_ARVALID_f && m_ARREADY_p)
-                ,.dout                      (m_ARADDR_f)
-                );
-
-            assign m_ARREADY = ~axi_raddr_fifo_full;
-            assign m_ARVALID_f = ~axi_raddr_fifo_empty;
-
-            // AXI write response FIFOs
-            wire axi_wresp_fifo_full, axi_wresp_fifo_empty;
-
-            prga_tokenfifo #(
-                .DEPTH_LOG2                 (1)
-            ) axi_wresp_fifo (
-                .clk                        (clk)
-                ,.rst                       (rst)
-                ,.full                      (axi_wresp_fifo_full)
-                ,.wr                        (m_BVALID_p && m_BREADY_f)
-                ,.empty                     (axi_wresp_fifo_empty)
-                ,.rd                        (m_BREADY)
-                );
-
-            assign m_BVALID = ~axi_wresp_fifo_empty;
-            assign m_BREADY_f = ~axi_wresp_fifo_full;
-
-            // AXI read response FIFOs
-            wire axi_rresp_fifo_full, axi_rresp_fifo_empty;
-
-            prga_fifo #(
-                .DATA_WIDTH                 (`PRGA_CREG_DATA_WIDTH)
-                ,.DEPTH_LOG2                (1)
-                ,.LOOKAHEAD                 (1)
-            ) axi_rresp_fifo (
-                .clk                        (clk)
-                ,.rst                       (rst)
-                ,.full                      (axi_rresp_fifo_full)
-                ,.wr                        (m_RVALID_p && m_RREADY_f)
-                ,.din                       (m_RDATA_p)
-                ,.empty                     (axi_rresp_fifo_empty)
-                ,.rd                        (m_RREADY)
-                ,.dout                      (m_RDATA)
-                );
-
-            assign m_RVALID = ~axi_rresp_fifo_empty;
-            assign m_RREADY_f = ~axi_rresp_fifo_full;
-        end
-    endgenerate
-
-    // =======================================================================
-    // -- Convert AXI4Lite Accesses to CREG Reads/Writes ---------------------
-    // =======================================================================
-
-    // reorder buffer
+    // == Token FIFO ==
     localparam  TOKEN_WIDTH = 1;
-    localparam  TOKEN_READ  = 1'b0,
-                TOKEN_WRITE = 1'b1;
+    localparam  TOKEN_RD    = 1'b0,
+                TOKEN_WR    = 1'b1;
 
     wire i_tokenq_full, i_tokenq_empty;
     reg i_tokenq_wr, i_tokenq_rd;
@@ -198,114 +170,91 @@ module prga_fe_axi4lite #(
     reg [TOKEN_WIDTH-1:0] i_tokenq_din;
 
     prga_fifo #(
-        .DATA_WIDTH                 (TOKEN_WIDTH)
-        ,.DEPTH_LOG2                (4)
-        ,.LOOKAHEAD                 (1)
+        .DATA_WIDTH                     (TOKEN_WIDTH)
+        ,.DEPTH_LOG2                    (6)
+        ,.LOOKAHEAD                     (1)
     ) i_tokenq (
-        .clk                        (clk)
-        ,.rst                       (~rst_n)
-        ,.full                      (i_tokenq_full)
-        ,.wr                        (i_tokenq_wr)
-        ,.din                       (i_tokenq_din)
-        ,.empty                     (i_tokenq_empty)
-        ,.rd                        (i_tokenq_rd)
-        ,.dout                      (i_tokenq_dout)
+        .clk                            (clk)
+        ,.rst                           (~rst_n)
+        ,.full                          (i_tokenq_full)
+        ,.wr                            (i_tokenq_wr)
+        ,.din                           (i_tokenq_din)
+        ,.empty                         (i_tokenq_empty)
+        ,.rd                            (i_tokenq_rd)
+        ,.dout                          (i_tokenq_dout)
         );
 
-    // arbitration
-    reg [TOKEN_WIDTH-1:0] token_f;
+    // == Arbitration ==
+    reg [TOKEN_WIDTH-1:0]   arb_next, arb_f;
 
     always @(posedge clk) begin
         if (~rst_n) begin
-            token_f <= TOKEN_READ;
-        end else if (i_tokenq_wr && ~i_tokenq_full) begin
-            token_f <= i_tokenq_din;
+            arb_f   <= TOKEN_RD;
+        end else begin
+            arb_f   <= arb_next;
         end
     end
 
-    // request pipeline (2 stages)
-    //
-    //  T (Token acquisition):  Acquire a token for the request
-    //  Q (Request):            Send request
-
-    // == T stage ==
-    reg stall_t;
-
     always @* begin
+        arb_next = arb_f;
+
+        awready = 1'b0;
+        wready = 1'b0;
+        arready = 1'b0;
         i_tokenq_wr = 1'b0;
-        i_tokenq_din = TOKEN_READ;
-        m_AWREADY_p = 1'b0;
-        m_WREADY_p = 1'b0;
-        m_ARREADY_p = 1'b0;
+        i_tokenq_din = TOKEN_RD;
+        creq_val = 1'b0;
+        creq_addr = araddr;
+        creq_strb = {`PRGA_CREG_DATA_BYTES {1'b0} };
 
-        if (~stall_t) begin
-            case ({m_AWVALID_f && m_WVALID_f, m_RVALID_f, token_f})
-                {2'h10, TOKEN_READ},
-                {2'h10, TOKEN_WRITE},
-                {2'h11, TOKEN_READ}: begin
-                    i_tokenq_wr = 1'b1;
-                    i_tokenq_din = TOKEN_WRITE;
-                    m_AWREADY_p = ~i_tokenq_full;
-                    m_WREADY_p = ~i_tokenq_full;
+        case ({awvalid && wvalid, arvalid, arb_f})
+            {2'b10, TOKEN_RD},
+            {2'b10, TOKEN_WR},
+            {2'b11, TOKEN_RD}: begin
+                i_tokenq_wr = creq_rdy;
+                creq_val = ~i_tokenq_full;
+
+                i_tokenq_din = TOKEN_WR;
+                creq_addr = awaddr;
+                creq_strb = wstrb;
+
+                if (~i_tokenq_full && creq_rdy) begin
+                    awready = 1'b1;
+                    wready = 1'b1;
+                    arb_next = TOKEN_WR;
                 end
-                {2'h01, TOKEN_READ},
-                {2'h01, TOKEN_WRITE},
-                {2'h11, TOKEN_WRITE}: begin
-                    i_tokenq_wr = 1'b1;
-                    i_tokenq_din = TOKEN_READ;
-                    m_ARREADY_p = ~i_tokenq_full;
+            end
+            {2'b01, TOKEN_RD},
+            {2'b01, TOKEN_WR},
+            {2'b11, TOKEN_WR}: begin
+                i_tokenq_wr = creq_rdy;
+                creq_val = ~i_tokenq_full;
+
+                if (~i_tokenq_full && creq_rdy) begin
+                    arready = 1'b1;
+                    arb_next = TOKEN_RD;
                 end
-            endcase
-        end
-    end
+            end
+        endcase
 
-    // == Q stage ==
-    always @(posedge clk) begin
-        if (~rst_n) begin
-            creg_req_val    <= 1'b0;
-            creg_req_addr   <= {`PRGA_CREG_ADDR_WIDTH {1'b0} };
-            creg_req_strb   <= {`PRGA_CREG_DATA_BYTES {1'b0} };
-            creg_req_data   <= {`PRGA_CREG_DATA_WIDTH {1'b0} };
-        end else if (m_AWVALID_f && m_AWREADY_f && m_WVALID_f && m_WREADY_f) begin
-            creg_req_val    <= 1'b1;
-            creg_req_addr   <= m_AWADDR_f;
-            creg_req_strb   <= m_WSTRB_f;   // XXX: the request will be executed as a read if 
-                                            //  m_WSTRB is all-zero. This is OK
-            creg_req_data   <= m_WDATA_f;
-        end else if (m_ARVALID_f && m_ARREADY_f) begin
-            creg_req_val    <= 1'b1;
-            creg_req_addr   <= m_ARADDR_f;
-            creg_req_strb   <= {`PRGA_CREG_DATA_BYTES {1'b0} };
-            creg_req_data   <= {`PRGA_CREG_DATA_WIDTH {1'b0} };
-        end else if (creg_req_rdy) begin
-            creg_req_val    <= 1'b0;
-        end
-    end
-
-    always @* begin
-        stall_t = creg_req_val && ~creg_req_rdy;
-    end
-
-    // response pipeline
-    always @* begin
-        m_BVALID_p      = 1'b0;
-        m_RVALID_p      = 1'b0;
-        m_RDATA_p       = {`PRGA_CREG_DATA_WIDTH {1'b0} };
-        creg_resp_rdy   = 1'b0;
-        i_tokenq_rd     = 1'b0;
+        bvalid = 1'b0;
+        rvalid = 1'b0;
+        i_tokenq_rd = 1'b0;
+        cresp_rdy = 1'b0;
 
         if (~i_tokenq_empty) begin
             case (i_tokenq_dout)
-                TOKEN_READ: begin
-                    m_RVALID_p = creg_resp_val;
-                    m_RDATA_p = creg_resp_data;
-                    creg_resp_rdy = m_RREADY_f;
-                    i_tokenq_rd = creg_resp_val && m_RREADY_f;
+                TOKEN_RD: begin
+                    rvalid = cresp_val;
+                    cresp_rdy = rready;
+
+                    i_tokenq_rd = cresp_val && rready;
                 end
-                TOKEN_WRITE: begin
-                    m_BVALID_p = creg_resp_val;
-                    creg_resp_rdy = m_BREADY_f;
-                    i_tokenq_rd = creg_resp_val && m_BREADY_f;
+                TOKEN_WR: begin
+                    bvalid = cresp_val;
+                    cresp_rdy = bready;
+
+                    i_tokenq_rd = cresp_val && bready;
                 end
             endcase
         end
