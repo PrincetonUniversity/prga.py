@@ -48,10 +48,9 @@ class YosysScriptsCollection(AbstractPass):
         for primitive_key in context.summary.active_primitives:
             primitive = context.database[ModuleView.user, primitive_key]
             renderer.add_yosys_library(
-                    os.path.join(os.path.abspath(self.output_dir), "lib.v"),
-                    primitive, template = getattr(primitive, "lib_template", None))
-            techmap_template = getattr(primitive, "techmap_template", None)
-            if techmap_template is not None:
+                    os.path.join(os.path.abspath(self.output_dir), primitive.name + ".lib.v"),
+                    primitive, template = getattr(primitive, "verilog_template", None))
+            if (techmap_template := getattr(primitive, "techmap_template", None)) is not None:
                 if primitive.primitive_class.is_custom:
                     premap_commands = getattr(primitive, "premap_commands", tuple())
                     renderer.add_yosys_techmap(

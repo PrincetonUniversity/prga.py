@@ -50,18 +50,3 @@ class BaseRoutingBoxBuilder(BaseBuilder):
                 node.prototype.name)
         else:
             raise PRGAInternalError("Unknown node type: {}".format(node))
-
-    # == high-level API ======================================================
-    def connect(self, sources, sinks, *, fully = False):
-        """Connect ``sources`` to ``sinks``.
-        
-        Args:
-            sources: Source nets, i.e., an input port, a subset of an input port, or a list of a combination of the
-                above
-            sinks: Sink nets, i.e., an output port, a subset of an output port, or a list of a combination of the
-                above
-
-        Keyword Args:
-            fully (:obj:`bool`): If set to ``True``, connections are made between every source and every sink
-        """
-        NetUtils.connect(sources, sinks, fully = fully)

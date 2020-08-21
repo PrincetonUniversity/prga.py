@@ -3,25 +3,20 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from ..core.common import ModuleView
-from ..netlist.net.util import NetUtils
-from ..netlist.module.module import Module
-from ..netlist.module.util import ModuleUtils
-from ..util import Object, uno
+from ..core.common import ModuleView, ModuleClass
+from ..netlist import Module, NetUtils, ModuleUtils
+from ..util import uno
 from ..exception import PRGAInternalError
 
 import os
 import jinja2 as jj
-
-# In Python 3.7 and above, ``dict`` preserves insertion order and is more performant than ``OrderedDict``
-OrderedDict = dict
 
 __all__ = ['FileRenderer']
 
 # ----------------------------------------------------------------------------
 # -- File Renderer -----------------------------------------------------------
 # ----------------------------------------------------------------------------
-class FileRenderer(Object):
+class FileRenderer(object):
     """File renderer based on Jinja2."""
 
     __slots__ = ['template_search_paths', 'tasks', '_yosys_synth_script_task']
@@ -34,33 +29,29 @@ class FileRenderer(Object):
 
     @classmethod
     def _net2verilog(cls, net):
-        """:obj:`str`: Render in verilog syntax a slice or a bus ``net``."""
+        """:obj:`str`: Render ``net`` in verilog syntax."""
         if net.net_type.is_const:
             if net.value is None:
                 return "{}'bx".format(len(net))
             else:
                 return "{}'h{:x}".format(len(net), net.value)
+        elif net.net_type.is_concat:
+            return '{' + ',\n'.join(cls._net2verilog(i) for i in reversed(net.items)) + '}'
+        elif net.net_type.is_slice:
+            return '{}[{}:{}]'.format(cls._net2verilog(net.bus), net.index.stop - 1, net.index.start)
+        elif net.net_type.is_bit:
+            return '{}[{}]'.format(cls._net2verilog(net.bus), net.index)
+        elif net.net_type.is_port:
+            return net.name
+        elif net.net_type.is_pin:
+            return "_{}__{}".format(net.instance.name, net.model.name)
         else:
-            bus, suffix = net, ""
-            if net.bus_type.is_slice:
-                bus = net.bus
-                if len(net) == 1:
-                    suffix = '[{}]'.format(net.index.start)
-                else:
-                    suffix = '[{}:{}]'.format(net.index.stop - 1, net.index.start)
-            if bus.net_type.is_port:
-                return bus.name + suffix
-            else:
-                return "_{}__{}".format(bus.instance.name, bus.model.name) + suffix
+            raise PRGAInternalError("Unsupported net: {}".format(net))
 
     @classmethod
     def _source2verilog(cls, net):
         """:obj:`str`: Render in verilog syntax the concatenation for the nets driving ``net``."""
-        source = NetUtils.get_source(net)
-        if source.bus_type.is_concat:
-            return '{' + ', '.join(cls._net2verilog(i) for i in reversed(source.items)) + '}'
-        else:
-            return cls._net2verilog(source)
+        return cls._net2verilog(NetUtils.get_source(net))
 
     def _get_yosys_script_task(self, script_file = None):
         """Get the specified or most recently added yosys script rending task."""
@@ -83,11 +74,15 @@ class FileRenderer(Object):
         for d in ("prga_ram_1r1w", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer",
                 "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo", "prga_valrdy_buf"):
             context._database[ModuleView.logical, d] = Module(d,
+                    is_cell = True,
                     view = ModuleView.logical,
+                    module_class = ModuleClass.aux,
                     verilog_template = "stdlib/{}.v".format(d))
         for d in ("prga_ram_1r1w_dc", "prga_async_fifo", "prga_async_tokenfifo", "prga_clkdiv"):
             context._database[ModuleView.logical, d] = Module(d,
+                    is_cell = True,
                     view = ModuleView.logical,
+                    module_class = ModuleClass.aux,
                     verilog_template = "cdclib/{}.v".format(d))
         ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo"],
                 context._database[ModuleView.logical, "prga_ram_1r1w"], "ram")
@@ -105,12 +100,12 @@ class FileRenderer(Object):
         # add headers
         context._add_verilog_header("prga_utils.vh", "stdlib/include/prga_utils.tmpl.vh")
 
-    def add_verilog(self, module, file_, template = 'module.tmpl.v', **kwargs):
+    def add_verilog(self, file_, module, template = 'module.tmpl.v', **kwargs):
         """Add a Verilog rendering task.
 
         Args:
-            module (`Module`): The module to be rendered
             file_ (:obj:`str` of file-like object): The output file
+            module (`Module`): The module to be rendered
             template (:obj:`str`): The template to be used
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
@@ -178,7 +173,7 @@ class FileRenderer(Object):
                 "module": module,
                 }
         parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (uno(template, "blackbox.lib.tmpl.v"), parameters) )
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
         script_task = self._get_yosys_script_task(script_file)
         if not isinstance(file_, basestring):
             file_ = os.path.abspath(file_.name)

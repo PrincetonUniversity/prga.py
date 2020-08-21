@@ -4,9 +4,7 @@ from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
 from ..base import BaseBuilder
-from ....netlist.net.common import PortDirection
-from ....netlist.net.util import NetUtils
-from ....netlist.module.util import ModuleUtils
+from ....netlist import PortDirection, ModuleUtils, NetUtils
 from ....exception import PRGAInternalError
 from ....util import Object
 
@@ -64,7 +62,7 @@ class BaseArrayBuilder(BaseBuilder):
                     (x < 0 and module.edge.west)):
                 return True
         else:
-            raise PRGAInternalError("Unkonwn dimension: {}".format(dim))
+            raise PRGAInternalError("Unknown dimension: {}".format(dim))
         if module.module_class.is_tile:
             if module.disallow_segments_passthru:
                 return dim.case(
@@ -80,18 +78,6 @@ class BaseArrayBuilder(BaseBuilder):
         else:
             raise PRGAInternalError("Unknown module class: {}".format(module.module_class))
 
-    @classmethod
-    def _get_or_create_global_input(cls, module, global_):
-        source = module.ports.get(global_.name)
-        if source is not None:
-            if getattr(source, "global_", None) is not global_:
-                raise PRGAInternalError("'{}' is not driving global wire '{}'"
-                        .format(source, global_.name))
-        else:
-            source = ModuleUtils.create_port(module, global_.name, global_.width, PortDirection.input_,
-                    is_clock = global_.is_clock, global_ = global_)
-        return source
-
     # == high-level API ======================================================
     def connect(self, sources, sinks):
         """Connect ``sources`` to ``sinks``."""
@@ -106,8 +92,3 @@ class BaseArrayBuilder(BaseBuilder):
     def height(self):
         """:obj:`int`: Height of the array."""
         return self._module.height
-
-    @property
-    def instances(self):
-        """:obj:`Mapping` [:obj:`Hashable`, `Instance` ]: Proxy to ``module.instances``."""
-        return self._module.instances

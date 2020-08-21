@@ -5,7 +5,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from ..util import Abstract, Object, Enum, uno
+from ..util import Object, Enum, uno
 from ..exception import PRGAInternalError
 
 from collections import namedtuple
@@ -516,7 +516,7 @@ class BridgeType(Enum):
 # ----------------------------------------------------------------------------
 # -- Abstract Routing Node ID ------------------------------------------------
 # ----------------------------------------------------------------------------
-class AbstractRoutingNodeID(Hashable, Abstract):
+class AbstractRoutingNodeID(Object, Hashable):
     """Abstract base class for routing node IDs."""
 
     # == low-level API =======================================================

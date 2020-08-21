@@ -5,7 +5,7 @@ from prga.compatible import *
 
 from .base import AbstractPass
 from ..core.common import ModuleView
-from ..util import Object, uno
+from ..util import uno
 from ..exception import PRGAInternalError, PRGAAPIError
 
 import os
@@ -15,7 +15,7 @@ __all__ = ['VerilogCollection']
 # ----------------------------------------------------------------------------
 # -- Verilog Collection ------------------------------------------------------
 # ----------------------------------------------------------------------------
-class VerilogCollection(Object, AbstractPass):
+class VerilogCollection(AbstractPass):
     """Collecting Verilog rendering tasks.
     
     Args:
@@ -40,7 +40,7 @@ class VerilogCollection(Object, AbstractPass):
             return
         f = os.path.join(os.path.abspath(self.src_output_dir), module.name + ".v")
         self.visited[module.key] = f
-        self.renderer.add_verilog(module, f, getattr(module, "verilog_template", "module.tmpl.v"))
+        self.renderer.add_verilog(f, module, getattr(module, "verilog_template", "module.tmpl.v"))
         for instance in itervalues(module.instances):
             self._process_module(instance.model)
 

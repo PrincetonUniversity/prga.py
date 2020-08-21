@@ -8,10 +8,7 @@ from .tile import TileBuilder
 from ..box.sbox import SwitchBoxBuilder
 from ...common import (Corner, Position, OrientationTuple, SwitchBoxPattern, ModuleView, ModuleClass, Orientation,
         BridgeID, Dimension, BridgeType, BlockPinID)
-from ....netlist.net.util import NetUtils
-from ....netlist.module.instance import Instance
-from ....netlist.module.module import Module
-from ....netlist.module.util import ModuleUtils
+from ....netlist import PortDirection, Module, Instance, NetUtils, ModuleUtils
 from ....util import Object, uno
 from ....exception import PRGAInternalError, PRGAAPIError
 
@@ -47,10 +44,10 @@ class _ArrayInstancesMapping(Object, MutableMapping):
     def __getitem__(self, key):
         try:
             (x, y), corner = key
-        except TypeError:
+        except (TypeError, ValueError):
             try:
                 (x, y), corner = key, None
-            except TypeError:
+            except (TypeError, ValueError):
                 raise KeyError(key)
         if self.__validate_position(x, y):
             if corner is not None and isinstance((i := self.sboxes[x][y][corner]), Instance):
@@ -169,61 +166,86 @@ class ArrayBuilder(BaseArrayBuilder):
     def __expose_node(cls, pin):
         assert not pin.instance.is_hierarchical
         array = pin.parent
+
+        # get the routing node in parent module
         pos = pin.instance.key[0] if pin.instance.model.module_class.is_switch_box else pin.instance.key
         node = pin.model.key.move(pos)
-        if node.node_type.is_block:    # BLOCK PIN
+
+        if node.node_type.is_segment:
+            node = node.convert(BridgeType.regular_output)
+
+        # alternative node for Cbox-Sbox bridges
+        alt_node = None
+        if node.node_type.is_bridge and node.bridge_type in (BridgeType.cboxout, BridgeType.cboxout2):
+            node = node.convert(BridgeType.cboxout)
+            alt_node = node.convert(BridgeType.cboxout2)
+
+        # try exposing
+        port = None
+
+        # case 1. input pin
+        #   using `while` for easier flow control. The loop below executes only once
+        while pin.model.direction.is_input:
+            # check current source
+            if (port := NetUtils.get_source(pin, return_none_if_unconnected = True)) is not None:
+                if port.net_type.is_port and port.key in (node, alt_node):
+                    break       # this is the port we want
+                raise PRGAInternalError("{} is connected incorrectly. Current source is: {}"
+                        .format(pin, port))
+            # unconnected yet. check if the node is already added to the array
+            if (port := array.ports.get(node)) is not None:
+                if ((node.node_type.is_bridge and node.bridge_type.is_regular_input) or
+                        len(NetUtils.get_sinks(port)) == 0):
+                    NetUtils.connect(port, pin)     # accepted
+                    break
+                elif alt_node is None:
+                    raise PRGAInternalError("{} is already added to {} and connected".format(node, array))
+            # alternative node?
+            if alt_node is not None and (port := array.ports.get(alt_node)) is not None:
+                if len(NetUtils.get_sinks(port)) == 0:
+                    NetUtils.connect(port, pin) # accepted
+                    break
+                raise PRGAInternalError("No available Cbox-Sbox bridge slots for {} in {}".format(node, array))
+            # create ports
+            if node not in array.ports:
+                port = ModuleUtils.create_port(array, cls._node_name(node), len(pin),
+                        PortDirection.input_, key = node)
+            else:
+                port = ModuleUtils.create_port(array, cls._node_name(alt_node), len(pin),
+                        PortDirection.input_, key = alt_node)
+            NetUtils.connect(port, pin)
+            break
+
+        # case 2. output pin
+        while pin.model.direction.is_output:
             if (port := array.ports.get(node)) is None:
                 port = ModuleUtils.create_port(array, cls._node_name(node), len(pin),
-                        pin.model.direction, key = node)
-            source, sink = (pin, port) if port.direction.is_output else (port, pin)
-            if (cur_source := NetUtils.get_source(sink, return_none_if_unconnected = True)) is None:
-                NetUtils.connect(source, sink)
-            elif cur_source != source:
-                raise PRGAInternalError("{} already exposed but not correctly connected".format(pin))
+                        PortDirection.output, key = node)
+                NetUtils.connect(pin, port)
+                break
+            elif (cur_source := NetUtils.get_source(port, return_none_if_unconnected = True)) is None:
+                NetUtils.connect(pin, port)
+                break
+            elif cur_source is pin:
+                break
+            elif alt_node is not None:
+                node, alt_node = alt_node, None
+            else:
+                raise PRGAInternalError("{} is connected incorrectly. Current source is: {}"
+                        .format(port, cur_source))
+
+        # return here if this is a blockpin
+        if node.node_type.is_block:
             return port
-        if node.node_type.is_segment:  # SEGMENT
-            node = node.convert(BridgeType.regular_output)
-        elif node.node_type.is_bridge:
-            if node.bridge_type.is_cboxout2:
-                node = node.convert(BridgeType.cboxout)
-        else:
-            raise PRGAInternalError("Unknown node type: {:r}".format(pin.model.key.node_type))
-        while (port := array.ports.get(node)) is not None:
-            if port.direction.is_output:
-                if pin.model.direction.is_output:
-                    if (cur_source := NetUtils.get_source(port, return_none_if_unconnected = True)) is None:
-                        NetUtils.connect(pin, port)
-                        break
-                    elif cur_source == pin:
-                        break
-            elif port.direction.is_input:
-                if pin.model.direction.is_input:
-                    if (cur_source := NetUtils.get_source(pin, return_none_if_unconnected = True)) is None:
-                        if node.bridge_type not in (BridgeType.cboxout, BridgeType.cboxout2):
-                            NetUtils.connect(port, pin)
-                            break
-                    elif cur_source == port:
-                        break
-            if node.bridge_type.is_cboxout:
-                node = node.convert(BridgeType.cboxout2)
-                continue
-            elif node.bridge_type.is_cboxout2:
-                raise PRGAInternalError("All cboxout bridges are used up in {}".format(array))
-            raise PRGAInternalError("{} already exposed but not correctly connected".format(pin))
+
+        # update boxpos
         boxpos, boxcorner = None, None
         if pin.instance.model.module_class.is_switch_box:
             boxpos, boxcorner = pin.instance.key
         else:
             boxpos, boxcorner = pin.model.boxpos[0] + pos, pin.model.boxpos[1]
-        if port is None:
-            port = ModuleUtils.create_port(array, cls._node_name(node), len(pin), pin.model.direction,
-                    key = node, boxpos = (boxpos, boxcorner))
-            if pin.model.direction.is_input:
-                NetUtils.connect(port, pin)
-            else:
-                NetUtils.connect(pin, port)
-        elif node.bridge_type.is_regular_input:
-            oldpos, oldcorner = port.boxpos
+        if node.bridge_type.is_regular_input and (oldboxpos := getattr(port, "boxpos", None)) is not None:
+            oldpos, oldcorner = oldboxpos
             if node.orientation.is_north:
                 if oldpos.y > boxpos.y or (oldpos.y == boxpos.y and oldcorner.dotx(Dimension.y).is_inc):
                     boxpos, boxcorner = oldpos, oldcorner
@@ -238,7 +260,7 @@ class ArrayBuilder(BaseArrayBuilder):
                     boxpos, boxcorner = oldpos, oldcorner
             else:
                 raise PRGAInternalError("Unknown orientation: {:r}".format(node.orientation))
-            port.boxpos = boxpos, boxcorner
+        port.boxpos = boxpos, boxcorner
         return port
 
     @classmethod
@@ -325,7 +347,7 @@ class ArrayBuilder(BaseArrayBuilder):
         instances_visited = set()
         corner = ordering[corner_idx]
         while not cls._no_channel_for_switchbox(module, pos, corner, node.orientation, True):
-            # using `while` only for easier flow contorl. This loop only executes once
+            # using `while` only for easier flow contorl. The loop below only executes once
             while (instance := module._instances.get_root(pos, corner)) is not None:
                 # check if we've visited this instance
                 if instance.key in instances_visited:
@@ -345,7 +367,7 @@ class ArrayBuilder(BaseArrayBuilder):
                         break
                     for subdriver in cls._find_segment_drivers(instance.model, node.move(-instance.key),
                             pos - instance.key, ordering, corner_idx):
-                        yield subdriver.instance.extend_hierarchy(above = instance).pins[subdriver.model.key]
+                        yield subdriver.instance._extend_hierarchy(above = instance).pins[subdriver.model.key]
                 # end of code block
                 break
             corner_idx = (corner_idx + 1) % 4
@@ -380,7 +402,7 @@ class ArrayBuilder(BaseArrayBuilder):
             Corner.compose(ori,          corner.decompose()[ori.dimension.perpendicular].opposite),
             ))
         while True:
-            # using `while` only for easier flow control. this loop executes only once
+            # using `while` only for easier flow control. the loop below executes only once
             while (sbox := cls.get_hierarchical_root(module, pos, corner)) is not None:
                 sgmt_drv_node = node.move(-cls.hierarchical_position(sbox)).convert()
                 if sgmt_drv_node not in sbox.pins:
@@ -392,7 +414,7 @@ class ArrayBuilder(BaseArrayBuilder):
                         for i, inst in enumerate(sbox.hierarchy[1:]):
                             if (brg_drv := NetUtils.get_source(bridge, return_none_if_unconnected = True)) is None:
                                 # cool! this one is unused!
-                                bridge = bridge.instance.extend_hierarchy(
+                                bridge = bridge.instance._extend_hierarchy(
                                         above = sbox.hierarchy[i + 1:]).pins[bridge.model.key]
                                 bridge = cls._expose_node(bridge)
                                 break
@@ -409,7 +431,7 @@ class ArrayBuilder(BaseArrayBuilder):
                             if (brg_drv := NetUtils.get_source(bridge, return_none_if_unconnected = True)) is None:
                                 NetUtils.connect(pin, bridge)
                                 return
-                            elif brg_drv == pin:
+                            elif brg_drv is pin:
                                 return
                 # no bridge already available. create a new one
                 bridge = SwitchBoxBuilder._add_cboxout(sbox.model, sgmt_drv_node.convert(BridgeType.cboxout))
@@ -426,14 +448,14 @@ class ArrayBuilder(BaseArrayBuilder):
     # == low-level API =======================================================
     @classmethod
     def get_hierarchical_root(cls, array, position, corner = None):
-        """Get the hierarchical root instance occupying the given position
+        """Get the hierarchical root instance occupying the given position.
 
         Args:
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of the tile
             corner (`Corner`): If specified, get the switch box instance
 
         Returns:
-            `Module`: If ``corner`` is not specified, return a hierarhical instance of a tile; otherwise a switch box
+            `AbstractInstance`: If ``corner`` is not specified, return a hierarhical instance of a tile; otherwise a switch box
         """
         if array.module_class.is_array:
             if (i := array._instances.get_root(position, corner)) is None:
@@ -444,7 +466,7 @@ class ArrayBuilder(BaseArrayBuilder):
                 return i
             elif (i.model.module_class.is_array and
                     (sub := cls.get_hierarchical_root(i.model, position - i.key, corner)) is not None):
-                return sub.extend_hierarchy(above = i)
+                return sub._extend_hierarchy(above = i)
             else:
                 return None
         else:
@@ -480,9 +502,9 @@ class ArrayBuilder(BaseArrayBuilder):
             `Module`
         """
         return Module(name,
+                coalesce_connections = True,
                 view = ModuleView.user,
                 instances = _ArrayInstancesMapping(width, height),
-                coalesce_connections = True,
                 module_class = ModuleClass.array,
                 width = width,
                 height = height,
@@ -695,11 +717,7 @@ class ArrayBuilder(BaseArrayBuilder):
                 (x, y), corner = key
             except TypeError:
                 (x, y), corner = key, None
-            # if the instance is a tile/array, process global wires
-            if corner is None:
-                for pin in itervalues(instance.pins):
-                    if (global_ := getattr(pin.model, "global_", None)) is not None:
-                        self.connect(self._get_or_create_global_input(self._module, global_), pin)
+
             # process routing nodes
             snapshot = tuple(iteritems(instance.pins))
             for node, pin in snapshot:

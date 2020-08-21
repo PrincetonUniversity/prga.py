@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from ...netlist.net.common import PortDirection
+from ...netlist import PortDirection
 from ...core.common import Position, OrientationTuple, IOType
 from ...exception import PRGAAPIError, PRGAInternalError
 from ...util import Object, uno

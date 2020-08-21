@@ -6,6 +6,7 @@ from prga.compatible import *
 from ..util import create_argparser, docstring_from_argparser
 from ...core.context import Context
 from ...core.common import ModuleView
+from ...passes.vpr.arch import FASM_NONE
 from ...util import enable_stdout_logging
 from ...exception import PRGAInternalError
 from ...cfg.pktchain.protocol import PktchainProtocol
@@ -85,7 +86,7 @@ class PktchainBitgen(object):
         # process features
         for lineno, line in enumerate(istream):
             segments = line.strip().split(".")
-            if segments[-1] == 'ignored':
+            if FASM_NONE in segments:
                 continue
             x, y, base = 0, 0, 0
             for sgmt in segments[:-1]:

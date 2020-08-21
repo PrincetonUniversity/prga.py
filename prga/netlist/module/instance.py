@@ -1,37 +1,45 @@
 # -*- encoding: ascii -*-
 # Python 2 and 3 compatible
-"""Module instances, i.e. sub-modules."""
+"""Netlist module instances, i.e. sub-modules."""
 
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from .common import AbstractInstance
-from ..net.bus import Pin
-from ...util import Object, uno
+from ..net.bus import Pin, HierarchicalPin
+from ...util import uno, Object
 from ...exception import PRGAInternalError, PRGATypeError, PRGAIndexError
+
+from abc import abstractproperty, abstractmethod
 
 __all__ = ['Instance', 'HierarchicalInstance']
 
 # ----------------------------------------------------------------------------
 # -- Instance Pins Mapping Proxy ---------------------------------------------
 # ----------------------------------------------------------------------------
-class _InstancePinsProxy(Object, Mapping):
-    """Helper class for `AbstractInstance.pins` properties.
+class _InstancePinsProxy(Mapping):
+    """Helper class for `AbstractInstance.pins` property.
 
     Args:
-        instance (`AbstractInstance`): 
+        instance (`AbstractInstance`):
     """
 
-    __slots__ = ['instance']
+    __slots__ = ["instance"]
+
     def __init__(self, instance):
-        super(_InstancePinsProxy, self).__init__()
         self.instance = instance
 
     def __getitem__(self, key):
-        try:
-            return Pin(self.instance.model.ports[key], self.instance)
-        except (KeyError, AttributeError):
+        if (model := self.instance.model.ports.get(key)) is None:
+            if (not self.instance.is_hierarchical and
+                    (pin := self.instance._pins.get(key)) is not None):
+                raise PRGAInternalError("Port {} removed from {}"
+                        .format(key, self.instance.model))
             raise KeyError(key)
+        elif self.instance.is_hierarchical:
+            return HierarchicalPin(self.instance, model)
+        elif (pin := self.instance._pins.get(key)) is None:
+            pin = self.instance._pins.setdefault(key, Pin(self.instance, model))
+        return pin
 
     def __len__(self):
         return len(self.instance.model.ports)
@@ -41,14 +49,88 @@ class _InstancePinsProxy(Object, Mapping):
             yield key
 
 # ----------------------------------------------------------------------------
+# -- Abstract Instance -------------------------------------------------------
+# ----------------------------------------------------------------------------
+class AbstractInstance(Object):
+    """Abstract base class for instances."""
+
+    @abstractproperty
+    def is_hierarchical(self):
+        """:obj:`bool`: Test if this is a hierarchical instance."""
+        raise NotImplementedError
+
+    @abstractproperty
+    def parent(self):
+        """`Module`: Module which instance belongs to. For a hierarchical instance, this means the top-level
+        module."""
+        raise NotImplementedError
+
+    @abstractproperty
+    def model(self):
+        """`Module`: The module instantiated. For a hierarchical instance, this is the model of the leaf instance."""
+        raise NotImplementedError
+
+    @abstractproperty
+    def hierarchy(self):
+        """:obj:`Sequence` [`Instance` ]: Hierarchy of this instance in bottom-up order."""
+        raise NotImplementedError
+
+    @property
+    def pins(self):
+        """:obj:`Mapping` [:obj:`Hashable`, `Pin` or `HierarchicalPin`]: Pins of this instance."""
+        return _InstancePinsProxy(self)
+
+    def _extend_hierarchy(self, *, above = None, below = None):
+        """Extend the hierarchy.
+
+        Keyword Args:
+            above (`AbstractInstance` or :obj:`Sequence` [`Instance`]): Append above the current hierarchy
+            below (`AbstractInstance` or :obj:`Sequence` [`Instance`]): Append below the current hierarchy 
+
+        Returns:
+            `AbstractInstance`:
+        """
+        hierarchy = self.hierarchy
+        if above is not None:
+            hierarchy = hierarchy + (above.hierarchy if isinstance(above, AbstractInstance) else above)
+        if below is not None:
+            hierarchy = (below.hierarchy if isinstance(below, AbstractInstance) else below) + hierarchy
+        if len(hierarchy) > 1:
+            return HierarchicalInstance(hierarchy)
+        else:
+            return hierarchy[0]
+
+    def _shrink_hierarchy(self, *, low = None, high = None):
+        """Shrink the hierarchy.
+
+        Keyword Args:
+            low (:obj:`int`): The lowest hierarchy (INCLUSIVE) to be kept
+            high (:obj:`int`): The highest hierarchy (EXCLUSIVE) to be kept
+
+        Returns:
+            `AbstractInstance`:
+
+        Notes:
+            The difference in the inclusiveness of args ``low`` and ``high`` is intended to match the list indexing
+            mechanism in Python.
+        """
+        hierarchy = self.hierarchy[low:high]
+        if len(hierarchy) == 0:
+            return None
+        elif len(hierarchy) > 1:
+            return HierarchicalInstance(hierarchy)
+        else:
+            return hierarchy[0]
+
+# ----------------------------------------------------------------------------
 # -- Instance ----------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Instance(Object, AbstractInstance):
-    """[Hierarchical] instance of a module.
+class Instance(AbstractInstance):
+    """Direct sub-instance in a module.
 
     Args:
-        parent (`AbstractModule`): Parent module
-        model (`AbstractModule`): Model of this instance
+        parent (`Module`): Parent module
+        model (`Module`): Model of this instance
         name (:obj:`str`): Name of the instance
 
     Keyword Args:
@@ -57,7 +139,7 @@ class Instance(Object, AbstractInstance):
         **kwargs: Custom attributes associated with this instance
     """
 
-    __slots__ = ['_parent', '_model', '_name', '_key', '__dict__']
+    __slots__ = ['_parent', '_model', '_name', '_key', '_pins', '__dict__']
 
     # == internal API ========================================================
     def __init__(self, parent, model, name, *, key = None, **kwargs):
@@ -65,6 +147,8 @@ class Instance(Object, AbstractInstance):
         self._model = model
         self._name = name
         self._key = uno(key, name)
+        self._pins = OrderedDict()
+
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
 
@@ -74,20 +158,18 @@ class Instance(Object, AbstractInstance):
     # == low-level API =======================================================
     @property
     def name(self):
+        """:obj:`str`: Name of this instance."""
         return self._name
 
     @property
     def key(self):
+        """:obj:`Hashable`: A hashable key used to index this instance in the parent module's isntance mapping."""
         return self._key
 
     # -- implementing properties/methods required by superclass --------------
     @property
     def is_hierarchical(self):
         return False
-
-    @property
-    def pins(self):
-        return _InstancePinsProxy(self)
 
     @property
     def parent(self):
@@ -101,60 +183,34 @@ class Instance(Object, AbstractInstance):
     def hierarchy(self):
         return (self, )
 
-    def extend_hierarchy(self, *, above = None, below = None):
-        if above is None and below is None:
-            return self
-        hierarchy = self.hierarchy
-        if isinstance(above, AbstractInstance):
-            hierarchy = hierarchy + above.hierarchy
-        elif above is not None:
-            hierarchy = hierarchy + above
-        if isinstance(below, AbstractInstance):
-            hierarchy = below.hierarchy + hierarchy
-        elif below is not None:
-            hierarchy = below + hierarchy
-        return HierarchicalInstance(hierarchy)
-
-    def shrink_hierarchy(self, index):
-        if isinstance(index, int):
-            if index == 0:
-                return self
-            else:
-                raise PRGAIndexError("Index out of range. {} has 1 levels of hierarchy".format(self))
-        elif isinstance(index, slice):
-            start = max(0, uno(index.start, 0))
-            stop = min(1, uno(index.stop, 1))
-            if start <= 0 < stop:
-                return self
-            else:
-                return None
-        else:
-            raise PRGATypeError("index", "int or slice")
-
 # ----------------------------------------------------------------------------
 # -- Hierarchical Instance ---------------------------------------------------
 # ----------------------------------------------------------------------------
-class HierarchicalInstance(Object, AbstractInstance):
-    """Hierarchical instance of a module.
+class HierarchicalInstance(AbstractInstance):
+    """Hierarchical instance in a module.
 
     Args:
-        hierarchy (:obj:`Sequence` [:obj:`Instance` ]): Hierarchy in bottom-up order
+        hierarchy (:obj:`Sequence` [:obj:`Instance` ]): Hierarchy in bottom-up order.
+
+    Notes:
+        Direct instantiation of this class is not recommended. Use `AbstractInstance._shrink_hierarchy`,
+        `AbstractInstance._extend_hierarchy`, or `ModuleUtils._dereference` instead.
     """
 
-    __slots__ = ['_hierarchy']
+    __slots__ = ["hierarchy"]
 
     # == internal API ========================================================
     def __init__(self, hierarchy):
-        self._hierarchy = tuple(iter(hierarchy))
-        if len(self._hierarchy) < 2:
+        if len(hierarchy) < 2:
             raise PRGAInternalError("Cannot create hierarchical instance with less than 2 levels")
+        self.hierarchy = hierarchy
 
     def __repr__(self):
-        s = '{}/{}'.format(self._hierarchy[-1].parent.name, self._hierarchy[-1].name)
-        for inst in reversed(self._hierarchy[:-1]):
+        s = '{}/{}'.format(self.hierarchy[-1].parent.name, self.hierarchy[-1].name)
+        for inst in reversed(self.hierarchy[:-1]):
             s += "[{}]/{}".format(inst.parent.name, inst.name)
         s += "[{}]".format(self.model.name)
-        return "HierarchicalInstance({})".format(s)
+        return "HierInstance({})".format(s)
 
     # == low-level API =======================================================
     # -- implementing properties/methods required by superclass --------------
@@ -164,39 +220,8 @@ class HierarchicalInstance(Object, AbstractInstance):
 
     @property
     def parent(self):
-        return self._hierarchy[-1].parent
+        return self.hierarchy[-1].parent
 
     @property
     def model(self):
-        return self._hierarchy[0].model
-
-    @property
-    def pins(self):
-        return _InstancePinsProxy(self)
-
-    @property
-    def hierarchy(self):
-        return self._hierarchy
-
-    def extend_hierarchy(self, *, above = None, below = None):
-        if above is None and below is None:
-            return self
-        hierarchy = self.hierarchy
-        if isinstance(above, AbstractInstance):
-            hierarchy = hierarchy + above.hierarchy
-        elif above is not None:
-            hierarchy = hierarchy + above
-        if isinstance(below, AbstractInstance):
-            hierarchy = below.hierarchy + hierarchy
-        elif below is not None:
-            hierarchy = below + hierarchy
-        return HierarchicalInstance(hierarchy)
-
-    def shrink_hierarchy(self, index):
-        hierarchy = self._hierarchy[index]
-        if len(hierarchy) == 0:
-            return None
-        elif len(hierarchy) == 1:
-            return hierarchy[0]
-        else:
-            return type(self)(hierarchy)
+        return self.hierarchy[0].model

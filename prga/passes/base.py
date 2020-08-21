@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from ..util import Abstract
+from ..util import Object
 
 from abc import abstractproperty, abstractmethod
 
@@ -12,7 +12,7 @@ __all__ = ['AbstractPass']
 # ----------------------------------------------------------------------------
 # -- Abstract Pass -----------------------------------------------------------
 # ----------------------------------------------------------------------------
-class AbstractPass(Abstract):
+class AbstractPass(Object):
     """A pass working on the architecture context."""
 
     @abstractproperty

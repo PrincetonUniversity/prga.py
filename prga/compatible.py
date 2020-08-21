@@ -9,9 +9,8 @@ from __future__ import division, absolute_import, print_function
 
 import sys as _sys, os as _os, errno as _errno
 
-if ((_sys.version_info > (3, ) and _sys.version_info < (3, 3)) or
-        (_sys.version_info > (2, ) and _sys.version_info < (2, 7))):
-    raise RuntimeError("Python 2.7+ or 3.3+ is required to run PRGA")
+if _sys.version_info <= (3, 7):
+    raise RuntimeError("Python 3.7+ is required to run PRGA")
 
 from future.utils import with_metaclass, raise_from, iteritems, itervalues, string_types
 from future.builtins import object, range
@@ -26,6 +25,9 @@ try:
     from collections.abc import Sequence, MutableSequence, Mapping, MutableMapping, Hashable, Iterable, Container
 except ImportError:
     from collections import Sequence, MutableSequence, Mapping, MutableMapping, Hashable, Iterable, Container
+
+# In Python 3.7 and above, ``dict`` preserves insertion order and is more performant than ``OrderedDict``
+OrderedDict = dict
 
 try:
     from io import StringIO

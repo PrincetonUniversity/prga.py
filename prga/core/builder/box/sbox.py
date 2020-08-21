@@ -6,10 +6,7 @@ from prga.compatible import *
 from .base import BaseRoutingBoxBuilder
 from ...common import (Dimension, Position, BridgeType, Orientation, BridgeID, SegmentID, ModuleView, ModuleClass,
         SwitchBoxPattern)
-from ....netlist.net.common import PortDirection
-from ....netlist.net.util import NetUtils
-from ....netlist.module.module import Module
-from ....netlist.module.util import ModuleUtils
+from ....netlist import PortDirection, Module, ModuleUtils, NetUtils
 from ....exception import PRGAAPIError, PRGAInternalError
 from ....util import uno
 
@@ -79,8 +76,7 @@ class SwitchBoxBuilder(BaseRoutingBoxBuilder):
         if node in box.ports:
             raise PRGAInternalError("'{}' already added to {}".format(node, box))
         node_so = node.convert()
-        sink = box.ports.get(node_so)
-        if sink is None:
+        if (sink := box.ports.get(node_so)) is None:
             raise PRGAInternalError("{} does not have output '{}'".format(box, node_so))
         port = ModuleUtils.create_port(box, cls._node_name(node), node.prototype.width,
                 PortDirection.input_, key = node)
@@ -469,8 +465,8 @@ class SwitchBoxBuilder(BaseRoutingBoxBuilder):
         name = name or 'sbox_{}{}'.format(corner.case("ne", "nw", "se", "sw"),
                 ('_' + identifier) if identifier is not None else '')
         return Module(name,
+                allow_multisource = True,
                 view = ModuleView.user,
-                is_cell = True,
                 module_class = ModuleClass.switch_box,
                 key = key,
                 **kwargs)

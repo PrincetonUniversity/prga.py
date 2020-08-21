@@ -20,19 +20,21 @@ __all__.extend([
     "BridgeType", "SegmentID", "BlockPinID", "BlockPortFCValue", "BlockFCValue", "SwitchBoxPattern",
     ])
 
+# Context
+from .core.context import Context
+__all__.extend(["Context"])
+
 # Configuration Circuitry Entry Points
 from .cfg.scanchain.lib import Scanchain
 from .cfg.pktchain.lib import Pktchain
 __all__.extend([
-    "Scanchain", "Pktchain",
+    "Scanchain",
+    "Pktchain",
     ])
 
 # Flow Manager and Passes
-from .passes.flow import Flow
-from .passes.translation import TranslationPass
-from .passes.rtl import VerilogCollection
-from .passes.vpr import VPRArchGeneration, VPRScalableDelegate, VPRScalableArchGeneration, VPR_RRG_Generation
-from .passes.yosys import YosysScriptsCollection
+from .passes import (Flow, TranslationPass, VerilogCollection, YosysScriptsCollection,
+        VPRScalableDelegate, VPRScalableArchGeneration, VPRArchGeneration, VPR_RRG_Generation)
 __all__.extend([
     "Flow", "TranslationPass", "VerilogCollection", "VPRArchGeneration", "VPRScalableDelegate",
     "VPRScalableArchGeneration", "VPR_RRG_Generation", "YosysScriptsCollection",
