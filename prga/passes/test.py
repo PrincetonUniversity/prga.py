@@ -24,52 +24,59 @@ __all__ = ['Tester']
 # -- Tester Pass ------------------------------------------------------
 # ----------------------------------------------------------------------------
 class Tester(Object, AbstractPass):
-    """Collecting Verilog rendering tasks.
+    """Collecting Unit Tests rendering data and tasks
     
     Args:
-        renderer (`FileRenderer`): File generation tasks are added to the specified renderer
-        src_output_dir (:obj:`str`): Verilog source files are generated in the specified directory. Default value is
-            the current working directory.
+        src_output_dir (:obj:`str`): Verilog source files are generated in the specified directory by the VerilogCollection pass. 
+        The directory name provided for both VerilogCollection pass and Tester pass must be the same. Default value is the current working directory.
+        tests_output_dir (:obj:`str`): Multiple Unit Tests are generated in this directory. Each test has its own individual directory. 
+        Default value is a "unit_tests"
+        
+    Keyword Args:
         header_output_dir (:obj:`str`): Verilog header files are generated in the specified directory. Default value
             is "{src_output_dir}/include"
-        view (`ModuleView`): Generate Verilog source files with the specified view. Currently No use in tester pass
     """
 
-    __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'view', 'visited']
-    def __init__(self, rtl_dir, tests_dir, src_output_dir = ".", header_output_dir = None, view = ModuleView.logical):
-        self.src_output_dir = src_output_dir
-        self.tests_dir = os.path.abspath(tests_dir)
-        self.rtl_dir = os.path.abspath(rtl_dir)
+    __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'visited']
+    def __init__(self, src_output_dir = ".", tests_output_dir = "unit_tests",  header_output_dir = None):
+        self.src_output_dir = os.path.abspath(src_output_dir)
+        self.tests_dir = os.path.abspath(tests_output_dir)
         self.header_output_dir = os.path.abspath(uno(header_output_dir, os.path.join(src_output_dir, "include")))
-        self.view = view
         self.visited = {}
         if not path.exists(self.tests_dir):
             os.mkdir(self.tests_dir)
 
     def get_instance_file(self,module):
+        """
+        Collecting Data for Makefile VERILOG_SOURCES argument
+        
+        Args:
+            module (`AbstractModule`):
+        
+        Returns:
+            :obj:List : a list of :obj:`str` which contain the path of source verilog files 
 
-        instance_files = [path.join(self.rtl_dir,module.name+".v")]
-        # if os.path.join(self.tests_dir,"test_"+module.name):
-        #     makedirs(os.path.join(self.tests_dir,"test_"+module.name))
-
-        # os.system('cp '+os.path.join(self.rtl_dir,module.name+".v")+' '+os.path.join(self.tests_dir,"test_"+module.name))
+        """
+        instance_files = [path.join(self.src_output_dir,module.name+".v")]
         queue = []
-        # module = self.context.database[ModuleView.user,module.key]
         for temp in itervalues(module.instances):
             queue.append(temp.model)
         
         while len(queue)!=0:
             curr = queue.pop(0)
-            curr_file = path.join(self.rtl_dir,curr.name+".v")
+            curr_file = path.join(self.src_output_dir,curr.name+".v")
             if curr_file not in instance_files:
                 instance_files.append(curr_file)
-                # os.system('cp '+os.path.join(self.rtl_dir,curr.name+".v")+' '+os.path.join(self.tests_dir,"test_"+module.name))
             for temp in itervalues(curr.instances):
                 queue.append(temp.model)
 
         return instance_files
     
     def get_primitives(self,module):
+        """
+        Collecting Data regarding primitive modules and Switch module such as the hierarchy and cfg_bitoffset
+        """
+        
         queue = []
         primitives = []
 
@@ -82,7 +89,7 @@ class Tester(Object, AbstractPass):
         while len(queue)!=0:
             parent, heirarchy,offset = queue.pop(0)
 
-            if parent.model.module_class.is_primitive or parent.model.module_class == 9:
+            if parent.model.module_class.is_primitive or parent.model.module_class == ModuleClass.switch:
                 try:
                     primitives.append([parent,heirarchy,offset+parent.cfg_bitcount])
                 except:
@@ -97,6 +104,10 @@ class Tester(Object, AbstractPass):
         return primitives
   
     def get_input_ports(self,module):
+        """
+        Helper Function to get all the input ports of a Verilog Module.
+        """
+
         ports = [] 
         try:
             module = self.context.database[ModuleView.user,module.key]
@@ -113,6 +124,9 @@ class Tester(Object, AbstractPass):
         return ports
     
     def get_clocks(self,module):
+        """
+        Helper Function to get all the pins/ports driving the clocks inside a Verilog Module.
+        """
         clocks = []
         if module.module_class == ModuleClass.io_block:
             module = self.context.database[ModuleView.logical,module.key]
@@ -130,6 +144,10 @@ class Tester(Object, AbstractPass):
         return clocks
 
     def get_name(self,bus_index):
+        """
+        Helper function for generating variable names which will be used in templatings
+        """
+
         var_name = "" 
         if bus_index.bus.net_type == 1:
             var_name = bus_index.bus.name+ "_" + str(bus_index.index.start) + "_port"
@@ -139,24 +157,25 @@ class Tester(Object, AbstractPass):
         return var_name
 
     def switch_connections(self,module):
-    # For modules using switches like cluster and switchbox
-        module_temp = self.context.database[0,module.key]
+        """
+        Generate the connections along with their corresponding cfg_bits
+        """
+
+        module = self.context.database[ModuleView.user,module.key]
+
         num_tests = 0
-        for port in module_temp.ports.values():
+        for port in module.ports.values():
             if port.is_sink:
                 for sink in port:
-                    if module_temp._allow_multisource:
+                    if module._allow_multisource:
                         num_tests = max(len(NetUtils.get_multisource(sink)),num_tests)
-                    else:
-                        num_tests = max(len(NetUtils.get_source(sink)),num_tests)
+        
         stack = [[] for i in range(num_tests+1)]
         G = nx.DiGraph()
-        # print(module.view)
-        # print(stack)
-        if module_temp._allow_multisource:
-            for port in module_temp.ports.values():
-                if port.is_sink:
-                    for sink in port:
+        for port in module.ports.values():
+            if port.is_sink:
+                for sink in port:
+                    if module._allow_multisource:
                         for i,src in enumerate(NetUtils.get_multisource(sink)):
                             if src.net_type == 0:
                                 continue
@@ -165,67 +184,50 @@ class Tester(Object, AbstractPass):
                             conn = NetUtils.get_connection(src,sink)
                             stack[i].append((src_var_name,src,sink_var_name,sink,conn.get("cfg_bits",tuple())))
                             G.add_edge(NetUtils._reference(src), NetUtils._reference(sink), cfg_bits =conn.get("cfg_bits",tuple()))
-                        #     print("Conn: ",src," -> ",sink," : ",conn.get("cfg_bits",tuple()))
-                        # print()
-        else:
-            for port in module_temp.ports.values():
-                if port.is_sink:
-                    for sink in port:
-                        for i,src in enumerate(NetUtils.get_source(sink)):
-                            if src.net_type == 0:
-                                continue
-                            
-                            src_var_name = self.get_name(src) 
-                            sink_var_name = self.get_name(sink) 
-
-                            conn = NetUtils.get_connection(src,sink)
-                            stack[i].append((src_var_name,src,sink_var_name,sink,conn.get("cfg_bits",tuple())))
-                            G.add_edge(NetUtils._reference(src), NetUtils._reference(sink), cfg_bits =conn.get("cfg_bits",tuple()))
-                        #     print("Conn: ",src," -> ",sink," : ",conn.get("cfg_bits",tuple()))
-                        # print()
-        
-        while [] in stack:
-            stack.remove([])
-        # for conn in stack:
-        #     for src_var,src,sink_var,sink,cfg_bits in conn:
-        #         print("Conn: ",src," -> ",sink," : ",cfg_bits)
-        #     print()
+                    else:
+                        src = NetUtils.get_source(sink)
+                        if src.net_type == 0:
+                            continue
+                        src_var_name = self.get_name(src) 
+                        sink_var_name = self.get_name(sink) 
+                        conn = NetUtils.get_connection(src,sink)
+                        stack[0].append((src_var_name,src,sink_var_name,sink,conn.get("cfg_bits",tuple())))
+                        G.add_edge(NetUtils._reference(src), NetUtils._reference(sink), cfg_bits =conn.get("cfg_bits",tuple()))
         
         return stack,G
 
     def get_connections(self,module):
+        """
+        Generate the connections for modules like CLB, Subarray, iob, etc. (the ones not used for switch_connections function)
+        """
         connections = []
         G = nx.DiGraph()
         try:
             module = self.context.database[ModuleView.user,module.key]
-            if module._allow_multisource:
-                for sink_bus in chain(iter(oport for oport in itervalues(module.ports) if oport.direction.is_output),
-                            iter(ipin for instance in itervalues(module.instances) for ipin in itervalues(instance.pins) if ipin.model.direction.is_input and not ipin.model.is_clock)):
-                    for sink_net in sink_bus:
-                            for src_net in NetUtils.get_multisource(sink_net):
-                                if src_net.net_type == 0:
-                                    continue
-                                src_var_name = self.get_name(src_net) 
-                                sink_var_name = self.get_name(sink_net)
+            for sink_bus in chain(iter(oport for oport in itervalues(module.ports) if oport.direction.is_output),
+                        iter(ipin for instance in itervalues(module.instances) for ipin in itervalues(instance.pins) if ipin.model.direction.is_input and not ipin.model.is_clock)):
+                for sink_net in sink_bus:
+                    if module._allow_multisource:
+                        for src_net in NetUtils.get_multisource(sink_net):
+                            if src_net.net_type == 0:
+                                continue
+                            src_var_name = self.get_name(src_net) 
+                            sink_var_name = self.get_name(sink_net)
+                            connections.append((src_var_name,src_net,sink_var_name,sink_net,tuple()))
+                            G.add_edge(NetUtils._reference(src_net), NetUtils._reference(sink_net), cfg_bits = tuple())
+        
+                    else:
+                        src_net = NetUtils.get_source(sink_net)
+                        if src_net.net_type == 0:
+                            continue
 
-                                connections.append((src_var_name,src_net,sink_var_name,sink_net,tuple()))
-                                G.add_edge(NetUtils._reference(src_net), NetUtils._reference(sink_net), cfg_bits = tuple())
-            
-            else:
-                for sink_bus in chain(iter(oport for oport in itervalues(module.ports) if oport.direction.is_output),
-                            iter(ipin for instance in itervalues(module.instances) for ipin in itervalues(instance.pins) if ipin.model.direction.is_input and not ipin.model.is_clock)):
-                    for sink_net in sink_bus:
-                            for src_net in NetUtils.get_source(sink_net):
-                                if src_net.net_type == 0:
-                                    continue
-
-                                src_var_name = self.get_name(src_net) 
-                                sink_var_name = self.get_name(sink_net) 
-                                
-                                connections.append((src_var_name,src_net,sink_var_name,sink_net,tuple()))
-                                G.add_edge(NetUtils._reference(src_net), NetUtils._reference(sink_net), cfg_bits = tuple())
+                        src_var_name = self.get_name(src_net) 
+                        sink_var_name = self.get_name(sink_net) 
+                        
+                        connections.append((src_var_name,src_net,sink_var_name,sink_net,tuple()))
+                        G.add_edge(NetUtils._reference(src_net), NetUtils._reference(sink_net), cfg_bits = tuple())
         except:
-            x= 0+0    
+            x= 0
         return connections,G
 
     def _process_module(self, module):
@@ -244,43 +246,30 @@ class Tester(Object, AbstractPass):
         if module.module_class == ModuleClass.switch_box or module.module_class == ModuleClass.connection_box or module.module_class.is_cluster:
             stack,nx_graph = self.switch_connections(module)
             setattr(module,"stack",stack)
-            # for edge in nx_graph.edges(data = True):
-            #     print(edge)
             self.graphs[module.name] = {'graph':nx_graph,'module':module}
-            # for conn in stack:
-            #     for src_var,src,sink_var,sink,cfg_bits in conn:
-            #         print("Conn: ",src," -> ",sink," : ",cfg_bits)
-            #     print()
             
         else:
             connections,nx_graph = self.get_connections(module)
             setattr(module,"stack",[connections])
-            # for edge in nx_graph.edges(data = True):
-            #     print(edge)
             self.graphs[module.name] = {'graph':nx_graph,'module':module}
 
-        # setattr(module,"connections",connections)
         
         input_ports = self.get_input_ports(module)
         setattr(module,"input_ports",input_ports)
         
         clocks = self.get_clocks(module)
-        # print(clocks)
         setattr(module,"clocks",clocks)
        
-        setattr(module,"verilog_file",path.join(self.rtl_dir,module.name+".v"))
+        setattr(module,"verilog_file",path.join(self.src_output_dir,module.name+".v"))
         
         primitives = self.get_primitives(module)
         setattr(module,"primitives",primitives)
-        # for ins,names,offset in primitives:
-        #     print(ins,offset)
-
-        instance_files = []
+ 
         instance_files  = self.get_instance_file(module)
         setattr(module,"files",' '.join(instance_files))
         setattr(module,"top_level",module.name)
         
-        if module.module_class.is_cluster:
+        if module.module_class == ModuleClass.cluster:
             self.renderer.add_top_level_python_test(module, path.join(f,"test.py"), "cluster.tmpl.py")
         elif module.module_class == ModuleClass.switch:
             self.renderer.add_top_level_python_test(module, path.join(f,"test.py"), "switch.tmpl.py")
@@ -299,7 +288,6 @@ class Tester(Object, AbstractPass):
         for instance in itervalues(module.instances):
             self._process_module(instance.model)
 
-
     def path_L(self,top,G):
         # - - - - - - 
         # | | | | | -
@@ -315,11 +303,11 @@ class Tester(Object, AbstractPass):
         
         # Horizontal Path
         for i in range(1,width-1):
-            path.append((i,1))
+            path.append((1,i))
  
         # Vertical Path
-        # for i in range(1,height-1):
-        #     path.append((width-2,i))
+        for i in range(2,height-1):
+            path.append((i,width-2))
         
         # Diagonal Path
         # for i in range(1,height-1):
@@ -339,15 +327,24 @@ class Tester(Object, AbstractPass):
             tile_sink = top._instances[Position(sink[0],sink[1])]
             # print(tile_src,tile_sink)
             for k,v in iteritems(tile_src.pins):
-                if v.model.direction.is_output:
+                # print(v.model.name)
+                # print(dir(v.model))
+                # print(v.model.net_class)
+                if v.model.direction.is_output and not v.model.is_clock and not 'cu' in v.model.name:
                     for net in v:
                         srcs.append(NetUtils._reference(net))
                         # print(net,G.has_node(NetUtils._reference(net)))
+            # print()
             for k,v in iteritems(tile_sink.pins):
-                if v.model.direction.is_input and not v.model.is_clock:
+                # print(v.model.node_type)
+                # print(v.model.name)
+                # print(v.model.net_class)
+                if v.model.direction.is_input and not v.model.is_clock and not 'cu' in v.model.name:
                     for net in v:
                         sinks.append(NetUtils._reference(net))
                         # print(net,G.has_node(NetUtils._reference(net)))
+            # print()
+            # print()
             count = 0
             for src_net in srcs:
                 for sink_net in sinks:
@@ -365,14 +362,13 @@ class Tester(Object, AbstractPass):
         sinks = []
         tile_src = top._instances[Position(src[0],src[1])]
         tile_sink = top._instances[Position(sink[0],sink[1])]
-        # print(tile_src,tile_sink)
         for k,v in iteritems(tile_src.pins):
-            if v.model.direction.is_input and not v.model.is_clock:
+            if v.model.direction.is_input and not v.model.is_clock and not 'cu' in v.model.name:
                 for net in v:
                     srcs.append(NetUtils._reference(net))
                     # print(net,G.has_node(NetUtils._reference(net)))
         for k,v in iteritems(tile_sink.pins):
-            if v.model.direction.is_output:
+            if v.model.direction.is_output and not v.model.is_clock and not 'cu' in v.model.name:
                 for net in v:
                     sinks.append(NetUtils._reference(net))
                     # print(net,G.has_node(NetUtils._reference(net)))
@@ -397,6 +393,7 @@ class Tester(Object, AbstractPass):
         count = 0
         for index in range(1,len(connections)):
             # print(index)
+            count = 0
             for i in range(len(connections[index])):
                 for j in range(len(connections[index-1])):
                     if nx.has_path(G,connections[index][i][1],connections[index-1][j][0]):
@@ -417,41 +414,68 @@ class Tester(Object, AbstractPass):
                         break
                 if count:
                     break
-            # print()
+            if count == 0:
+                print("PATH DOESNT EXIST BETWEEN path index ",index,"and path index",index-1)
+        # print()
 
         # for conn in route:
         #     print(conn)
         # print()
 
-        for i in range(0,len(route)):
+        route_vars = []
+        cfg_bits_route = []
+        for i in range(len(route)):
             path = nx.shortest_path(G,NetUtils._reference(route[i][0]),NetUtils._reference(route[i][1]))
-            # for i in range(1,len(path)):
-                # print(path[i],path[i-1])
-                # cfg_bits = G[path[i-1]][path[i]]['cfg_bits'] 
-                # print(cfg_bits)
-                # if len(cfg_bits) !=0 :
-                #     print(NetUtils._dereference(top,path[i-1]),NetUtils._dereference(top,path[i]))
-                #     x = (inst.name for inst in NetUtils._dereference(top,path[i-1]).bus.instance._hierarchy)
-                    
-                #     print('.'.join(x))
+            src = route[i][0]
+            sink = route[i][1]
+            src_var_name = self.get_name(src)
+            sink_var_name = self.get_name(sink)
+            route_vars.append((src_var_name,src,sink_var_name,sink))
+            
+            for i in range(1,len(path)):
+                cfg_bits = G[path[i-1]][path[i]]['cfg_bits'] 
+                # print(NetUtils._dereference(top,path[i-1]),NetUtils._dereference(top,path[i]),cfg_bits)
+                if len(cfg_bits) !=0 :
+                    # print(NetUtils._dereference(top,path[i-1]),NetUtils._dereference(top,path[i]))
+                    hierarchy = [inst.name for inst in reversed(NetUtils._dereference(top,path[i-1]).bus.instance._hierarchy)]
+                    model = NetUtils._dereference(top,path[i-1]).bus.instance._hierarchy[0].model
+                    model_logical = self.context.database[1,model.key]
+                    cfg_bits_route.append((model_logical,hierarchy,cfg_bits))
+           
+            # for x in path:
+            #     print(NetUtils._dereference(top,x))
 
-                #     x = (inst.name for inst in NetUtils._dereference(top,path[i]).bus.instance._hierarchy)
-                #     print('.'.join(x))
-                    
-            for x in path:
-                print(NetUtils._dereference(top,x))
-            print()
+            # print()
 
+        # for x in route_vars:
+        #     print(x)
+        # print()
+        # for x in cfg_bits_route:
+        #     print(x)
+        
+        # print()
+
+        top_logical = self.context.database[1,top.key]
+
+        start_point = route_vars[len(route_vars)-1][1]
+
+        route_vars.pop(len(route_vars)-1)
+        # for x in route_vars:
+        #     print(x)
+        # print()
+        setattr(top_logical,"route",route_vars)
+        setattr(top_logical,"cfg_bits_route",cfg_bits_route)
+        setattr(top_logical,"start_point",start_point.bus)
+    
     @property
     def key(self):
         return "test.cocotb"
  
     @property
     def dependences(self):
-        if self.view.is_logical:
-            return ()
-        else:
-            return ()
+        # Ask Ang about this,
+        # Should I add dependencies for the final product
+        return ()
 
     @property
     def is_readonly_pass(self):
@@ -460,7 +484,11 @@ class Tester(Object, AbstractPass):
     def badly_named_function(self,instance,G):
         # Function for adding the connections between outport of tile_module(Eg: Instance(top/t_ix6y1[subarray])) and the source of outport
         # Also the connection between inpin of instances and source of the inpin
-
+        
+        # print("badly_named_function")
+        # print(instance)
+        # print()
+        
         sinks1 = []
         for k,v in instance.pins.items():
             if v.bus.model.is_sink and not v.bus.model.is_clock:
@@ -485,8 +513,7 @@ class Tester(Object, AbstractPass):
                 #2.
                 leaf_src = None
                 if hierarchy and hierarchy.model._allow_multisource:
-                    # leaf_src = NetUtils.get_multisource(leaf_sink)[0] # Taking the first source to simplify the path setting up process
-                    leaf_src = NetUtils.get_multisource(leaf_sink) #change to this in case you want to try setting up the cfg_bits
+                    leaf_src = NetUtils.get_multisource(leaf_sink)
                 else:
                     leaf_src = NetUtils.get_source(leaf_sink)
                 #3.
@@ -546,8 +573,7 @@ class Tester(Object, AbstractPass):
                 #2.
                 leaf_src = None
                 if hierarchy and hierarchy.model._allow_multisource:
-                    # leaf_src = NetUtils.get_multisource(leaf_sink)[0] # Taking the first source to simplify the path setting up process
-                    leaf_src = NetUtils.get_multisource(leaf_sink) #change to this in case you want to try setting up the cfg_bits
+                    leaf_src = NetUtils.get_multisource(leaf_sink)
                 else:
                     leaf_src = NetUtils.get_source(leaf_sink)
                 #3.
@@ -637,8 +663,7 @@ class Tester(Object, AbstractPass):
                             # 2.
                             leaf_src = None
                             if hierarchy.model._allow_multisource:
-                                # leaf_src = NetUtils.get_multisource(leaf_sink) # Taking the first source to simplify the path setting up process
-                                leaf_src = NetUtils.get_multisource(leaf_sink) #change to this in case you want to try setting up the cfg_bits
+                                leaf_src = NetUtils.get_multisource(leaf_sink)
                             else:
                                 leaf_src = NetUtils.get_source(leaf_sink)
                             # 3.
@@ -707,60 +732,19 @@ class Tester(Object, AbstractPass):
         self._process_module(top)
 
         G = self.graphs['top']['graph']
+        
         top_user = self.context._database[ModuleView.user,top.key]
         self.add_heirarchial_instance(top_user,G)
-        tile_51 = [ArrayBuilder.get_hierarchical_root(top_user, Position(5,1),corner = 0),ArrayBuilder.get_hierarchical_root(top_user, Position(5,1),corner = 2),
-                    ArrayBuilder.get_hierarchical_root(top_user, Position(5,1),corner = 1),ArrayBuilder.get_hierarchical_root(top_user, Position(5,1),corner = 3),
-                    ArrayBuilder.get_hierarchical_root(top_user, Position(5,1))]
 
         G = self.graphs['top']['graph']
 
         tile_src = top._instances[Position(6,1)]
-        print(tile_src)
-
-        # in_ports = []
-        # out_ports = []
-        # print(tile_src)
-        # for k,v in iteritems(tile_src.pins):
-        #     # print(v)
-        #     if v.model.direction.is_input:
-        #         for x in v:
-        #             in_ports.append(x)
-        #     else:
-        #         for x in v:
-        #             out_ports.append(x)
-        # for src in in_ports:
-        #     for sink in out_ports:
-        #         # print(src,sink)
-        #         # print(src.bus.model,sink.bus.model)
-        #         # print(G.has_node(NetUtils._reference(src)),G.has_node(NetUtils._reference(sink)))
-        #         try:
-        #             if nx.has_path(G,NetUtils._reference(src),NetUtils._reference(sink)):
-        #                 path = nx.shortest_path(G,NetUtils._reference(src),NetUtils._reference(sink))
-        #                 print("PATH EXISTS")
-        #                 # for x in path:
-        #                 #     print(NetUtils._dereference(top,x))
-        #                 print(src,sink)
-        #                 # print(src.bus.model,sink.bus.model)
-        #                 print()
-        #         except:
-        #             x = 0
-        # print()
-        # print()
-        # print()
-        # print()
-
-
-        # Variables to be returned
-        # Paths - list of each conn
-        # Start_point - 
-        # CFG_bITS and the modules which require them
-        # src and sink names along with the paths
 
         self.path_L(top_user,G)
 
         # for src,sink in G.edges():
         #     print(NetUtils._dereference(top_user, src),NetUtils._dereference(top_user, sink))
+       
         f = os.path.join(self.tests_dir,"test_route_1")
         self.renderer.add_top_level_python_test(top, os.path.join(f,"test.py"), "route.tmpl.py")
         self.renderer.add_top_level_makefile(top, os.path.join(f,"Makefile"), "test_base.tmpl")

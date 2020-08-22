@@ -255,7 +255,7 @@ class Scanchain(object):
                     cfg_bitcount = 2 ** i,
                     primitive_class = PrimitiveClass.lut,
                     verilog_template = "lut.tmpl.v",
-                    test_python_template = "test_lut.tmpl.py" )
+                    test_python_template = "lut.tmpl.py" )
             # user ports
             in_ = ModuleUtils.create_port(lut, "bits_in", i, PortDirection.input_, net_class = NetClass.user)
             out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output, net_class = NetClass.user)
@@ -279,7 +279,7 @@ class Scanchain(object):
                     module_class = ModuleClass.primitive,
                     verilog_template = "flipflop.tmpl.v",
                     primitive_class = PrimitiveClass.flipflop,
-                    test_python_template = "test_flipflop.tmpl.py")
+                    test_python_template = "flipflop.tmpl.py")
             clk = ModuleUtils.create_port(flipflop, 'clk', 1, PortDirection.input_,
                     is_clock = True, net_class = NetClass.user)
             D = ModuleUtils.create_port(flipflop, 'D', 1, PortDirection.input_,
@@ -454,8 +454,8 @@ class Scanchain(object):
             if "fle6" not in dont_add_logical_primitive:
                 fle6 = fle6.build_logical_counterpart(not_cell = True, allow_multisource = True,
                         cfg_bitcount = 69, verilog_template = "fle6.tmpl.v",
-                        test_makefile_template = "test_fle6.tmpl",
-                        test_python_template = "test_fle6.tmpl.py")
+                        test_makefile_template = "fle6.tmpl",
+                        test_python_template = "fle6.tmpl.py")
                 ModuleUtils.instantiate(fle6.module, cls.get_cfg_data_cell(context, 69), "i_cfg_data")
 
                 # combinational paths
