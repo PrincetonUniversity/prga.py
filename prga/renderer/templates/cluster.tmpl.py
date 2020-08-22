@@ -7,16 +7,14 @@ import math
 from cocotb.result import TestFailure,TestSuccess
 from bitarray import bitarray
 from cocotb.binary import BinaryValue
-from cocotb.scoreboard import Scoreboard
 import config
 
-# config.cfg_d = bitarray([0]*{{module.cfg_bitcount}})
-
+# cocotb coroutine for driving the clocks
 def clock_generation(clk,clock_period=10,test_time=100000):
     c= Clock(clk,clock_period)
     cocotb.fork(c.start(test_time//clock_period))
 
-
+# Coroutines to test the primitive modules - LUT (look-up tables) and FF(flipflops)
 {%- for instance,test_hierarchy,offset in module.primitives %}
 {%- if instance.model.module_class.is_primitive and instance.model.primitive_class.is_lut %}
 @cocotb.coroutine
@@ -30,13 +28,12 @@ def test_{{'_'.join(test_hierarchy)}}(dut):
             yield RisingEdge(dut.{{'.'.join(test_hierarchy)}}.cfg_clk)
             output = out.value.integer
             yield NextTimeStep()
-            # Check this step
             if output != config.cfg_d[{{offset}}+i]:
                 raise TestFailure("[ERROR]")  
 
     {% endif -%}
     
-    {%- if instance.model.module_class.is_primitive and instance.model.primitive_class.is_flipflop %}
+{%- if instance.model.module_class.is_primitive and instance.model.primitive_class.is_flipflop %}
 @cocotb.coroutine
 def test_{{'_'.join(test_hierarchy)}}(dut): 
     {% if module._allow_multisource %}
@@ -61,20 +58,29 @@ def test_{{'_'.join(test_hierarchy)}}(dut):
         if not cfg_e.value.integer:       
             if Q.value.binstr != 'x' and Q.value.binstr != 'z':
                 if Q.value.binstr != prev_d.binstr:
-                    dut._log.info("Error "+str(i))
-                    # raise TestFailure("Test Failed at "+str(i)+"iteration when D="+D.value.binstr+" and Q="+Q.value.binstr)
+                    raise TestFailure("Test Failed at "+str(i)+"iteration when D="+D.value.binstr+" and Q="+Q.value.binstr)
                     
 {% endif -%}
 {% endfor -%}
 
+# Testing the different configurations by changing the configuration bits
 {%- for stack_connections in module.stack %}
 @cocotb.test()
 def simple_test_{{loop.index}}(dut):
+    """
+    cocotb test {{loop.index}} for verifying the functionality of {{module.name}}
+    """
 
+    #######################################################
+    ## INITIALIZING #######################################
+    #######################################################
+
+    # Initialize the clocks
     {%- for clock in module.clocks %}
     {{clock.name}} = dut.{{clock.name}}
     clock_generation({{clock.name}})
     {% endfor -%} 
+    
     test_clk = dut.test_clk 
     clock_generation(test_clk,clock_period = 2,test_time=100000)
     
@@ -82,13 +88,9 @@ def simple_test_{{loop.index}}(dut):
     {% for instance,test_hierarchy,offset in module.primitives %}
     {%- if instance.model.module_class.is_primitive and instance.model.primitive_class.is_lut %}
     {%- set bitcount = instance.model.cfg_bitcount -%}
-    input_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(test_hierarchy)}}.bits_in
+    # Initialize the configuration bits for LUT
     config.cfg_d[{{offset+bitcount-1}}:{{offset}}] = 0
     config.cfg_d[{{offset+bitcount-1}}] = 1
-    # {% elif instance.model.module_class == 9 %}
-    # {%- set bitcount = instance.model.cfg_bitcount -%}
-    # config.cfg_d[{{offset+bitcount-1}}:{{offset}}] = 0
-    # config.cfg_d[{{offset+bitcount-1}}] = 1    
     {% endif -%}
     {% endfor %}
 
@@ -103,6 +105,7 @@ def simple_test_{{loop.index}}(dut):
     {% else %}
     {{sink_var}} = dut.{{sink.bus.instance.name}}.{{sink.bus.model.name}}
     {% endif -%}
+    # Initialize the configuration bits of the Module for setting up the connections
     {%- for bits in cfg_bits%}
     config.cfg_d[{{bits}}] = 1
     {% endfor -%}
@@ -113,6 +116,7 @@ def simple_test_{{loop.index}}(dut):
     cfg_we = dut.cfg_we
     cfg_i = dut.cfg_i
    
+    # Loading the configuration bits of the module
     cfg_e <= 1
     cfg_we <= 1
     
@@ -127,6 +131,12 @@ def simple_test_{{loop.index}}(dut):
 
     yield RisingEdge(dut.cfg_clk)
 
+    #######################################################
+    ## TESTING ############################################
+    #######################################################
+
+    # Check whether the configuration bits have been set up properly
+    # Also initialize the primitive testing coroutines
     {%- for instance,test_hierarchy,offset in module.primitives %}
     {%- if instance.model.module_class.is_primitive and instance.model.primitive_class.is_lut %}
     {% set bitcount = instance.model.cfg_bitcount %}
@@ -134,27 +144,20 @@ def simple_test_{{loop.index}}(dut):
     for i in range({{offset+bitcount-1}},{{offset-1}},-1):
         if int(config.cfg_d[i])!= int(cfg_d_{{'_'.join(test_hierarchy)}}[i-{{offset}}]):
             raise TestFailure("cfg_d not properly setup for {{'->'.join(test_hierarchy)}}")
-    # {% elif instance.model.module_class == 9 %}
-    # {%- set bitcount = instance.model.cfg_bitcount -%}
-    # cfg_d_{{'_'.join(test_hierarchy)}} = dut.{{'.'.join(handle_names_with_underscore(test_hierarchy))}}.cfg_d.value.binstr[::-1]
-    # # cfg_d__sw_o = dut._HierarchyObject__get_sub_handle_by_name("_sw_o").cfg_d.value.binstr[::-1]
-    # for i in range({{offset+bitcount-1}},{{offset-1}},-1):
-    #     if int(config.cfg_d[i])!= int(cfg_d_{{'_'.join(test_hierarchy)}}[i-{{offset}}]):
-    #         raise TestFailure("cfg_d not properly setup for {{'->'.join(test_hierarchy)}}")
     {% endif -%}
+
     {%- if instance.model.module_class.is_primitive and (instance.model.primitive_class.is_lut or instance.model.primitive_class.is_flipflop) %}
     cocotb.fork(test_{{'_'.join(test_hierarchy)}}(dut))
     {% endif -%}
     {% endfor -%}
 
 
+    # Test the connections for the given test
     for _ in range(1000):
         yield Edge(dut.test_clk)
         {% for src_var,src,sink_var,sink,cfg_bits in stack_connections %}
-        # print({{src_var}}.value[{{src.index.start}}],{{sink_var}}.value[{{sink.index.start}}])
         if str({{src_var}}.value.binstr[::-1][{{src.index.start}}]) not in ['x','z'] and str({{sink_var}}.value.binstr[::-1][{{sink.index.start}}]) not in  ['x','z']:
             if str({{src_var}}.value.binstr[::-1][{{src.index.start}}]) != str({{sink_var}}.value.binstr[::-1][{{sink.index.start}}]):
-                # print("{{src}}",str({{src_var}}.value[{{src.index.start}}]),"{{sink}}",str({{sink_var}}.value[{{sink.index.start}}]))
                 raise TestFailure("Error at connection {{src}} -> {{sink}}")
         {% endfor %}
 

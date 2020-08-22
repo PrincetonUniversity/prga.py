@@ -52,7 +52,7 @@ def always_star(dut,cfg_d,LUT5A_DATA,LUT5B_DATA,CIN_FABRIC,DISABLE_FFA,DISABLE_F
 
                 if (expected_out[0]+2*expected_out[1]) != dut.out.value.integer: 
                     dut._log.info("Mode LUT5X2 given bits_in bits " + str(input)+" expected_out!=out")
-                    # raise TestFailure("Mode LUT5X2 given bits_in bits " + str(input)+" expected_out[1]!=out[0]")
+                    raise TestFailure("Mode LUT5X2 given bits_in bits " + str(input)+" expected_out[1]!=out[0]")
 
                 if expected_cout != dut.cout.value.integer:
                     # dut._log.info("Mode LUT6X1 given bits_in bits " + str(input)+" expected_cout!=cout")
@@ -74,11 +74,11 @@ def always_star(dut,cfg_d,LUT5A_DATA,LUT5B_DATA,CIN_FABRIC,DISABLE_FFA,DISABLE_F
                 
                 if (expected_out[0]+2*expected_out[1]) != dut.out.value.integer: 
                     dut._log.info("Mode LUT5X2 given bits_in bits " + str(input)+" expected_out!=out")
-                    # raise TestFailure("Mode LUT5X2 given bits_in bits " + str(input)+" expected_out[1]!=out[0]")
+                    raise TestFailure("Mode LUT5X2 given bits_in bits " + str(input)+" expected_out[1]!=out[0]")
                                 
                 if expected_cout != dut.cout.value.integer:
                     dut._log.info("Mode LUT5X2 given bits_in bits " + str(input)+" expected_cout!=cout")
-                    # raise TestFailure("Mode LUT5X2 given bits_in bits " + str(input)+" expected_cout!=cout")
+                    raise TestFailure("Mode LUT5X2 given bits_in bits " + str(input)+" expected_cout!=cout")
 
             elif mode == 3:
 
@@ -97,11 +97,11 @@ def always_star(dut,cfg_d,LUT5A_DATA,LUT5B_DATA,CIN_FABRIC,DISABLE_FFA,DISABLE_F
                 if dut.out.value[0].binstr != 'x' and dut.out.value[1].binstr != 'x':
                     if (expected_out[0]+2*expected_out[1]) != dut.out.value.integer: 
                         dut._log.info("Mode ARITH given bits_in bits " + str(input)+" expected_out!=out")
-                        # raise TestFailure("Mode ARITH given bits_in bits " + str(input)+" expected_out[1]!=out[0]")
+                        raise TestFailure("Mode ARITH given bits_in bits " + str(input)+" expected_out[1]!=out[0]")
                 
                 if expected_cout != dut.cout.value.integer:
                     dut._log.info("Mode ARITH given bits_in bits " + str(input)+" expected_cout!=cout")
-                    # raise TestFailure("Mode ARITH given bits_in bits " + str(input)+" expected_cout!=cout")
+                    raise TestFailure("Mode ARITH given bits_in bits " + str(input)+" expected_cout!=cout")
 
             else:
                 raise TestFailure("Mode Not Supported")  

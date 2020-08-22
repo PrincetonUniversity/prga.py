@@ -11,10 +11,12 @@ from cocotb.binary import BinaryValue
 from cocotb.scoreboard import Scoreboard
 import config
 
+# cocotb coroutine for driving the clocks
 def clock_generation(clk,clock_period=10,test_time=100000):
     c= Clock(clk,clock_period)
     cocotb.fork(c.start(test_time//clock_period))
 
+# cocotb coroutine for driving the start point
 @cocotb.coroutine
 def initialise_{{module.start_point.instance.name}}_{{module.start_point.model.name}}(dut):
     while True:
@@ -24,7 +26,14 @@ def initialise_{{module.start_point.instance.name}}_{{module.start_point.model.n
 
 @cocotb.test()
 def simple_test(dut):
+    """
+    cocotb test for verifying routing
+    """
+    #######################################################
+    ## INITIALIZING #######################################
+    #######################################################
 
+    # Initialize the clocks
     {% for clock in module.clocks %}
     {{clock.name}} = dut.{{clock.name}}
     clock_generation({{clock.name}})
@@ -33,6 +42,7 @@ def simple_test(dut):
     test_clk = dut.test_clk 
     clock_generation(test_clk,clock_period = 2,test_time=100000)
     
+    # Get the cocotb objects representing the pins and ports of a verilog module 
     {% for src_var,src,sink_var,sink in module.route %}
     {%- if src.bus.net_type == 1 %}
     {{src_var}} = dut.{{src.bus.name}}
@@ -49,6 +59,7 @@ def simple_test(dut):
     
     cocotb.fork(initialise_{{module.start_point.instance.name}}_{{module.start_point.model.name}}(dut))
     
+    # Setting up the configuration bits of the module
     {% for model,hierarchy,cfg_bits in module.cfg_bits_route %}
     cfg_d = bitarray([0]*{{model.cfg_bitcount}})
     cfg_e = dut.{{'.'.join(hierarchy)}}.cfg_e
@@ -60,6 +71,7 @@ def simple_test(dut):
     cfg_d[{{bit}}] = 1 
     {% endfor -%}
 
+    # Loading the configuration bits of the module
     cfg_e <= 1
     cfg_we <= 1
     
@@ -79,17 +91,14 @@ def simple_test(dut):
     bool_{{src_var}} = True
     {% endfor %}
 
+    # Test the connections for the given test
     for _ in range(1000):
         yield Edge(dut.test_clk)
         {%- for src_var,src,sink_var,sink in module.route %}
-        # print({{src_var}}.value.binstr[{{src.index.start}}],{{sink_var}}.value.binstr[{{sink.index.start}}])
-        # print("{{src}}",str({{src_var}}.value.binstr[::-1]),"{{sink}}",str({{sink_var}}.value.binstr[::-1]))
-        # print("{{src}}",str({{src_var}}.value.binstr[::-1][{{src.index.start}}]),"{{sink}}",str({{sink_var}}.value.binstr[::-1][{{sink.index.start}}]))
         if str({{src_var}}.value.binstr[::-1][{{src.index.start}}]) not in ['x','z'] and str({{sink_var}}.value.binstr[::-1][{{sink.index.start}}]) not in  ['x','z']:
-            # print("{{src}}",str({{src_var}}.value.binstr[::-1][{{src.index.start}}]),"{{sink}}",str({{sink_var}}.value.binstr[::-1][{{sink.index.start}}]))
             if str({{src_var}}.value.binstr[::-1][{{src.index.start}}]) != str({{sink_var}}.value.binstr[::-1][{{sink.index.start}}]):
-                print("{{src}}",str({{src_var}}.value.binstr[::-1][{{src.index.start}}]),"{{sink}}",str({{sink_var}}.value.binstr[::-1][{{sink.index.start}}]))
-                # raise TestFailure("Error at connection {{src}} -> {{sink}}")
+                # print("{{src}}",str({{src_var}}.value.binstr[::-1][{{src.index.start}}]),"{{sink}}",str({{sink_var}}.value.binstr[::-1][{{sink.index.start}}]))
+                raise TestFailure("Error at connection {{src}} -> {{sink}}")
             else:
                 if bool_{{src_var}}:
                     print("Path checked {{src}} -> {{sink}}")

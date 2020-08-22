@@ -39,12 +39,12 @@ class Tester(Object, AbstractPass):
 
     __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'visited']
     def __init__(self, src_output_dir = ".", tests_output_dir = "unit_tests",  header_output_dir = None):
-        self.src_output_dir = os.path.abspath(src_output_dir)
+        self.src_output_dir = os.path.abspath(src_output_dir) 
         self.tests_dir = os.path.abspath(tests_output_dir)
         self.header_output_dir = os.path.abspath(uno(header_output_dir, os.path.join(src_output_dir, "include")))
         self.visited = {}
-        if not path.exists(self.tests_dir):
-            os.mkdir(self.tests_dir)
+        # if not path.exists(self.tests_dir):
+        #     os.mkdir(self.tests_dir)
 
     def get_instance_file(self,module):
         """
@@ -75,6 +75,12 @@ class Tester(Object, AbstractPass):
     def get_primitives(self,module):
         """
         Collecting Data regarding primitive modules and Switch module such as the hierarchy and cfg_bitoffset
+        
+        Args:
+            module (`AbstractModule`):
+        
+        Returns:
+            :obj:List : a list of :obj:`tuples` which contain instance, heirarchy and the offset 
         """
         
         queue = []
@@ -91,9 +97,9 @@ class Tester(Object, AbstractPass):
 
             if parent.model.module_class.is_primitive or parent.model.module_class == ModuleClass.switch:
                 try:
-                    primitives.append([parent,heirarchy,offset+parent.cfg_bitcount])
+                    primitives.append((parent,heirarchy,offset+parent.cfg_bitcount))
                 except:
-                    primitives.append([parent,heirarchy,offset])
+                    primitives.append((parent,heirarchy,offset))
 
             for instance in itervalues(parent.model.instances):
                 try:
@@ -106,6 +112,12 @@ class Tester(Object, AbstractPass):
     def get_input_ports(self,module):
         """
         Helper Function to get all the input ports of a Verilog Module.
+
+        Args:
+            module (`AbstractModule`):
+        
+        Returns:
+            :obj:List : a list of `Port` objects representing the input ports of a module  
         """
 
         ports = [] 
@@ -126,6 +138,12 @@ class Tester(Object, AbstractPass):
     def get_clocks(self,module):
         """
         Helper Function to get all the pins/ports driving the clocks inside a Verilog Module.
+    
+        Args:
+            module (`AbstractModule`):
+        
+        Returns:
+            :obj:List : a list of `Port` objects representing the input ports of a module which drive the clocks 
         """
         clocks = []
         if module.module_class == ModuleClass.io_block:
@@ -146,6 +164,12 @@ class Tester(Object, AbstractPass):
     def get_name(self,bus_index):
         """
         Helper function for generating variable names which will be used in templatings
+      
+        Args:
+            module (`Bit`):
+        
+        Returns:
+            :obj:str : Unique name for the Bit of a pin/port 
         """
 
         var_name = "" 
@@ -159,6 +183,15 @@ class Tester(Object, AbstractPass):
     def switch_connections(self,module):
         """
         Generate the connections along with their corresponding cfg_bits
+
+        Args:
+            module (`AbstractModule`):
+        
+        Returns:
+            stack : List of lists where each sublist contains a set of connections 
+            which have to be tested in a single test
+            G : A networkx graph containing the connections between instance pins 
+            and ports of the module
         """
 
         module = self.context.database[ModuleView.user,module.key]
@@ -199,6 +232,15 @@ class Tester(Object, AbstractPass):
     def get_connections(self,module):
         """
         Generate the connections for modules like CLB, Subarray, iob, etc. (the ones not used for switch_connections function)
+
+        Args:
+            module (`AbstractModule`):
+        
+        Returns:
+            connections : List of connections present between instance pins 
+            and ports of the module
+            G : A networkx graph containing the connections between instance pins 
+            and ports of the module
         """
         connections = []
         G = nx.DiGraph()
@@ -231,6 +273,12 @@ class Tester(Object, AbstractPass):
         return connections,G
 
     def _process_module(self, module):
+        """
+        Function for processing module for generating tests 
+
+        Args:
+            module (`AbstractModule`):
+        """
         if module.key in self.visited:
             return
         
@@ -473,9 +521,7 @@ class Tester(Object, AbstractPass):
  
     @property
     def dependences(self):
-        # Ask Ang about this,
-        # Should I add dependencies for the final product
-        return ()
+        return ("translation", "rtl.verilog")
 
     @property
     def is_readonly_pass(self):

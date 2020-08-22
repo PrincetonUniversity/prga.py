@@ -11,10 +11,12 @@ from cocotb.binary import BinaryValue
 from cocotb.scoreboard import Scoreboard
 import config
 
+# cocotb coroutine for driving the clocks
 def clock_generation(clk,clock_period=10,test_time=100000):
     c= Clock(clk,clock_period)
     cocotb.fork(c.start(test_time//clock_period))
 
+# cocotb coroutine for driving the input ports
 @cocotb.coroutine
 def initialise_i(dut):
     while True:
@@ -25,9 +27,17 @@ def initialise_i(dut):
 
 @cocotb.test()
 def simple_test(dut):
+    """
+    cocotb test for verifying the functionality of {{module.name}}
+    """
+    
+    #######################################################
+    ## INITIALIZING #######################################
+    #######################################################
 
     cfg_d = bitarray([0]*{{cfg_bitcount}})
 
+    # Initialize the clocks
     cfg_clk = dut.cfg_clk 
     clock_generation(cfg_clk)
 
@@ -35,6 +45,7 @@ def simple_test(dut):
     clock_generation(test_clk,clock_period = 2,test_time=100000)
     
 
+    # Setting up the configuration bits of the module
     cfg_e = dut.cfg_e
     cfg_we = dut.cfg_we
     cfg_i = dut.cfg_i
@@ -46,6 +57,7 @@ def simple_test(dut):
         cfg_d[i] = loop_cfd%2
         loop_cfd//=2
 
+    # Loading the configuration bits of the module
     cfg_e <= 1
     cfg_we <= 1
     
@@ -62,11 +74,18 @@ def simple_test(dut):
 
     cocotb.fork(initialise_i(dut))
     
+    #######################################################
+    ## TESTING ############################################
+    #######################################################
+
+    # Check whether the configuration bits have been set up properly
+    # Also initialize the primitive testing coroutines
     cfg_d_dut = dut.cfg_d.value.binstr[::-1]
     for i in range({{cfg_bitcount-1}},-1,-1):
         if int(cfg_d[i])!= int(cfg_d_dut[i]):
             raise TestFailure("cfg_d not properly setup")
 
+    # Testing the working of switch
     for _ in range(1000):
         yield Edge(dut.test_clk)
         if str(dut.i.value.binstr[::-1][cfd]) != str(dut.o.value.binstr):
