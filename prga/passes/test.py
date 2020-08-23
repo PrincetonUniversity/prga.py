@@ -43,8 +43,6 @@ class Tester(Object, AbstractPass):
         self.tests_dir = os.path.abspath(tests_output_dir)
         self.header_output_dir = os.path.abspath(uno(header_output_dir, os.path.join(src_output_dir, "include")))
         self.visited = {}
-        # if not path.exists(self.tests_dir):
-        #     os.mkdir(self.tests_dir)
 
     def get_instance_file(self,module):
         """
@@ -57,12 +55,12 @@ class Tester(Object, AbstractPass):
             :obj:List : a list of :obj:`str` which contain the path of source verilog files 
 
         """
-        instance_files = [path.join(self.src_output_dir,module.name+".v")]
+        instance_files = [path.join(self.src_output_dir,module.name+".v")] #This list stores all the paths for the source files
         queue = []
         for temp in itervalues(module.instances):
             queue.append(temp.model)
         
-        while len(queue)!=0:
+        while len(queue)!=0: # This loop is iterative BFS 
             curr = queue.pop(0)
             curr_file = path.join(self.src_output_dir,curr.name+".v")
             if curr_file not in instance_files:
@@ -84,7 +82,7 @@ class Tester(Object, AbstractPass):
         """
         
         queue = []
-        primitives = []
+        primitives = [] 
 
         for instance in itervalues(module.instances):
             try:
@@ -92,7 +90,7 @@ class Tester(Object, AbstractPass):
             except:
                 queue.append([instance,[str(instance.name)],0])
         
-        while len(queue)!=0:
+        while len(queue)!=0: # This loop is iterative BFS 
             parent, heirarchy,offset = queue.pop(0)
 
             if parent.model.module_class.is_primitive or parent.model.module_class == ModuleClass.switch:
@@ -336,15 +334,21 @@ class Tester(Object, AbstractPass):
         for instance in itervalues(module.instances):
             self._process_module(instance.model)
 
-    def path_L(self,top,G):
-        # - - - - - - 
-        # | | | | | -
-        # | | | | | -
-        # | | | | | -
-        # | | | | | -
-        # | | | | | -
-  
-        # - represents the path on the FPGA fabric
+    def route_L(self,top,G):
+        """
+        An example route which takes the shape L along the FPGA Fabric 
+        """
+        # | | | | | | | |
+        # | - - - - - - |
+        # | | | | | | - |
+        # | | | | | | - |
+        # | | | | | | - |
+        # | | | | | | - |
+        # | | | | | | - |
+        # | | | | | | | |
+        # - represents the route on the FPGA fabric
+
+
         height = top.height
         width = top.width
         path = []
@@ -357,121 +361,82 @@ class Tester(Object, AbstractPass):
         for i in range(2,height-1):
             path.append((i,width-2))
         
-        # Diagonal Path
-        # for i in range(1,height-1):
-        #     path.append((i,i))
         path.reverse()
             
         print(path)
         
+        # Get Inter Tile Connections Eg- Connection between tile(1,1) and tile(1,2)
         connections = [[] for i in range(len(path))]
         for i in range(1,len(path)):
-            # print(i)
             sink = path[i-1]
             src = path[i]
             srcs = []
             sinks = []
             tile_src = top._instances[Position(src[0],src[1])]
             tile_sink = top._instances[Position(sink[0],sink[1])]
-            # print(tile_src,tile_sink)
-            for k,v in iteritems(tile_src.pins):
-                # print(v.model.name)
-                # print(dir(v.model))
-                # print(v.model.net_class)
-                if v.model.direction.is_output and not v.model.is_clock and not 'cu' in v.model.name:
-                    for net in v:
+            
+            for _,src_pin in iteritems(tile_src.pins):
+                if src_pin.model.direction.is_output and not src_pin.model.is_clock and not 'cu' in src_pin.model.name:
+                    for net in src_pin:
                         srcs.append(NetUtils._reference(net))
-                        # print(net,G.has_node(NetUtils._reference(net)))
-            # print()
-            for k,v in iteritems(tile_sink.pins):
-                # print(v.model.node_type)
-                # print(v.model.name)
-                # print(v.model.net_class)
-                if v.model.direction.is_input and not v.model.is_clock and not 'cu' in v.model.name:
-                    for net in v:
+            
+            for _,sink_pin in iteritems(tile_sink.pins):
+                if sink_pin.model.direction.is_input and not sink_pin.model.is_clock and not 'cu' in sink_pin.model.name:
+                    for net in sink_pin:
                         sinks.append(NetUtils._reference(net))
-                        # print(net,G.has_node(NetUtils._reference(net)))
-            # print()
-            # print()
-            count = 0
+
             for src_net in srcs:
                 for sink_net in sinks:
                     if nx.has_path(G,src_net,sink_net):
-                        # print("PATH EXISTS")
-                        # print(NetUtils._dereference(top,src_net),NetUtils._dereference(top,sink_net))
-                        count += 1
                         connections[i-1].append((src_net,sink_net))
-                if count > 50:
-                    break
 
+        # Get Intra Tile Connections of the start point i.e connections between inports and outports of a tile
         sink = path[len(path)-1]
         src = path[len(path)-1]
         srcs = []
         sinks = []
         tile_src = top._instances[Position(src[0],src[1])]
         tile_sink = top._instances[Position(sink[0],sink[1])]
-        for k,v in iteritems(tile_src.pins):
-            if v.model.direction.is_input and not v.model.is_clock and not 'cu' in v.model.name:
-                for net in v:
+
+        for _,src_pin in iteritems(tile_src.src_pins):
+            if src_pin.model.direction.is_input and not src_pin.model.is_clock and not 'cu' in src_pin.model.name:
+                for net in src_pin:
                     srcs.append(NetUtils._reference(net))
-                    # print(net,G.has_node(NetUtils._reference(net)))
-        for k,v in iteritems(tile_sink.pins):
-            if v.model.direction.is_output and not v.model.is_clock and not 'cu' in v.model.name:
-                for net in v:
+
+        for _,sink_pin in iteritems(tile_sink.sink_pins):
+            if sink_pin.model.direction.is_output and not sink_pin.model.is_clock and not 'cu' in sink_pin.model.name:
+                for net in sink_pin:
                     sinks.append(NetUtils._reference(net))
-                    # print(net,G.has_node(NetUtils._reference(net)))
-        count = 0
+        
         for src_net in srcs:
             for sink_net in sinks:
                 if nx.has_path(G,src_net,sink_net):
-                    # print("PATH EXISTS")
-                    # print(NetUtils._dereference(top,src_net),NetUtils._dereference(top,sink_net))
-                    # count += 1
                     connections[len(path)-1].append((src_net,sink_net))
-            if count > 50:
-                break
         
-        # for i in range(len(connections)):
-        #     print(i)
-        #     print(NetUtils._dereference(top, connections[i][0][0]),NetUtils._dereference(top, connections[i][0][1]))
-        # print()
-
-        route = [] # Final Path
-        
-        count = 0
+        # Return the individual connections which form the route 
+        route = [] # Final Route
         for index in range(1,len(connections)):
             # print(index)
-            count = 0
+            connection_found = False
             for i in range(len(connections[index])):
                 for j in range(len(connections[index-1])):
                     if nx.has_path(G,connections[index][i][1],connections[index-1][j][0]):
-                        count += 1
+                        connection_found = True
                         route.append((NetUtils._dereference(top,connections[index-1][j][0]),NetUtils._dereference(top,connections[index-1][j][1])))
-                        # print((NetUtils._dereference(top,connections[index-1][j][0]),NetUtils._dereference(top,connections[index-1][j][1])))
-                        
                         if index == (len(connections)-1): 
                             route.append((NetUtils._dereference(top,connections[index][i][0]),NetUtils._dereference(top,connections[index][i][1])))
-                            # print((NetUtils._dereference(top,connections[index][i][0]),NetUtils._dereference(top,connections[index][i][1])))
                         else:
                             route.append((NetUtils._dereference(top,connections[index][i][1]),NetUtils._dereference(top,connections[index-1][j][0])))
-                            # print((NetUtils._dereference(top,connections[index][i][1]),NetUtils._dereference(top,connections[index-1][j][0])))
-
-                        # print()
                         
-                    if count:
+                    if connection_found:
                         break
-                if count:
+                if connection_found:
                     break
-            if count == 0:
+            if not connection_found:
                 print("PATH DOESNT EXIST BETWEEN path index ",index,"and path index",index-1)
-        # print()
 
-        # for conn in route:
-        #     print(conn)
-        # print()
-
-        route_vars = []
-        cfg_bits_route = []
+        route_vars = [] # Extra data to be used for templating
+        cfg_bits_route = [] # All the cfg_bits which need to set up for the route
         for i in range(len(route)):
             path = nx.shortest_path(G,NetUtils._reference(route[i][0]),NetUtils._reference(route[i][1]))
             src = route[i][0]
@@ -482,70 +447,33 @@ class Tester(Object, AbstractPass):
             
             for i in range(1,len(path)):
                 cfg_bits = G[path[i-1]][path[i]]['cfg_bits'] 
-                # print(NetUtils._dereference(top,path[i-1]),NetUtils._dereference(top,path[i]),cfg_bits)
                 if len(cfg_bits) !=0 :
-                    # print(NetUtils._dereference(top,path[i-1]),NetUtils._dereference(top,path[i]))
                     hierarchy = [inst.name for inst in reversed(NetUtils._dereference(top,path[i-1]).bus.instance._hierarchy)]
                     model = NetUtils._dereference(top,path[i-1]).bus.instance._hierarchy[0].model
                     model_logical = self.context.database[1,model.key]
                     cfg_bits_route.append((model_logical,hierarchy,cfg_bits))
            
-            # for x in path:
-            #     print(NetUtils._dereference(top,x))
-
-            # print()
-
-        # for x in route_vars:
-        #     print(x)
-        # print()
-        # for x in cfg_bits_route:
-        #     print(x)
+        for x in route_vars:
+            print(x)
+        print()
         
-        # print()
-
-        top_logical = self.context.database[1,top.key]
+        top_logical = self.context.database[ModuleView.logical,top.key]
 
         start_point = route_vars[len(route_vars)-1][1]
 
-        route_vars.pop(len(route_vars)-1)
-        # for x in route_vars:
-        #     print(x)
-        # print()
+        # route_vars.pop(len(route_vars)-1)
+        
         setattr(top_logical,"route",route_vars)
         setattr(top_logical,"cfg_bits_route",cfg_bits_route)
         setattr(top_logical,"start_point",start_point.bus)
     
-    @property
-    def key(self):
-        return "test.cocotb"
- 
-    @property
-    def dependences(self):
-        return ("translation", "rtl.verilog")
-
-    @property
-    def is_readonly_pass(self):
-        return True
-    
-    def badly_named_function(self,instance,G):
-        # Function for adding the connections between outport of tile_module(Eg: Instance(top/t_ix6y1[subarray])) and the source of outport
-        # Also the connection between inpin of instances and source of the inpin
-        
-        # print("badly_named_function")
-        # print(instance)
-        # print()
-        
-        sinks1 = []
-        for k,v in instance.pins.items():
-            if v.bus.model.is_sink and not v.bus.model.is_clock:
-                sinks1.append((k,v))
-        # for k,v in sinks1:
-        #     print(v,v.model)
-        for k,v in sinks1:
-            key = k
-            # print(v)
-            # print(v.bus.model)
-            for index in range(len(v)):
+    def helper(self,pins,G):
+        """
+        Helper Function for Adding Heirarchial Instance
+        This function adds the connections between instances pins and ports of module present at Position(i,j)
+        """
+        for key,pin,instance in pins:
+            for index in range(len(pin)):
                 hier_pin_bit = instance.pins[key][index]
                 hier_src_bit = None # the one we want
                 # 1.
@@ -575,101 +503,56 @@ class Tester(Object, AbstractPass):
                                 hier_src_bit = hierarchy.pins[leaf_src_bus.key][leaf_src_index]
                             else: # is_pin
                                 hier_src_bit = hierarchy.extend_hierarchy(below = leaf_src_bus.instance).pins[leaf_src_bus.model.key][leaf_src_index]
+                        if hier_src_bit is None:
+                            continue
                         if hierarchy.model._allow_multisource:
                             conn = NetUtils.get_connection(sources,leaf_sink)
-                            # print(hier_src_bit,hier_pin_bit,conn.get("cfg_bits",tuple()))
-                            # print(NetUtils._reference(hier_src_bit), NetUtils._reference(hier_pin_bit))
                             G.add_edge(NetUtils._reference(hier_src_bit), NetUtils._reference(hier_pin_bit), cfg_bits =conn.get("cfg_bits",tuple()))
                         else:
-                            # print(hier_src_bit,hier_pin_bit,tuple())
-                            # print(NetUtils._reference(hier_src_bit), NetUtils._reference(hier_pin_bit))
                             G.add_edge(NetUtils._reference(hier_src_bit), NetUtils._reference(hier_pin_bit), cfg_bits = tuple())
-                        
-            #         print(hier_src_bit,hier_pin_bit)
-            # print()
-
-        sinks2 = []
-        for temp in itervalues(instance.model._instances):
-            for k,v in temp.pins.items():
-                if v.bus.model.is_source and not v.bus.model.is_clock:
-                    sinks2.append((k,v,instance.extend_hierarchy(below= temp)))
-        # for _,v,temp in sinks2:
-        #     print(v,v.model)
-
-        top = instance
-
-        # for k,v in instance.pins.items():
-        for k,v,instance in sinks2:
-            key = k
-            # print(instance)
-            # print(v)
-            # print(v.bus.model)
-            for index in range(len(v)):
-                hier_pin_bit = instance.pins[key][index]
-                hier_src_bit = None # the one we want
-                # 1.
-                hierarchy, leaf_sink = None, None
-                if hier_pin_bit.bus.model.is_source:
-                    hierarchy = instance.shrink_hierarchy(slice(1, None))
-                    leaf_sink = instance.hierarchy[0].pins[key][index]
-                else:
-                    hierarchy = instance
-                    leaf_sink = instance.model.ports[key][index]
-                # print(hierarchy)
-                #2.
-                leaf_src = None
-                if hierarchy and hierarchy.model._allow_multisource:
-                    leaf_src = NetUtils.get_multisource(leaf_sink)
-                else:
-                    leaf_src = NetUtils.get_source(leaf_sink)
-                #3.
-                for sources in leaf_src:
-                    if hierarchy is None:
-                        hier_src_bit = sources
-                    else:
-                        leaf_src_bus, leaf_src_index = sources, 0
-                        if sources.bus_type.is_slice:
-                            leaf_src_index = sources.index
-                            leaf_src_bus = sources.bus
-                            if leaf_src_bus.net_type.is_port:
-                                hier_src_bit = hierarchy.pins[leaf_src_bus.key][leaf_src_index]
-                            else: # is_pin
-                                hier_src_bit = hierarchy.extend_hierarchy(below = leaf_src_bus.instance).pins[leaf_src_bus.model.key][leaf_src_index]
-                        # print(hier_src_bit,hier_pin_bit)
-                        if hierarchy.model._allow_multisource:
-                            conn = NetUtils.get_connection(sources,leaf_sink)
-                            # print(hier_src_bit,hier_pin_bit,conn.get("cfg_bits",tuple()))
-                            # print(NetUtils._reference(hier_src_bit), NetUtils._reference(hier_pin_bit))
-                            G.add_edge(NetUtils._reference(hier_src_bit), NetUtils._reference(hier_pin_bit), cfg_bits =conn.get("cfg_bits",tuple()))
-                        else:
-                            # print(hier_src_bit,hier_pin_bit,tuple())
-                            # print(NetUtils._reference(hier_src_bit), NetUtils._reference(hier_pin_bit))
-                            G.add_edge(NetUtils._reference(hier_src_bit), NetUtils._reference(hier_pin_bit), cfg_bits = tuple())
-
-                    # print()    
-            # print()
-
+        
         return G
 
-
-    def add_heirarchial_instance(self,top,G):
-        top_user = self.context._database[ModuleView.user,top.key]
-        height = top_user.height
-        width = top_user.width
+    def add_hierarchial_instances_connections(self,top,G):
+        """
+        Recursively add all the connections in the submodules of the top module.
+        All the connections are heirarchial
+        """
+        top_user = self.context._database[ModuleView.user,top.key] #User view of the top module
+        
+        height = top_user.height # Height of the FPGA Fabric
+        width = top_user.width # Width of the FPGA Fabric
+        
         for i in range(height):
-        # for i in range(5,6):
             for j in range(width):
-            # for j in range(1,2):
+                
+                # Store all the instances present in a tile
                 tile_ij = [ArrayBuilder.get_hierarchical_root(top_user, Position(int(i),int(j)),corner = 0),ArrayBuilder.get_hierarchical_root(top_user, Position(i,j),corner = 2),
                         ArrayBuilder.get_hierarchical_root(top_user, Position(i,j),corner = 1),ArrayBuilder.get_hierarchical_root(top_user, Position(i,j),corner = 3),
                         ArrayBuilder.get_hierarchical_root(top_user, Position(i,j))]
+                
                 while None in tile_ij:
                     tile_ij.remove(None)
                 
                 try:
                     tile_ij.append(top._instances[Position(i,j)])
-                    G = self.badly_named_function(top._instances[Position(i,j)],G)
-                    # print(top._instances[Position(i,j)])
+                    """
+                    Generate the connections between outports and their source and 
+                    the connections between input pins of instances and their source of tile_module
+                    """
+                    sinks = []
+                    for key,pin in top._instances[Position(i,j)].pins.items():
+                        if pin.bus.model.is_sink and not pin.bus.model.is_clock:
+                            sinks.append((key,pin,top._instances[Position(i,j)]))
+                    
+                    G = self.helper(sinks,G)
+                    sinks = []
+                    for temp in itervalues(top._instances[Position(i,j)].model._instances):
+                        for k,v in temp.pins.items():
+                            if v.bus.model.is_source and not v.bus.model.is_clock:
+                                sinks.append((k,v,top._instances[Position(i,j)].extend_hierarchy(below= temp)))
+                    
+                    G = self.helper(sinks,G)                    
                 except:
                     x = 0
 
@@ -684,18 +567,10 @@ class Tester(Object, AbstractPass):
                     if hier_inst_key in visited:
                         continue
 
-                    # print(hierarchical_instance)
-                    # print(hierarchical_instance._hierarchy)
-                    # print()
-                    # print(hierarchical_instance.model)
-
                     visited.append(hier_inst_key)
 
-                    for k,v in hierarchical_instance.pins.items():
-                        # print(v)
-                        # key = next(iter(hierarchical_instance.pins))
-                        key = k
-                        for index in range(len(v)):
+                    for key,pin in hierarchical_instance.pins.items():
+                        for index in range(len(pin)):
                             hier_pin_bit = hierarchical_instance.pins[key][index]
                             hier_src_bit = None # the one we want
                             # 1.
@@ -736,34 +611,26 @@ class Tester(Object, AbstractPass):
                                     G.add_edge(NetUtils._reference(hier_src_bit), NetUtils._reference(hier_pin_bit), cfg_bits = tuple())
                             
                             if hierarchy.is_hierarchical:
-                            # if hierarchy.is_hierarchical and not hierarchy.model.name != 'clb':
-                                # print(hierarchy)                               
-                                # print(hierarchy.model)
-                                # print(dir(hierarchy))
-                                for k,v in iteritems(hierarchy.model.instances):
-                                    # print(v)
-                                    # print(hierarchy)
-                                    leaf = hierarchy.extend_hierarchy(below = v)
-                                    # print(hierarchy)
-                                    # print(leaf)
-                                    hier_inst_key = tuple(i.key for i in leaf.hierarchy)
-
+                                for _,sub_instance in iteritems(hierarchy.model.instances):
+                                    leaf = hierarchy.extend_hierarchy(below = sub_instance)
+                                    hier_inst_key = tuple(i.key for i in leaf.hierarchy) #hash
                                     if hier_inst_key not in visited:
                                         queue.append(leaf)
 
-                                    # print(leaf)
-                                # print()
-                            #     if hierarchy not in visited:
-                            #         print(hierarchy)
-                            # print(hierarchy.model)
-                            # for k,v in iteritems(hierarchy.model.instances):
-                            #     print(v)
-                    # print()
-                # print()
-
         self.graphs['top']['graph'] = G
 
+    @property
+    def key(self):
+        return "test.cocotb"
+ 
+    @property
+    def dependences(self):
+        return ("translation", "rtl.verilog")
 
+    @property
+    def is_readonly_pass(self):
+        return True
+    
     def run(self, context, renderer=None):
         top = context.system_top
         self.renderer = renderer
@@ -780,17 +647,12 @@ class Tester(Object, AbstractPass):
         G = self.graphs['top']['graph']
         
         top_user = self.context._database[ModuleView.user,top.key]
-        self.add_heirarchial_instance(top_user,G)
+        self.add_hierarchial_instances_connections(top,G)
 
         G = self.graphs['top']['graph']
 
-        tile_src = top._instances[Position(6,1)]
+        self.route_L(top_user,G)
 
-        self.path_L(top_user,G)
-
-        # for src,sink in G.edges():
-        #     print(NetUtils._dereference(top_user, src),NetUtils._dereference(top_user, sink))
-       
         f = os.path.join(self.tests_dir,"test_route_1")
         self.renderer.add_top_level_python_test(top, os.path.join(f,"test.py"), "route.tmpl.py")
         self.renderer.add_top_level_makefile(top, os.path.join(f,"Makefile"), "test_base.tmpl")
