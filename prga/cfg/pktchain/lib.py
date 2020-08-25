@@ -568,8 +568,8 @@ class Pktchain(Scanchain):
         Returns:
             `FileRenderer`:
         """
-        r = super(Pktchain, cls).new_renderer(additional_template_search_paths)
-        r.template_search_paths.insert(0, ADDITIONAL_TEMPLATE_SEARCH_PATH)
+        r = super(Pktchain, cls).new_renderer(tuple(iter(additional_template_search_paths)) +
+                (ADDITIONAL_TEMPLATE_SEARCH_PATH, ))
         return r
 
     @classmethod

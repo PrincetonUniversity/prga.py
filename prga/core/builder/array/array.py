@@ -12,7 +12,7 @@ from ....netlist import PortDirection, Module, Instance, NetUtils, ModuleUtils
 from ....util import Object, uno
 from ....exception import PRGAInternalError, PRGAAPIError
 
-from itertools import product
+from itertools import product, cycle, islice
 
 __all__ = ['ArrayBuilder']
 
@@ -610,52 +610,54 @@ class ArrayBuilder(BaseArrayBuilder):
             `ArrayBuilder`: Return ``self`` to support chaining, e.g.,
                 ``array = builder.fill().auto_connect().commit()``
         """
+        # 1. allocate primary / secondaries output orientations
+        primaries, secondaries = {}, {}
+        corners = (Corner.northwest, Corner.southwest, Corner.southeast, Corner.northeast)
+        for i, ori in enumerate((Orientation.east, Orientation.north, Orientation.west, Orientation.south)):
+            for corner in islice(cycle(corners), i, i + 4):
+                if corner in sbox_pattern.fill_corners:
+                    primaries.setdefault(corner, []).append(ori)
+                    break
+            for corner in islice(cycle(corners), i + 2, i + 6):
+                if corner in sbox_pattern.fill_corners:
+                    secondaries.setdefault(corner, []).append(ori)
+                    break
+        # 2. iterate all sbox positions
         processed_boxes = set()
         for x, y in product(range(self._module.width), range(self._module.height)):
             position = Position(x, y)
             for corner in sbox_pattern.fill_corners:
+                # 2.1 skip if the sbox position is on chip edge 
                 if any(ori.case(y == self.height - 1, x == self.width - 1, y == 0, x == 0) and self._module.edge[ori]
                         for ori in corner.decompose()):
                     continue
+                # 2.2 skip if the `dont_create` and the sbox is not there yet
                 elif (instance := self._module._instances.get_root(position, corner)) is None:
                     if dont_create:
                         continue
+                # 2.3 skip if the `dont_update` and the sbox is already there
                 elif not instance.model.module_class.is_switch_box or dont_update:
                     continue
                 # analyze the environment around the switch box
                 outputs = {}    # orientation -> drive_at_crosspoints, crosspoints_only
-                curpos, curcorner = position, corner
-                while True:
-                    # primary output
-                    primary_output = Orientation[curcorner.case("south", "east", "west", "north")]
-                    if not self._no_channel_for_switchbox(self._module, curpos, curcorner, primary_output, True):
-                        drivex, _ = outputs.get(primary_output, (False, False))
-                        drivex = drivex or self._no_channel_for_switchbox(self._module, curpos, curcorner,
-                                primary_output)
-                        outputs[primary_output] = drivex, False
-                    # secondary output: when the switch box supposed to drive certain segments is not fullfiling
-                    # its job
-                    secondary_output = primary_output.opposite
-                    if (not self._no_channel_for_switchbox(self._module, curpos, curcorner, secondary_output, True)
-                            and self._no_channel_for_switchbox(self._module, curpos, curcorner, secondary_output)):
-                        otherpos, othercorner = self._equiv_sbox_position(curpos, curcorner,
-                                Corner[secondary_output.case("southwest", "northwest", "northeast", "southeast")])
-                        if (not (0 <= otherpos.x < self.width and 0 <= otherpos.y < self.height) or
-                                ((i := self._module._instances.get_root(otherpos, othercorner)) is not None and
-                                    not i.model.module_class.is_switch_box)):
-                            _, xo = outputs.get(secondary_output, (True, True))
-                            outputs[secondary_output] = True, xo
-                    # go to the next corner
-                    curpos, curcorner = self._equiv_sbox_position(curpos, curcorner)
-                    # check if we've gone through all corners
-                    if curcorner in sbox_pattern.fill_corners:
-                        break
+                # primary output
+                for primary in primaries[corner]:
+                    if not self._no_channel_for_switchbox(self._module, position, corner, primary, True):
+                        drivex, _ = outputs.get(primary, (False, False))
+                        # drivex = drivex or self._no_channel_for_switchbox(self._module, position, corner, primary)
+                        outputs[primary] = drivex, False
+                # secondary output
+                for secondary in secondaries[corner]:
+                    if (not self._no_channel_for_switchbox(self._module, position, corner, secondary, True)
+                            and self._no_channel_for_switchbox(self._module, position, corner, secondary)):
+                        _, xo = outputs.get(secondary, (True, True))
+                        outputs[secondary] = True, xo
                 if len(outputs) == 0:
                     continue
                 # analyze excluded inputs
                 excluded_inputs = set(ori for ori in Orientation
                         if self._no_channel_for_switchbox(self._module, position, corner, ori))
-                if len(excluded_inputs) == 4:
+                if len(excluded_inputs) == len(Orientation):
                     continue
                 # if the instance is not there, create new switch box and instantiate there
                 if instance is None:

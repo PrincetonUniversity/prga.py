@@ -91,7 +91,8 @@ class _VPRArchGeneration(AbstractPass):
                                 attrs)
                     # 2. FC
                     if (unroutables := set(port.name for tunnel in itervalues(context.tunnels)
-                        for port in (tunnel.source, tunnel.sink) if port.parent is block)):
+                        for port in (tunnel.source, tunnel.sink) if port.parent is block) |
+                        set(port.name for port in block.ports.values() if hasattr(port, "global_"))):
                         with self.xml.element("fc",
                                 {"in_type": "frac", "in_val": "1.0", "out_type": "frac", "out_val": "1.0"}):
                             for port in unroutables:

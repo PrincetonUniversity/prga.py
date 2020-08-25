@@ -606,9 +606,7 @@ class Scanchain(Object):
         Returns:
             `FileRenderer`:
         """
-        r = FileRenderer()
-        r.template_search_paths.insert(0, ADDITIONAL_TEMPLATE_SEARCH_PATH)
-        r.template_search_paths.extend(additional_template_search_paths)
+        r = FileRenderer(*additional_template_search_paths, ADDITIONAL_TEMPLATE_SEARCH_PATH)
         return r
 
     @classmethod

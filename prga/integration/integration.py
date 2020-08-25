@@ -244,12 +244,22 @@ class Integration(object):
                 ios = constraints["clk"] = IOConstraints(IOType.ipin)
                 planner.use(IOType.ipin, g.bound_to_position, g.bound_to_subtile)
                 ios[0] = g.bound_to_position, g.bound_to_subtile
+                break
         if "clk" not in constraints:
             raise PRGAAPIError("No clock found in the fabric")
 
         # constrain reset
-        ios = constraints["rst_n"] = IOConstraints(IOType.ipin)
-        ios[0] = planner.pop(IOType.ipin)
+        for g in itervalues(context.globals_):
+            # FIXME: matching reset net based on name
+            if not g.is_clock and g.width == 1 and "rst" in g.name.lower():
+                ios = constraints["rst_n"] = IOConstraints(IOType.ipin)
+                planner.use(IOType.ipin, g.bound_to_position, g.bound_to_subtile)
+                ios[0] = g.bound_to_position, g.bound_to_subtile
+                break
+        if "rst_n" not in constraints:
+            ios = constraints["rst_n"] = IOConstraints(IOType.ipin)
+            ios[0] = planner.pop(IOType.ipin)
+
         return constraints
 
     @classmethod

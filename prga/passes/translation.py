@@ -121,12 +121,18 @@ class TranslationPass(AbstractPass):
                 'key': module.key,
                 }
 
-        # propagate primitive_class
+        # propagate attributes
         if module.module_class.is_primitive:
             kwargs["primitive_class"] = module.primitive_class
             kwargs["is_cell"] = True
         elif not disable_coalesce and module.coalesce_connections:
             kwargs['coalesce_connections'] = True
+
+        if (module.module_class.is_block or 
+                module.module_class.is_tile or 
+                module.module_class.is_array):
+            kwargs["width"] = module.width
+            kwargs["height"] = module.height
 
         # create logical module
         logical = Module(module.name, **kwargs)
