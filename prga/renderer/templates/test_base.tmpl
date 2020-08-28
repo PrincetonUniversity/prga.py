@@ -1,0 +1,11 @@
+SIM = icarus
+TOPLEVEL_LANG = verilog
+
+VERILOG_SOURCES = {{instance.files}}
+# TOPLEVEL is the name of the toplevel instance in the Verilog or VHDL file
+TOPLEVEL={{instance.top_level}}
+# MODULE is the name of the python testfile
+MODULE=test
+
+include $(shell cocotb-config --makefiles)/Makefile.inc
+include $(shell cocotb-config --makefiles)/Makefile.sim

@@ -101,7 +101,7 @@ class Pin(Object, AbstractPin):
             See `Pin.instance` for more information
     """
 
-    __slots__ = ['_model', '_instance']
+    __slots__ = ['_model', '_instance','test_heirarchy']
 
     # == internal API ========================================================
     def __init__(self, model, instance):
@@ -117,7 +117,7 @@ class Pin(Object, AbstractPin):
 
     def __ne__(self, other):
         return not self.__eq__(other)
-
+    
     # == low-level API =======================================================
     @property
     def model(self):
@@ -136,7 +136,7 @@ class Pin(Object, AbstractPin):
     def index(self):
         """:obj:`int` or :obj:`slice`: Index of this net in the bus."""
         return slice(0, len(self))
-
+    
     # -- implementing properties/methods required by superclass --------------
     def __len__(self):
         return len(self._model)

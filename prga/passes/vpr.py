@@ -434,7 +434,7 @@ class _VPRArchGeneration(Object, AbstractPass):
             return
         bitwise_timing = True
         if primitive.primitive_class.is_lut:
-            self.lut_sizes.add( len(primitive.ports['in']) )
+            self.lut_sizes.add( len(primitive.ports['bits_in']) )
             bitwise_timing = False
             attrs.update({"blif_model": ".names", "class": "lut"})
         elif primitive.primitive_class.is_flipflop:
@@ -600,7 +600,7 @@ class _VPRArchGeneration(Object, AbstractPass):
                                 fasm_luts['{}[{}]'.format(sub.key[0], i)] = fasm_lut
                             else:
                                 fasm_luts['{}[{}]'.format(sub.key[0], i)] = 'ignored[{}:0]'.format(
-                                        2 ** len(subsub.pins["in"]) - 1)
+                                        2 ** len(subsub.pins["bits_in"]) - 1)
             else:
                 sub_prefix = self.fasm.fasm_prefix_for_intrablock_module(hierarchical)
                 if sub.model.module_class.is_cluster:
@@ -612,7 +612,7 @@ class _VPRArchGeneration(Object, AbstractPass):
                         if fasm_lut:
                             fasm_luts['{}[0]'.format(sub.name)] = fasm_lut
                         else:
-                            fasm_luts['{}[0]'.format(sub.name)] = 'ignored[{}:0]'.format(2 ** len(sub.pins["in"]) - 1)
+                            fasm_luts['{}[0]'.format(sub.name)] = 'ignored[{}:0]'.format(2 ** len(sub.pins["bits_in"]) - 1)
         # 2. emit interconnect
         with self.xml.element('interconnect'):
             for net in chain(itervalues(module.ports),

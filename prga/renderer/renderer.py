@@ -3,7 +3,7 @@
 from __future__ import division, absolute_import, print_function
 from prga.compatible import *
 
-from ..core.common import ModuleView
+from ..core.common import ModuleView, ModuleClass
 from ..netlist.net.util import NetUtils
 from ..netlist.module.module import Module
 from ..netlist.module.util import ModuleUtils
@@ -12,6 +12,7 @@ from ..exception import PRGAInternalError
 
 import os
 import jinja2 as jj
+import fileinput
 
 # In Python 3.7 and above, ``dict`` preserves insertion order and is more performant than ``OrderedDict``
 OrderedDict = dict
@@ -26,11 +27,12 @@ DEFAULT_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__fi
 class FileRenderer(Object):
     """File renderer based on Jinja2."""
 
-    __slots__ = ['template_search_paths', 'tasks', '_yosys_synth_script_task']
+    __slots__ = ['template_search_paths', 'tasks', 'test_tasks','_yosys_synth_script_task']
     def __init__(self, *paths):
         self.template_search_paths = [DEFAULT_TEMPLATE_SEARCH_PATH]
         self.template_search_paths.extend(paths)
         self.tasks = OrderedDict()
+        self.test_tasks = OrderedDict()
         self._yosys_synth_script_task = None
 
     @classmethod
@@ -85,10 +87,12 @@ class FileRenderer(Object):
                 "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo"):
             context._database[ModuleView.logical, d] = Module(d,
                     view = ModuleView.logical,
+                    module_class = ModuleClass.aux,
                     verilog_template = "stdlib/{}.v".format(d))
         for d in ("prga_ram_1r1w_dc", "prga_async_fifo", "prga_async_tokenfifo", "prga_clkdiv"):
             context._database[ModuleView.logical, d] = Module(d,
                     view = ModuleView.logical,
+                    module_class = ModuleClass.aux,
                     verilog_template = "cdclib/{}.v".format(d))
         ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo"],
                 context._database[ModuleView.logical, "prga_ram_1r1w"], "ram")
@@ -111,6 +115,43 @@ class FileRenderer(Object):
 
         Args:
             module (`Module`): The module to be rendered
+            file_ (:obj:`str` of file-like object): The output file
+            template (:obj:`str`): The template to be used
+            **kwargs: Additional key-value parameters to be passed into the template when rendering
+        """
+        parameters = {
+                "module": module,
+                "source2verilog": self._source2verilog,
+                'itervalues': itervalues,
+                'iteritems': iteritems,
+                }
+        parameters.update(kwargs)
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
+
+
+    def add_top_level_makefile(self, module, file_, template = 'test_base.tmpl', **kwargs):
+        """Add a Makefile rendering task.
+
+        Args:
+            module (`Abstractg`): The module to be rendered
+            file_ (:obj:`str` of file-like object): The output file
+            template (:obj:`str`): The template to be used
+            **kwargs: Additional key-value parameters to be passed into the template when rendering
+        """
+        parameters = {
+                "instance": module,
+                "source2verilog": self._source2verilog,
+                'itervalues': itervalues,
+                'iteritems': iteritems
+                }
+        parameters.update(kwargs)
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
+
+    def add_top_level_python_test(self, module, file_, template = '=module.tmpl.py', **kwargs):
+        """Add a Cocotb test bench rendering task.
+
+        Args:
+            module (`Abstractg`): The module to be rendered
             file_ (:obj:`str` of file-like object): The output file
             template (:obj:`str`): The template to be used
             **kwargs: Additional key-value parameters to be passed into the template when rendering
@@ -281,9 +322,23 @@ class FileRenderer(Object):
             d["rule"] = os.path.abspath(rule_script.name)
         script_task[0][1]["memory_techmaps"].append( d )
 
+    def handle_names_with_underscore(self,names):
+        # This function provides support for COCOTB test_bench variables
+        formatted_syntax = []
+        # print(names)
+        for name in names:
+            if name[0] == '_':
+                formatted_syntax.append(str("_id(\""+str(name)+"\", extended=False)"))
+            else:
+                formatted_syntax.append(str(name))
+        # print(formatted_syntax)
+        return formatted_syntax
+
     def render(self):
         """Render all added files and clear the task queue."""
         env = jj.Environment(loader = jj.FileSystemLoader(self.template_search_paths))
+        env.globals.update(NetUtils=NetUtils)
+        env.globals.update(handle_names_with_underscore=self.handle_names_with_underscore)
         while self.tasks:
             file_, l = self.tasks.popitem()
             if isinstance(file_, basestring):

@@ -6,7 +6,8 @@ module {{ module.name }} (
     input wire [0:0] cfg_we,
     input wire [{{ module.ports.cfg_i|length }} - 1:0] cfg_i,
     output wire [{{ module.ports.cfg_o|length }} - 1:0] cfg_o,
-    output reg [{{ module.ports.cfg_d|length }} - 1:0] cfg_d
+    output reg [{{ module.ports.cfg_d|length }} - 1:0] cfg_d,
+    input wire [0:0] test_clk
     );
 
     localparam CFG_BITCOUNT = {{ module.ports.cfg_d|length }};

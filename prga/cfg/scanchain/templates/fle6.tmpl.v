@@ -4,7 +4,7 @@
 module fle6 (
     // user accessible ports
     input wire [0:0] clk,
-    input wire [5:0] in,
+    input wire [5:0] bits_in,
     output reg [1:0] out,
     input wire [0:0] cin,
     output reg [0:0] cout,
@@ -14,7 +14,10 @@ module fle6 (
     input wire [0:0] cfg_e,
     input wire [0:0] cfg_we,
     input wire [{{ cfg_width - 1 }}:0] cfg_i,
-    output wire [{{ cfg_width - 1 }}:0] cfg_o
+    output wire [{{ cfg_width - 1 }}:0] cfg_o,
+    
+    // Variables for testbench files
+    input wire test_clk
     );
 
     // 3 modes:
@@ -51,12 +54,12 @@ module fle6 (
     // synopsys translate_on
 
     always @* begin
-        internal_in = in;
+        internal_in = bits_in;
 
         // synopsys translate_off
         // in simulation, force unconnected LUT input to be zeros
         {%- for i in range(6) %}
-        if (in[{{ i }}] === 1'bx) begin
+        if (bits_in[{{ i }}] === 1'bx) begin
             internal_in[{{ i }}] = 1'b0;
         end
         {%- endfor %}

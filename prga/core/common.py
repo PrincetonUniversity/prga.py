@@ -301,7 +301,8 @@ class ModuleClass(Enum):
     # logical-only modules
     switch = 9              #: switch
     cfg = 10                #: configuration modules
-
+    aux = 11
+    
     @property
     def is_block(self):
         """:obj:`bool`: Test if this module is a block."""
