@@ -28,16 +28,17 @@ class Tester(Object, AbstractPass):
     
     Args:
         src_output_dir (:obj:`str`): Verilog source files are generated in the specified directory by the VerilogCollection pass. 
-        The directory name provided for both VerilogCollection pass and Tester pass must be the same. Default value is the current working directory.
+                                    The directory name provided for both VerilogCollection pass and Tester pass must be the same. 
+                                    Default value is the current working directory.
         tests_output_dir (:obj:`str`): Multiple Unit Tests are generated in this directory. Each test has its own individual directory. 
-        Default value is a "unit_tests"
-        
-    Keyword Args:
+                                    Default value is a "unit_tests"
         header_output_dir (:obj:`str`): Verilog header files are generated in the specified directory. Default value
-            is "{src_output_dir}/include"
+                                        is "{src_output_dir}/include"
     """
 
     __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'visited']
+
+    # Add arguments for path start and end points 
     def __init__(self, src_output_dir = ".", tests_output_dir = "unit_tests",  header_output_dir = None):
         self.src_output_dir = os.path.abspath(src_output_dir) 
         self.tests_dir = os.path.abspath(tests_output_dir)
@@ -78,11 +79,11 @@ class Tester(Object, AbstractPass):
             module (`AbstractModule`):
         
         Returns:
-            :obj:List : a list of :obj:`tuples` which contain instance, heirarchy and the offset 
+            :obj:List : a list of :obj:`tuples` which contain instance, hierarchy and the offset 
         """
         
         queue = []
-        primitives = [] 
+        primitives = [] #This list stores all the data i.e., instance,hierarchy and the offset 
 
         for instance in itervalues(module.instances):
             try:
@@ -127,9 +128,8 @@ class Tester(Object, AbstractPass):
             for k,v in iteritems(module.ports):
                 if v.direction.is_input and not v.is_clock:
                     ports.append(v)
-                    # print(v)
-            # print(module.ports)
         except:
+            # A useless function to prevent the program from crashing
             x = 0+0
         return ports
     
@@ -195,6 +195,8 @@ class Tester(Object, AbstractPass):
         module = self.context.database[ModuleView.user,module.key]
 
         num_tests = 0
+        # The following loop checks the number of ways an output port can be configured.
+        # And stores the maximum number in the variable num_tests
         for port in module.ports.values():
             if port.is_sink:
                 for sink in port:
@@ -203,6 +205,9 @@ class Tester(Object, AbstractPass):
         
         stack = [[] for i in range(num_tests+1)]
         G = nx.DiGraph()
+
+        # The following loop puts each configuration in a different test.
+        # All tests are disjoint
         for port in module.ports.values():
             if port.is_sink:
                 for sink in port:
@@ -244,6 +249,7 @@ class Tester(Object, AbstractPass):
         G = nx.DiGraph()
         try:
             module = self.context.database[ModuleView.user,module.key]
+            # The following loop returns all the connections between ports and instance pins of a module
             for sink_bus in chain(iter(oport for oport in itervalues(module.ports) if oport.direction.is_output),
                         iter(ipin for instance in itervalues(module.instances) for ipin in itervalues(instance.pins) if ipin.model.direction.is_input and not ipin.model.is_clock)):
                 for sink_net in sink_bus:
@@ -267,6 +273,7 @@ class Tester(Object, AbstractPass):
                         connections.append((src_var_name,src_net,sink_var_name,sink_net,tuple()))
                         G.add_edge(NetUtils._reference(src_net), NetUtils._reference(sink_net), cfg_bits = tuple())
         except:
+            # Placeholder to prevent the pass from crashing
             x= 0
         return connections,G
 
@@ -284,11 +291,8 @@ class Tester(Object, AbstractPass):
         
         self.visited[module.key] = f
 
-        if not hasattr(module, "test_dir"):
-            setattr(module,"test_dir",f)
+        setattr(module,"test_dir",f)
         
-        print(module.name)
-
         if module.module_class == ModuleClass.switch_box or module.module_class == ModuleClass.connection_box or module.module_class.is_cluster:
             stack,nx_graph = self.switch_connections(module)
             setattr(module,"stack",stack)
@@ -329,7 +333,6 @@ class Tester(Object, AbstractPass):
 
         self.renderer.add_top_level_makefile(module, path.join(f,"Makefile"), "test_base.tmpl")
         self.renderer.add_top_level_python_test(module, path.join(f,"config.py"), "config.py")
-        print()
         
         for instance in itervalues(module.instances):
             self._process_module(instance.model)
@@ -398,12 +401,12 @@ class Tester(Object, AbstractPass):
         tile_src = top._instances[Position(src[0],src[1])]
         tile_sink = top._instances[Position(sink[0],sink[1])]
 
-        for _,src_pin in iteritems(tile_src.src_pins):
+        for _,src_pin in iteritems(tile_src.pins):
             if src_pin.model.direction.is_input and not src_pin.model.is_clock and not 'cu' in src_pin.model.name:
                 for net in src_pin:
                     srcs.append(NetUtils._reference(net))
 
-        for _,sink_pin in iteritems(tile_sink.sink_pins):
+        for _,sink_pin in iteritems(tile_sink.pins):
             if sink_pin.model.direction.is_output and not sink_pin.model.is_clock and not 'cu' in sink_pin.model.name:
                 for net in sink_pin:
                     sinks.append(NetUtils._reference(net))
@@ -476,7 +479,8 @@ class Tester(Object, AbstractPass):
             for index in range(len(pin)):
                 hier_pin_bit = instance.pins[key][index]
                 hier_src_bit = None # the one we want
-                # 1.
+                # 1. We split the hierarchy so as to find in which MODULE we should call NetUtils.get_source 
+                #  or NetUtils.get_multisource if the module allows multi-source connections
                 hierarchy, leaf_sink = None, None
                 if hier_pin_bit.bus.model.is_source:
                     hierarchy = instance.shrink_hierarchy(slice(1, None))
@@ -484,13 +488,13 @@ class Tester(Object, AbstractPass):
                 else:
                     hierarchy = instance
                     leaf_sink = instance.model.ports[key][index]
-                #2.
+                #2. Call the corresponding source query method to get the source
                 leaf_src = None
                 if hierarchy and hierarchy.model._allow_multisource:
                     leaf_src = NetUtils.get_multisource(leaf_sink)
                 else:
                     leaf_src = NetUtils.get_source(leaf_sink)
-                #3.
+                #3. Reassemble the source and the hierarchy
                 for sources in leaf_src:
                     if hierarchy is None:
                         hier_src_bit = sources
@@ -554,11 +558,12 @@ class Tester(Object, AbstractPass):
                     
                     G = self.helper(sinks,G)                    
                 except:
+                    # Placeholder to prevent the pass from crashing
                     x = 0
 
                 queue = tile_ij
                 visited = []
-                while len(queue):
+                while len(queue): #This is a BFS where we add all the connections of the instances
                     hierarchical_instance  = queue.pop(0)
                     if hierarchical_instance is None  or not hierarchical_instance.is_hierarchical:
                         continue
@@ -573,7 +578,8 @@ class Tester(Object, AbstractPass):
                         for index in range(len(pin)):
                             hier_pin_bit = hierarchical_instance.pins[key][index]
                             hier_src_bit = None # the one we want
-                            # 1.
+                            # 1. We split the hierarchy so as to find in which MODULE we should call NetUtils.get_source 
+                            #  or NetUtils.get_multisource if the module allows multi-source connections
                             hierarchy, leaf_sink = None, None
                             if hier_pin_bit.bus.model.is_source:
                                 hierarchy = hierarchical_instance.shrink_hierarchy(slice(1, None))
@@ -581,13 +587,13 @@ class Tester(Object, AbstractPass):
                             else:
                                 hierarchy = hierarchical_instance
                                 leaf_sink = hierarchical_instance.model.ports[key][index]
-                            # 2.
+                            #2. Call the corresponding source query method to get the source
                             leaf_src = None
                             if hierarchy.model._allow_multisource:
                                 leaf_src = NetUtils.get_multisource(leaf_sink)
                             else:
                                 leaf_src = NetUtils.get_source(leaf_sink)
-                            # 3.
+                            #3. Reassemble the source and the hierarchy
                             for sources in leaf_src:
                                 if hierarchy is None:
                                     hier_src_bit = sources
@@ -602,12 +608,8 @@ class Tester(Object, AbstractPass):
                                         hier_src_bit = hierarchy.extend_hierarchy(below = leaf_src_bus.instance).pins[leaf_src_bus.model.key][leaf_src_index]
                                 if hierarchy.model._allow_multisource:
                                     conn = NetUtils.get_connection(sources,leaf_sink)
-                                    # print(hier_src_bit,hier_pin_bit)
-                                    # print(NetUtils._reference(hier_src_bit), NetUtils._reference(hier_pin_bit))
                                     G.add_edge(NetUtils._reference(hier_src_bit), NetUtils._reference(hier_pin_bit), cfg_bits =conn.get("cfg_bits",tuple()))
                                 else:
-                                    # print(hier_src_bit,hier_pin_bit)
-                                    # print(NetUtils._reference(hier_src_bit), NetUtils._reference(hier_pin_bit))
                                     G.add_edge(NetUtils._reference(hier_src_bit), NetUtils._reference(hier_pin_bit), cfg_bits = tuple())
                             
                             if hierarchy.is_hierarchical:
@@ -629,7 +631,7 @@ class Tester(Object, AbstractPass):
 
     @property
     def is_readonly_pass(self):
-        return True
+        return False
     
     def run(self, context, renderer=None):
         top = context.system_top
@@ -642,10 +644,11 @@ class Tester(Object, AbstractPass):
             context.summary.rtl = {}
         self.visited = context.summary.rtl["sources"] = {}
         context.summary.rtl["includes"] = [self.header_output_dir]
+
         self._process_module(top)
 
         G = self.graphs['top']['graph']
-        
+
         top_user = self.context._database[ModuleView.user,top.key]
         self.add_hierarchial_instances_connections(top,G)
 
