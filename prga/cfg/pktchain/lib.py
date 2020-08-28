@@ -766,41 +766,103 @@ class Pktchain(Scanchain):
     class BuildSystem(AbstractPass):
         """Create a system wrapping the fabric with the system integration interface."""
 
-        __slots__  = ["io_constraints_f", "name"]
+        __slots__  = ["io_constraints_f", "name", "core", "cfg_in_core"]
 
-        def __init__(self, io_constraints_f = "io.pads", *, name = "prga_system"):
+        def __init__(self, io_constraints_f = "io.pads", *,
+                name = "prga_system", core = None, cfg_in_core = False):
+
+            if cfg_in_core and core is None:
+                raise PRGAAPIError("`core` must be set when `cfg_in_core` is set")
+
             self.io_constraints_f = io_constraints_f
             self.name = name
+            self.core = core
+            self.cfg_in_core = cfg_in_core
 
         def run(self, context, renderer = None):
-            Integration.build_system(context)
-            # add cfg instance and connect ports/pins
+            # build system
+            Integration.build_system(context,
+                    name = self.name, core = self.core)
+
+            # get system module
             system = context.system_top
-            cfg = ModuleUtils.instantiate(system,
+
+            # which backend should we connect?
+            sysintf_slave, sysintf_prefix = None, ""
+            cfg_inst, cfg_slave = None, None
+
+            # check core
+            if self.core and self.cfg_in_core:
+                core = system.instances["i_core"]
+                fabric = core.model.instances["i_fabric"]
+
+                sysintf_slave, sysintf_prefix, cfg_slave = core, "cfg_", fabric
+
+                # create cfg ports
+                core_ports = Integration._create_intf_cfg(core.model, True, sysintf_prefix)
+                core_ports["cfg_clk"] = ModuleUtils.create_port(core.model, "cfg_clk", 1, PortDirection.input_,
+                        is_clock = True)
+
+                # instantiate
+                cfg_inst = ModuleUtils.instantiate(core.model,
+                        context.database[ModuleView.logical, "pktchain_cfg"], "i_cfg")
+
+                # connect cfg with core ports
+                for port_name, port in iteritems(core_ports):
+                    if port.direction.is_input:
+                        NetUtils.connect(port, cfg_inst.pins[port_name[4:]])
+                    else:
+                        NetUtils.connect(cfg_inst.pins[port_name[4:]], port)
+
+                # connect cfg with fabric pins
+                NetUtils.connect(core_ports["cfg_clk"], fabric.pins["cfg_clk"])
+
+            else:
+                if self.core:
+                    cfg_slave = core = system.instances["i_core"]
+                    fabric = core.model.instances["i_fabric"]
+
+                    # expose fabric cfg ports to outside of core
+                    NetUtils.connect(
+                            ModuleUtils.create_port(core.model, "cfg_clk", 1, PortDirection.input_, is_clock = True),
+                            fabric.pins["cfg_clk"])
+                    NetUtils.connect(system.ports["clk"], core.pins["cfg_clk"])
+
+                    for pin_name in ["cfg_rst", "cfg_e", "phit_o_full", "phit_i_wr", "phit_i"]:
+                        pin = fabric.pins[pin_name]
+                        NetUtils.connect(
+                                ModuleUtils.create_port(core.model, pin_name, len(pin), PortDirection.input_),
+                                pin)
+                    for pin_name in ["phit_i_full", "phit_o_wr", "phit_o"]:
+                        pin = fabric.pins[pin_name]
+                        NetUtils.connect(pin,
+                                ModuleUtils.create_port(core.model, pin_name, len(pin), PortDirection.output))
+                else:
+                    cfg_slave = system.instances["i_fabric"]
+                    NetUtils.connect(system.ports["clk"], cfg_slave.pins["cfg_clk"])
+
+                # instantiate
+                sysintf_slave = cfg_inst = ModuleUtils.instantiate(system,
                     context.database[ModuleView.logical, "pktchain_cfg"], "i_cfg")
+
+            # connect cfg with its slave
+            NetUtils.connect(cfg_inst.pins["cfg_rst"], cfg_slave.pins["cfg_rst"])
+            NetUtils.connect(cfg_inst.pins["cfg_e"], cfg_slave.pins["cfg_e"])
+            NetUtils.connect(cfg_inst.pins["phit_i_full"], cfg_slave.pins["phit_o_full"])
+            NetUtils.connect(cfg_slave.pins["phit_o_wr"], cfg_inst.pins["phit_i_wr"])
+            NetUtils.connect(cfg_slave.pins["phit_o"], cfg_inst.pins["phit_i"])
+            NetUtils.connect(cfg_slave.pins["phit_i_full"], cfg_inst.pins["phit_o_full"])
+            NetUtils.connect(cfg_inst.pins["phit_o_wr"], cfg_slave.pins["phit_i_wr"])
+            NetUtils.connect(cfg_inst.pins["phit_o"], cfg_slave.pins["phit_i"])
+
+            # connect sysintf with its slave
             intf = system.instances["i_sysintf"]
-            fabric = system.instances["i_fabric"]
-            NetUtils.connect(system.ports["clk"], cfg.pins["clk"])
-            NetUtils.connect(system.ports["clk"], fabric.pins["cfg_clk"])
-            NetUtils.connect(intf.pins["cfg_rst_n"], cfg.pins["rst_n"])
-            NetUtils.connect(cfg.pins["status"], intf.pins["cfg_status"])
-            NetUtils.connect(cfg.pins["req_rdy"], intf.pins["cfg_req_rdy"])
-            NetUtils.connect(intf.pins["cfg_req_val"], cfg.pins["req_val"])
-            NetUtils.connect(intf.pins["cfg_req_addr"], cfg.pins["req_addr"])
-            NetUtils.connect(intf.pins["cfg_req_strb"], cfg.pins["req_strb"])
-            NetUtils.connect(intf.pins["cfg_req_data"], cfg.pins["req_data"])
-            NetUtils.connect(intf.pins["cfg_resp_rdy"], cfg.pins["resp_rdy"])
-            NetUtils.connect(cfg.pins["resp_val"], intf.pins["cfg_resp_val"])
-            NetUtils.connect(cfg.pins["resp_err"], intf.pins["cfg_resp_err"])
-            NetUtils.connect(cfg.pins["resp_data"], intf.pins["cfg_resp_data"])
-            NetUtils.connect(cfg.pins["cfg_rst"], fabric.pins["cfg_rst"])
-            NetUtils.connect(cfg.pins["cfg_e"], fabric.pins["cfg_e"])
-            NetUtils.connect(cfg.pins["phit_i_full"], fabric.pins["phit_o_full"])
-            NetUtils.connect(fabric.pins["phit_o_wr"], cfg.pins["phit_i_wr"])
-            NetUtils.connect(fabric.pins["phit_o"], cfg.pins["phit_i"])
-            NetUtils.connect(fabric.pins["phit_i_full"], cfg.pins["phit_o_full"])
-            NetUtils.connect(cfg.pins["phit_o_wr"], fabric.pins["phit_i_wr"])
-            NetUtils.connect(cfg.pins["phit_o"], fabric.pins["phit_i"])
+            NetUtils.connect(system.ports["clk"], sysintf_slave.pins[sysintf_prefix + "clk"])
+            for pin_name in ["rst_n", "req_val", "req_addr", "req_strb", "req_data", "resp_rdy"]:
+                NetUtils.connect(intf.pins["cfg_" + pin_name], sysintf_slave.pins[sysintf_prefix + pin_name])
+            for pin_name in ["status", "req_rdy", "resp_val", "resp_err", "resp_data"]:
+                NetUtils.connect(sysintf_slave.pins[sysintf_prefix + pin_name], intf.pins["cfg_" + pin_name])
+
             # generate IO constraints
             constraints = dict(
                     **Integration.ioplan_syscon(context),

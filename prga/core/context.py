@@ -36,6 +36,7 @@ class ContextSummary(Object):
     """Summary of the FPGA."""
 
     __slots__ = [
+            'cwd',                  # root directory of the project
             # generic summaries: updated by 'SummaryUpdate'
             'ios',                  # list of `IO` s
             'active_blocks',        # dict of block keys to active orientations
@@ -80,6 +81,8 @@ class Context(Object):
             '_verilog_headers',     # Verilog header rendering tasks
             'summary',              # FPGA summary
             "version",              # version of the context
+            # non-persistent variables
+            'cwd',                  # root path of the context. Set when unpickled/created
             '__dict__']
 
     def __init__(self, cfg_type, *, database = None, **kwargs):
@@ -96,6 +99,7 @@ class Context(Object):
             self._database = database
         self.summary = ContextSummary()
         self.version = _VERSION
+        self.summary.cwd = self.cwd = os.getcwd()
         for k, v in iteritems(kwargs):
             setattr(self, k, v)
 
@@ -607,12 +611,16 @@ class Context(Object):
         Args:
             file_ (:obj:`str` or file-like object): output file or its name
         """
+        cwd = self.cwd
+        del self.cwd
+        del self.summary.cwd
         if isinstance(file_, basestring):
             pickle.dump(self, open(file_, OpenMode.wb))
             _logger.info("Context pickled to {}".format(file_))
         else:
             pickle.dump(self, file_)
             _logger.info("Context pickled to {}".format(file_.name))
+        self.summary.cwd = self.cwd = cwd
 
     def pickle_summary(self, file_):
         """Pickle the summary into a binary file.
@@ -636,15 +644,17 @@ class Context(Object):
         """
         name = file_ if isinstance(file_, basestring) else file_.name
         obj = pickle.load(open(file_, OpenMode.rb) if isinstance(file_, basestring) else file_)
-        if isinstance(obj, cls) and (version := getattr(obj, "version", None)) != _VERSION:
-            if version is None:
-                raise PRGAAPIError(
-                        "The context is pickled by an old PRGA release, not supported by current version {}"
-                        .format(_VERSION))
-            else:
-                raise PRGAAPIError(
-                        "The context is pickled by PRGA version {}, not supported by current version {}"
-                        .format(version, _VERSION))
+        if isinstance(obj, cls):
+            if (version := getattr(obj, "version", None)) != _VERSION:
+                if version is None:
+                    raise PRGAAPIError(
+                            "The context is pickled by an old PRGA release, not supported by current version {}"
+                            .format(_VERSION))
+                else:
+                    raise PRGAAPIError(
+                            "The context is pickled by PRGA version {}, not supported by current version {}"
+                            .format(version, _VERSION))
+            obj.summary.cwd = obj.cwd = os.path.dirname(os.path.abspath(name))
         _logger.info("Context {}unpickled from {}".format(
             "summary " if isinstance(obj, ContextSummary) else "", name))
         return obj

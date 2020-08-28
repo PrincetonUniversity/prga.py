@@ -519,7 +519,7 @@ module prga_ctrl (
             case (asx_data[`PRGA_ASX_MSGTYPE_INDEX])
                 `PRGA_ASX_MSGTYPE_ERR: begin
                     eflags_set = 1'b1;
-                    eflags_set_mask |= asx_data[0+:`PRGA_CREG_DATA_WIDTH];
+                    eflags_set_mask = eflags_set_mask | asx_data[0+:`PRGA_CREG_DATA_WIDTH];
                     asx_rdy = 1'b1;
                 end
             endcase
@@ -528,7 +528,7 @@ module prga_ctrl (
         // Priority 2: CFG Error Messages
         if (cfg_resp_val && cfg_resp_err) begin
             eflags_set = 1'b1;
-            eflags_set_mask |= cfg_resp_data;
+            eflags_set_mask = eflags_set_mask | cfg_resp_data;
             cfg_resp_rdy = 1'b1;
         end
 

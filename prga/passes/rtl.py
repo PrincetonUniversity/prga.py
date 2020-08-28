@@ -31,16 +31,17 @@ class VerilogCollection(AbstractPass):
     __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'view', 'visited']
     def __init__(self, src_output_dir = ".", header_output_dir = None, view = ModuleView.logical):
         self.src_output_dir = src_output_dir
-        self.header_output_dir = os.path.abspath(uno(header_output_dir, os.path.join(src_output_dir, "include")))
+        self.header_output_dir = uno(header_output_dir, os.path.join(src_output_dir, "include"))
         self.view = view
         self.visited = {}
 
     def _process_module(self, module):
         if module.key in self.visited:
             return
-        f = os.path.join(os.path.abspath(self.src_output_dir), module.name + ".v")
+        f = os.path.join(self.src_output_dir, getattr(module, "verilog_src", module.name + ".v"))
         self.visited[module.key] = f
-        self.renderer.add_verilog(f, module, getattr(module, "verilog_template", "module.tmpl.v"))
+        if not getattr(module, "dont_generate_verilog", False):
+            self.renderer.add_verilog(f, module, getattr(module, "verilog_template", "module.tmpl.v"))
         for instance in itervalues(module.instances):
             self._process_module(instance.model)
 

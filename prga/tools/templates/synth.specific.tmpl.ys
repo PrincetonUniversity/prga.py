@@ -10,7 +10,7 @@ begin:
     hierarchy -check -top {{ model.name }}
 
 synth:
-    script {{ yosys_script }}
+    tcl {{ yosys_script }}
 
 backend:
     write_blif -conn -param {{ model.name }}.blif

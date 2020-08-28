@@ -75,7 +75,7 @@ module prga_uprot (
         if (~rst_n) begin
             // system reset locks application in reset state until explicitly de-reset
             urst_n                      <= 1'b0;
-            urst_countdown              <= 1'b0;
+            urst_countdown              <= {`PRGA_PROT_TIMER_WIDTH {1'b0} };
             urst_countdown_rstvalue_f   <= {`PRGA_PROT_TIMER_WIDTH {1'b0} };
         end else begin
             if (urst_countdown_rst) begin

@@ -463,7 +463,8 @@ class Integration(object):
         return constraints
 
     @classmethod
-    def build_system(cls, context, interfaces = (InterfaceClass.ccm, InterfaceClass.reg), *, name = "prga_system"):
+    def build_system(cls, context, interfaces = (InterfaceClass.ccm, InterfaceClass.reg), *,
+            name = "prga_system", core = None):
         """Create the system top wrapping the reconfigurable fabric.
 
         Args:
@@ -472,20 +473,15 @@ class Integration(object):
 
         Keyword Args:
             name (:obj:`str`): Name of the system top module
+            core (:obj:`str` or :obj:`bool`): If set to a :obj:`str`, or set to ``True`` \(in which case it is
+                converted to ``{name}_core``\), an extra layer of wrapper is created around the fabric and
+                instantiated in the top-level module
         """
-
-        system = context.system_top = Module(name, view = ModuleView.logical, module_class = ModuleClass.aux)
         if set(iter(interfaces)) != {InterfaceClass.ccm, InterfaceClass.reg}:
             raise NotImplementedError("The only implemented interface is (ccm, reg) at the moment")
 
-        # create ports
-        cls._create_intf_syscon(system, True)
-        cls._create_intf_reg(system, True, "reg_")
-        cls._create_intf_ccm(system, False, "ccm_")
-
-        # create instances
-        fabric = ModuleUtils.instantiate(system, context.database[ModuleView.logical, context.top.key], "i_fabric")
-        sysintf = ModuleUtils.instantiate(system, context.database[ModuleView.logical, "prga_sysintf"], "i_sysintf")
+        if core is True:
+            core = name + "_core"
 
         # get or create IO constraints
         planner = IOPlanner(context)
@@ -494,20 +490,79 @@ class Integration(object):
                 **cls.ioplan_reg(context, planner = planner),
                 **cls.ioplan_ccm(context, planner = planner))
 
-        # connect stuff
+        # create system
+        system = context.system_top = Module(name, view = ModuleView.logical, module_class = ModuleClass.aux)
+
+        # create ports
+        cls._create_intf_syscon(system, True)
+        cls._create_intf_reg(system, True, "reg_")
+        cls._create_intf_ccm(system, False, "ccm_")
+
+        # instantiate sysintf in system
+        sysintf = ModuleUtils.instantiate(system, context.database[ModuleView.logical, "prga_sysintf"], "i_sysintf")
+
+        # connect system ports to sysintf
         for port_name, port in iteritems(system.ports):
             if port.direction.is_input:
                 NetUtils.connect(port, sysintf.pins[port_name])
             else:
                 NetUtils.connect(sysintf.pins[port_name], port)
-        NetUtils.connect(sysintf.pins["aclk"], fabric.pins[(IOType.ipin, ) + constraints["clk"][0]])
-        NetUtils.connect(sysintf.pins["urst_n"], fabric.pins[(IOType.ipin, ) + constraints["rst_n"][0]])
-        for name, ios in iteritems(constraints):
-            if name in ("clk", "rst_n"):
-                continue
-            elif ios.type_.is_ipin:
-                for i, key in enumerate(ios, ios.low):
-                    NetUtils.connect(sysintf.pins[name][i], fabric.pins[(IOType.ipin, ) + key])
-            else:
-                for i, key in enumerate(ios, ios.low):
-                    NetUtils.connect(fabric.pins[(IOType.opin, ) + key], sysintf.pins[name][i])
+
+        if core:
+            # build system core (fabric wrapper)
+            core = context._database[ModuleView.logical, core] = Module(core,
+                    view = ModuleView.logical, module_class = ModuleClass.aux)
+
+            # create ports in core
+            cls._create_intf_syscon(core, True, "u")
+            cls._create_intf_reg(core, True, "ureg_", ecc = True)
+            cls._create_intf_ccm(core, False, "uccm_", ecc = True)
+
+            # instantiate fabric within core
+            fabric = ModuleUtils.instantiate(core,
+                    context.database[ModuleView.logical, context.top.key], "i_fabric")
+
+            # connect within core
+            for name, ios in iteritems(constraints):
+                if name == "clk":
+                    NetUtils.connect(core.ports["uclk"], fabric.pins[(IOType.ipin, ) + ios[0]])
+                elif name == "rst_n":
+                    NetUtils.connect(core.ports["urst_n"], fabric.pins[(IOType.ipin, ) + ios[0]])
+                elif ios.type_.is_ipin:
+                    for i, key in enumerate(ios, ios.low):
+                        NetUtils.connect(core.ports[name][i], fabric.pins[(IOType.ipin, ) + key])
+                else:
+                    for i, key in enumerate(ios, ios.low):
+                        NetUtils.connect(fabric.pins[(IOType.opin, ) + key], core.ports[name][i])
+            
+            # instantiate core in system
+            core = ModuleUtils.instantiate(system, core, "i_core")
+
+            # connect sysintf with core
+            for pin_name, pin in iteritems(core.pins):
+                if pin_name == "uclk":
+                    NetUtils.connect(sysintf.pins["aclk"], pin)
+                elif pin_name == "urst_n":
+                    NetUtils.connect(sysintf.pins["urst_n"], pin)
+                elif pin.model.direction.is_input:
+                    NetUtils.connect(sysintf.pins[pin_name], pin)
+                else:
+                    NetUtils.connect(pin, sysintf.pins[pin_name])
+
+        else:
+            # instantiate fabric within system
+            fabric = ModuleUtils.instantiate(system,
+                    context.database[ModuleView.logical, context.top.key], "i_fabric")
+
+            # connect sysintf with fabric
+            NetUtils.connect(sysintf.pins["aclk"], fabric.pins[(IOType.ipin, ) + constraints["clk"][0]])
+            NetUtils.connect(sysintf.pins["urst_n"], fabric.pins[(IOType.ipin, ) + constraints["rst_n"][0]])
+            for name, ios in iteritems(constraints):
+                if name in ("clk", "rst_n"):
+                    continue
+                elif ios.type_.is_ipin:
+                    for i, key in enumerate(ios, ios.low):
+                        NetUtils.connect(sysintf.pins[name][i], fabric.pins[(IOType.ipin, ) + key])
+                else:
+                    for i, key in enumerate(ios, ios.low):
+                        NetUtils.connect(fabric.pins[(IOType.opin, ) + key], sysintf.pins[name][i])

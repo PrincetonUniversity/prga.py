@@ -85,13 +85,13 @@ def generate_scanchain_makefile(summary_f, summary, renderer, ostream, yosys_scr
     # vpr settings
     vpr = param["vpr"] = {}
     vpr["channel_width"] = summary.vpr["channel_width"]
-    vpr["archdef"] = os.path.join(summary.vpr["arch"])
-    vpr["rrgraph"] = os.path.join(summary.vpr["rrg"])
+    vpr["archdef"] = os.path.join(summary.cwd, summary.vpr["arch"])
+    vpr["rrgraph"] = os.path.join(summary.cwd, summary.vpr["rrg"])
     vpr["io_constraints"] = io_constraints
 
     # fpga sources
-    param["rtl"] = tuple(iter(itervalues(summary.rtl["sources"])))
-    param["includes"] = tuple(summary.rtl["includes"])
+    param["rtl"] = tuple(os.path.join(summary.cwd, src) for src in itervalues(summary.rtl["sources"]))
+    param["includes"] = tuple(os.path.join(summary.cwd, incdir) for incdir in summary.rtl["includes"])
 
     # generate
     renderer.add_generic( ostream, "tmpl.Makefile", **param )

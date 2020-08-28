@@ -10,6 +10,10 @@ __all__.extend([
     "PRGAInternalError", "PRGAAPIError", "PRGATypeError", "PRGAIndexError",
     ])
 
+# Constant net
+from .netlist import Const
+__all__.append("Const")
+
 # Core Commons
 from .core.common import (Dimension, Direction, Orientation, OrientationTuple, Corner, Position, NetClass, IOType,
         ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView, Global, Segment, DirectTunnel, BridgeType,

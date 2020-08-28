@@ -354,12 +354,12 @@ class VPR_RRG_Generation(AbstractPass):
                 for sgmt in itervalues(context.segments))
         # update VPR summary
         if isinstance(self.output_file, basestring):
-            f = os.path.abspath(self.output_file)
+            f = self.output_file
             makedirs(os.path.dirname(f))
             context.summary.vpr["rrg"] = f
             self.output_file = open(f, OpenMode.wb)
         else:
-            f = os.path.abspath(self.output_file.name)
+            f = self.output_file.name
             makedirs(os.path.dirname(f))
             context.summary.vpr["rrg"] = f
         # FASM 

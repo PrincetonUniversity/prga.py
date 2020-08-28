@@ -55,13 +55,12 @@ class FileRenderer(object):
 
     def _get_yosys_script_task(self, script_file = None):
         """Get the specified or most recently added yosys script rending task."""
-        script_task = uno(script_file, self._yosys_synth_script_task)
-        if script_task is None:
+        if (script_file := uno(script_file, self._yosys_synth_script_task)) is None:
             raise PRGAInternalError("Main synthesis script not specified")
-        script_task = self.tasks[script_task]
+        script_task = self.tasks[script_file]
         if len(script_task) > 1:
             raise PRGAInternalError("Main synthesis script is produced by multiple templates")
-        return script_task
+        return script_file, script_task
 
     @classmethod
     def _register_lib(cls, context):
@@ -133,7 +132,7 @@ class FileRenderer(object):
         parameters.update(kwargs)
         self.tasks.setdefault(file_, []).append( (template, parameters) )
 
-    def add_yosys_synth_script(self, file_, lut_sizes, template = 'synth.generic.tmpl.ys', **kwargs):
+    def add_yosys_synth_script(self, file_, lut_sizes, template = 'synth.generic.tmpl.tcl', **kwargs):
         """Add a yosys synthesis script rendering task.
 
         Args:
@@ -174,11 +173,11 @@ class FileRenderer(object):
                 }
         parameters.update(kwargs)
         self.tasks.setdefault(file_, []).append( (template, parameters) )
-        script_task = self._get_yosys_script_task(script_file)
+        script_file, script_task = self._get_yosys_script_task(script_file)
         if not isinstance(file_, basestring):
-            file_ = os.path.abspath(file_.name)
-        else:
-            file_ = os.path.abspath(file_)
+            file_ = file_.name
+        if not os.path.isabs(file_) and not os.path.isabs(script_file):
+            file_ = os.path.relpath(file_, os.path.dirname(script_file))
         if file_ not in script_task[0][1]["libraries"]:
             script_task[0][1]["libraries"].append( file_ )
 
@@ -201,13 +200,11 @@ class FileRenderer(object):
                 }
         parameters.update(kwargs)
         self.tasks.setdefault(file_, []).append( (template, parameters) )
-        script_task = self._get_yosys_script_task(script_file)
-        if len(script_task) > 1:
-            raise PRGAInternalError("Main synthesis script is produced by multiple templates")
+        script_file, script_task = self._get_yosys_script_task(script_file)
         if not isinstance(file_, basestring):
-            file_ = os.path.abspath(file_.name)
-        else:
-            file_ = os.path.abspath(file_)
+            file_ = file_.name
+        if not os.path.isabs(file_) and not os.path.isabs(script_file):
+            file_ = os.path.relpath(file_, os.path.dirname(script_file))
         script_task[0][1]["techmaps"].append( {
             "premap_commands": premap_commands,
             "techmap": file_,
@@ -258,21 +255,21 @@ class FileRenderer(object):
                 }
         parameters.update(kwargs)
         self.tasks.setdefault(file_, []).append( (template, parameters) )
-        script_task = self._get_yosys_script_task(script_file)
-        if len(script_task) > 1:
-            raise PRGAInternalError("Main synthesis script is produced by multiple templates")
+        script_file, script_task = self._get_yosys_script_task(script_file)
         if not isinstance(file_, basestring):
-            file_ = os.path.abspath(file_.name)
-        else:
-            file_ = os.path.abspath(file_)
+            file_ = file_.name
+        if not os.path.isabs(file_) and not os.path.isabs(script_file):
+            file_ = os.path.relpath(file_, os.path.dirname(script_file))
         d = {
                 "premap_commands": premap_commands,
                 "techmap": file_,
                 }
-        if isinstance(rule_script, basestring):
-            d["rule"] = os.path.abspath(rule_script)
-        elif rule_script is not None:
-            d["rule"] = os.path.abspath(rule_script.name)
+        if rule_script is not None:
+            if not isinstance(rule_script, basestring):
+                rule_script = rule_script.name
+            if not os.path.isabs(rule_script) and not os.path.isabs(script_file):
+                rule_script = os.path.relpath(rule_script, os.path.dirname(script_file))
+            d["rule"] = rule_script
         script_task[0][1]["memory_techmaps"].append( d )
 
     def render(self):

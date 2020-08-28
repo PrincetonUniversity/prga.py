@@ -518,12 +518,12 @@ class _VPRArchGeneration(AbstractPass):
             context.summary.vpr = {}
         # output file update to the VPR summary is done per subclass
         if isinstance(self.output_file, basestring):
-            f = os.path.abspath(self.output_file)
+            f = self.output_file
             makedirs(os.path.dirname(f))
             self._update_output_file(context.summary.vpr, f)
             self.output_file = open(f, OpenMode.wb)
         else:
-            f = os.path.abspath(self.output_file.name)
+            f = self.output_file.name
             makedirs(os.path.dirname(f))
             self._update_output_file(context.summary.vpr, f)
         # FASM 
