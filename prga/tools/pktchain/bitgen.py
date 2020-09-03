@@ -134,7 +134,7 @@ class PktchainBitgen(object):
                     fullstream += bitarray("0", endian="little") * remainder
                 col[y] = fullstream
         # dump the bitstream (or more precisely, the "packet" stream)
-        max_packet_frames = min(255, (2 ** fabric["router_fifo_depth_log2"]) // (32 // fabric["phit_width"]))
+        max_packet_frames = min(256, (2 ** fabric["router_fifo_depth_log2"]) // (32 // fabric["phit_width"])) - 1
         for pkt in count():
             completed = True
             for y, x in product(reversed(range(len(bits[0]))), reversed(range(len(bits)))):

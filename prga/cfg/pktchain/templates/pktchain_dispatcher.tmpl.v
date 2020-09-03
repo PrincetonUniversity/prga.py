@@ -54,9 +54,7 @@ module pktchain_dispatcher (
         ,.phit_o        (phit_ox)
         );
 
-    pktchain_frame_disassemble #(
-        .DEPTH_LOG2     (9 - `PRGA_PKTCHAIN_PHIT_WIDTH_LOG2)  // increased Y-dimension buffering capability: 16 frames
-    ) oy (  
+    pktchain_frame_disassemble oy (
         .cfg_clk        (cfg_clk)
         ,.cfg_rst       (cfg_rst_f)
         ,.frame_full    (frame_oy_full)

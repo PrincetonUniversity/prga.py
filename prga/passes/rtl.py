@@ -40,7 +40,7 @@ class VerilogCollection(AbstractPass):
             return
         f = os.path.join(self.src_output_dir, getattr(module, "verilog_src", module.name + ".v"))
         self.visited[module.key] = f
-        if not getattr(module, "dont_generate_verilog", False):
+        if not os.path.isabs(f) or getattr(module, "force_generate_verilog", False):
             self.renderer.add_verilog(f, module, getattr(module, "verilog_template", "module.tmpl.v"))
         for instance in itervalues(module.instances):
             self._process_module(instance.model)
