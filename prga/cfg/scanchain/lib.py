@@ -99,6 +99,7 @@ class ScanchainFASMDelegate(FASMDelegate):
         if instance:
             for i in reversed(instance.hierarchy):
                 if (offset := getattr(i, "cfg_bitoffset", None)) is None:
+                    _logger.warning("No scanchain bit offset found for {}".format(i))
                     return None
                 cfg_bitoffset += offset
         return cfg_bitoffset
@@ -612,7 +613,7 @@ class Scanchain(Object):
     @classmethod
     def complete_scanchain(cls, context, logical_module = None, *,
             iter_instances = lambda m: itervalues(m.instances),
-            timing_enclosure = lambda m: m.module_class.is_block or m.module_class.is_routing_box):
+            timing_closure = lambda m: m.module_class.is_block or m.module_class.is_routing_box):
         """Inject the scanchain.
         
         Args:
@@ -623,7 +624,7 @@ class Scanchain(Object):
         Keyword Args:
             iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
                 the instances in a module
-            timing_enclosure (:obj:`Function` [`Module` ] -> :obj:`bool`): A function used to determine if
+            timing_closure (:obj:`Function` [`Module` ] -> :obj:`bool`): A function used to determine if
                 configuration enable signals should be registered for one configuration cycle in a module. This is
                 necessary because the configuration enable signal may control millions of registers across the entire
                 FPGA. This super high-fanout net, if not registered, will be very slow to drive
@@ -644,7 +645,7 @@ class Scanchain(Object):
             if (inst_cfg_e := instance.pins.get("cfg_e")) is None:
                 continue
             if (cfg_e := cfg_nets.get("cfg_e")) is None:
-                if timing_enclosure(module):
+                if timing_closure(module):
                     ereg = ModuleUtils.instantiate(module,
                             context.database[ModuleView.logical, "cfg_e_reg"],
                             "_i_cfg_ereg")
@@ -680,7 +681,7 @@ class Scanchain(Object):
                     cfg_nets["cfg_we_o"] = ModuleUtils.create_port(module, "cfg_we_o", 1, PortDirection.output,
                             net_class = NetClass.cfg)
         if "cfg_i" in cfg_nets:
-            if timing_enclosure(module):
+            if timing_closure(module):
                 # align to `cfg_width`
                 if cfg_bitoffset % cfg_width != 0:
                     remainder = cfg_width - (cfg_bitoffset % cfg_width)
@@ -789,24 +790,24 @@ class Scanchain(Object):
         Keyword Args:
             iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
                 the instances in a module
-            timing_enclosure (:obj:`Function` [`Module` ] -> :obj:`bool`): A function used to determine if
+            timing_closure (:obj:`Function` [`Module` ] -> :obj:`bool`): A function used to determine if
                 configuration enable signals should be registered for one configuration cycle in a module. This is
                 necessary because the configuration enable signal may control millions of registers across the entire
                 FPGA. This super high-fanout net, if not registered, will be very slow to drive
         """
 
-        __slots__ = ["iter_instances", "timing_enclosure"]
+        __slots__ = ["iter_instances", "timing_closure"]
 
-        def __init__(self, *, iter_instances = None, timing_enclosure = None):
+        def __init__(self, *, iter_instances = None, timing_closure = None):
             self.iter_instances = iter_instances
-            self.timing_enclosure = timing_enclosure
+            self.timing_closure = timing_closure
 
         def run(self, context, renderer = None):
             kwargs = {}
             if callable(self.iter_instances):
                 kwargs["iter_instances"] = self.iter_instances
-            if callable(self.timing_enclosure):
-                kwargs["timing_enclosure"] = self.timing_enclosure
+            if callable(self.timing_closure):
+                kwargs["timing_closure"] = self.timing_closure
             Scanchain.complete_scanchain(context, **kwargs)
             Scanchain.annotate_user_view(context)
 

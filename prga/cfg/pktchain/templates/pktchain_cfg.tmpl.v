@@ -221,7 +221,7 @@ module pktchain_cfg (
                 if (|xtra_eflags_f) begin
                     resp_val_next = 1'b1;
                     resp_err_next = 1'b1;
-                    resp_data_next |= xtra_eflags_f;
+                    resp_data_next = resp_data_next | xtra_eflags_f;
                     xtra_eflags_clear = resp_err || ~stall_ctrl_r;
                 end
 
@@ -253,7 +253,7 @@ module pktchain_cfg (
             ST_CTRL_Q_ERR_SENT: if (|xtra_eflags_f) begin
                 resp_val_next = 1'b1;
                 resp_err_next = 1'b1;
-                resp_data_next |= xtra_eflags_f;
+                resp_data_next = resp_data_next | xtra_eflags_f;
                 xtra_eflags_clear = resp_err || ~stall_ctrl_r;
             end else begin
                 resp_val_next = 1'b1;

@@ -38,14 +38,21 @@ class PktchainFASMDelegate(ScanchainFASMDelegate):
     """
 
     def _instance_chainoffset(self, instance):
-        chain, ypos = 0, 0
+        chain, ypos, bit = None, None, None
         for i in instance.hierarchy:
-            chain, ypos_inc = i.cfg_chainoffsets[chain]
-            ypos += ypos_inc
-        return chain, ypos
+            if (bitoffset := getattr(i, "cfg_bitoffset", None)) is not None:
+                bit = uno(bit, 0) + bitoffset
+            elif (chainoffsets := getattr(i, "cfg_chainoffsets", None)) is not None:
+                chain, ypos_inc = chainoffsets[uno(chain, 0)]
+                ypos = uno(ypos, 0) + ypos_inc
+            else:
+                _logger.warning("No pktchain offsets or scanchain bit offset found for {}".format(i))
+                return None, None, None
+        return chain, ypos, bit
 
     def fasm_prefix_for_tile(self, instance):
-        if (tile_bitoffset := getattr(instance.hierarchy[0], "cfg_bitoffset", None)) is None:
+        chain, ypos, bitoffset = self._instance_chainoffset(instance)
+        if chain is None or ypos is None or bitoffset is None:
             return tuple()
         retval = []
         for subtile, blkinst in iteritems(instance.model.instances):
@@ -54,20 +61,12 @@ class PktchainFASMDelegate(ScanchainFASMDelegate):
             elif subtile >= len(retval):
                 retval.extend(None for _ in range(subtile - len(retval) + 1))
             if (inst_bitoffset := getattr(blkinst, "cfg_bitoffset", None)) is not None:
-                retval[subtile] = 'x{}.y{}.b{}'.format(*self._instance_chainoffset(instance),
-                        tile_bitoffset + inst_bitoffset)
+                retval[subtile] = 'x{}.y{}.b{}.b{}'.format(chain, ypos, bitoffset, inst_bitoffset)
         return tuple(retval)
 
     def fasm_features_for_interblock_switch(self, source, sink, hierarchy = None):
-        inst_for_chain, inst_for_offset = None, None
-        if hierarchy.model.module_class.is_connection_box:
-            inst_for_chain = hierarchy._shrink_hierarchy(low = 1)
-            inst_for_offset = hierarchy._shrink_hierarchy(high = 2)
-        else:
-            inst_for_chain = hierarchy
-            inst_for_offset = hierarchy.hierarchy[0]
-        return tuple( 'x{}.y{}.{}'.format(*self._instance_chainoffset(inst_for_chain), f)
-                for f in self._features_for_path(source, sink, inst_for_offset) )
+        return tuple( 'x{}.y{}.b{}.{}'.format(*self._instance_chainoffset(hierarchy), f)
+                for f in self._features_for_path(source, sink) )
 
 # ----------------------------------------------------------------------------
 # -- Pktchain Configuration Circuitry Main Entry -----------------------------
@@ -575,7 +574,7 @@ class Pktchain(Scanchain):
     @classmethod
     def complete_pktchain(cls, context, logical_module = None, *,
             iter_instances = lambda m: itervalues(m.instances), _not_top = False):
-        """Inject pktchain network and routers in ``module``. This method should be called on a non-top level array.
+        """Inject pktchain network and routers in ``module``. This method should be called only on arrays.
 
         Args:
             context (`Context`):
@@ -595,6 +594,8 @@ class Pktchain(Scanchain):
         module = uno(logical_module, context.database[ModuleView.logical, context.top.key])
         if not module.module_class.is_array:
             raise PRGAInternalError("{} is not an array".format(module))
+        elif hasattr(module, "cfg_bitcount"):
+            return
         # primary network
         dispatcher, gatherer = None, None
         # secondary pktchain
@@ -630,49 +631,66 @@ class Pktchain(Scanchain):
                 chainoffsets = getattr(instance, "cfg_chainoffsets", {})
                 assert set(range(len(chainoffsets))) == set(chainoffsets)
                 subchain = len(chainoffsets)
-            # complete sub-instance
+            # complete sub-instances
             if instance.model.module_class.is_array:
-                # ramp up any remaining scanchains
-                scanchain_bitoffset = cls._complete_pktchain_wrap_leaves(context, module, len(chains),
-                        secondary_cfg_nets, current_chain, scanchain_cfg_nets, scanchain_bitoffset)
-                # get subchain map
                 if (subchain_map := getattr(instance.model, "cfg_chains", None)) is None:
                     cls.complete_pktchain(context, instance.model, iter_instances = iter_instances, _not_top = True)
-                    subchain_map = instance.model.cfg_chains
-                if not 0 <= subchain < len(subchain_map):
-                    raise PRGAInternalError("{} does not have chain No. {}".format(instance, subchain))
-                # update chain settings
-                if (chainoffsets := getattr(instance, "cfg_chainoffsets", None)) is None:
-                    chainoffsets = instance.cfg_chainoffsets = {}
-                chainoffsets[subchain] = len(chains), len(current_chain)
-                _logger.debug(("Adding {} routers ({} bits, respectively) from {} to secondary chain "
-                    "No. {} ({} routers after, {})")
-                    .format(len(subchain_map[subchain]), ', '.join(map(str, subchain_map[subchain])), instance,
-                        len(chains), len(current_chain) + len(subchain_map[subchain]), module))
-                current_chain.extend( subchain_map[subchain] )
-                # connect ports
-                cls._connect_pktchain_subchain(module, instance, subchain, secondary_cfg_nets)
+                if hasattr(instance.model, "cfg_bitcount"):     # an array with a scanchain
+                    scanchain_bitoffset = cls._complete_pktchain_leaf(
+                            context, module, instance, iter_instances,
+                            scanchain_cfg_nets, scanchain_bitoffset, len(chains), len(current_chain))
+                else:
+                    # ramp up any remaining scanchains
+                    scanchain_bitoffset = cls._complete_pktchain_wrap_leaves(context, module, len(chains),
+                            secondary_cfg_nets, current_chain, scanchain_cfg_nets, scanchain_bitoffset)
+                    # get subchain map
+                    if not 0 <= subchain < len(subchain_map := instance.model.cfg_chains):
+                        raise PRGAInternalError("{} does not have chain No. {}".format(instance, subchain))
+                    # update chain settings
+                    if (chainoffsets := getattr(instance, "cfg_chainoffsets", None)) is None:
+                        chainoffsets = instance.cfg_chainoffsets = {}
+                    chainoffsets[subchain] = len(chains), len(current_chain)
+                    _logger.debug(("Adding {} routers ({} bits, respectively) from {} to secondary chain "
+                        "No. {} ({} routers after, {})")
+                        .format(len(subchain_map[subchain]), ', '.join(map(str, subchain_map[subchain])), instance,
+                            len(chains), len(current_chain) + len(subchain_map[subchain]), module))
+                    current_chain.extend( subchain_map[subchain] )
+                    # connect ports
+                    cls._connect_pktchain_subchain(module, instance, subchain, secondary_cfg_nets)
             else:
                 scanchain_bitoffset = cls._complete_pktchain_leaf(
                         context, module, instance, iter_instances,
                         scanchain_cfg_nets, scanchain_bitoffset, len(chains), len(current_chain))
-        # remaining
-        # ramp up any remaining scanchains
-        cls._complete_pktchain_wrap_leaves(context, module, len(chains),
-                secondary_cfg_nets, current_chain, scanchain_cfg_nets, scanchain_bitoffset)
         # if we have a secondary chain, expose it and update our main chain map
-        if secondary_cfg_nets:
-            if _not_top:
-                _logger.debug("Exposing secondary chain No. {} ({} routers, {})"
-                        .format(len(chains), len(current_chain), module))
-                cls._expose_pktchain_secondary_chain(module, secondary_cfg_nets, len(chains))
-            else:
-                _logger.debug("Attaching secondary chain No. {} ({} routers) to the primary backbone"
-                        .format(len(chains), len(current_chain)))
-                dispatcher, gatherer = cls._attach_pktchain_secondary_chain(context, module,
-                        dispatcher, gatherer, secondary_cfg_nets, len(chains))
-            chains.append( tuple(iter(current_chain)) )
-        module.cfg_chains = tuple(iter(chains))
+        if secondary_cfg_nets or chains or current_chain:
+            # ramp up any remaining scanchains
+            cls._complete_pktchain_wrap_leaves(context, module, len(chains),
+                    secondary_cfg_nets, current_chain, scanchain_cfg_nets, scanchain_bitoffset)
+            if secondary_cfg_nets:
+                if _not_top:
+                    _logger.debug("Exposing secondary chain No. {} ({} routers, {})"
+                            .format(len(chains), len(current_chain), module))
+                    cls._expose_pktchain_secondary_chain(module, secondary_cfg_nets, len(chains))
+                else:
+                    _logger.debug("Attaching secondary chain No. {} ({} routers) to the primary backbone"
+                            .format(len(chains), len(current_chain)))
+                    dispatcher, gatherer = cls._attach_pktchain_secondary_chain(context, module,
+                            dispatcher, gatherer, secondary_cfg_nets, len(chains))
+                chains.append( tuple(iter(current_chain)) )
+            module.cfg_chains = tuple(iter(chains))
+        # if not, treat this array as a regular scanchain-based module
+        elif scanchain_cfg_nets:
+            NetUtils.connect(ModuleUtils.create_port(module, "cfg_we", 1, PortDirection.input_,
+                net_class = NetClass.cfg), scanchain_cfg_nets["cfg_we"])
+            NetUtils.connect(ModuleUtils.create_port(module, "cfg_i", len(scanchain_cfg_nets["cfg_i"]),
+                PortDirection.input_, net_class = NetClass.cfg), scanchain_cfg_nets["cfg_i"])
+            NetUtils.connect(scanchain_cfg_nets["cfg_we_o"], ModuleUtils.create_port(module, "cfg_we_o", 1,
+                PortDirection.output, net_class = NetClass.cfg))
+            NetUtils.connect(scanchain_cfg_nets["cfg_o"], ModuleUtils.create_port(module, "cfg_o",
+                len(scanchain_cfg_nets["cfg_o"]), PortDirection.output, net_class = NetClass.cfg))
+            module.cfg_bitcount = scanchain_bitoffset
+        else:
+            module.cfg_bitcount = 0
         # tie the control pins of the last dispatcher/gatherer to constant values
         if not _not_top:
             assert dispatcher is not None
@@ -711,7 +729,9 @@ class Pktchain(Scanchain):
                 .format(module))
 
         _annotated = uno(_annotated, set())
-        if module.module_class.is_array:
+        if not module.module_class.is_array or hasattr(module, "cfg_bitcount"):
+            super(Pktchain, cls).annotate_user_view(context, module, _annotated = _annotated)
+        else:
             logical = context.database[ModuleView.logical, module.key]
             # annotate user instances
             for instance in itervalues(module.instances):
@@ -724,8 +744,6 @@ class Pktchain(Scanchain):
                 if instance.model.key not in _annotated:
                     _annotated.add(instance.model.key)
                     cls.annotate_user_view(context, instance.model, _annotated = _annotated)
-        else:
-            super(Pktchain, cls).annotate_user_view(context, module, _annotated = _annotated)
 
     class InjectConfigCircuitry(AbstractPass):
         """Automatically inject configuration circuitry.

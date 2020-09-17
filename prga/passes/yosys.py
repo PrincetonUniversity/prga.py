@@ -55,7 +55,8 @@ class YosysScriptsCollection(AbstractPass):
                     premap_commands = getattr(primitive, "premap_commands", tuple())
                     renderer.add_yosys_techmap(
                         os.path.join(self.output_dir, primitive.name + ".techmap.v"),
-                        techmap_template, premap_commands = premap_commands)
+                        techmap_template, premap_commands = premap_commands,
+                        **getattr(primitive, "techmap_parameters", {}))
                 elif primitive.primitive_class.is_memory:
                     try:
                         mem_infer_rule_template = primitive.mem_infer_rule_template
