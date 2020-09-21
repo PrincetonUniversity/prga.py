@@ -444,6 +444,8 @@ class Scanchain(Object):
                     parameters = {
                         "CIN_FABRIC": {"default": "1'b0", "cfg": cls.PrimitiveParameter(0)},
                         },
+                    techmap_parameters = {"model": "m_adder"},
+                    vpr_model = {"m_adder"},
                     cfg_bitcount = 1)
             inputs, outputs = [], []
             outputs.append(adder.create_output("cout", 1))
@@ -470,6 +472,30 @@ class Scanchain(Object):
                 # configuration data
                 adder.instantiate(cls.get_cfg_data_cell(context, 1), "i_cfg_data")
                 cls._get_or_create_cfg_ports(adder._module, cfg_width)
+
+            adder.commit()
+
+        # register different types of adders (user-only)
+        if "adder_chain" not in dont_add_primitive:
+            # user view
+            adder = context.build_primitive("adder_chain",
+                    verilog_template = "adder_chain.lib.tmpl.v",
+                    techmap_template = "adder_chain.techmap.tmpl.v",
+                    techmap_parameters = {"model": "m_adder_chain"},
+                    parameters = {
+                        "CIN_FABRIC": {"default": "1'b0", "cfg": cls.PrimitiveParameter(0)},
+                        },
+                    vpr_model = "m_adder_chain",
+                    cfg_bitcount = 1)
+            inputs, outputs = [], []
+            outputs.append(adder.create_output("cout", 1))
+            outputs.append(adder.create_output("s", 1))
+            inputs.append(adder.create_input("a", 1))
+            inputs.append(adder.create_input("b", 1))
+            inputs.append(adder.create_input("cin", 1))
+            inputs.append(adder.create_input("cin_fabric", 1))
+            for i, o in product(inputs, outputs):
+                adder.create_timing_arc(TimingArcType.comb_bitwise, i, o)
 
             adder.commit()
 
@@ -546,6 +572,104 @@ class Scanchain(Object):
                 cls._get_or_create_cfg_ports(fle6._module, cfg_width)
 
             fle6.commit()
+
+        # register stratix-IV FLE modeled by B. Grady, J. Anderson (FPT'18)
+        if not ({"lut4", "lut5", "lut6", "adder_chain", "flipflop", "fle8"} & dont_add_primitive):
+            # user view of sub-cluster
+            #   TODO: add configuration-related annotations
+            fle8_sub = context.build_multimode("fle8_sub", cfg_bitcount = 35)
+            fle8_sub.create_clock("clk")
+            fle8_sub.create_input("in", 5)
+            fle8_sub.create_input("cin", 1)
+            fle8_sub.create_input("cin_fabric", 1)
+            fle8_sub.create_output("out", 1)
+            fle8_sub.create_output("cout", 1)
+
+            if True:
+                mode = fle8_sub.build_mode("lut5x1", cfg_mode_selection = (34, ))
+                lut = mode.instantiate(context.primitives["lut5"], "lut", cfg_bitoffset = 0)
+                ff = mode.instantiate(context.primitives["flipflop"], "ff")
+                mode.connect(mode.ports["clk"], ff.pins["clk"])
+                mode.connect(mode.ports["in"], lut.pins["in"])
+                mode.connect(lut.pins["out"], ff.pins["D"], vpr_pack_patterns = ["lut5_dff"])
+                mode.connect(lut.pins["out"], mode.ports["out"], cfg_bits = (33, ))
+                mode.connect(ff.pins["Q"], mode.ports["out"])
+                mode.commit()
+
+            if True:
+                mode = fle8_sub.build_mode("arithmetic", cfg_mode_selection = tuple())
+                adder = mode.instantiate(context.primitives["adder_chain"], "fa", cfg_bitoffset = 32)
+                ff = mode.instantiate(context.primitives["flipflop"], "ff")
+                for i, lut in enumerate(luts := mode.instantiate(context.primitives["lut4"], "lut", 2)):
+                    lut.cfg_bitoffset = 16 * i
+                    mode.connect(mode.ports["in"][3:0], lut.pins["in"])
+                mode.connect(luts[0].pins["out"], adder.pins["a"], vpr_pack_patterns = ["carrychain"])
+                mode.connect(luts[1].pins["out"], adder.pins["b"], vpr_pack_patterns = ["carrychain"])
+                mode.connect(mode.ports["cin"], adder.pins["cin"], vpr_pack_patterns = ["carrychain"])
+                mode.connect(mode.ports["cin_fabric"], adder.pins["cin_fabric"])
+                mode.connect(adder.pins["cout"], mode.ports["cout"], vpr_pack_patterns = ["carrychain"])
+                mode.connect(adder.pins["s"], ff.pins["D"], vpr_pack_patterns = ["carrychain"])
+                mode.connect(adder.pins["s"], mode.ports["out"], vpr_pack_patterns = ["carrychain"],
+                        cfg_bits = (33, ))
+                mode.connect(mode.ports["clk"], ff.pins["clk"])
+                mode.connect(ff.pins["Q"], mode.ports["out"])
+                mode.commit()
+
+            fle8_sub = fle8_sub.commit()
+
+            # user view
+            fle8 = context.build_multimode('fle8', cfg_bitcount = 71)
+            fle8.create_clock("clk")
+            fle8.create_input("in", 8)
+            fle8.create_input("cin", 1)
+            fle8.create_output("out", 2)
+            fle8.create_output("cout", 1)
+
+            if True:
+                mode = fle8.build_mode("lut6x1", cfg_mode_selection = tuple())
+                lut = mode.instantiate(context.primitives["lut6"], "lut", cfg_bitoffset = 0)
+                ff = mode.instantiate(context.primitives["flipflop"], "ff")
+                mode.connect(mode.ports["clk"], ff.pins["clk"])
+                mode.connect(mode.ports["in"][3:0], lut.pins["in"][3:0])
+                mode.connect(mode.ports["in"][7:6], lut.pins["in"][5:4])
+                mode.connect(lut.pins["out"], ff.pins["D"], vpr_pack_patterns = ["lut6_dff"])
+                mode.connect(lut.pins["out"], mode.ports["out"][0], cfg_bits = (33, ))
+                mode.connect(ff.pins["Q"], mode.ports["out"][0])
+                mode.commit()
+
+            if True:
+                mode = fle8.build_mode("subx2", cfg_mode_selection = (70, ))
+                for i, sub in enumerate(subs := mode.instantiate(fle8_sub, "sub", 2)):
+                    mode.connect(mode.ports["in"][1:0], sub.pins["in"][1:0])
+                    mode.connect(mode.ports["in"][(2*i)+3:(2*i)+2], sub.pins["in"][3:2])
+                    mode.connect(mode.ports["in"][6], sub.pins["in"][4])
+                    mode.connect(mode.ports["in"][7], sub.pins["cin_fabric"])
+                    mode.connect(mode.ports["clk"], sub.pins["clk"])
+                    mode.connect(sub.pins["out"], mode.ports["out"][i])
+                mode.connect(mode.ports["cin"], subs[0].pins["cin"], vpr_pack_patterns = ["carrychain"])
+                mode.connect(subs[0].pins["cout"], subs[1].pins["cin"], vpr_pack_patterns = ["carrychain"])
+                mode.connect(subs[1].pins["cout"], mode.ports["cout"], vpr_pack_patterns = ["carrychain"])
+
+            # logical view
+            if "fle8" not in dont_add_logical_primitive:
+                fle8 = fle8.build_logical_counterpart(cfg_bitcount = 71, verilog_template = "fle8.tmpl.v")
+
+                # timing arcs
+                for i, o in product(
+                        (fle8.ports["in"], fle8.ports["cin"]),
+                        (fle8.ports["out"], fle8.ports["cout"]),
+                        ):
+                    fle8.create_timing_arc(TimingArcType.comb_matrix, i, o)
+                for p in (fle8.ports["in"], fle8.ports["cin"]):
+                    fle8.create_timing_arc(TimingArcType.seq_end, fle8.ports["clk"], p)
+                for p in (fle8.ports["out"], fle8.ports["cout"]):
+                    fle8.create_timing_arc(TimingArcType.seq_start, fle8.ports["clk"], p)
+
+                # configuration ports
+                fle8.instantiate(cls.get_cfg_data_cell(context, 71), "i_cfg_data")
+                cls._get_or_create_cfg_ports(fle8._module, cfg_width)
+
+            fle8.commit()
 
     @classmethod
     def get_cfg_data_cell(cls, context, data_width):
