@@ -32,19 +32,19 @@ module fle8 (
     // SUB 0: 35 bits
     localparam  LUT4A_DATA_BASE = 0;
     localparam  LUT4B_DATA_BASE = LUT4A_DATA_BASE + LUT4_DATA_WIDTH;
-    localparam  ENABLE_CIN_FABRIC_SUB0 = LUT4B_DATA_BASE;
+    localparam  ENABLE_CIN_FABRIC_SUB0 = LUT4B_DATA_BASE + LUT4_DATA_WIDTH;
     localparam  DISABLE_FF_SUB0 = ENABLE_CIN_FABRIC_SUB0 + 1;
-    localparam  DISABLE_ADDER_SUB0 = DISABLE_ADDER_SUB0 + 1;
+    localparam  DISABLE_ADDER_SUB0 = DISABLE_FF_SUB0 + 1;
 
     // SUB 1:
-    localparam  LUT4C_DATA_BASE = DISABLE_FF_SUB0;
+    localparam  LUT4C_DATA_BASE = DISABLE_ADDER_SUB0 + 1;
     localparam  LUT4D_DATA_BASE = LUT4C_DATA_BASE + LUT4_DATA_WIDTH;
-    localparam  ENABLE_CIN_FABRIC_SUB1 = LUT4D_DATA_BASE;
+    localparam  ENABLE_CIN_FABRIC_SUB1 = LUT4D_DATA_BASE + LUT4_DATA_WIDTH;
     localparam  DISABLE_FF_SUB1 = ENABLE_CIN_FABRIC_SUB1 + 1;
-    localparam  DISABLE_ADDER_SUB1 = DISABLE_ADDER_SUB1 + 1;
+    localparam  DISABLE_ADDER_SUB1 = DISABLE_FF_SUB1 + 1;
 
     // LUT6
-    localparam  DISABLE_LUT6 = DISABLE_FF_SUB1 + 1;
+    localparam  DISABLE_LUT6 = DISABLE_ADDER_SUB1 + 1;
     localparam  CFG_BITCOUNT = DISABLE_LUT6 + 1;    // 71
 
     {% if module.view.is_logical %}
@@ -104,23 +104,23 @@ module fle8 (
     end
 
     always @* begin
-        case (internal_in[3:0]) begin
+        case (internal_in[3:0])
             {%- for i in range(16) %}
             4'd{{ i }}: begin
                 internal_lut4[0][0] = cfg_d[LUT4A_DATA_BASE + {{ i }}];
                 internal_lut4[1][0] = cfg_d[LUT4B_DATA_BASE + {{ i }}];
             end
             {%- endfor %}
-        end
+        endcase
 
-        case (cfg_d[DISABLE_LUT6] ? {internal_in[5:4], internal_in[1:0]} : internal_in[3:0]) begin
+        case (cfg_d[DISABLE_LUT6] ? {internal_in[5:4], internal_in[1:0]} : internal_in[3:0])
             {%- for i in range(16) %}
             4'd{{ i }}: begin
                 internal_lut4[0][1] = cfg_d[LUT4C_DATA_BASE + {{ i }}];
                 internal_lut4[1][1] = cfg_d[LUT4D_DATA_BASE + {{ i }}];
             end
             {%- endfor %}
-        end
+        endcase
     end
 
     always @* begin
@@ -141,8 +141,10 @@ module fle8 (
             cout = 1'b0;
         end else begin
             out[0] = (~cfg_d[DISABLE_FF_SUB0]) ? internal_ff[0] :
-                     (cfg_d[DISABLE_LUT6] ? internal_lut5[0] : internal_lut6);
-            out[1] = cfg_d[DISABLE_FF_SUB1] ? internal_lut5[1] : internal_ff[1];
+                     (~cfg_d[DISABLE_LUT6]) ? internal_lut6 :
+                     cfg_d[DISABLE_ADDER_SUB0] ? internal_lut5[0] : internal_sum[0][0];
+            out[1] = (~cfg_d[DISABLE_FF_SUB1]) ? internal_ff[1] :
+                     cfg_d[DISABLE_ADDER_SUB1] ? internal_lut5[1] : internal_sum[1][0];
             cout = internal_sum[1][1];
         end
     end

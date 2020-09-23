@@ -126,7 +126,8 @@ class ScanchainFASMDelegate(FASMDelegate):
         for key, value in iteritems(params):
             if (settings := value.get("cfg")) is None:
                 continue
-            fasm_params[key] = "b{}[{}:0]".format(settings.cfg_bitoffset, settings.cfg_bitcount - 1)
+            fasm_params[key] = "l{}r{}[{}:0]".format(settings.cfg_bitoffset, settings.cfg_bitcount,
+                    settings.cfg_bitcount - 1)
         return fasm_params
 
     def fasm_prefix_for_intrablock_module(self, module, hierarchy = None):
@@ -151,7 +152,13 @@ class ScanchainFASMDelegate(FASMDelegate):
         if (cfg_bitoffset := self._instance_bitoffset(instance)) is None:
             return None
         else:
-            return 'b{}[{}:0]'.format(str(cfg_bitoffset), instance.model.cfg_bitcount - 1)
+            if (cfg_bitslices := getattr(instance.hierarchy[0], "cfg_bitslices", None)) is None:
+                return 'l{}r{}[{}:0]'.format(str(cfg_bitoffset), instance.model.cfg_bitcount,
+                        instance.model.cfg_bitcount - 1)
+            else:
+                return '{}[{}:0]'.format(
+                        '_'.join('l{}r{}'.format(cfg_bitoffset + low, range_) for low, range_ in cfg_bitslices),
+                        instance.model.cfg_bitcount - 1)
 
     def fasm_prefix_for_tile(self, instance):
         if (cfg_bitoffset := self._instance_bitoffset(instance)) is None:
@@ -445,7 +452,7 @@ class Scanchain(Object):
                         "CIN_FABRIC": {"default": "1'b0", "cfg": cls.PrimitiveParameter(0)},
                         },
                     techmap_parameters = {"model": "m_adder"},
-                    vpr_model = {"m_adder"},
+                    vpr_model = "m_adder",
                     cfg_bitcount = 1)
             inputs, outputs = [], []
             outputs.append(adder.create_output("cout", 1))
@@ -479,8 +486,8 @@ class Scanchain(Object):
         if "adder_chain" not in dont_add_primitive:
             # user view
             adder = context.build_primitive("adder_chain",
-                    verilog_template = "adder_chain.lib.tmpl.v",
-                    techmap_template = "adder_chain.techmap.tmpl.v",
+                    verilog_template = "fle8/adder_chain.lib.tmpl.v",
+                    techmap_template = "fle8/adder_chain.techmap.tmpl.v",
                     techmap_parameters = {"model": "m_adder_chain"},
                     parameters = {
                         "CIN_FABRIC": {"default": "1'b0", "cfg": cls.PrimitiveParameter(0)},
@@ -627,7 +634,8 @@ class Scanchain(Object):
 
             if True:
                 mode = fle8.build_mode("lut6x1", cfg_mode_selection = tuple())
-                lut = mode.instantiate(context.primitives["lut6"], "lut", cfg_bitoffset = 0)
+                lut = mode.instantiate(context.primitives["lut6"], "lut", cfg_bitoffset = 0,
+                        cfg_bitslices = ((0, 32), (35, 32)))
                 ff = mode.instantiate(context.primitives["flipflop"], "ff")
                 mode.connect(mode.ports["clk"], ff.pins["clk"])
                 mode.connect(mode.ports["in"][3:0], lut.pins["in"][3:0])
@@ -640,6 +648,7 @@ class Scanchain(Object):
             if True:
                 mode = fle8.build_mode("subx2", cfg_mode_selection = (70, ))
                 for i, sub in enumerate(subs := mode.instantiate(fle8_sub, "sub", 2)):
+                    sub.cfg_bitoffset = i * 35
                     mode.connect(mode.ports["in"][1:0], sub.pins["in"][1:0])
                     mode.connect(mode.ports["in"][(2*i)+3:(2*i)+2], sub.pins["in"][3:2])
                     mode.connect(mode.ports["in"][6], sub.pins["in"][4])
@@ -652,7 +661,7 @@ class Scanchain(Object):
 
             # logical view
             if "fle8" not in dont_add_logical_primitive:
-                fle8 = fle8.build_logical_counterpart(cfg_bitcount = 71, verilog_template = "fle8.tmpl.v")
+                fle8 = fle8.build_logical_counterpart(cfg_bitcount = 71, verilog_template = "fle8/fle8.tmpl.v")
 
                 # timing arcs
                 for i, o in product(

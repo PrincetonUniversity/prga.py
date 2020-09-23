@@ -31,7 +31,8 @@ _parser.add_argument('memh', type=argparse.FileType('w'),
 __doc__ = docstring_from_argparser(_parser)
 
 _logger = logging.getLogger(__name__)
-_reprog_param = re.compile("^b(?P<offset>\d+)\[(?P<high>\d+):(?P<low>\d+)\]=(?P<width>\d+)'b(?P<content>[01]+)$")
+_reprog_param = re.compile("^(?P<slices>\w+)\[(?P<high>\d+):(?P<low>\d+)\]=(?P<width>\d+)'b(?P<content>[01]+)$")
+_reprog_slice = re.compile("^l(?P<low>\d+)r(?P<range>\d+)$")
 
 def bitgen_scanchain(bitstream_size     # bitstream size
         , istream                       # input file-like object
@@ -57,10 +58,10 @@ def bitgen_scanchain(bitstream_size     # bitstream size
         base = sum(int(segment[1:]) for segment in segments[:-1])
         if '[' in segments[-1]:
             matched = _reprog_param.match(segments[-1])
-            base += int(matched.group('offset'))
+            high, low, width = map(lambda x: int(matched.group(x)), ('high', 'low', 'width'))
+            base += low
             segment = bitarray(matched.group('content'))
             segment.reverse()
-            high, low, width = map(lambda x: int(matched.group(x)), ('high', 'low', 'width'))
             if high < low:
                 raise RuntimeError("LINE {:>08d}: Invalid range specifier".format(lineno + 1))
             elif width != len(segment):
@@ -69,7 +70,14 @@ def bitgen_scanchain(bitstream_size     # bitstream size
             actual_width = high - low + 1
             if actual_width > width:
                 segment.extend((False, ) * (actual_width - width))
-            bits[base + low: base + low + actual_width] = segment[0: actual_width]
+            cur = 0
+            for slice_ in matched.group("slices").split('_'):
+                sl, rg = map(int, _reprog_slice.match(slice_).group("low", "range"))
+                bits[base + sl : base + sl + rg] = segment[cur : cur + rg]
+                cur += rg
+            if cur != actual_width:
+                raise RuntimeError("LINE {:>08d}: Sum of slices mismatches with number of bits"
+                        .format(lineno + 1))
         else:
             bits[base + int(segments[-1][1:])] = True
     # emit lines in quad words
