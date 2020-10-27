@@ -3,17 +3,16 @@
 module {{ module.vpr_model | default("adder") }} (
     input wire [0:0] a,
     input wire [0:0] b,
-    input wire [0:0] cin_fabric,
     input wire [0:0] cin,
 
     output reg [0:0] cout,
     output reg [0:0] s
     );
 
-    parameter CIN_FABRIC = 0;
+    parameter CIN_CONST0 = 0;
 
     always @* begin
-        {cout, s} = a + b + (CIN_FABRIC ? cin_fabric : cin);
+        {cout, s} = a + b + (~CIN_CONST0 & cin);
     end
 
 endmodule

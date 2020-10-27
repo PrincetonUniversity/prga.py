@@ -490,7 +490,7 @@ class Scanchain(Object):
                     techmap_template = "fle8/adder_chain.techmap.tmpl.v",
                     techmap_parameters = {"model": "m_adder_chain"},
                     parameters = {
-                        "CIN_FABRIC": {"default": "1'b0", "cfg": cls.PrimitiveParameter(0)},
+                        "CIN_CONST0": {"default": "1'b0", "cfg": cls.PrimitiveParameter(0)},
                         },
                     vpr_model = "m_adder_chain",
                     cfg_bitcount = 1)
@@ -500,7 +500,7 @@ class Scanchain(Object):
             inputs.append(adder.create_input("a", 1))
             inputs.append(adder.create_input("b", 1))
             inputs.append(adder.create_input("cin", 1))
-            inputs.append(adder.create_input("cin_fabric", 1))
+            # inputs.append(adder.create_input("cin_fabric", 1))
             for i, o in product(inputs, outputs):
                 adder.create_timing_arc(TimingArcType.comb_bitwise, i, o)
 
@@ -588,7 +588,7 @@ class Scanchain(Object):
             fle8_sub.create_clock("clk")
             fle8_sub.create_input("in", 5)
             fle8_sub.create_input("cin", 1)
-            fle8_sub.create_input("cin_fabric", 1)
+            # fle8_sub.create_input("cin_fabric", 1)
             fle8_sub.create_output("out", 1)
             fle8_sub.create_output("cout", 1)
 
@@ -613,7 +613,7 @@ class Scanchain(Object):
                 mode.connect(luts[0].pins["out"], adder.pins["a"], vpr_pack_patterns = ["carrychain"])
                 mode.connect(luts[1].pins["out"], adder.pins["b"], vpr_pack_patterns = ["carrychain"])
                 mode.connect(mode.ports["cin"], adder.pins["cin"], vpr_pack_patterns = ["carrychain"])
-                mode.connect(mode.ports["cin_fabric"], adder.pins["cin_fabric"])
+                # mode.connect(mode.ports["cin_fabric"], adder.pins["cin_fabric"])
                 mode.connect(adder.pins["cout"], mode.ports["cout"], vpr_pack_patterns = ["carrychain"])
                 mode.connect(adder.pins["s"], ff.pins["D"], vpr_pack_patterns = ["carrychain"])
                 mode.connect(adder.pins["s"], mode.ports["out"], vpr_pack_patterns = ["carrychain"],
@@ -652,7 +652,7 @@ class Scanchain(Object):
                     mode.connect(mode.ports["in"][1:0], sub.pins["in"][1:0])
                     mode.connect(mode.ports["in"][(2*i)+3:(2*i)+2], sub.pins["in"][3:2])
                     mode.connect(mode.ports["in"][6], sub.pins["in"][4])
-                    mode.connect(mode.ports["in"][7], sub.pins["cin_fabric"])
+                    # mode.connect(mode.ports["in"][7], sub.pins["cin_fabric"])
                     mode.connect(mode.ports["clk"], sub.pins["clk"])
                     mode.connect(sub.pins["out"], mode.ports["out"][i])
                 mode.connect(mode.ports["cin"], subs[0].pins["cin"], vpr_pack_patterns = ["carrychain"])

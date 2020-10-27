@@ -32,15 +32,15 @@ module fle8 (
     // SUB 0: 35 bits
     localparam  LUT4A_DATA_BASE = 0;
     localparam  LUT4B_DATA_BASE = LUT4A_DATA_BASE + LUT4_DATA_WIDTH;
-    localparam  ENABLE_CIN_FABRIC_SUB0 = LUT4B_DATA_BASE + LUT4_DATA_WIDTH;
-    localparam  DISABLE_FF_SUB0 = ENABLE_CIN_FABRIC_SUB0 + 1;
+    localparam  DISABLE_CIN_SUB0 = LUT4B_DATA_BASE + LUT4_DATA_WIDTH;
+    localparam  DISABLE_FF_SUB0 = DISABLE_CIN_SUB0 + 1;
     localparam  DISABLE_ADDER_SUB0 = DISABLE_FF_SUB0 + 1;
 
     // SUB 1:
     localparam  LUT4C_DATA_BASE = DISABLE_ADDER_SUB0 + 1;
     localparam  LUT4D_DATA_BASE = LUT4C_DATA_BASE + LUT4_DATA_WIDTH;
-    localparam  ENABLE_CIN_FABRIC_SUB1 = LUT4D_DATA_BASE + LUT4_DATA_WIDTH;
-    localparam  DISABLE_FF_SUB1 = ENABLE_CIN_FABRIC_SUB1 + 1;
+    localparam  DISABLE_CIN_SUB1 = LUT4D_DATA_BASE + LUT4_DATA_WIDTH;
+    localparam  DISABLE_FF_SUB1 = DISABLE_CIN_SUB1 + 1;
     localparam  DISABLE_ADDER_SUB1 = DISABLE_FF_SUB1 + 1;
 
     // LUT6
@@ -125,9 +125,9 @@ module fle8 (
 
     always @* begin
         internal_sum[0] = (internal_lut4[1][0] + internal_lut4[0][0] +
-                          (cfg_d[ENABLE_CIN_FABRIC_SUB0] ? internal_in[7] : internal_cin));
+                          (~cfg_d[DISABLE_CIN_SUB0] & internal_cin));
         internal_sum[1] = (internal_lut4[1][1] + internal_lut4[0][1] +
-                          (cfg_d[ENABLE_CIN_FABRIC_SUB1] ? internal_in[7] : internal_sum[0][1]));
+                          (~cfg_d[DISABLE_CIN_SUB1] & internal_sum[0][1]));
         internal_lut5 = internal_in[6] ? internal_lut4[1] : internal_lut4[0];
     end
 

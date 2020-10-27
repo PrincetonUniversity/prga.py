@@ -26,7 +26,14 @@ module \$alu (A, B, CI, BI, X, Y, CO);
     wire [Y_WIDTH-1:0] CO_CHAIN;
     wire CO_LAST;
 
-    {{ model }} #(.CIN_FABRIC(1'b1)) cc_first (.a(AA[0]), .b(BB[0]), .cin_fabric(CI), .s(Y[0]), .cout(CO_CHAIN[0]));
+    generate if (_TECHMAP_CONSTMSK_CI_ && ~_TECHMAP_CONSTVAL_CI_) begin
+        // if CI is constant zero
+        {{ model }} #(.CIN_CONST0(1'b1)) cc_first (.a(AA[0]), .b(BB[0]), .s(Y[0]), .cout(CO_CHAIN[0]));
+    end else begin
+        wire CI_INT;
+        {{ model }} #(.CIN_CONST0(1'b1)) cc_pre (.a(1'b1), .b(CI), .cout(CI_INT));
+        {{ model }} cc_first (.a(AA[0]), .b(BB[0]), .cin(CI_INT), .s(Y[0]), .cout(CO_CHAIN[0]));
+    end endgenerate
 
     genvar i;
     generate for (i = 1; i < Y_WIDTH; i = i + 1) begin: slice

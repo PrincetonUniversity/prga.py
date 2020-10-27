@@ -32,8 +32,8 @@ module prga_tokenfifo #(
         end
     end
 
-    assign full = rst || rd_ptr == {~wr_ptr[DEPTH_LOG2], wr_ptr[0 +: DEPTH_LOG2]};
-    assign empty = rst || rd_ptr == wr_ptr;
+    assign full = rd_ptr == {~wr_ptr[DEPTH_LOG2], wr_ptr[0 +: DEPTH_LOG2]};
+    assign empty = rd_ptr == wr_ptr;
 
 endmodule
 

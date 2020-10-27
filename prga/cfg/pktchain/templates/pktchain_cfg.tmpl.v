@@ -4,14 +4,16 @@
 `include "prga_system.vh"
 `include "pktchain_system.vh"
 
-module pktchain_cfg (
+module pktchain_cfg #(
+    parameter   DECOUPLED_INPUT = 1
+) (
     input wire                                      clk,
     input wire                                      rst_n,
 
     // == CTRL <-> CFG ========================================================
     output reg [`PRGA_CFG_STATUS_WIDTH-1:0]         status,
 
-    output reg                                      req_rdy,
+    output wire                                     req_rdy,
     input wire                                      req_val,
     input wire [`PRGA_CREG_ADDR_WIDTH-1:0]          req_addr,
     input wire [`PRGA_CREG_DATA_BYTES-1:0]          req_strb,
@@ -36,6 +38,50 @@ module pktchain_cfg (
     input wire                                      phit_i_wr,
     input wire [`PRGA_PKTCHAIN_PHIT_WIDTH - 1:0]    phit_i
     );
+
+    // =======================================================================
+    // -- Timing-decoupled Input ---------------------------------------------
+    // =======================================================================
+    reg req_rdy_f;
+    wire req_val_f;
+    wire [`PRGA_CREG_ADDR_WIDTH-1:0]        req_addr_f;
+    wire [`PRGA_CREG_DATA_BYTES-1:0]        req_strb_f;
+    wire [`PRGA_CREG_DATA_WIDTH-1:0]        req_data_f;
+
+    generate if (DECOUPLED_INPUT) begin
+        prga_valrdy_buf #(
+            .REGISTERED             (1)
+            ,.DECOUPLED             (1)
+            ,.DATA_WIDTH            (
+                `PRGA_CREG_ADDR_WIDTH
+                + `PRGA_CREG_DATA_BYTES
+                + `PRGA_CREG_DATA_WIDTH
+            )
+        ) req_valrdy_buf (
+            .clk                (clk)
+            ,.rst               (~rst_n)
+            ,.rdy_o             (req_rdy)
+            ,.val_i             (req_val)
+            ,.data_i            ({
+                req_addr
+                , req_strb
+                , req_data
+            })
+            ,.rdy_i             (req_rdy_f)
+            ,.val_o             (req_val_f)
+            ,.data_o            ({
+                req_addr_f
+                , req_strb_f
+                , req_data_f
+            })
+            );
+    end else begin
+        assign req_val_f = req_val;
+        assign req_addr_f = req_addr;
+        assign req_strb_f = req_strb;
+        assign req_data_f = req_data;
+        assign req_rdy = req_rdy_f;
+    end endgenerate
 
     // =======================================================================
     // -- Bitstream Frame Input ----------------------------------------------
@@ -163,11 +209,6 @@ module pktchain_cfg (
 
     reg [ST_CTRL_Q_WIDTH-1:0]         ctrl_state_q, ctrl_state_q_next;
 
-    reg                             req_val_q;
-    reg [`PRGA_CREG_ADDR_WIDTH-1:0] req_addr_q;
-    reg [`PRGA_CREG_DATA_WIDTH-1:0] req_data_q;
-    reg [`PRGA_CREG_DATA_BYTES-1:0] req_strb_q;
-
     reg                             resp_val_next, resp_err_next;
     reg [`PRGA_CREG_DATA_WIDTH-1:0] resp_data_next;
 
@@ -177,28 +218,15 @@ module pktchain_cfg (
     always @(posedge clk) begin
         if (~rst_n) begin
             ctrl_state_q    <= ST_CTRL_Q_RST;
-            req_val_q       <= 1'b0;
-            req_addr_q      <= {`PRGA_CREG_ADDR_WIDTH {1'b0} };
-            req_data_q      <= {`PRGA_CREG_DATA_WIDTH {1'b0} };
-            req_strb_q      <= {`PRGA_CREG_DATA_BYTES {1'b0} };
         end else begin
             ctrl_state_q    <= ctrl_state_q_next;
-
-            if (req_val && req_rdy) begin
-                req_val_q       <= 1'b1;
-                req_addr_q      <= req_addr;
-                req_data_q      <= req_data;
-                req_strb_q      <= req_strb;
-            end else if (~stall_ctrl_q) begin
-                req_val_q       <= 1'b0;
-            end
         end
     end
 
     always @* begin
-        req_rdy = rst_n && (~req_val_q || ~stall_ctrl_q);
-        rawq_rawdata = req_data_q;
-        rawq_rawstrb = req_strb_q;
+        req_rdy_f = rst_n && (~req_val_f || ~stall_ctrl_q);
+        rawq_rawdata = req_data_f;
+        rawq_rawstrb = req_strb_f;
     end
 
     // == Main FSM ==
@@ -225,10 +253,10 @@ module pktchain_cfg (
                     xtra_eflags_clear = resp_err || ~stall_ctrl_r;
                 end
 
-                if (req_val_q) begin
-                    case (req_addr_q)
+                if (req_val_f) begin
+                    case (req_addr_f)
                         `PRGA_CREG_ADDR_PKTCHAIN_BITSTREAM_FIFO: if (~(|xtra_eflags_f || stall_ctrl_r)) begin
-                            if (|req_strb_q && bitstream_en) begin
+                            if (|req_strb_f && bitstream_en) begin
                                 stall_ctrl_q = rawq_full;
                                 rawq_wr = 1'b1;
                                 resp_val_next = ~rawq_full;
@@ -358,7 +386,7 @@ module pktchain_cfg (
     reg frame_o_val;
 
     pktchain_frame_disassemble #(
-        .DEPTH_LOG2             (11 - `PRGA_PKTCHAIN_PHIT_WIDTH_LOG2)   // buffer capacity: 64 frames
+        .DEPTH_LOG2             (1)
     ) i_frameq (
         .cfg_clk                (clk)
         ,.cfg_rst               (cfg_rst)

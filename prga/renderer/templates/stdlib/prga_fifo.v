@@ -53,8 +53,8 @@ module prga_fifo #(
         end
     end
 
-    assign full = rst || rd_ptr == {~wr_ptr[DEPTH_LOG2], wr_ptr[0 +: DEPTH_LOG2]};
-    assign empty_internal = rst || rd_ptr == wr_ptr;
+    assign full = rd_ptr == {~wr_ptr[DEPTH_LOG2], wr_ptr[0 +: DEPTH_LOG2]};
+    assign empty_internal = rd_ptr == wr_ptr;
 
     generate if (LOOKAHEAD && !ALLOW_RAM_UNREGISTERED_OUTPUT) begin
         prga_fifo_lookahead_buffer #(

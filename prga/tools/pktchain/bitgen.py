@@ -20,7 +20,8 @@ from itertools import product, count
 __all__ = ['PktchainBitgen']
 
 _logger = logging.getLogger(__name__)
-_reprog_param = re.compile("^b(?P<offset>\d+)\[(?P<high>\d+):(?P<low>\d+)\]=(?P<width>\d+)'b(?P<content>[01]+)$")
+_reprog_param = re.compile("^(?P<slices>\w+)\[(?P<high>\d+):(?P<low>\d+)\]=(?P<width>\d+)'b(?P<content>[01]+)$")
+_reprog_slice = re.compile("^l(?P<low>\d+)r(?P<range>\d+)$")
 
 import argparse
 _parser = create_argparser(__name__,
@@ -95,15 +96,13 @@ class PktchainBitgen(object):
                 elif sgmt[0] == 'b':
                     base += int(sgmt[1:])
                 else:
-                    raise PRGAInternalError("LINE {:>08d}: Invalid FASM feature line {}".format(lineno + 1))
+                    raise PRGAInternalError("LINE {:>08d}: Invalid FASM feature line {}".format(lineno + 1, line.strip()))
             if '[' in segments[-1]:
                 matched = _reprog_param.match(segments[-1])
-                if matched is None:
-                    raise PRGAInternalError("LINE {:>08d}: Invalid FASM feature line {}".format(lineno + 1))
-                base += int(matched.group('offset'))
+                high, low, width = map(lambda x: int(matched.group(x)), ('high', 'low', 'width'))
+                base += low
                 segment = bitarray(matched.group('content'))
                 segment.reverse()
-                high, low, width = map(lambda x: int(matched.group(x)), ('high', 'low', 'width'))
                 if high < low:
                     raise RuntimeError("LINE {:>08d}: Invalid range specifier".format(lineno + 1))
                 elif width != len(segment):
@@ -112,7 +111,14 @@ class PktchainBitgen(object):
                 actual_width = high - low + 1
                 if actual_width > width:
                     segment.extend((False, ) * (actual_width - width))
-                bits[x][y][base + low: base + low + actual_width] = segment[0: actual_width]
+                cur = 0
+                for slice_ in matched.group("slices").split('_'):
+                    sl, rg = map(int, _reprog_slice.match(slice_).group("low", "range"))
+                    bits[x][y][base + sl : base + sl + rg] = segment[cur : cur + rg]
+                    cur += rg
+                if cur != actual_width:
+                    raise RuntimeError("LINE {:>08d}: Sum of slices mismatches with number of bits"
+                            .format(lineno + 1))
             else:
                 bits[x][y][base + int(segments[-1][1:])] = True
         # complete each tile
@@ -139,6 +145,8 @@ class PktchainBitgen(object):
             completed = True
             for y, x in product(reversed(range(len(bits[0]))), reversed(range(len(bits)))):
                 bitstream = bits[x][y]
+                if not any(bitstream):
+                    continue
                 total_frames = len(bitstream) // 32
                 if pkt * max_packet_frames >= total_frames:
                     continue
