@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ...util import find_verilog_top, parse_parameters, create_argparser, docstring_from_argparser
 from ....core.context import Context
@@ -92,7 +89,7 @@ class PktchainMkgen(object):
         vpr["io_constraints"] = io_constraints
 
         # fpga sources
-        param["rtl"] = tuple(os.path.join(summary.cwd, src) for src in itervalues(summary.rtl["sources"]))
+        param["rtl"] = tuple(os.path.join(summary.cwd, src) for src in summary.rtl["sources"].values())
         param["includes"] = tuple(os.path.join(summary.cwd, incdir) for incdir in summary.rtl["includes"])
 
         # generate

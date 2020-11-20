@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ..core.common import ModuleView, ModuleClass
 from ..netlist import Module, NetUtils, ModuleUtils
@@ -24,7 +21,7 @@ class FileRenderer(object):
         self.template_search_paths = [os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'),
                 os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "integration", "templates")]
         self.template_search_paths = list(iter(paths)) + self.template_search_paths
-        self.tasks = OrderedDict()
+        self.tasks = {}
         self._yosys_synth_script_task = None
 
     @classmethod
@@ -111,8 +108,6 @@ class FileRenderer(object):
         parameters = {
                 "module": module,
                 "source2verilog": self._source2verilog,
-                'itervalues': itervalues,
-                'iteritems': iteritems,
                 }
         parameters.update(kwargs)
         self.tasks.setdefault(file_, []).append( (template, parameters) )
@@ -125,12 +120,7 @@ class FileRenderer(object):
             template (:obj:`str`): The template to be used
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        parameters = {
-                'itervalues': itervalues,
-                'iteritems': iteritems,
-                }
-        parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (template, parameters) )
+        self.tasks.setdefault(file_, []).append( (template, kwargs) )
 
     def add_yosys_synth_script(self, file_, lut_sizes, template = 'synth.generic.tmpl.tcl', **kwargs):
         """Add a yosys synthesis script rendering task.
@@ -146,8 +136,6 @@ class FileRenderer(object):
                 "memory_techmaps": [],
                 "techmaps": [],
                 "lut_sizes": lut_sizes,
-                "iteritems": iteritems,
-                "itervalues": itervalues,
                 }
         parameters.update(kwargs)
         self.tasks.setdefault(file_, []).append( (template, parameters) )
@@ -167,14 +155,12 @@ class FileRenderer(object):
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
         parameters = {
-                "iteritems": iteritems,
-                "itervalues": itervalues,
                 "module": module,
                 }
         parameters.update(kwargs)
         self.tasks.setdefault(file_, []).append( (template, parameters) )
         script_file, script_task = self._get_yosys_script_task(script_file)
-        if not isinstance(file_, basestring):
+        if not isinstance(file_, str):
             file_ = file_.name
         if not os.path.isabs(file_) and not os.path.isabs(script_file):
             file_ = os.path.relpath(file_, os.path.dirname(script_file))
@@ -194,14 +180,11 @@ class FileRenderer(object):
             premap_commands (:obj:`Sequence` [:obj:`str` ]): Commands to be run before running the techmap step
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        parameters = {
-                "iteritems": iteritems,
-                "itervalues": itervalues,
-                }
+        parameters = {}
         parameters.update(kwargs)
         self.tasks.setdefault(file_, []).append( (template, parameters) )
         script_file, script_task = self._get_yosys_script_task(script_file)
-        if not isinstance(file_, basestring):
+        if not isinstance(file_, str):
             file_ = file_.name
         if not os.path.isabs(file_) and not os.path.isabs(script_file):
             file_ = os.path.relpath(file_, os.path.dirname(script_file))
@@ -222,8 +205,6 @@ class FileRenderer(object):
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
         parameters = {
-                "iteritems": iteritems,
-                "itervalues": itervalues,
                 "module": module,
                 }
         parameters.update(kwargs)
@@ -249,14 +230,12 @@ class FileRenderer(object):
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
         parameters = {
-                "iteritems": iteritems,
-                "itervalues": itervalues,
                 "module": module,
                 }
         parameters.update(kwargs)
         self.tasks.setdefault(file_, []).append( (template, parameters) )
         script_file, script_task = self._get_yosys_script_task(script_file)
-        if not isinstance(file_, basestring):
+        if not isinstance(file_, str):
             file_ = file_.name
         if not os.path.isabs(file_) and not os.path.isabs(script_file):
             file_ = os.path.relpath(file_, os.path.dirname(script_file))
@@ -265,7 +244,7 @@ class FileRenderer(object):
                 "techmap": file_,
                 }
         if rule_script is not None:
-            if not isinstance(rule_script, basestring):
+            if not isinstance(rule_script, str):
                 rule_script = rule_script.name
             if not os.path.isabs(rule_script) and not os.path.isabs(script_file):
                 rule_script = os.path.relpath(rule_script, os.path.dirname(script_file))
@@ -277,10 +256,10 @@ class FileRenderer(object):
         env = jj.Environment(loader = jj.FileSystemLoader(self.template_search_paths))
         while self.tasks:
             file_, l = self.tasks.popitem()
-            if isinstance(file_, basestring):
+            if isinstance(file_, str):
                 d = os.path.dirname(file_)
                 if d:
-                    makedirs(d)
-                file_ = open(file_, OpenMode.wb)
+                    os.makedirs(d, exist_ok = True)
+                file_ = open(file_, "wb")
             for template, parameters in l:
                 env.get_template(template).stream(parameters).dump(file_, encoding="ascii")

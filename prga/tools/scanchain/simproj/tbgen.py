@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ...ioplan.ioplan import IOPlanner
 from ...util import find_verilog_top, parse_parameters, create_argparser, docstring_from_argparser
@@ -25,11 +22,11 @@ import argparse
 _parser = create_argparser(__name__,
         description="Testbench generator for scanchain configuration circuitry")
 
-_parser.add_argument('context', type=argparse.FileType(OpenMode.rb),
+_parser.add_argument('context', type=argparse.FileType("rb"),
         help="Pickled architecture context object")
 _parser.add_argument('io', type=str,
         help="IO constraints")
-_parser.add_argument('wrapper', type=argparse.FileType(OpenMode.wb),
+_parser.add_argument('wrapper', type=argparse.FileType("wb"),
         help="Generated Verilog testbench wrapper")
 
 _parser.add_argument('-t', '--testbench', type=str, nargs='+', dest="testbench",
@@ -99,7 +96,7 @@ def generate_scanchain_testbench_wrapper(context, renderer, ostream, tb_top, beh
     # extract io constraints
     impl_info = {'name': fpga_top.name, 'config': []}
     ports = impl_info['ports'] = {}
-    for port_name, ios in iteritems(io_constraints):
+    for port_name, ios in io_constraints.items():
         direction = ios.type_.case(PortDirection.input_, PortDirection.output)
         for index, ((x, y), subtile) in enumerate(ios, ios.low):
             if len(ios) == 1:
@@ -133,8 +130,7 @@ def generate_scanchain_testbench_wrapper(context, renderer, ostream, tb_top, beh
 
     # generate testbench wrapper
     renderer.add_generic( ostream, "tb.tmpl.v",
-            config = config_info, behav = behav_top, tb = tb_top, impl = impl_info,
-            iteritems = iteritems, itervalues = itervalues )
+            config = config_info, behav = behav_top, tb = tb_top, impl = impl_info )
 
 if __name__ == '__main__':
     args = _parser.parse_args()

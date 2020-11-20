@@ -1,5 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
 """XML streaming generation."""
 
 from lxml.etree import xmlfile

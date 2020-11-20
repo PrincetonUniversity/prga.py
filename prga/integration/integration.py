@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from .common import InterfaceClass
 from ..core.common import ModuleView, ModuleClass, IOType
@@ -239,7 +236,7 @@ class Integration(object):
             planner.reset_scanning(start_pos, subtile, counterclockwise)
 
         # find and constrain clock
-        for g in itervalues(context.globals_):
+        for g in context.globals_.values():
             if g.is_clock:
                 ios = constraints["clk"] = IOConstraints(IOType.ipin)
                 planner.use(IOType.ipin, g.bound_to_position, g.bound_to_subtile)
@@ -249,7 +246,7 @@ class Integration(object):
             raise PRGAAPIError("No clock found in the fabric")
 
         # constrain reset
-        for g in itervalues(context.globals_):
+        for g in context.globals_.values():
             # FIXME: matching reset net based on name
             if not g.is_clock and g.width == 1 and "rst" in g.name.lower():
                 ios = constraints["rst_n"] = IOConstraints(IOType.ipin)
@@ -319,7 +316,7 @@ class Integration(object):
                 {   "uccm_resp_data":       (IOType.ipin, 128), },
                 ):
             first = True
-            for p, (t, w) in iteritems(channel):
+            for p, (t, w) in channel.items():
                 ios = constraints[p] = IOConstraints(t, 0, w)
                 for i in range(w):
                     ios[i] = planner.pop(t, force_change_tile = first)
@@ -389,7 +386,7 @@ class Integration(object):
                 {   "ureg_resp_data":   (IOType.opin, data_bytes * 8), },
                 ):
             first = True
-            for p, (t, w) in iteritems(channel):
+            for p, (t, w) in channel.items():
                 ios = constraints[p] = IOConstraints(t, 0, w)
                 for i in range(w):
                     ios[i] = planner.pop(t, force_change_tile = first)
@@ -455,7 +452,7 @@ class Integration(object):
                 {"RVALID": (to, 1), "RRESP": (to, 2), "RDATA": (to, data_bytes * 8), "RREADY": (ti, 1), },
                 ):
             first = True
-            for p, (t, w) in iteritems(channel):
+            for p, (t, w) in channel.items():
                 ios = constraints[p] = IOConstraints(t, 0, w)
                 for i in range(w):
                     ios[i] = planner.pop(t, force_change_tile = first)
@@ -502,7 +499,7 @@ class Integration(object):
         sysintf = ModuleUtils.instantiate(system, context.database[ModuleView.logical, "prga_sysintf"], "i_sysintf")
 
         # connect system ports to sysintf
-        for port_name, port in iteritems(system.ports):
+        for port_name, port in system.ports.items():
             if port.direction.is_input:
                 NetUtils.connect(port, sysintf.pins[port_name])
             else:
@@ -523,7 +520,7 @@ class Integration(object):
                     context.database[ModuleView.logical, context.top.key], "i_fabric")
 
             # connect within core
-            for name, ios in iteritems(constraints):
+            for name, ios in constraints.items():
                 if name == "clk":
                     NetUtils.connect(core.ports["uclk"], fabric.pins[(IOType.ipin, ) + ios[0]])
                 elif name == "rst_n":
@@ -539,7 +536,7 @@ class Integration(object):
             core = ModuleUtils.instantiate(system, core, "i_core")
 
             # connect sysintf with core
-            for pin_name, pin in iteritems(core.pins):
+            for pin_name, pin in core.pins.items():
                 if pin_name == "uclk":
                     NetUtils.connect(sysintf.pins["aclk"], pin)
                 elif pin_name == "urst_n":
@@ -557,7 +554,7 @@ class Integration(object):
             # connect sysintf with fabric
             NetUtils.connect(sysintf.pins["aclk"], fabric.pins[(IOType.ipin, ) + constraints["clk"][0]])
             NetUtils.connect(sysintf.pins["urst_n"], fabric.pins[(IOType.ipin, ) + constraints["rst_n"][0]])
-            for name, ios in iteritems(constraints):
+            for name, ios in constraints.items():
                 if name in ("clk", "rst_n"):
                     continue
                 elif ios.type_.is_ipin:

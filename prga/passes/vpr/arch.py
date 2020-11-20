@@ -24,14 +24,13 @@ class _VPRArchGeneration(AbstractPass):
 
     __slots__ = [
             # customizable variables
-            'output_file', 'gzip', 'fasm', 'timing',
+            'output_file', 'fasm', 'timing',
             # temporary variables
             'xml', 'lut_sizes', 'active_primitives', 'active_blocks', 'active_tiles',
             ]
 
-    def __init__(self, output_file, *, gzip = False, fasm = None, timing = None):
+    def __init__(self, output_file, *, fasm = None, timing = None):
         self.output_file = output_file
-        self.gzip = False
         self.fasm = fasm
         self.timing = timing
 
@@ -519,7 +518,7 @@ class _VPRArchGeneration(AbstractPass):
             f = self.output_file
             os.makedirs(os.path.dirname(f), exist_ok = True)
             self._update_output_file(context.summary.vpr, f)
-            if self.gzip:
+            if f.endswith(".gz"):
                 self.output_file = gzip.open(f, "wb")
             else:
                 self.output_file = open(f, "wb")
@@ -527,7 +526,7 @@ class _VPRArchGeneration(AbstractPass):
             f = self.output_file.name
             os.makedirs(os.path.dirname(f), exist_ok = True)
             self._update_output_file(context.summary.vpr, f)
-            if self.gzip:
+            if f.endswith(".gz"):
                 self.output_file = gzip.open(self.output_file, "wb")
         # FASM 
         if self.fasm is None:
@@ -664,10 +663,10 @@ class VPRArchGeneration(_VPRArchGeneration):
     """Generate VPR's architecture description XML.
     
     Args:
-        output_file (:obj:`str` of file-like object): The output file
+        output_file (:obj:`str` of file-like object): The output file. If the file name ends with ".gz", the output
+            file will be compressed using gzip
 
     Keyword Args:
-        gzip (:obj:`bool`): Use gzip to compress the output file
         fasm (`FASMDelegate`): Overwrite the deafult fasm delegate provided by the context
         timing (`TimingDelegate`): Overwrite the default iming delegate provided by the context
     """
@@ -752,11 +751,11 @@ class VPRScalableArchGeneration(_VPRArchGeneration):
     """Generate a scalable version of VPR's architecture description XML.
     
     Args:
-        output_file (:obj:`str` of file-like object): The output file
+        output_file (:obj:`str` of file-like object): The output file. If the file name ends with ".gz", the output
+            file will be compressed using gzip
         delegate (`VPRScalableDelegate`):
 
     Keyword Args:
-        gzip (:obj:`bool`): Use gzip to compress the output file
         fasm (`FASMDelegate`): Overwrite the deafult fasm delegate provided by the context
         timing (`TimingDelegate`): Overwrite the default iming delegate provided by the context
 

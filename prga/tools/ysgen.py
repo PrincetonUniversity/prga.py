@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from .util import find_verilog_top, parse_parameters, create_argparser, docstring_from_argparser
 from ..core.context import Context
@@ -17,7 +14,7 @@ __all__ = ['generate_yosys_script']
 import argparse
 _parser = create_argparser(__name__, description="Design-specific synthesis script generator")
 
-_parser.add_argument('summary', type=argparse.FileType(OpenMode.rb),
+_parser.add_argument('summary', type=argparse.FileType("rb"),
         help="Pickled architecture context summary object")
 _parser.add_argument('-o', '--output', type=argparse.FileType("w"), dest='output',
         help="Generated script")
@@ -45,9 +42,7 @@ def generate_yosys_script(summary, renderer, ostream, model, model_sources, temp
     renderer.add_generic( ostream, template, 
             model = model,
             model_sources = model_sources,
-            yosys_script = os.path.join(summary.cwd, summary.yosys["script"]),
-            iteritems = iteritems,
-            itervalues = itervalues )
+            yosys_script = os.path.join(summary.cwd, summary.yosys["script"]) )
 
 if __name__ == '__main__':
     args = _parser.parse_args()

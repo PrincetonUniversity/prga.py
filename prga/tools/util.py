@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ..core.common import Position
 from ..netlist.net.common import PortDirection
@@ -9,6 +6,7 @@ from ..exception import PRGAAPIError
 from ..util import Object, uno
 
 from hdlparse.verilog_parser import VerilogExtractor as Vex
+from io import StringIO
 import re, argparse
 
 _reprog_width = re.compile('^.*?\[\s*(?P<start>\d+)\s*:\s*(?P<end>\d+)\s*\].*?$')
@@ -59,7 +57,7 @@ def find_verilog_top(files, top = None):
         `VerilogModule`:
     """
     mods = {x.name : x for f in files for x in Vex().extract_objects(f)}
-    mod = next(iter(itervalues(mods)))
+    mod = next(iter(mods.values()))
     if len(mods) > 1:
         if top is not None:
             try:

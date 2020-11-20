@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ..util import create_argparser, docstring_from_argparser
 import argparse
@@ -9,7 +6,7 @@ import argparse
 def def_argparser(name):
     parser = create_argparser(name, description="IO constraints generator")
 
-    parser.add_argument('summary', type=argparse.FileType(OpenMode.rb),
+    parser.add_argument('summary', type=argparse.FileType("rb"),
             help="Pickled context or summary object")
     parser.add_argument('-o', '--output', type=str, dest="output",
             help="Output file for the IO constraints")

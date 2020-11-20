@@ -4,7 +4,7 @@ read_source:
     {%- endfor %}
 
 begin:
-    {%- for k, v in iteritems(model.parameters) %}
+    {%- for k, v in model.parameters.items() %}
     chparam -set {{ k }} {{ v }} {{ model.name }}
     {%- endfor %}
     hierarchy -check -top {{ model.name }}

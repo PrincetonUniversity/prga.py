@@ -94,9 +94,9 @@ class TileBuilder(BaseArrayBuilder):
             raise PRGAAPIError("At most one type of subtile per tile. {} is already instantiated in {}"
                     .format(self._module.instances[0].model, self._module))
         if reps is None:
-            return ModuleUtils.instantiate(self._module, model, uno(name, "lb_i0"), key = 0)
+            return ModuleUtils.instantiate(self._module, model, uno(name, "i_blk"), key = 0)
         else:
-            return tuple(ModuleUtils.instantiate(self._module, model, "{}_i{}".format(uno(name, "lb"), i),
+            return tuple(ModuleUtils.instantiate(self._module, model, "{}_i{}".format(uno(name, "i_blk"), i),
                 key = i, vpr_capacity = reps, vpr_subtile = i) for i in range(reps))
 
     def build_connection_box(self, ori, offset, **kwargs):
@@ -136,7 +136,7 @@ class TileBuilder(BaseArrayBuilder):
             except KeyError:
                 box = self._context._database[ModuleView.user, key] = ConnectionBoxBuilder.new(
                         self._module, ori, offset, **kwargs)
-            inst = ModuleUtils.instantiate(self._module, box, "cb_i{}{}".format(ori.name[0], offset),
+            inst = ModuleUtils.instantiate(self._module, box, "i_cbox_{}{}".format(ori.name[0], offset),
                     key = (ori, offset))
         return ConnectionBoxBuilder(self._context, inst.model)
 

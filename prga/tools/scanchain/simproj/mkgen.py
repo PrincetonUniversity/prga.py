@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ...util import create_argparser, docstring_from_argparser
 from ....core.context import Context
@@ -90,7 +87,7 @@ def generate_scanchain_makefile(summary_f, summary, renderer, ostream, yosys_scr
     vpr["io_constraints"] = io_constraints
 
     # fpga sources
-    param["rtl"] = tuple(os.path.join(summary.cwd, src) for src in itervalues(summary.rtl["sources"]))
+    param["rtl"] = tuple(os.path.join(summary.cwd, src) for src in summary.rtl["sources"].values())
     param["includes"] = tuple(os.path.join(summary.cwd, incdir) for incdir in summary.rtl["includes"])
 
     # generate

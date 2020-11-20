@@ -765,7 +765,7 @@ class BlockFCValue(namedtuple('BlockFCValue', 'default_in default_out overrides'
         if overrides is None:
             overrides = {}
         else:
-            overrides = {k: BlockPortFCValue._construct(v) for k, v in iteritems(overrides)}
+            overrides = {k: BlockPortFCValue._construct(v) for k, v in overrides.items()}
         return super(BlockFCValue, cls).__new__(cls, default_in, default_out, uno(overrides, {}))
 
     @classmethod

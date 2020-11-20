@@ -534,7 +534,7 @@ class ArrayBuilder(BaseArrayBuilder):
                         .format(*position, corner, i))
             # instantiate the switch box
             return ModuleUtils.instantiate(self._module, model,
-                    uno(name, 'sb_ix{}y{}{}'.format(*position, model.key.corner.case("ne", "nw", "se", "sw"))),
+                    uno(name, 'i_sbox_x{}y{}{}'.format(*position, model.key.corner.case("ne", "nw", "se", "sw"))),
                     key = (position, model.key.corner))
         elif model.module_class.is_tile or model.module_class.is_array:
             # A bit more complex case: instantiating tile/array
@@ -572,7 +572,7 @@ class ArrayBuilder(BaseArrayBuilder):
                         raise PRGAAPIError("Edge incompatible")
             # cool, check passed. Now process the instantiation
             i = ModuleUtils.instantiate(self._module, model,
-                    uno(name, 't_ix{}y{}'.format(*position)),
+                    uno(name, 'i_tile_x{}y{}'.format(*position)),
                     key = position)
             for x, y in product(range(model.width), range(model.height)):
                 offset = Position(x, y)

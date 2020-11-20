@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from .protocol import PktchainProtocol
 from ..scanchain.lib import Scanchain, ScanchainSwitchDatabase, ScanchainFASMDelegate
@@ -55,7 +52,7 @@ class PktchainFASMDelegate(ScanchainFASMDelegate):
         if chain is None or ypos is None or bitoffset is None:
             return tuple()
         retval = []
-        for subtile, blkinst in iteritems(instance.model.instances):
+        for subtile, blkinst in instance.model.instances.items():
             if not isinstance(subtile, int):
                 continue
             elif subtile >= len(retval):
@@ -573,7 +570,7 @@ class Pktchain(Scanchain):
 
     @classmethod
     def complete_pktchain(cls, context, logical_module = None, *,
-            iter_instances = lambda m: itervalues(m.instances), _not_top = False):
+            iter_instances = lambda m: m.instances.values(), _not_top = False):
         """Inject pktchain network and routers in ``module``. This method should be called only on arrays.
 
         Args:
@@ -734,7 +731,7 @@ class Pktchain(Scanchain):
         else:
             logical = context.database[ModuleView.logical, module.key]
             # annotate user instances
-            for instance in itervalues(module.instances):
+            for instance in module.instances.values():
                 # look for the corresponding logical instance and annotate cfg_chainoffsets
                 logical_instance = logical.instances[instance.key]
                 if (cfg_chainoffsets := getattr(logical_instance, "cfg_chainoffsets", None)) is not None:
@@ -826,7 +823,7 @@ class Pktchain(Scanchain):
                         context.database[ModuleView.logical, "pktchain_cfg"], "i_cfg")
 
                 # connect cfg with core ports
-                for port_name, port in iteritems(core_ports):
+                for port_name, port in core_ports.items():
                     if port.direction.is_input:
                         NetUtils.connect(port, cfg_inst.pins[port_name[4:]])
                     else:

@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ...core.common import NetClass, ModuleClass, ModuleView, IOType, PrimitiveClass, PrimitivePortClass
 from ...core.context import Context
@@ -123,7 +120,7 @@ class ScanchainFASMDelegate(FASMDelegate):
         elif (params := getattr(instance.model, "parameters", None)) is None:
             return {}
         fasm_params = {}
-        for key, value in iteritems(params):
+        for key, value in params.items():
             if (settings := value.get("cfg")) is None:
                 continue
             fasm_params[key] = "l{}r{}[{}:0]".format(settings.cfg_bitoffset, settings.cfg_bitcount,
@@ -164,7 +161,7 @@ class ScanchainFASMDelegate(FASMDelegate):
         if (cfg_bitoffset := self._instance_bitoffset(instance)) is None:
             return None
         retval = []
-        for subtile, blkinst in iteritems(instance.model.instances):
+        for subtile, blkinst in instance.model.instances.items():
             if not isinstance(subtile, int):
                 continue
             elif subtile >= len(retval):
@@ -745,7 +742,7 @@ class Scanchain(Object):
 
     @classmethod
     def complete_scanchain(cls, context, logical_module = None, *,
-            iter_instances = lambda m: itervalues(m.instances),
+            iter_instances = lambda m: m.instances.values(),
             timing_closure = lambda m: m.module_class.is_block or m.module_class.is_routing_box):
         """Inject the scanchain.
         
@@ -785,7 +782,7 @@ class Scanchain(Object):
                     NetUtils.connect(cls._get_or_create_cfg_ports(module, cfg_width, enable_only = True),
                             ereg.pins["cfg_e_i"])
                     cfg_e = cfg_nets["cfg_e"] = ereg.pins["cfg_e"]
-                    for k, v in iteritems(cls._get_or_create_cfg_ports(module, cfg_width)):
+                    for k, v in cls._get_or_create_cfg_ports(module, cfg_width).items():
                         cfg_nets.setdefault(k, v)
                     NetUtils.connect(cfg_nets["cfg_clk"], ereg.pins["cfg_clk"])
                 else:
@@ -801,7 +798,7 @@ class Scanchain(Object):
             cfg_bitoffset += instance.model.cfg_bitcount
             # connect nets
             if "cfg_clk" not in cfg_nets:
-                for k, v in iteritems(cls._get_or_create_cfg_ports(module, cfg_width)):
+                for k, v in cls._get_or_create_cfg_ports(module, cfg_width).items():
                     cfg_nets.setdefault(k, v)
             NetUtils.connect(cfg_nets["cfg_clk"], instance.pins['cfg_clk'])
             NetUtils.connect(cfg_nets["cfg_i"], inst_cfg_i)
@@ -873,7 +870,7 @@ class Scanchain(Object):
         _annotated = uno(_annotated, set())
 
         # 1. annotate user instances
-        for instance in itervalues(module.instances):
+        for instance in module.instances.values():
             # look for the corresponding logical instance and annotate cfg_bitoffset
             logical_instance = logical.instances[instance.key]
             if hasattr(logical_instance, "cfg_bitoffset"):

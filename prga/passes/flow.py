@@ -122,7 +122,7 @@ class Flow(Object):
                         for pass_ in self._passes}
                 raise PRGAAPIError("Missing dependent passes:" +
                         "\n\t".join(map(lambda kv: "{} required by {}".format(", ".join(kv[1]), kv[0]),
-                            iteritems(missing))))
+                            missing.items())))
             else:
                 del self._passes[i]
         passes = tuple(passes.values())

@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ...netlist import PortDirection
 from ...core.common import Position, OrientationTuple, IOType
@@ -9,6 +6,7 @@ from ...exception import PRGAAPIError, PRGAInternalError
 from ...util import Object, uno
 
 import re, os, sys
+from collections.abc import MutableSequence
 
 __all__ = ["IOPlanner"]
 
@@ -221,10 +219,10 @@ class IOPlanner(Object):
         planner = cls(context)
         # initialize constraints
         constraints = {}
-        for port_name, port in iteritems(mod_top.ports):
+        for port_name, port in mod_top.ports.items():
             constraints[port_name] = IOConstraints(port.direction.case(IOType.ipin, IOType.opin), port.low, port.high)
         # process manual constraints
-        for name, fixed_constraints in iteritems(uno(fixed, {})):
+        for name, fixed_constraints in uno(fixed, {}).items():
             if (ios := constraints.get(name)) is None:
                 continue
                 raise PRGAAPIError("Port '{}' is not found in module '{}'"
@@ -235,7 +233,7 @@ class IOPlanner(Object):
                 planner.use(ios.type_, *c)
                 ios[i] = c
         # complete the constraints
-        for key, ios in iteritems(constraints):
+        for key, ios in constraints.items():
             for i, c in enumerate(ios, ios.low):
                 if c is not None:
                     continue
@@ -254,7 +252,7 @@ class IOPlanner(Object):
                 IO constraints
         """
         constraints = {}
-        if isinstance(file_, basestring):
+        if isinstance(file_, str):
             file_ = open(file_)
         for lineno, line in enumerate(file_):
             line = line.split("#")[0].strip()
@@ -286,11 +284,11 @@ class IOPlanner(Object):
             constraints (:obj:`Mapping` [:obj:`str`, `IOConstraints` ]):
             ostream (:obj:`str` or file-like object):
         """
-        if isinstance(ostream, basestring):
+        if isinstance(ostream, str):
             if d := os.path.dirname(ostream):
                 makedirs(d)
             ostream = open(ostream, "w")
-        for name, ios in iteritems(constraints):
+        for name, ios in constraints.items():
             key = ios.type_.case(ipin = "", opin = "out:") + name
             if len(ios) == 1:
                 (x, y), subtile = ios[ios.low]

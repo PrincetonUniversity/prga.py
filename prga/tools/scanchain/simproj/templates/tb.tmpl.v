@@ -19,12 +19,12 @@ module {{ behav.name }}_tb_wrapper;
     reg             tb_rst;
 
     // behavioral model wires
-    {%- for name, port in iteritems(behav.ports) %}
+    {%- for name, port in behav.ports.items() %}
     wire {% if port.low is not none %}[{{ port.high - 1 }}:{{ port.low }}] {% endif %}behav_{{ name }};
     {%- endfor %}
 
     // FPGA implementation wires
-    {%- for name, port in iteritems(behav.ports) %}
+    {%- for name, port in behav.ports.items() %}
         {%- if port.direction.name == 'output' %}
     wire {% if port.low is not none %}[{{ port.high - 1 }}:{{ port.low }}] {% endif %}impl_{{ name }};
         {%- endif %}
@@ -33,7 +33,7 @@ module {{ behav.name }}_tb_wrapper;
     // testbench
     {{ tb.name }} {% if tb.parameters %}#(
         {%- set comma0 = joiner(",") -%}
-        {%- for k, v in iteritems(tb.parameters) %}
+        {%- for k, v in tb.parameters.items() %}
         {{ comma0() }}.{{ k }}({{ v }})
         {%- endfor %}
     ) {% endif %}host (
@@ -42,7 +42,7 @@ module {{ behav.name }}_tb_wrapper;
         ,.sys_success(sys_success)
         ,.sys_fail(sys_fail)
         ,.cycle_count(cycle_count)
-        {%- for name, port in iteritems(behav.ports) %}
+        {%- for name, port in behav.ports.items() %}
             {%- if port.direction.name == 'output' %}
         ,.{{ name }}(impl_{{ name }})
             {%- else %}
@@ -55,7 +55,7 @@ module {{ behav.name }}_tb_wrapper;
     // behavioral model
     {{ behav.name }} {% if behav.parameters %}#(
         {%- set comma1 = joiner(",") -%}
-        {%- for k, v in iteritems(behav.parameters) %}
+        {%- for k, v in behav.parameters.items() %}
         {{ comma1() }}.{{ k }}({{ v }})
         {%- endfor %}
     ) {% endif %}behav (
@@ -68,7 +68,7 @@ module {{ behav.name }}_tb_wrapper;
     // post-PAR simulation
     {{ behav.name }} behav (
         {%- set comma3 = joiner(",") -%}
-        {%- for name, port in iteritems(behav.ports) %}
+        {%- for name, port in behav.ports.items() %}
             {%- if port.low is not none %}
                 {%- for i in range(port.low, port.high) %}
         {{ comma3() }}.{{ "\\" ~ name ~ "[" ~ i ~ "]" }} (behav_{{ name ~ "[" ~ i ~ "]" }})
@@ -171,7 +171,7 @@ module {{ behav.name }}_tb_wrapper;
         ,.cfg_we(cfg_we)
         ,.cfg_we_o(cfg_we_o)
         ,.cfg_o(cfg_o)
-        {%- for name, port in iteritems(impl.ports) %}
+        {%- for name, port in impl.ports.items() %}
             {%- if port.direction.name == 'output' %}
         ,.{{ name }}(impl_{{ port.name }})
             {%- else %}
@@ -304,7 +304,7 @@ module {{ behav.name }}_tb_wrapper;
     // output tracking
     always @(posedge sys_clk) begin
         if (~sys_rst && state == IMPL_RUNNING) begin
-            {%- for name, port in iteritems(behav.ports) %}
+            {%- for name, port in behav.ports.items() %}
                 {%- if port.direction.name == 'output' %}
             if (verbose && impl_{{ name }} !== behav_{{ name }}) begin
                 $display("[WARNING] [Cycle %04d] Output mismatch: {{ name }}, impl (%h) != behav (%h)",
