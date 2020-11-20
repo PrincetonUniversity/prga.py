@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ...util import Object, uno
 from ...exception import PRGAAPIError
@@ -132,7 +129,7 @@ class VPRScalableDelegate(Object):
     __slots__ = ['active_tiles', 'device', 'layout_rules', 'aspect_ratio']
     def __init__(self, aspect_ratio, *, device = None):
         self.aspect_ratio = aspect_ratio
-        self.active_tiles = OrderedDict()
+        self.active_tiles = {}
         self.device = uno(device, {})
         self.layout_rules = []
 
@@ -168,7 +165,7 @@ class VPRScalableDelegate(Object):
             self.active_tiles[tile.key] = True
         # assemble the rule
         attrs = {"type": "EMPTY" if tile is None else tile.name, "priority": priority}
-        for k, required in iteritems(self._rule_args[rule]):
+        for k, required in self._rule_args[rule].items():
             v = kwargs.get(k)
             if v is None:
                 if required:

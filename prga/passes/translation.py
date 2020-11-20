@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from .base import AbstractPass
 from ..netlist import PortDirection, Module, ModuleUtils, NetUtils
@@ -138,7 +135,7 @@ class TranslationPass(AbstractPass):
         logical = Module(module.name, **kwargs)
 
         # translate ports
-        for port in itervalues(module.ports):
+        for port in module.ports.values():
             attrs = {"key": port.key, "is_clock": port.is_clock}
             if module.module_class.is_primitive:
                 attrs["net_class"] = NetClass.user
@@ -164,7 +161,7 @@ class TranslationPass(AbstractPass):
             ModuleUtils.create_port(logical, port.name, len(port), port.direction, **attrs)
 
         # translate instances
-        for instance in itervalues(module.instances):
+        for instance in module.instances.values():
             logical_model = self._process_module(instance.model, context,
                     disable_coalesce = disable_coalesce or not logical.coalesce_connections)
             logical_instance = ModuleUtils.instantiate(logical, logical_model, instance.name, key = instance.key)

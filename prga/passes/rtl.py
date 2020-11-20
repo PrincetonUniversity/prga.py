@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from .base import AbstractPass
 from ..core.common import ModuleView
@@ -42,11 +39,11 @@ class VerilogCollection(AbstractPass):
         self.visited[module.key] = f
         if not os.path.isabs(f) or getattr(module, "force_generate_verilog", False):
             self.renderer.add_verilog(f, module, getattr(module, "verilog_template", "module.tmpl.v"))
-        for instance in itervalues(module.instances):
+        for instance in module.instances.values():
             self._process_module(instance.model)
 
     def _collect_headers(self, context):
-        for f, (template, parameters) in iteritems(context._verilog_headers):
+        for f, (template, parameters) in context._verilog_headers.items():
             self.renderer.add_generic(os.path.join(self.header_output_dir, f), template, context = context,
                     **parameters)
 

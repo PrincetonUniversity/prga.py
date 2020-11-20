@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ..base import AbstractPass
 from ...core.builder import ArrayBuilder
@@ -13,7 +10,7 @@ from ...xml import XMLGenerator
 import logging
 _logger = logging.getLogger(__name__)
 
-import time, os
+import time, os, gzip
 from itertools import product
 import networkx as nx 
 
@@ -29,17 +26,19 @@ class VPR_RRG_Generation(AbstractPass):
         output_file (:obj:`str` of file-like object): The output file
 
     Keyword Args:
+        gzip (:obj:`bool`): Use gzip to compress the output file
         fasm (`FASMDelegate`): Overwrite the deafult fasm delegate provided by the context
         timing (`TimingDelegate`): Overwrite the default iming delegate provided by the context
     """
 
-    __slots__ = ['output_file', 'fasm', 'timing',                           # customizable variables
+    __slots__ = ['output_file', 'gzip', 'fasm', 'timing',                       # customizable variables
             # temporary variables:
             'xml', 'tile2id', 'tilepin2ptc', 'switch2id', 'sgmt2id', 'sgmt2ptc',
             'chanx', 'chany', 'conn_graph',
             ]
-    def __init__(self, output_file, *, fasm = None, timing = None):
+    def __init__(self, output_file, *, gzip = False, fasm = None, timing = None):
         self.output_file = output_file
+        self.gzip = gzip
         self.fasm = fasm
         self.timing = timing
 
@@ -197,20 +196,20 @@ class VPR_RRG_Generation(AbstractPass):
         with self.xml.element("block_type", {
             "name": tile.name, "width": tile.width, "height": tile.height, "id": self.tile2id[tile.key]}):
             srcsink_ptc, iopin_ptc = 0, 0
-            for subtile, i in iteritems(tile.instances):
+            for subtile, i in tile.instances.items():
                 if not isinstance(subtile, int):
                     continue
-                tilepin2ptc.append( OrderedDict() )
-                for pin in itervalues(i.pins):
+                tilepin2ptc.append( {} )
+                for pin in i.pins.values():
                     if pin.model.direction.is_input and not pin.model.is_clock:
                         equivalent = getattr(pin.model, "vpr_equivalent_pins", False)
                         tilepin2ptc[subtile][pin.model.key] = srcsink_ptc, equivalent, iopin_ptc
                         srcsink_ptc, iopin_ptc = self._tile_pinlist(pin, srcsink_ptc, iopin_ptc)
-                for pin in itervalues(i.pins):
+                for pin in i.pins.values():
                     if pin.model.direction.is_output:
                         tilepin2ptc[subtile][pin.model.key] = srcsink_ptc, False, iopin_ptc
                         srcsink_ptc, iopin_ptc = self._tile_pinlist(pin, srcsink_ptc, iopin_ptc)
-                for pin in itervalues(i.pins):
+                for pin in i.pins.values():
                     if pin.model.is_clock:
                         tilepin2ptc[subtile][pin.model.key] = srcsink_ptc, False, iopin_ptc
                         srcsink_ptc, iopin_ptc = self._tile_pinlist(pin, srcsink_ptc, iopin_ptc)
@@ -342,28 +341,33 @@ class VPR_RRG_Generation(AbstractPass):
 
     def run(self, context, renderer = None):
         # runtime-generated data
-        self.tile2id = OrderedDict()
-        self.tilepin2ptc = OrderedDict()
-        # self.blockpin2ptc = OrderedDict()
-        self.switch2id = OrderedDict()
-        self.sgmt2id = OrderedDict()
-        self.sgmt2ptc = OrderedDict()
+        self.tile2id = {}
+        self.tilepin2ptc = {}
+        # self.blockpin2ptc = {}
+        self.switch2id = {}
+        self.sgmt2id = {}
+        self.sgmt2ptc = {}
         self.chanx = [[(0 < x < context.top.width - 1 and 0 <= y < context.top.height - 1)
             for y in range(context.top.height)] for x in range(context.top.width)]
         self.chany = [[(0 <= x < context.top.width - 1 and 0 < y < context.top.height - 1)
             for y in range(context.top.height)] for x in range(context.top.width)]
         channel_width = context.summary.vpr["channel_width"] = 2 * sum(sgmt.width * sgmt.length
-                for sgmt in itervalues(context.segments))
+                for sgmt in context.segments.values())
         # update VPR summary
-        if isinstance(self.output_file, basestring):
+        if isinstance(self.output_file, str):
             f = self.output_file
-            makedirs(os.path.dirname(f))
+            os.makedirs(os.path.dirname(f), exist_ok = True)
             context.summary.vpr["rrg"] = f
-            self.output_file = open(f, OpenMode.wb)
+            if self.gzip:
+                self.output_file = gzip.open(f, "wb")
+            else:
+                self.output_file = open(f, "wb")
         else:
             f = self.output_file.name
-            makedirs(os.path.dirname(f))
+            os.makedirs(os.path.dirname(f), exist_ok = True)
             context.summary.vpr["rrg"] = f
+            if self.gzip:
+                self.output_file = gzip.open(self.output_file, "wb")
         # FASM 
         if self.fasm is None:
             self.fasm = context.fasm_delegate
@@ -407,7 +411,7 @@ class VPR_RRG_Generation(AbstractPass):
             # segments
             with xml.element('segments'):
                 ptc = 0
-                for i, (name, sgmt) in enumerate(iteritems(context.segments)):
+                for i, (name, sgmt) in enumerate(context.segments.items()):
                     self.sgmt2id[name] = i
                     self.sgmt2ptc[name] = ptc
                     ptc += 2 * sgmt.width * sgmt.length

@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from .delegate import FASMDelegate
 from ..base import AbstractPass
@@ -13,7 +10,7 @@ from ...exception import PRGAInternalError
 
 from abc import abstractproperty, abstractmethod
 from itertools import product
-import os
+import os, gzip
 
 __all__ = ["VPRArchGeneration", "VPRScalableDelegate"]
 
@@ -27,13 +24,14 @@ class _VPRArchGeneration(AbstractPass):
 
     __slots__ = [
             # customizable variables
-            'output_file', 'fasm', 'timing',
+            'output_file', 'gzip', 'fasm', 'timing',
             # temporary variables
             'xml', 'lut_sizes', 'active_primitives', 'active_blocks', 'active_tiles',
             ]
 
-    def __init__(self, output_file, *, fasm = None, timing = None):
+    def __init__(self, output_file, *, gzip = False, fasm = None, timing = None):
         self.output_file = output_file
+        self.gzip = False
         self.fasm = fasm
         self.timing = timing
 
@@ -67,7 +65,7 @@ class _VPRArchGeneration(AbstractPass):
     def _tile(self, context, tile):
         with self.xml.element("tile", {"name": tile.name, "width": tile.width, "height": tile.height}):
             processed_blocks = set()
-            for subtile, i in iteritems(tile.instances):
+            for subtile, i in tile.instances.items():
                 if not isinstance(subtile, int):
                     continue
                 elif (block := i.model).key in processed_blocks:
@@ -80,7 +78,7 @@ class _VPRArchGeneration(AbstractPass):
 
                 with self.xml.element("sub_tile", {"name": subtile_name, "capacity": capacity}):
                     # 1. emit ports:
-                    for port in itervalues(block.ports):
+                    for port in block.ports.values():
                         attrs = {'name': port.name, 'num_pins': len(port)}
                         if not port.is_clock and hasattr(port, 'global_'):
                             attrs['is_non_clock_global'] = "true"
@@ -90,7 +88,7 @@ class _VPRArchGeneration(AbstractPass):
                                 'clock' if port.is_clock else port.direction.case('input', 'output'),
                                 attrs)
                     # 2. FC
-                    if (unroutables := set(port.name for tunnel in itervalues(context.tunnels)
+                    if (unroutables := set(port.name for tunnel in context.tunnels.values()
                         for port in (tunnel.source, tunnel.sink) if port.parent is block) |
                         set(port.name for port in block.ports.values() if hasattr(port, "global_"))):
                         with self.xml.element("fc",
@@ -109,7 +107,7 @@ class _VPRArchGeneration(AbstractPass):
                             for offset in range(ori.dimension.case(tile.height, tile.width)):
                                 pos = ori.case( (offset, tile.height - 1), (tile.width - 1, offset),
                                         (offset, 0), (0, offset) )
-                                if (ports := tuple(port for port in itervalues(block.ports)
+                                if (ports := tuple(port for port in block.ports.values()
                                     if port.position == pos and port.orientation in (None, ori))):
                                     self.xml.element_leaf("loc", {
                                         "side": ori.case("top", "right", "bottom", "left"),
@@ -171,11 +169,11 @@ class _VPRArchGeneration(AbstractPass):
                 #     if min_ is not None:
                 #         attrs["min"] = min_
                 #     self.xml.element_leaf("delay_constant", attrs)
-            if any(itervalues(fasm_muxes)):
+            if any(fasm_muxes.values()):
                 with self.xml.element("metadata"):
                     self.xml.element_leaf("meta", {"name": "fasm_mux"},
                             '\n'.join('{} : {}'.format(src, ", ".join(fasm_mux) or FASM_NONE)
-                                for src, fasm_mux in iteritems(fasm_muxes)))
+                                for src, fasm_mux in fasm_muxes.items()))
 
     def _leaf_pb_type(self, instance):
         leaf, primitive, attrs = instance.hierarchy[0], instance.model, {}
@@ -197,13 +195,13 @@ class _VPRArchGeneration(AbstractPass):
         if primitive.primitive_class.is_multimode:
             with self.xml.element("pb_type", attrs):
                 # 1. emit ports:
-                for port in itervalues(primitive.ports):
+                for port in primitive.ports.values():
                     attrs = {'name': port.name, 'num_pins': len(port)}
                     self.xml.element_leaf(
                             'clock' if port.is_clock else port.direction.case('input', 'output'),
                             attrs)
                 # 2. enumerate modes
-                for mode_name, mode in iteritems(primitive.modes):
+                for mode_name, mode in primitive.modes.items():
                     with self.xml.element("mode", {"name": mode_name}):
                         self._pb_type_body(mode, instance)
                 # 3. FASM metadata
@@ -238,7 +236,7 @@ class _VPRArchGeneration(AbstractPass):
         parent_name = attrs["name"]
         with self.xml.element('pb_type', attrs):
             # 1. emit ports
-            for port in itervalues(primitive.ports):
+            for port in primitive.ports.values():
                 attrs = {'name': port.name, 'num_pins': len(port)}
                 if (port_class := getattr(port, 'port_class', None)) is not None:
                     attrs['port_class'] = port_class.name
@@ -246,7 +244,7 @@ class _VPRArchGeneration(AbstractPass):
                         'clock' if port.is_clock else port.direction.case('input', 'output'),
                         attrs)
             # 2. timing
-            for port in itervalues(primitive.ports):
+            for port in primitive.ports.values():
                 for arc in NetUtils.get_timing_arcs(sink = port):
                     # FIXME: fake timing here
                     if arc.type_.is_comb_bitwise or arc.type_.is_comb_matrix:
@@ -263,16 +261,16 @@ class _VPRArchGeneration(AbstractPass):
                             "clock": arc.source.name})
             # 3. FASM parameters
             fasm_params = self.fasm.fasm_params_for_primitive(instance)
-            if fasm_prefixes or fasm_features or any(itervalues(fasm_params)):
+            if fasm_prefixes or fasm_features or any(fasm_params.values()):
                 with self.xml.element("metadata"):
                     if fasm_prefixes:
                         self.xml.element_leaf("meta", {"name": "fasm_prefix"}, fasm_prefixes)
                     if fasm_features:
                         self.xml.element_leaf("meta", {"name": "fasm_features"}, " ".join(fasm_features))
-                    if any(itervalues(fasm_params)):
+                    if any(fasm_params.values()):
                         self.xml.element_leaf("meta", {"name": "fasm_params"},
                             '\n'.join("{} = {}".format(p or FASM_NONE, param)
-                                for param, p in iteritems(fasm_params)))
+                                for param, p in fasm_params.items()))
 
                 # if port.is_clock:
                 #     continue
@@ -397,7 +395,7 @@ class _VPRArchGeneration(AbstractPass):
             fasm_features = self.fasm.fasm_features_for_intrablock_module(module, hierarchy)
         # sub instances
         fasm_luts = {}
-        for instance in itervalues(module.instances):
+        for instance in module.instances.values():
             leaves = []
             if (vpr_num_pb := getattr(instance, "vpr_num_pb", None)) is not None:
                 if instance.key[1] != 0:
@@ -424,18 +422,18 @@ class _VPRArchGeneration(AbstractPass):
                 for sink in net:
                     self._interconnect(sink, hierarchy, parent_name)
         # FASM
-        if fasm_prefixes or fasm_features or any(itervalues(fasm_luts)):
+        if fasm_prefixes or fasm_features or any(fasm_luts.values()):
             with self.xml.element("metadata"):
                 if fasm_prefixes:
                     self.xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefixes)
                 if fasm_features:
                     self.xml.element_leaf('meta', {'name': 'fasm_features'}, " ".join(fasm_features))
-                if any(itervalues(fasm_luts)):
+                if any(fasm_luts.values()):
                     self.xml.element_leaf('meta', {'name': 'fasm_type'},
                             'LUT' if len(fasm_luts) == 1 else 'SPLIT_LUT')
                     self.xml.element_leaf('meta', {'name': 'fasm_lut'},
                             '\n'.join('{} = {}'.format(lut or FASM_NONE, name)
-                                for name, lut in iteritems(fasm_luts)))
+                                for name, lut in fasm_luts.items()))
 
     def _pb_type(self, module, hierarchy = None):
         attrs, parent_name = {}, module.name
@@ -450,7 +448,7 @@ class _VPRArchGeneration(AbstractPass):
         attrs["name"] = parent_name
         with self.xml.element("pb_type", attrs):
             # 1. emit ports:
-            for port in itervalues(module.ports):
+            for port in module.ports.values():
                 attrs = {'name': port.name, 'num_pins': len(port)}
                 if not port.is_clock and hasattr(port, 'global_'):
                     attrs['is_non_clock_global'] = "true"
@@ -465,7 +463,7 @@ class _VPRArchGeneration(AbstractPass):
     def _model(self, primitive):
         with self.xml.element("model", {"name": getattr(primitive, "vpr_model", primitive.name)}):
             with self.xml.element("output_ports"):
-                for port in itervalues(primitive.ports):
+                for port in primitive.ports.values():
                     if port.direction.is_input:
                         continue
                     attrs = {"name": port.name}
@@ -479,7 +477,7 @@ class _VPRArchGeneration(AbstractPass):
                             attrs["clock"] = arc.source.name
                     self.xml.element_leaf("port", attrs)
             with self.xml.element("input_ports"):
-                for port in itervalues(primitive.ports):
+                for port in primitive.ports.values():
                     if port.direction.is_output:
                         continue
                     attrs = {"name": port.name}
@@ -517,15 +515,20 @@ class _VPRArchGeneration(AbstractPass):
         if not hasattr(context.summary, 'vpr'):
             context.summary.vpr = {}
         # output file update to the VPR summary is done per subclass
-        if isinstance(self.output_file, basestring):
+        if isinstance(self.output_file, str):
             f = self.output_file
-            makedirs(os.path.dirname(f))
+            os.makedirs(os.path.dirname(f), exist_ok = True)
             self._update_output_file(context.summary.vpr, f)
-            self.output_file = open(f, OpenMode.wb)
+            if self.gzip:
+                self.output_file = gzip.open(f, "wb")
+            else:
+                self.output_file = open(f, "wb")
         else:
             f = self.output_file.name
-            makedirs(os.path.dirname(f))
+            os.makedirs(os.path.dirname(f), exist_ok = True)
             self._update_output_file(context.summary.vpr, f)
+            if self.gzip:
+                self.output_file = gzip.open(self.output_file, "wb")
         # FASM 
         if self.fasm is None:
              self.fasm = context.fasm_delegate
@@ -536,13 +539,13 @@ class _VPRArchGeneration(AbstractPass):
         # self.timing.reset()
         # link and reset context summary
         if self._update_summary:
-            self.active_tiles = context.summary.active_tiles = OrderedDict()
-            self.active_blocks = context.summary.active_blocks = OrderedDict()
+            self.active_tiles = context.summary.active_tiles = {}
+            self.active_blocks = context.summary.active_blocks = {}
             self.active_primitives = context.summary.active_primitives = set()
             self.lut_sizes = context.summary.lut_sizes = set()
         else:
-            self.active_tiles = OrderedDict()
-            self.active_blocks = OrderedDict()
+            self.active_tiles = {}
+            self.active_blocks = {}
             self.active_primitives = set()
             self.lut_sizes = set()
         # XML generation
@@ -560,7 +563,7 @@ class _VPRArchGeneration(AbstractPass):
                 for block_key in self.active_blocks:
                     self._pb_type(context.database[ModuleView.user, block_key])
             # directs:
-            if (active_tunnels := tuple(tunnel for tunnel in itervalues(context.tunnels)
+            if (active_tunnels := tuple(tunnel for tunnel in context.tunnels.values()
                 if tunnel.source.parent.key in self.active_blocks and tunnel.sink.parent.key in self.active_blocks)):
                 with xml.element("directlist"):
                     for tunnel in active_tunnels:
@@ -604,7 +607,7 @@ class _VPRArchGeneration(AbstractPass):
                 #         })
             # segments:
             with xml.element("segmentlist"):
-                for segment in itervalues(context.segments):
+                for segment in context.segments.values():
                     # FIXME: fake segment timing
                     with xml.element('segment', {
                         'name': segment.name,
@@ -664,6 +667,7 @@ class VPRArchGeneration(_VPRArchGeneration):
         output_file (:obj:`str` of file-like object): The output file
 
     Keyword Args:
+        gzip (:obj:`bool`): Use gzip to compress the output file
         fasm (`FASMDelegate`): Overwrite the deafult fasm delegate provided by the context
         timing (`TimingDelegate`): Overwrite the default iming delegate provided by the context
     """
@@ -694,7 +698,7 @@ class VPRArchGeneration(_VPRArchGeneration):
                 self._layout_array(subarray.model, globals_, subarray._extend_hierarchy(above = hierarchy))
             elif subarray.model.module_class.is_tile:
                 self.active_tiles[subarray.model.key] = True
-                for subtile, i in iteritems(subarray.model.instances):
+                for subtile, i in subarray.model.instances.items():
                     if not isinstance(subtile, int):
                         continue
                     if i.model.module_class.is_io_block:
@@ -721,7 +725,7 @@ class VPRArchGeneration(_VPRArchGeneration):
     def _layout(self, context):
         self.ios = context.summary.ios = []
         globals_ = { (glb.bound_to_position, glb.bound_to_subtile): glb
-                for glb in itervalues(context.globals_)
+                for glb in context.globals_.values()
                 if glb.bound_to_position is not None and glb.bound_to_subtile is not None }
         with self.xml.element("fixed_layout",
                 {"name": context.top.name, "width": context.top.width, "height": context.top.height}):
@@ -752,6 +756,7 @@ class VPRScalableArchGeneration(_VPRArchGeneration):
         delegate (`VPRScalableDelegate`):
 
     Keyword Args:
+        gzip (:obj:`bool`): Use gzip to compress the output file
         fasm (`FASMDelegate`): Overwrite the deafult fasm delegate provided by the context
         timing (`TimingDelegate`): Overwrite the default iming delegate provided by the context
 

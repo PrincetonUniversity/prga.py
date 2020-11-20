@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ..util import Object, uno
 from ..exception import PRGAInternalError, PRGAAPIError
@@ -128,7 +125,7 @@ class Flow(Object):
                             iteritems(missing))))
             else:
                 del self._passes[i]
-        passes = tuple(itervalues(passes))
+        passes = tuple(passes.values())
         # 2. determine the correct order
         g = nx.DiGraph()
         g.add_nodes_from(range(len(passes)))
