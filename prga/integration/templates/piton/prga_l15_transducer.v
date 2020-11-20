@@ -95,7 +95,7 @@ module prga_l15_transducer (
     // =======================================================================
 
     // == Send L15 Request ==
-    reg                             transducer_l15_stall, l15_transducer_header_ack_pending;
+    reg                             transducer_l15_stall, l15_transducer_ack_pending;
     reg                             transducer_l15_val_next;
     reg [4:0]                       transducer_l15_rqtype_next;
     reg                             transducer_l15_nc_next;
@@ -107,7 +107,7 @@ module prga_l15_transducer (
 
     always @(posedge clk) begin
         if (~rst_n) begin
-            l15_transducer_header_ack_pending   <= 1'b0;
+            l15_transducer_ack_pending  <= 1'b0;
 
             transducer_l15_val          <= 1'b0;
             transducer_l15_rqtype       <= 5'b0;
@@ -118,7 +118,7 @@ module prga_l15_transducer (
             transducer_l15_data         <= 64'b0;
             transducer_l15_amo_op       <= `L15_AMO_OP_NONE;
         end else if (~transducer_l15_stall) begin
-            l15_transducer_header_ack_pending   <= transducer_l15_val_next;
+            l15_transducer_ack_pending  <= transducer_l15_val_next;
 
             transducer_l15_val          <= transducer_l15_val_next;
             transducer_l15_rqtype       <= transducer_l15_rqtype_next;
@@ -129,19 +129,19 @@ module prga_l15_transducer (
             transducer_l15_data         <= transducer_l15_data_next;
             transducer_l15_amo_op       <= transducer_l15_amo_op_next;
         end else begin
-            if (transducer_l15_val && l15_transducer_ack) begin
+            if (transducer_l15_val && l15_transducer_header_ack) begin
                 transducer_l15_val <= 1'b0;
             end
 
-            if (l15_transducer_header_ack_pending && l15_transducer_header_ack) begin
-                l15_transducer_header_ack_pending <= 1'b0;
+            if (l15_transducer_ack_pending && l15_transducer_ack) begin
+                l15_transducer_ack_pending <= 1'b0;
             end
         end
     end
 
     always @* begin
-        transducer_l15_stall = (transducer_l15_val && ~l15_transducer_ack) ||
-                               (l15_transducer_header_ack_pending && ~l15_transducer_header_ack);
+        transducer_l15_stall = (transducer_l15_val && ~l15_transducer_header_ack) ||
+                               (l15_transducer_ack_pending && ~l15_transducer_ack);
 
         // Tie unused outputs to constant low
         transducer_l15_l1rplway = 2'b0;     // no L1 cache

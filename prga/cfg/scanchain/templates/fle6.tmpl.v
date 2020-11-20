@@ -46,7 +46,7 @@ module fle6 (
     // synopsys translate_off
     // in case the sensitivity list is never triggered
     initial begin
-        internal_in = 6'b0;
+        internal_in = $random % 64;
     end
     // synopsys translate_on
 
@@ -54,10 +54,10 @@ module fle6 (
         internal_in = in;
 
         // synopsys translate_off
-        // in simulation, force unconnected LUT input to be zeros
+        // in simulation, force unconnected LUT input to be random non-x values
         {%- for i in range(6) %}
         if (in[{{ i }}] === 1'bx) begin
-            internal_in[{{ i }}] = 1'b0;
+            internal_in[{{ i }}] = $random % 2;
         end
         {%- endfor %}
         // synopsys translate_on
