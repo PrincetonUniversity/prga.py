@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from .base import BaseRoutingBoxBuilder
 from ...common import (Position, BridgeID, BridgeType, BlockFCValue, ModuleView, ModuleClass, BlockPinID, Direction,
@@ -193,24 +190,24 @@ class ConnectionBoxBuilder(BaseRoutingBoxBuilder):
         """
         # process FC values
         default_fc = BlockFCValue._construct(default_fc)
-        fc_override = {k: BlockFCValue._construct(v) for k, v in iteritems(uno(fc_override, {}))}
-        for tunnel in itervalues(self._context.tunnels):
+        fc_override = {k: BlockFCValue._construct(v) for k, v in uno(fc_override, {}).items()}
+        for tunnel in self._context.tunnels.values():
             for port in (tunnel.source, tunnel.sink):
                 fc = fc_override.setdefault(port.parent.key, BlockFCValue(default_fc.default_in, default_fc.default_out))
                 fc.overrides[port.key] = BlockPortFCValue(0)
         tile, orientation, offset = self._module.key
         # iterate through segment types
-        for sgmt in itervalues(self._context.segments):
+        for sgmt in self._context.segments.values():
             itracks = tuple(product(range(sgmt.width), range(sgmt.length)))
             iutil = [0] * len(itracks)
             otracks = tuple(range(sgmt.width))
             outil = [0] * len(otracks)
             # iterate through instances in the tile
-            for subtile, instance in iteritems(tile.instances):
+            for subtile, instance in tile.instances.items():
                 if not isinstance(subtile, int):
                     continue
                 # iterate through pins
-                for pin in itervalues(instance.pins):
+                for pin in instance.pins.values():
                     if hasattr(pin.model, "global_"):
                         continue
                     elif not (pin.model.position == self._module.key.position and pin.model.orientation in (orientation, None)):

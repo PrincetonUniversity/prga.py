@@ -340,7 +340,7 @@ class ModuleUtils(Object):
                                 raise PRGAInternalError("Clock root ({}) ignored due to user-specified node_key"
                                         .format(sink))
                             for clk_node in clk_nodes:
-                                if (conflict := (d := g[clk_node])["clock_root"]) is not None:
+                                if (conflict := (d := g.nodes[clk_node])["clock_root"]) is not None:
                                     if conflict != clock_root:
                                         raise PRGAInternalError("Clock network driven by multiple sources: {}, {}"
                                                 .format(g[conflict]["net"], sink))
@@ -406,7 +406,7 @@ class ModuleUtils(Object):
                                 types = (TimingArcType.seq_start, TimingArcType.seq_end)):
                             assert arc.source.is_clock
                             # attach hierarchy
-                            src = cls._attach_hierarchy(src, hierarchy)
+                            src = cls._attach_hierarchy(arc.source, hierarchy)
                             # check if ``src`` is a valid startpoint
                             if (startpoint := node_key(src)) is not None:
                                 # Yes it is

@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from .base import BaseArrayBuilder
 from .tile import TileBuilder
@@ -13,6 +10,7 @@ from ....util import Object, uno
 from ....exception import PRGAInternalError, PRGAAPIError
 
 from itertools import product, cycle, islice
+from collections.abc import MutableMapping
 
 __all__ = ['ArrayBuilder']
 
@@ -684,7 +682,7 @@ class ArrayBuilder(BaseArrayBuilder):
                     instance = self.instantiate(sbox, position)
                 if instance.model.key not in processed_boxes:
                     builder = SwitchBoxBuilder(self._context, instance.model)
-                    for output, (drivex, xo) in iteritems(outputs):
+                    for output, (drivex, xo) in outputs.items():
                         builder.fill(output, drive_at_crosspoints = drivex, crosspoints_only = xo,
                                 exclude_input_orientations = excluded_inputs, pattern = sbox_pattern)
                     processed_boxes.add(instance.model.key)
@@ -714,14 +712,14 @@ class ArrayBuilder(BaseArrayBuilder):
                 auto_connected.add( instance.model.key )
                 type(self)(self._context, instance.model).auto_connect(is_top = False)
         # 2nd pass: connect routing nodes
-        for key, instance in iteritems(self._module.instances):
+        for key, instance in self._module.instances.items():
             try:
                 (x, y), corner = key
             except TypeError:
                 (x, y), corner = key, None
 
             # process routing nodes
-            snapshot = tuple(iteritems(instance.pins))
+            snapshot = tuple(instance.pins.items())
             for node, pin in snapshot:
                 if isinstance(node, BridgeID):              # bridges
                     if node.bridge_type.is_regular_input:

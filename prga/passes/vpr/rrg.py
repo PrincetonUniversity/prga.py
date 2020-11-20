@@ -170,7 +170,7 @@ class VPR_RRG_Generation(AbstractPass):
                 )
         t = time.time() - t
         _logger.info("Completed constructing coarse-grained routing graph for VPR RRG generation")
-        _logger.info("Construction took %f seconds", t)
+        _logger.info(" .. Construction took %f seconds", t)
 
     def _tile_pinlist(self, pin, srcsink_ptc, iopin_ptc):
         subtile_name = pin.parent.name
@@ -267,7 +267,9 @@ class VPR_RRG_Generation(AbstractPass):
             self.xml.element_leaf("edge", attrs)
 
     def _edge_box_output(self, head_pin_bit, tail_pin_bit, tail_pkg, fasm_features = tuple(), delay = 0.0):
-        sink, hierarchy = ModuleUtils._analyze_sink(head_pin_bit)
+        sink, index, hierarchy = ModuleUtils._analyze_sink(head_pin_bit)
+        if index is not None:
+            sink = sink[index]
         for src in NetUtils.get_multisource(sink):
             this_fasm = fasm_features + self.fasm.fasm_features_for_interblock_switch(src, sink, hierarchy)
             # FIXME: timing

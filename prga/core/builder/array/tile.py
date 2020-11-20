@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from .base import BaseArrayBuilder
 from ..box import ConnectionBoxBuilder
@@ -134,7 +131,7 @@ class TileBuilder(BaseArrayBuilder):
                         .format(ori, offset, self._module))
             try:
                 box = self._context.database[ModuleView.user, key]
-                for k, v in iteritems(kwargs):
+                for k, v in kwargs.items():
                     setattr(box, k, v)
             except KeyError:
                 box = self._context._database[ModuleView.user, key] = ConnectionBoxBuilder.new(
@@ -161,8 +158,8 @@ class TileBuilder(BaseArrayBuilder):
         """
         # process FC values
         default_fc = BlockFCValue._construct(default_fc)
-        fc_override = {k: BlockFCValue._construct(v) for k, v in iteritems(uno(fc_override, {}))}
-        for tunnel in itervalues(self._context.tunnels):
+        fc_override = {k: BlockFCValue._construct(v) for k, v in uno(fc_override, {}).items()}
+        for tunnel in self._context.tunnels.values():
             for port in (tunnel.source, tunnel.sink):
                 fc = fc_override.setdefault(port.parent.key, BlockFCValue(default_fc.default_in, default_fc.default_out))
                 fc.overrides[port.key] = BlockPortFCValue(0)
@@ -180,17 +177,17 @@ class TileBuilder(BaseArrayBuilder):
                 # 2. port?
                 cbox_needed = False
                 blocks_checked = set()
-                for key, instance in iteritems(self._module.instances):
+                for key, instance in self._module.instances.items():
                     if not isinstance(key, int) or instance.model.key in blocks_checked:
                         continue
                     blocks_checked.add(instance.model.key)
-                    for port in itervalues(instance.model.ports):
+                    for port in instance.model.ports.values():
                         if port.position != boxkey.position or port.orientation not in (ori, None):
                             continue
                         elif hasattr(port, 'global_'):
                             continue
                         elif any(fc_override.get(instance.model.key, default_fc).port_fc(port, sgmt)
-                                for sgmt in itervalues(self._context.segments)):
+                                for sgmt in self._context.segments.values()):
                             cbox_needed = True
                             break
                     if cbox_needed:
@@ -211,11 +208,11 @@ class TileBuilder(BaseArrayBuilder):
         """
         # two passes
         # 1. visit CBoxes and connect
-        for key, instance in iteritems(self._module.instances):
+        for key, instance in self._module.instances.items():
             if isinstance(key, int):
                 continue
             ori, offset = key
-            for node, box_pin in iteritems(instance.pins):
+            for node, box_pin in instance.pins.items():
                 # find the correct connection
                 box_pin_conn = None
                 if node.node_type.is_block:
@@ -255,11 +252,11 @@ class TileBuilder(BaseArrayBuilder):
                     self.connect(box_pin, box_pin_conn)
 
         # 2. visit subblocks and connect
-        for key, instance in iteritems(self._module.instances):
+        for key, instance in self._module.instances.items():
             if not isinstance(key, int):
                 continue
             # direct tunnels
-            for tunnel in itervalues(self._context.tunnels):
+            for tunnel in self._context.tunnels.values():
                 if tunnel.sink.parent is not instance.model:
                     continue
                 # find the sink pin of the tunnel

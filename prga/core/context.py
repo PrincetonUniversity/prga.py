@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from .common import (Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView, OrientationTuple,
         DirectTunnel)
@@ -87,12 +84,12 @@ class Context(Object):
 
     def __init__(self, cfg_type, *, database = None, **kwargs):
         self._cfg_type = cfg_type
-        self._globals = OrderedDict()
-        self._tunnels = OrderedDict()
-        self._segments = OrderedDict()
+        self._globals = {}
+        self._tunnels = {}
+        self._segments = {}
         self._top = None
         self._system_top = None
-        self._verilog_headers = OrderedDict()
+        self._verilog_headers = {}
         if database is None:
             self._new_database()
         else:
@@ -100,7 +97,7 @@ class Context(Object):
         self.summary = ContextSummary()
         self.version = _VERSION
         self.summary.cwd = self.cwd = os.getcwd()
-        for k, v in iteritems(kwargs):
+        for k, v in kwargs.items():
             setattr(self, k, v)
 
     def _add_verilog_header(self, f, template, **parameters):
@@ -116,7 +113,7 @@ class Context(Object):
         self._verilog_headers[f] = template, parameters
 
     def _new_database(self):
-        database = self._database = OrderedDict()
+        database = self._database = {}
 
         # 1. register built-in modules: LUTs
         for i in range(2, 9):
@@ -614,8 +611,8 @@ class Context(Object):
         cwd = self.cwd
         del self.cwd
         del self.summary.cwd
-        if isinstance(file_, basestring):
-            pickle.dump(self, open(file_, OpenMode.wb))
+        if isinstance(file_, str):
+            pickle.dump(self, open(file_, "wb"))
             _logger.info("Context pickled to {}".format(file_))
         else:
             pickle.dump(self, file_)
@@ -628,8 +625,8 @@ class Context(Object):
         Args:
             file_ (:obj:`str` or file-like object): output file or its name
         """
-        if isinstance(file_, basestring):
-            pickle.dump(self.summary, open(file_, OpenMode.wb))
+        if isinstance(file_, str):
+            pickle.dump(self.summary, open(file_, "wb"))
             _logger.info("Context summary pickled to {}".format(file_))
         else:
             pickle.dump(self.summary, file_)
@@ -642,8 +639,8 @@ class Context(Object):
         Args:
             file_ (:obj:`str` or file-like object): the pickled file
         """
-        name = file_ if isinstance(file_, basestring) else file_.name
-        obj = pickle.load(open(file_, OpenMode.rb) if isinstance(file_, basestring) else file_)
+        name = file_ if isinstance(file_, str) else file_.name
+        obj = pickle.load(open(file_, "rb") if isinstance(file_, str) else file_)
         if isinstance(obj, cls):
             if (version := getattr(obj, "version", None)) != _VERSION:
                 if version is None:

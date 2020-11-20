@@ -888,11 +888,12 @@ class Scanchain(Object):
         assert not module.coalesce_connections and not logical.coalesce_connections
         assert not logical.allow_multisource
 
-        # reduce timing graph
+        # reduce timing graph (use timing graph instead of conn graph to get the timing arcs inside the switches into
+        # the graph)
         def node_key(n):
             bus = n.bus if n.net_type.is_bit or n.net_type.is_slice else n
             model = bus.model if bus.net_type.is_pin else bus
-            if model.net_class in (NetClass.user, NetClass.block, NetClass.segment, NetClass.bridge):
+            if model.net_class in (NetClass.user, NetClass.block, NetClass.segment, NetClass.bridge, NetClass.global_):
                 return NetUtils._reference(n)
             else:
                 return None

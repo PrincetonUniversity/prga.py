@@ -1,9 +1,5 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
 """Algorithms for building interconnects."""
-
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from itertools import product, count, cycle, islice
 from bitarray.util import zeros
