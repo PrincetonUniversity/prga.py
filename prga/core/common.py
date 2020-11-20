@@ -1,14 +1,11 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
 """Common enums for FPGA builders."""
-
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ..util import Object, Enum, uno
 from ..exception import PRGAInternalError
 
 from collections import namedtuple
+from collections.abc import Hashable
 from abc import abstractproperty
 from copy import copy
 from math import ceil
@@ -302,7 +299,7 @@ class IO(Object):
         self.position = Position(*position)
         self.subtile = subtile
         self.global_ = global_
-        for k, v in iteritems(kwargs):
+        for k, v in kwargs.items():
             setattr(self, k, v)
 
 # ----------------------------------------------------------------------------

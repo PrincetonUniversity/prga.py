@@ -265,7 +265,7 @@ class TileBuilder(BaseArrayBuilder):
                 # find the sink pin of the tunnel
                 sink = instance.pins[tunnel.sink.key]
                 # check if the sink pin is already driven
-                if (driver := NetUtils.get_source(sink, return_none_if_unconnected = True)) is None:
+                if (driver := NetUtils.get_source(sink)) is None:
                     pass
                 elif driver.net_type.is_pin:
                     assert driver.instance.model.module_class.is_connection_box
@@ -276,7 +276,7 @@ class TileBuilder(BaseArrayBuilder):
                                 len(tunnel.source), driver.model.direction.opposite, key = src_node)
                         NetUtils.connect(tunnel_src_port, driver.model)
                     sink = driver.instance.pins[src_node]
-                    if NetUtils.get_source(sink, return_none_if_unconnected = True) is not None:
+                    if NetUtils.get_source(sink) is not None:
                         continue
                 else:
                     continue

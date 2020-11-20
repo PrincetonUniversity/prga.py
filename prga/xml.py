@@ -2,9 +2,6 @@
 # Python 2 and 3 compatible
 """XML streaming generation."""
 
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
-
 from lxml.etree import xmlfile
 
 __all__ = ['XMLGenerator']
@@ -39,7 +36,7 @@ class XMLGenerator(object):
         if self.__skip_stringify:
             return d
         else:
-            return {k: '{:g}'.format(v) if isinstance(v, float) else str(v) for k, v in iteritems(d)} 
+            return {k: '{:g}'.format(v) if isinstance(v, float) else str(v) for k, v in d.items()} 
 
     def _indent(self):
         if self.__pretty and self._depth > 0:

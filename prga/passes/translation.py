@@ -179,11 +179,11 @@ class TranslationPass(AbstractPass):
                     continue
                 lsink = NetUtils._dereference(logical, NetUtils._reference(usink))
                 if module.coalesce_connections:
-                    NetUtils.connect(NetUtils._dereference(logical, NetUtils._reference(NetUtils.get_source(usink))),
-                            lsink)
+                    usrc = NetUtils.get_source(usink, return_const_if_unconnected = True)
+                    NetUtils.connect(NetUtils._dereference(logical, NetUtils._reference(usrc)), lsink)
                 elif not module.allow_multisource:
-                    NetUtils.connect([NetUtils._dereference(logical, NetUtils._reference(usrc))
-                        for usrc in NetUtils.get_source(usink)], lsink)
+                    usrc = NetUtils.get_source(usink, return_const_if_unconnected = True)
+                    NetUtils.connect([NetUtils._dereference(logical, NetUtils._reference(i)) for i in usrc], lsink)
                 else:
                     for i, bit in enumerate(usink):
                         if len(usrcs := NetUtils.get_multisource(bit)) == 0:

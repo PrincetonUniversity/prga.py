@@ -1,9 +1,5 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
 """Netlist modules."""
-
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ..net.bus import Port
 from ...util import ReadonlyMappingProxy, uno, Enum, Object
@@ -28,13 +24,15 @@ class Module(Object):
         is_cell (:obj:`bool`): If set to ``True``, this module is created as a cell module. A cell module does not
             contain information about connections. It contains information about timing arcs instead. A cell module
             may still contain sub-instances, but they are only used for tracking the hierarchy. When set, this
-            argument overrides ``allow_multisource`` to ``False`` and ``coalesce_connections`` to ``True``
+            argument overrides ``allow_multisource`` to ``False`` and ``coalesce_connections`` to ``True``.
+            ``coalesce_connections`` is forced to ``True`` because VPR does not support bitwise timing arcs for
+            models.
         allow_multisource (:obj:`bool`): If set to ``True``, a sink net may be driven by multiple source nets.
             Incompatible with ``coalesce_connections``
         coalesce_connections (:obj:`bool`): If set to ``True``, bit-wise connections are not allowed.
             Incompatible with ``allow_multisource``
         instances (:obj:`MutableMapping` [:obj:`Hashable`, `Instance` ]): Custom instance mapping object. If not
-            specified, an :obj:`OrderedDict` object will be created and used
+            specified, a :obj:`dict` object will be created and used
         **kwargs: Custom key-value arguments. These attributes are added to ``__dict__`` of this object
             and accessible as dynamic attributes
     """
@@ -57,9 +55,9 @@ class Module(Object):
 
         self._name = name
         self._key = uno(key, name)
-        self._children = OrderedDict()
-        self._ports = OrderedDict()
-        self._instances = uno(instances, OrderedDict())
+        self._children = {}
+        self._ports = {}
+        self._instances = uno(instances, {})
 
         if is_cell:
             self._flags = self._FLAGS.IS_CELL | self._FLAGS.COALESCE_CONNECTIONS
@@ -70,7 +68,7 @@ class Module(Object):
         else:
             self._flags = self._FLAGS.NONE
 
-        for k, v in iteritems(kwargs):
+        for k, v in kwargs.items():
             setattr(self, k, v)
 
     def __repr__(self):

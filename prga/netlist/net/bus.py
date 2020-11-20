@@ -1,11 +1,7 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
 """Port & Pin classes."""
 
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
-
-from .common import NetType, PortDirection, AbstractNet, AbstractNonReferenceNet, Const
+from .common import NetType, PortDirection, AbstractNet, AbstractNonReferenceNet, Const, Slice
 from .util import NetUtils
 from ...util import uno
 from ...exception import PRGAInternalError
@@ -49,6 +45,12 @@ class _Bit(AbstractNonReferenceNet):
         else:
             return Const()
 
+    def __iter__(self):
+        yield self
+
+    def __reversed__(self):
+        yield self
+
     # == low-level API =======================================================
     @property
     def bus(self):
@@ -75,7 +77,7 @@ class _Bit(AbstractNonReferenceNet):
 
     @property
     def is_clock(self):
-        return self._bus.is_clock
+        return self._bus.is_clock 
 
     @property
     def parent(self):
@@ -132,6 +134,26 @@ class Port(AbstractNonReferenceNet):
             return self._bits[index.start]
         else:
             return NetUtils._slice(self, index)
+
+    def __iter__(self):
+        if len(self) == 1:
+            yield self
+        elif self._parent.coalesce_connections:
+            for i in range(self._width):
+                yield Slice(self, slice(i, i + 1))
+        else:
+            for i in self._bits:
+                yield i
+
+    def __reversed__(self):
+        if len(self) == 1:
+            yield self
+        elif self._parent.coalesce_connections:
+            for i in reversed(range(self._width)):
+                yield Slice(self, slice(i, i + 1))
+        else:
+            for i in reversed(self._bits):
+                yield i
 
     # == low-level API =======================================================
     @property
@@ -212,6 +234,26 @@ class Pin(AbstractNonReferenceNet):
         else:
             return NetUtils._slice(self, index)
 
+    def __iter__(self):
+        if len(self) == 1:
+            yield self
+        elif self._instance.parent.coalesce_connections:
+            for i in range(len(self)):
+                yield Slice(self, slice(i, i + 1))
+        else:
+            for i in self._bits:
+                yield i
+
+    def __reversed__(self):
+        if len(self) == 1:
+            yield self
+        elif self._instance.parent.coalesce_connections:
+            for i in reversed(range(len(self))):
+                yield Slice(self, slice(i, i + 1))
+        else:
+            for i in reversed(self._bits):
+                yield i
+
     # == low-level API =======================================================
     @property
     def instance(self):
@@ -270,6 +312,20 @@ class HierarchicalPin(AbstractNet):
     def __getitem__(self, index):
         return NetUtils._slice(self, self._auto_index(index))
 
+    def __iter__(self):
+        if len(self) == 1:
+            yield self
+        else:
+            for i in range(len(self)):
+                yield Slice(self, slice(i, i + 1))
+
+    def __reversed__(self):
+        if len(self) == 1:
+            yield self
+        else:
+            for i in reversed(range(len(self))):
+                yield Slice(self, slice(i, i + 1))
+
     # == low-level API =======================================================
     @property
     def instance(self):
@@ -285,6 +341,10 @@ class HierarchicalPin(AbstractNet):
     def parent(self):
         """`Module`: Parent module of this net."""
         return self._instance.parent
+
+    @property
+    def is_clock(self):
+        return self._model.is_clock
 
     # -- implementing properties/methods required by superclass --------------
     @property

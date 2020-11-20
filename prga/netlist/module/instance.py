@@ -1,15 +1,12 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
 """Netlist module instances, i.e. sub-modules."""
-
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ..net.bus import Pin, HierarchicalPin
 from ...util import uno, Object
 from ...exception import PRGAInternalError, PRGATypeError, PRGAIndexError
 
 from abc import abstractproperty, abstractmethod
+from collections.abc import Mapping
 
 __all__ = ['Instance', 'HierarchicalInstance']
 
@@ -75,17 +72,17 @@ class AbstractInstance(Object):
         """:obj:`Sequence` [`Instance` ]: Hierarchy of this instance in bottom-up order."""
         raise NotImplementedError
 
-    @property
+    @abstractproperty
     def pins(self):
         """:obj:`Mapping` [:obj:`Hashable`, `Pin` or `HierarchicalPin`]: Pins of this instance."""
-        return _InstancePinsProxy(self)
+        raise NotImplementedError
 
     def _extend_hierarchy(self, *, above = None, below = None):
         """Extend the hierarchy.
 
         Keyword Args:
-            above (`AbstractInstance` or :obj:`Sequence` [`Instance`]): Append above the current hierarchy
-            below (`AbstractInstance` or :obj:`Sequence` [`Instance`]): Append below the current hierarchy 
+            above (`AbstractInstance` or :obj:`tuple` [`Instance`]): Append above the current hierarchy
+            below (`AbstractInstance` or :obj:`tuple` [`Instance`]): Append below the current hierarchy 
 
         Returns:
             `AbstractInstance`:
@@ -139,7 +136,7 @@ class Instance(AbstractInstance):
         **kwargs: Custom attributes associated with this instance
     """
 
-    __slots__ = ['_parent', '_model', '_name', '_key', '_pins', '__dict__']
+    __slots__ = ['_parent', '_model', '_name', '_key', '_pins', '_pins_proxy', '__dict__']
 
     # == internal API ========================================================
     def __init__(self, parent, model, name, *, key = None, **kwargs):
@@ -147,9 +144,10 @@ class Instance(AbstractInstance):
         self._model = model
         self._name = name
         self._key = uno(key, name)
-        self._pins = OrderedDict()
+        self._pins = {}
+        self._pins_proxy = _InstancePinsProxy(self)
 
-        for k, v in iteritems(kwargs):
+        for k, v in kwargs.items():
             setattr(self, k, v)
 
     def __repr__(self):
@@ -183,6 +181,10 @@ class Instance(AbstractInstance):
     def hierarchy(self):
         return (self, )
 
+    @property
+    def pins(self):
+        return self._pins_proxy
+
 # ----------------------------------------------------------------------------
 # -- Hierarchical Instance ---------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -190,24 +192,25 @@ class HierarchicalInstance(AbstractInstance):
     """Hierarchical instance in a module.
 
     Args:
-        hierarchy (:obj:`Sequence` [:obj:`Instance` ]): Hierarchy in bottom-up order.
+        hierarchy (:obj:`tuple` [:obj:`Instance` ]): Hierarchy in bottom-up order.
 
     Notes:
         Direct instantiation of this class is not recommended. Use `AbstractInstance._shrink_hierarchy`,
         `AbstractInstance._extend_hierarchy`, or `ModuleUtils._dereference` instead.
     """
 
-    __slots__ = ["hierarchy"]
+    __slots__ = ["_hierarchy", "_pins_proxy"]
 
     # == internal API ========================================================
     def __init__(self, hierarchy):
         if len(hierarchy) < 2:
             raise PRGAInternalError("Cannot create hierarchical instance with less than 2 levels")
-        self.hierarchy = hierarchy
+        self._hierarchy = hierarchy
+        self._pins_proxy = _InstancePinsProxy(self)
 
     def __repr__(self):
-        s = '{}/{}'.format(self.hierarchy[-1].parent.name, self.hierarchy[-1].name)
-        for inst in reversed(self.hierarchy[:-1]):
+        s = '{}/{}'.format(self._hierarchy[-1].parent.name, self._hierarchy[-1].name)
+        for inst in reversed(self._hierarchy[:-1]):
             s += "[{}]/{}".format(inst.parent.name, inst.name)
         s += "[{}]".format(self.model.name)
         return "HierInstance({})".format(s)
@@ -220,8 +223,16 @@ class HierarchicalInstance(AbstractInstance):
 
     @property
     def parent(self):
-        return self.hierarchy[-1].parent
+        return self._hierarchy[-1].parent
 
     @property
     def model(self):
-        return self.hierarchy[0].model
+        return self._hierarchy[0].model
+
+    @property
+    def hierarchy(self):
+        return self._hierarchy
+
+    @property
+    def pins(self):
+        return self._pins_proxy

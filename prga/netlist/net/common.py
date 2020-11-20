@@ -1,14 +1,11 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
 """Common enums and abstract base class for nets."""
-
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from ...util import Enum, Object, uno
 from ...exception import PRGAIndexError, PRGATypeError
 
 from abc import abstractproperty, abstractmethod
+from collections.abc import Sequence
 
 __all__ = ["NetType", "PortDirection", "TimingArcType", "Const"]
 
@@ -57,11 +54,10 @@ class PortDirection(Enum):
 class TimingArcType(Enum):
     """Timing arc types."""
 
-    comb_1bit = 0           #: combinational propagation delay between two single-bit nets
-    comb_bitwise = 1        #: combinational propagation delay of a bitwise timing arc
-    comb_matrix = 2         #: combinational propagation delay of an all-to-all timing arc
-    seq_start = 3           #: clock -> sequential startpoint(s), i.e., clk2q
-    seq_end = 4             #: clock -> sequential endpoint(s), i.e., setup & hold
+    comb_bitwise = 0        #: combinational propagation delay of a bitwise timing arc
+    comb_matrix = 1         #: combinational propagation delay of an all-to-all timing arc
+    seq_start = 2           #: clock -> sequential startpoint(s), i.e., clk2q
+    seq_end = 3             #: clock -> sequential endpoint(s), i.e., setup & hold
 
 # ----------------------------------------------------------------------------
 # -- Abstract Net ------------------------------------------------------------
@@ -72,6 +68,11 @@ class AbstractNet(Object, Sequence):
     @abstractproperty
     def net_type(self):
         """`NetType`: Type of the net."""
+        raise NotImplementedError
+
+    @abstractproperty
+    def is_clock(self):
+        """:obj:`bool`: Test if this net is part of a clock network."""
         raise NotImplementedError
 
     def _auto_index(self, index):
@@ -113,11 +114,6 @@ class AbstractNonReferenceNet(AbstractNet):
     @abstractproperty
     def is_sink(self):
         """:obj:`bool`: Test if this net can be driven by other nets."""
-        raise NotImplementedError
-
-    @abstractproperty
-    def is_clock(self):
-        """:obj:`bool`: Test if this net is part of a clock network."""
         raise NotImplementedError
 
     @abstractproperty
@@ -216,6 +212,22 @@ class Const(AbstractNonReferenceNet):
         else:
             return type(self)(self.value >> index.start, index.stop - index.start)
 
+    def __iter__(self):
+        if self.value is None:
+            for _ in range(len(self)):
+                yield type(self)(self.value, 1)
+        else:
+            for i in range(len(self)):
+                yield type(self)(self.value >> i, 1)
+
+    def __reversed__(self):
+        if self.value is None:
+            for _ in range(len(self)):
+                yield type(self)(self.value, 1)
+        else:
+            for i in reversed(range(len(self))):
+                yield type(self)(self.value >> i, 1)
+
 # ----------------------------------------------------------------------------
 # -- Slice Reference of a Bus ------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -249,6 +261,14 @@ class Slice(AbstractNet):
         index = self._auto_index(index)
         return self.bus[self.index.start + index.start:self.index.start + index.stop]
 
+    def __iter__(self):
+        for i in range(self.index.start, self.index.stop):
+            yield self.bus[i]
+
+    def __reversed__(self):
+        for i in reversed(range(self.index.start, self.index.stop)):
+            yield self.bus[i]
+
     # == low-level API =======================================================
     @property
     def net_type(self):
@@ -258,6 +278,10 @@ class Slice(AbstractNet):
     def parent(self):
         """`Module`: Parent module of this net."""
         return self.bus.parent
+
+    @property
+    def is_clock(self):
+        return self.bus.is_clock
 
 # ----------------------------------------------------------------------------
 # -- A Concatenation of Slices and/or buses ----------------------------------
@@ -285,6 +309,10 @@ class Concat(AbstractNet):
     def net_type(self):
         return NetType.concat
 
+    @property
+    def is_clock(self):
+        return False
+
     def __len__(self):
         return sum(len(i) for i in self.items)
 
@@ -309,3 +337,13 @@ class Concat(AbstractNet):
             return items[0]
         else:
             return type(self)(items)
+
+    def __iter__(self):
+        for i in self.items:
+            for ii in i:
+                yield ii
+
+    def __reversed__(self):
+        for i in reversed(self.items):
+            for ii in reversed(i):
+                yield ii

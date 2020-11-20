@@ -1,9 +1,5 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
 """PRGA's exception and error types."""
-
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 __all__ = ["PRGAInternalError", "PRGAAPIError", "PRGATypeError", "PRGAIndexError"]
 

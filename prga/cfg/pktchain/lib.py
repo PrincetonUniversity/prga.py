@@ -81,21 +81,21 @@ class Pktchain(Scanchain):
     @classmethod
     def _connect_common_cfg_ports(cls, module, instance):
         # clock
-        if NetUtils.get_source(instance.pins["cfg_clk"], return_none_if_unconnected = True) is None:
+        if NetUtils.get_source(instance.pins["cfg_clk"]) is None:
             if (cfg_clk := module.ports.get("cfg_clk")) is None:
                 cfg_clk = ModuleUtils.create_port(module, "cfg_clk", 1, PortDirection.input_,
                         is_clock = True, net_class = NetClass.cfg)
             NetUtils.connect(cfg_clk, instance.pins["cfg_clk"])
         # enable
         if (inst_cfg_e := instance.pins.get("cfg_e")) is not None:
-            if NetUtils.get_source(inst_cfg_e, return_none_if_unconnected = True) is None:
+            if NetUtils.get_source(inst_cfg_e) is None:
                 if (cfg_e := module.ports.get("cfg_e")) is None:
                     cfg_e = ModuleUtils.create_port(module, "cfg_e", 1, PortDirection.input_,
                             net_class = NetClass.cfg)
                 NetUtils.connect(cfg_e, inst_cfg_e)
         # reset
         if (inst_cfg_rst := instance.pins.get("cfg_rst")) is not None:
-            if NetUtils.get_source(inst_cfg_rst, return_none_if_unconnected = True) is None:
+            if NetUtils.get_source(inst_cfg_rst) is None:
                 if (cfg_rst := module.ports.get("cfg_rst")) is None:
                     cfg_rst = ModuleUtils.create_port(module, "cfg_rst", 1, PortDirection.input_,
                             net_class = NetClass.cfg)

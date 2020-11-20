@@ -1,9 +1,5 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
 """Utility methods for accessing nets."""
-
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from .common import NetType, Const, Slice, Concat, TimingArcType
 from ...util import Object, uno
@@ -29,7 +25,6 @@ class TimingArc(Object):
             arc
 
     Keyword Args:
-        max_ (:obj:`float`): Maximum delay from ``source`` to ``sink``. ``type_`` must be `TimingArcType.comb_1bit`
         max_ (:obj:`list` [:obj:`float` ]): Maximum values for each ``source``-``sink`` pair if ``type_`` is
             `TimingArcType.comb_bitwise`, `TimingArcType.seq_start` or `TimingArcType.seq_end`. This is the setup
             value if ``type_`` is `TimingArcType.seq_end`
@@ -70,8 +65,8 @@ class TimingArc(Object):
 
     @property
     def min_(self):
-        """:obj:`float`, :obj:`list` [:obj:`float` ], or :obj:`list` [:obj:`list` [:obj:`float` ]]: The min/hold
-        value(s) of this timing arc."""
+        """:obj:`list` [:obj:`float` ] or :obj:`list` [:obj:`list` [:obj:`float` ]]: The min/hold value(s) of this
+        timing arc."""
         return self._min
 
     @min_.setter
@@ -80,8 +75,8 @@ class TimingArc(Object):
 
     @property
     def max_(self):
-        """:obj:`float`, :obj:`list` [:obj:`float` ], or :obj:`list` [:obj:`list` [:obj:`float` ]]: The max/setup
-        value(s) of this timing arc."""
+        """:obj:`list` [:obj:`float` ] or :obj:`list` [:obj:`list` [:obj:`float` ]]: The max/setup value(s) of this
+        timing arc."""
         return self._max
 
     @max_.setter
@@ -113,10 +108,8 @@ class NetConnection(Object):
 
         if source.net_type.is_const:
             self._arc = None
-        elif sink.parent.coalesce_connections:
-            self._arc = TimingArc(TimingArcType.comb_bitwise, source, sink)
         else:
-            self._arc = TimingArc(TimingArcType.comb_1bit, source, sink)
+            self._arc = TimingArc(TimingArcType.comb_bitwise, source, sink)
 
         for k, v in kwargs.items():
             setattr(self, k, v)
@@ -148,7 +141,7 @@ class NetUtils(Object):
 
     @classmethod
     def __concat_same(cls, i, j):
-        """Return the bus ``i`` and ``j`` are the same. Otherwise return ``None``."""
+        """Return the bus if ``i`` and ``j`` are the same. Otherwise return ``None``."""
         if i.net_type is not j.net_type:
             return None
         elif i.net_type in (NetType.port, NetType.pin):
@@ -250,25 +243,22 @@ class NetUtils(Object):
         # special cases
         if len(ref) == 3 and ref[-1] is NetType.const:
             return Const(*ref[:2])
-        elif len(ref) == 2 and isinstance(ref[0], int) and isinstance(ref[1], tuple):
+        elif len(ref) == 2 and (isinstance(ref[0], int) or isinstance(ref[0], slice)) and isinstance(ref[1], tuple):
+            # try if this is a bit/slice
             try:
                 return cls._dereference(module, ref[1])[ref[0]]
             except (KeyError, IndexError):
                 pass
         instance = []
         for inst_key in reversed(ref[1:]):
-            instance.append(instance[-1].model.instances[inst_key] if len(instance)
+            instance.append(instance[-1].model.instances[inst_key] if instance
                     else module.instances[inst_key])
         if len(instance) == 0:
-            instance = None
-        elif len(instance) == 1:
-            instance = instance[0]
-        else:
-            instance = instance[0]._extend_hierarchy(below = tuple(reversed(instance[1:])))
-        if instance is None:
             return module.ports[ref[0]]
+        elif len(instance) == 1:
+            return instance[0].pins[ref[0]]
         else:
-            return instance.pins[ref[0]]
+            return instance[0]._extend_hierarchy(below = tuple(reversed(instance[1:]))).pins[ref[0]]
 
     @classmethod
     def concat(cls, items):
@@ -350,25 +340,25 @@ class NetUtils(Object):
                 if not module.allow_multisource and len(sink._connections):
                     raise PRGAInternalError(
                             "{} is already connected to {}. ({} does not support multi-connections)"
-                            .format(sink, next(iter(itervalues(sink._connections))), module))
+                            .format(sink, next(iter(sink._connections.values())), module))
                 conn = sink._connections[srcref] = NetConnection(src, sink, **kwargs)
                 if not src.net_type.is_const:
                     src._connections[srcref] = conn
             else:
-                for k, v in iteritems(kwargs):
+                for k, v in kwargs.items():
                     setattr(conn, k, v)
 
     @classmethod
-    def get_source(cls, sink, *, return_none_if_unconnected = False):
+    def get_source(cls, sink, *, return_const_if_unconnected = False):
         """Get the source connected to ``sink``. This method is only for accessing connections in modules that do not
-        allow multi-source connections only.
+        allow multi-source connections.
         
         Args:
             sink (`AbstractNet`):
 
         Keyword Args:
-            return_none_if_unconnected (:obj:`bool`): If set, this method returns ``None`` when ``sink`` is not
-                connected to any sources. Otherwise this method returns a `Const` object.
+            return_const_if_unconnected (:obj:`bool`): If set, this method returns a `Const` object when ``sink`` is
+                not connected to any sources. Otherwise this method returns ``None``.
 
         Returns:
             ``AbstractNet`` or ``None``:
@@ -387,14 +377,14 @@ class NetUtils(Object):
                         "{} allows multi-source connections. Use `NetUtils.get_multisource` instead"
                         .format(sink.parent))
             elif len(sink) == 1 or sink.parent.coalesce_connections:
-                it = iter(itervalues(sink._connections))
+                it = iter(sink._connections.values())
                 try:
                     conn = next(it)
                 except StopIteration:
-                    if return_none_if_unconnected:
-                        return None
-                    else:
+                    if return_const_if_unconnected:
                         return Const(width = len(sink))
+                    else:
+                        return None
                 try:
                     next(it)
                     raise PRGAInternalError( "{} is connected to more than one sources".format(sink))
@@ -402,23 +392,23 @@ class NetUtils(Object):
                     pass
                 return conn.source
             else:
-                source = cls.concat(iter(cls.get_source(bit) for bit in sink))
-                if return_none_if_unconnected and source.net_type.is_const and source.value is None:
+                source = cls.concat(iter(cls.get_source(bit, return_const_if_unconnected = True) for bit in sink))
+                if source.net_type.is_const and source.value is None and not return_const_if_unconnected:
                     return None
                 else:
                     return source
         elif sink.net_type.is_hierarchical:
             raise PRGAInternalError("{} is a hierarchical pin".format(sink))
         elif sink.net_type.is_slice:
-            if (source := cls.get_source(sink.bus, return_none_if_unconnected = True)) is None:
-                if return_none_if_unconnected:
-                    return None
-                else:
+            if (source := cls.get_source(sink.bus)) is None:
+                if return_const_if_unconnected:
                     return Const(width = len(sink))
+                else:
+                    return None
             else:
                 return source[sink.index]
         elif sink.net_type.is_concat:
-            return cls.concat(iter(cls.get_source(i) for i in sink.items))
+            return cls.concat(iter(cls.get_source(i, return_const_if_unconnected = True) for i in sink.items))
         else:
             raise PRGAInternalError("Unrecognized NetType: {}".format(sink.net_type))
 
@@ -440,7 +430,7 @@ class NetUtils(Object):
         elif not sink.parent.allow_multisource:
             raise PRGAInternalError("{} does not allow multi-source connections".format(sink.parent))
         # get and return connections
-        return cls.concat(iter(conn.source for conn in itervalues(sink._connections)))
+        return cls.concat(iter(conn.source for conn in sink._connections.values()))
 
     @classmethod
     def get_sinks(cls, source):
@@ -481,7 +471,7 @@ class NetUtils(Object):
                         "{} is a cell module. Get timing arcs with `NetUtils.get_timing_arc` instead"
                         .format(source.parent))
             elif len(source) == 1 or source.parent.coalesce_connections:
-                return tuple(conn.sink for conn in itervalues(source._connections))
+                return tuple(conn.sink for conn in source._connections.values())
         elif source.net_type.is_slice and source.parent.coalesce_connections:
             return tuple(sink[source.index] for sink in cls.get_sinks(source))
         bitwise = tuple(cls.get_sinks(bit) for bit in source)
@@ -491,7 +481,7 @@ class NetUtils(Object):
         return tuple(l)
 
     @classmethod
-    def get_connection(cls, source, sink, *, return_none_if_unconnected = False, skip_validations = False):
+    def get_connection(cls, source, sink, *, raise_error_if_unconnected = False, skip_validations = False):
         """Get the connection from ``source`` to ``sink``.
         
         Args:
@@ -499,41 +489,39 @@ class NetUtils(Object):
             sink (`AbstractNonReferenceNet`):
 
         Keyword Args:
-            return_none_if_unconnected (:obj:`bool`): If set, this method returns ``None`` if the specified nets are
-                not connected. Otherwise, this method throws a `PRGAInternalError`.
+            raise_error_if_unconnected (:obj:`bool`): If set, this method raises a `PRGAInternalError` if the
+                specified nets are not connected. Otherwise, this method returns ``None``.
             skip_validations (:obj:`bool`): If set, this method skips all validations. This option saves runtime but
                 should be used with care
 
         Returns:
-            `NetConnection`:
+            `NetConnection` or ``None``:
         """
         # 0. shortcut
         if skip_validations:
-            if ((conn := sink._connections.get( cls._reference(source) )) is not None
-                    or return_none_if_unconnected):
-                return conn
-            else:
+            if (conn := sink._connections.get( cls._reference(source) )) is None and raise_error_if_unconnected:
                 raise PRGAInternalError("{} and {} are not connected".format(source, sink))
-        # 1. get the parent module
-        module = None
+            else:
+                return conn
+        # 1. validate sink (first pass)
         if sink.net_type.is_reference:
             raise PRGAInternalError("{} is a reference".format(sink))
         elif not sink.is_sink:
             raise PRGAInternalError("{} is not a valid sink".format(sink))
-        else:
-            module = sink.parent
+        # 2. get the parent module
+        module = sink.parent
         if module.is_cell:
             raise PRGAInternalError(
                     "{} is a cell module. Get timing arcs with `NetUtils.get_timing_arc` instead"
                     .format(module))
-        # 2. validate sink
+        # 3. validate sink (second pass)
         if module.coalesce_connections:
             if sink.net_type not in (NetType.port, NetType.pin):
                 raise PRGAInternalError("{} does not support bitwise connections ({} is not a bus)"
                         .format(module, sink))
         elif len(sink) != 1:
             raise PRGAInternalError("{} is not 1-bit wide".format(sink))
-        # 3. validate source
+        # 4. validate source
         if source.net_type.is_reference:
             raise PRGAInternalError("{} is a reference".format(source))
         elif not source.is_source:
@@ -548,12 +536,11 @@ class NetUtils(Object):
                             .format(module, source))
             elif len(source) != 1:
                 raise PRGAInternalError("{} is not 1-bit wide".format(source))
-        # 4. get connection
-        if ((conn := sink._connections.get( cls._reference(source) )) is not None
-                or return_none_if_unconnected):
-            return conn
-        else:
+        # 5. get connection
+        if (conn := sink._connections.get( cls._reference(source) )) is None and raise_error_if_unconnected:
             raise PRGAInternalError("{} and {} are not connected".format(source, sink))
+        else:
+            return conn
 
     @classmethod
     def create_timing_arc(cls, type_, source, sink, *, max_ = None, min_ = None):
@@ -578,9 +565,7 @@ class NetUtils(Object):
         elif source.parent is not sink.parent:
             raise PRGAInternalError("{} and {} are not in the same module".format(source, sink))
         # 2. further validate arguments
-        if type_.is_comb_1bit:
-            raise PRGAInternalError("Cannot create single-bit combinational timing arc in a cell module")
-        elif type_.is_comb_bitwise or type_.is_comb_matrix:
+        if type_.is_comb_bitwise or type_.is_comb_matrix:
             if not source.is_source:
                 raise PRGAInternalError("{} is not a valid combinational source".format(source))
             elif not sink.is_sink:
@@ -665,15 +650,10 @@ class NetUtils(Object):
 
         # get timing arcs
         if module.is_cell:
-            return tuple(arc for arc in itervalues(uno(source, sink)._connections)
+            return tuple(arc for arc in uno(source, sink)._connections.values()
                     if arc.type_ in types and source in (None, arc.source) and sink in (None, arc.sink))
         elif module.coalesce_connections:
             if TimingArcType.comb_bitwise not in types:
                 return tuple()
-            return tuple(conn.arc for conn in itervalues(uno(source, sink)._connections)
-                    if conn.arc is not None and source in (None, conn.source) and sink in (None, conn.sink))
-        else:
-            if TimingArcType.comb_1bit not in types:
-                return tuple()
-            return tuple(conn.arc for conn in itervalues(uno(source, sink)._connections)
+            return tuple(conn.arc for conn in uno(source, sink)._connections.values()
                     if conn.arc is not None and source in (None, conn.source) and sink in (None, conn.sink))

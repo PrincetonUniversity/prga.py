@@ -2,15 +2,13 @@
 # Python 2 and 3 compatible
 """Utility classes and functions."""
 
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
-
 from .exception import PRGAInternalError, PRGAIndexError
 
 from abc import ABCMeta
 import enum
 import logging
 import sys
+from collections.abc import Mapping, Sequence
 
 __all__ = ["ReadonlyMappingProxy", "ReadonlySequenceProxy", "uno", "Object", "Enum", 'enable_stdout_logging']
 
@@ -41,7 +39,7 @@ class ReadonlyMappingProxy(Mapping):
         if self.filter_ is None:
             return len(self.m)
         else:
-            return sum(1 for _ in filter(self.filter_, iteritems(self.m)))
+            return sum(1 for _ in filter(self.filter_, self.m.items()))
 
     def __getitem__(self, key):
         """Return the item with key *key* in the proxy.
@@ -65,10 +63,10 @@ class ReadonlyMappingProxy(Mapping):
     def __iter__(self):
         """Return an iterator over the keys of the filtered mapping."""
         if callable(self.uncast):
-            for k in (filter(self.filter_, iteritems(self.m)) if callable(self.filter_) else iter(self.m)):
+            for k in (filter(self.filter_, self.m.items()) if callable(self.filter_) else iter(self.m)):
                 yield self.uncast(k)
         else:
-            for k in (filter(self.filter_, iteritems(self.m)) if callable(self.filter_) else iter(self.m)):
+            for k in (filter(self.filter_, self.m.items()) if callable(self.filter_) else iter(self.m)):
                 yield k
 
 class ReadonlySequenceProxy(Sequence):
@@ -107,7 +105,7 @@ class _InheritDocstringsMeta(ABCMeta):
     def __new__(cls, clsname, bases, attributes):
         dummy = super(_InheritDocstringsMeta, cls).__new__(cls, '_dummy', bases, {})
         attributes.setdefault('__slots__', [])
-        for name, attr in iteritems(attributes):
+        for name, attr in attributes.items():
             if isinstance(attr, property) and attr.fget.__doc__ is None:
                 superproperty = getattr(dummy, name, None)
                 if superproperty is not None:
@@ -123,7 +121,7 @@ class _InheritDocstringsMeta(ABCMeta):
                         pass
         return super(_InheritDocstringsMeta, cls).__new__(cls, clsname, bases, attributes)
 
-class Object(with_metaclass(_InheritDocstringsMeta, object)):
+class Object(metaclass=_InheritDocstringsMeta):
     """Base class for all PRGA objects."""
     pass
 

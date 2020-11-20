@@ -1,7 +1,4 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from .base import BaseBuilder
 from ..common import ModuleClass, PrimitiveClass, PrimitivePortClass, NetClass, ModuleView
@@ -172,7 +169,7 @@ class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
                 module_class = ModuleClass.primitive,
                 primitive_class = user_view.primitive_class,
                 **kwargs)
-        for key, port in iteritems(user_view.ports):
+        for key, port in user_view.ports.items():
             assert key == port.name
             if (port_class := getattr(port, "port_class", None)) is None:
                 ModuleUtils.create_port(m, key, len(port), port.direction,
@@ -357,7 +354,7 @@ class _ModeBuilder(BaseBuilder):
                 module_class = ModuleClass.mode,
                 parent = parent,
                 **kwargs)
-        for key, port in iteritems(parent.ports):
+        for key, port in parent.ports.items():
             ModuleUtils.create_port(m, port.name, len(port), port.direction,
                     key = key, is_clock = port.is_clock)
         return m
@@ -442,7 +439,7 @@ class MultimodeBuilder(_BasePrimitiveBuilder):
                 view = ModuleView.user,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.multimode,
-                modes = OrderedDict(),
+                modes = {},
                 **kwargs)
 
     def build_mode(self, name, **kwargs):

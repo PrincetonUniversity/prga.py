@@ -1,9 +1,5 @@
 # -*- encoding: ascii -*-
-# Python 2 and 3 compatible
 """Unitility methods for accessing modules and instances."""
-
-from __future__ import division, absolute_import, print_function
-from prga.compatible import *
 
 from .module import Module
 from .instance import Instance
@@ -14,81 +10,12 @@ from ...exception import PRGAInternalError
 from ...util import uno, Object, Enum
 
 from itertools import chain, product
-from networkx import NetworkXError, DiGraph
+from networkx import NetworkXError, DiGraph, MultiDiGraph
 
 import logging
 _logger = logging.getLogger(__name__)
 
 __all__ = ['ModuleUtils']
-
-# ----------------------------------------------------------------------------
-# -- Memory-optimized Connection Graph ---------------------------------------
-# ----------------------------------------------------------------------------
-class _MemOptNodeDict(MutableMapping):
-
-    class _Placeholder(Enum):
-        _ = 0
-
-    __slots__ = ['_dict']
-
-    def __init__(self):
-        self._dict = {}
-
-    def __getitem__(self, k):
-        try:
-            idx, key = k
-            try:
-                v = self._dict[key][idx]
-            except (KeyError, IndexError):
-                raise KeyError(k)
-            if v is self._Placeholder._:
-                raise KeyError(k)
-            return v
-        except (ValueError, TypeError):
-            return self._dict[k]
-
-    def __setitem__(self, k, v):
-        try:
-            idx, key = k
-            if idx >= (len(l) if (l := self._dict.get(key)) is not None else 0):
-                if l is None:
-                    l = self._dict[key] = []
-                l.extend(self._Placeholder._ for _ in range(idx - len(l)))
-                l.append(v)
-            else:
-                l[idx] = v
-        except (ValueError, TypeError):
-            self._dict[k] = v
-
-    def __delitem__(self, k):
-        try:
-            idx, key = k
-            if (l := self._dict.get(key)) is None:
-                raise ValueError    # fall through
-            elif not 0 <= idx < len(l) or l[idx] is self._Placeholder._:
-                raise KeyError(k)
-            else:
-                l[idx] = self._Placeholder._
-        except (ValueError, TypeError):
-            del self._dict[k]
-
-    def __len__(self):
-        return sum(1 for _ in iter(self))
-
-    def __iter__(self):
-        for key, l in iteritems(self._dict):
-            try:
-                for k, v in l.items():
-                    yield k
-            except AttributeError:
-                for idx, item in enumerate(l):
-                    if item is not self._Placeholder._:
-                        yield idx, k
-
-class _MemOptDiGraph(DiGraph):
-
-    node_dict_factory = _MemOptNodeDict
-    adjlist_outer_dict_factory = _MemOptNodeDict
 
 # ----------------------------------------------------------------------------
 # -- Module Utilities --------------------------------------------------------
@@ -101,14 +28,14 @@ class ModuleUtils(Object):
         module, hierarchy = None, None
         if isinstance(obj, Module):
             module = obj
-            for net in itervalues(obj.ports):
+            for net in obj.ports.values():
                 yield net
         else:
             module, hierarchy = obj.model, obj
 
-        for i in itervalues(module.instances):
+        for i in module.instances.values():
             i = i._extend_hierarchy(above = hierarchy)
-            for net in itervalues(i.pins):
+            for net in i.pins.values():
                 yield net
             if not (i.model.is_cell or blackbox_instance(i)):
                 for net in cls._iter_nets(i, blackbox_instance):
@@ -124,9 +51,7 @@ class ModuleUtils(Object):
             elif bus.net_type.is_hierarchical:
                 sink = bus.instance.hierarchy[0].pins[bus.model.key]
                 hierarchy = bus.instance._shrink_hierarchy(low = 1)
-        if index is not None:
-            sink = sink[index]
-        return sink, hierarchy
+        return sink, index, hierarchy
 
     @classmethod
     def _attach_hierarchy(cls, net, hierarchy):
@@ -160,12 +85,15 @@ class ModuleUtils(Object):
         raise NotImplementedError
 
     @classmethod
-    def _dereference(cls, module, ref):
+    def _dereference(cls, module, ref, *, byname = False):
         """De-reference ``ref`` in ``module``.
 
         Args:
             module (`Module`): Top-level module
             ref (:obj:`Sequence` [:obj:`Hashable` ] or :obj:`str`):
+
+        Keyword Args:
+            byname (:obj:`bool`): If set, ``ref`` is treated as a hierarchical name
 
         Returns:
             `AbstractInstance` or `AbstractNet`:
@@ -217,6 +145,27 @@ class ModuleUtils(Object):
         return module._add_child(Instance(module, model, name, key = key, **kwargs))
 
     @classmethod
+    def __add_node_to_graph(cls, g, node, net, node_attrs, **reserved):
+        attrs = node_attrs(net)
+        reserved.update(net = net)
+        for k in reserved.keys():
+            if k in attrs:
+                raise PRGAInternalError("'{}' is a reserved attribute for a node".format(k))
+        g.add_node(node, **reserved, **attrs)
+
+    @classmethod
+    def __add_edge_to_graph(cls, g, u, v, path, edge_attrs, *key, prefix = "", **reserved):
+        if g.has_edge(u, v, *key):
+            raise PRGAInternalError("Bad reducing: multiple {}paths from {} to {}"
+                    .format(prefix, path[0], path[-1]))
+        reserved.update(path = path)
+        if (attrs := edge_attrs(path)) is not None:
+            for k in reserved.keys():
+                if k in attrs:
+                    raise PRGAInternalError("'{}' is a reserved attribute for an edge".format(k))
+            g.add_edge(u, v, *key, **reserved, **attrs)
+
+    @classmethod
     def reduce_conn_graph(cls, module, *,
             allow_multisource = False,
             coalesce_connections = False,
@@ -244,8 +193,8 @@ class ModuleUtils(Object):
                 upon the same net and should be deterministic
             node_attrs (:obj:`Function` [`AbstractNet` ] -> :obj:`dict`):
                 A function that returns additional attributes for a [hierarchical] net. This function is called only
-                once when a node with a valid key is created. ``"net"`` is a reserved key whose corresponding value is
-                the corresponding net object.
+                once when a node with a valid key is created. ``"net"`` is a reserved key whose value is the
+                corresponding net object.
             edge_attrs (:obj:`Function` [:obj:`Sequence` [`AbstractNet` ]] -> :obj:`dict`):
                 A function that returns additional attributes for a path. This function is called only once when an edge
                 with valid endpoints is created. ``"path"`` is a reserved key whose corresponding value is a sequence
@@ -269,15 +218,15 @@ class ModuleUtils(Object):
                 if (node := node_key(net)) is None or node in g:
                     continue
                 # create node && add attributes
-                if "net" in (attrs := node_attrs(net)):
-                    raise PRGAInternalError("'net' is a reserved attribute for a node")
-                g.add_node(node, net = net, **attrs)
-                # DFS:    head net, endpoint, path(end to start, will be reversed when added to the graph)
+                cls.__add_node_to_graph(g, node, net, node_attrs)
+                # DFS:    head net, endpoint, path(start to end)
                 stack = [(net,      node,      (net, ))]
                 while stack:
                     head_net, endpoint, path = stack.pop()
                     # 1.1 set up the environment for analyzing `head_net`
-                    sink, hierarchy = cls._analyze_sink(head_net)
+                    sink, index, hierarchy = cls._analyze_sink(head_net)
+                    if index is not None:
+                        sink = sink[index]
                     # 1.2 determine if we should keep on searching
                     if not sink.is_sink or sink.parent.is_cell or (hierarchy is not None and
                             blackbox_instance(hierarchy)):
@@ -291,31 +240,23 @@ class ModuleUtils(Object):
                     # 1.4 iterate the source(s) 
                     for src in (NetUtils.get_multisource(sink) if sink.parent.allow_multisource else
                             (NetUtils.get_source(sink), )):
-                        # 1.4.1 attach hierarchy to the source
-                        if src.net_type.is_const:
+                        if src is None:
                             continue
+                        # 1.4.1 attach hierarchy to the source
                         src = cls._attach_hierarchy(src, hierarchy)
                         # 1.4.1 check if this is a valid startpoint
                         if (startpoint := node_key(src)) is not None:
-                            # Yes it is. Add the node if it's not already added
+                            # Yes it is
                             if startpoint not in g:
-                                if "net" in (attrs := node_attrs(src)):
-                                    raise PRGAInternalError("'net' is a reserved attribute for a node")
-                                g.add_node(startpoint, net = src, **attrs)
+                                # put it in the DFS stack
+                                stack.append( (src, startpoint, (src, )) )
+                                # Add the node
+                                cls.__add_node_to_graph(g, startpoint, src, node_attrs)
                             # add the edge, too
-                            if g.has_edge(startpoint, endpoint):
-                                raise PRGAInternalError("Bad reducing: multiple paths from {} to {}"
-                                        .format(src, path[0]))
-                            path = (src, ) + tuple(reversed(path))
-                            if (attrs := edge_attrs(path)) is not None:
-                                if "path" in attrs:
-                                    raise PRGAInternalError("'path' is a reserved attribute for an edge")
-                                g.add_edge(startpoint, endpoint, path = path, **attrs)
-                            # put it in the DFS stack
-                            stack.append( (src, startpoint, (src, )) )
+                            cls.__add_edge_to_graph(g, startpoint, endpoint, (src, ) + path, edge_attrs)
                         else:
                             # No it is not. Keep searching
-                            stack.append( (src, endpoint, path + (src, )) )
+                            stack.append( (src, endpoint, (src, ) + path) )
         # 2. return
         return g
 
@@ -333,7 +274,8 @@ class ModuleUtils(Object):
         Keyword Args:
             blackbox_instance (:obj:`Function` [`AbstractInstance` ] -> :obj:`bool`): A function testing if an
                 instance should be blackboxed during elaboration. If ``True`` is returned, all connections or timing
-                arcs inside the instance are ignored
+                arcs inside the instance are ignored. Consequentially, all timing paths passing through the instance
+                are ignored as well.
             node_key (:obj:`Function` [`AbstractNet` ] -> :obj:`Hashable`):
                 A function that returns a hasable key to be used as the node ID in the graph. If ``None`` is returned,
                 the net and all paths starting from/ending at it are not added to the graph. Paths passing through the
@@ -341,78 +283,138 @@ class ModuleUtils(Object):
                 upon the same net and should be deterministic
             node_attrs (:obj:`Function` [`AbstractNet` ] -> :obj:`dict`):
                 A function that returns additional attributes for a [hierarchical] net. This function is called only
-                once when a node with a valid key is created. ``"net"`` is a reserved key whose corresponding value is
-                the net object.
-            edge_attrs (:obj:`Function` [:obj:`Sequence` [`AbstractNet` ]] -> :obj:`dict`):
+                once when a node with a valid key is created. ``"net"`` is a reserved key whose value is the
+                corresponding net object; ``"clock_root"`` is a reserved key whose value is the node of the root net of
+                the clock network that this net belongs to, or ``None`` if this net is not a clock. 
+            edge_attrs (:obj:`Function` [`TimingArcType`, :obj:`Sequence` [`AbstractNet` ]] -> :obj:`dict`):
                 A function that returns additional attributes for a path. This function is called only once when an edge
                 with valid endpoints is created. ``"path"`` is a reserved key whose corresponding value is a sequence
-                of nets that this path includes, from the startpoint to the endpoint, inclusively. If ``None`` is
-                returned, the edge is not added to the graph
+                of nets that this path includes, from the startpoint to the endpoint, inclusively; ``"type_"`` is a
+                reserved key indicating the type of this timing arc.  If ``None`` is returned, the edge is not added
+                to the graph
 
         Returns:
-            `networkx.DiGraph`_:
+            `networkx.MultiDiGraph`_:
 
         Notes:
-            The current implementation ignores sequential timing arcs
+            Clock networks are handled relatively naively in this method. Clock networks are detected using the
+            ``is_clock`` attribute on nets and collected following connections. For each network, a clock "root" is
+            identified (currently the root must be a clock input of ``module``), and combinational timing arcs are
+            created in the clock network. Reference clocks for all sequential timing arcs are updated to be the "root"
+            clock.
 
-        .. _networkx.DiGraph: https://networkx.github.io/documentation/stable/reference/classes/digraph.html
+        .. _networkx.MultiDiGraph: https://networkx.org/documentation/stable/reference/classes/multigraph.html
         """
         # build graph
-        g = DiGraph()
+        g = MultiDiGraph()
         for bus in cls._iter_nets(module, blackbox_instance):
             for net in bus:
                 if (node := node_key(net)) is None or node in g:
                     continue
-                # create node && add attributes
-                if "net" in (attrs := node_attrs(net)):
-                    raise PRGAInternalError("'net' is a reserved attribute for a node")
-                g.add_node(node, net = net, **attrs)
-                # DFS:    head net, endpoint, path(end to start, will be reversed when added to the graph)
-                stack = [(net,      node,      (net, ))]
+                # create node && add attributes. cannot determine clock root yet
+                cls.__add_node_to_graph(g, node, net, node_attrs, clock_root = None)
+                # DFS:    type,                    head net, endpoint, path(start to end), clock network nodes
+                stack = [(TimingArcType.comb_bitwise, net,   node,     (net, ), (node, ) if net.is_clock else tuple())]
                 while stack:
-                    head_net, endpoint, path = stack.pop()
+                    type_, head_net, endpoint, path, clk_nodes = stack.pop()
+                    # define a helper function here for correct closure
+                    def process_valid_startpoint(src, startpoint):
+                        if startpoint not in g:
+                            # put new head net into DFS stack
+                            stack.append( (type_, src, startpoint, (src, ),
+                                (clk_nodes + (startpoint, )) if src.is_clock else clk_nodes) )
+                            # add the node
+                            cls.__add_node_to_graph(g, startpoint, src, node_attrs, clock_root = None)
                     # 1.1 set up the environment for analyzing `head_net`
-                    sink, hierarchy = cls._analyze_sink(head_net)
-                    if hierarchy is not None and blackbox_instance(hierarchy):
+                    sinkbus, sinkidx, hierarchy = cls._analyze_sink(head_net)
+                    sink = sinkbus if sinkidx is None else sinkbus[sinkidx]
+                    # 1.2 determine if we should keep on searching
+                    if not sinkbus.is_sink:     # top-level input port
+                        assert sinkbus.net_type.is_port and hierarchy is None
+                        # update clock network, or create edge
+                        if clk_nodes or type_.is_seq_start or type_.is_seq_end:
+                            if not sink.is_clock:
+                                raise PRGAInternalError("Clock network driven by non-clock port {}"
+                                        .format(sink))
+                            elif (clock_root := node_key(sink)) is None:
+                                raise PRGAInternalError("Clock root ({}) ignored due to user-specified node_key"
+                                        .format(sink))
+                            for clk_node in clk_nodes:
+                                if (conflict := (d := g[clk_node])["clock_root"]) is not None:
+                                    if conflict != clock_root:
+                                        raise PRGAInternalError("Clock network driven by multiple sources: {}, {}"
+                                                .format(g[conflict]["net"], sink))
+                                    break
+                                d["clock_root"] = clock_root
+                            if type_.is_seq_start or type_.is_seq_end:
+                                cls.__add_edge_to_graph(g, clock_root, endpoint, path, edge_attrs, type_,
+                                        type_ = type_)
+                        # stop searching
                         continue
-                    # 1.2 get timing arc(s)
-                    srcs = []
-                    sinkbus, sinkidx = ((sink.bus, sink.index) if sink.net_type.is_bit or sink.net_type.is_slice
-                            else (sink, None))
-                    if sinkbus.parent.coalesce_connections:
+                    elif hierarchy is not None and blackbox_instance(hierarchy):
+                        # black-boxed instance
+                        continue
+                    # 1.3 DFS traversal
+                    # 1.3.1 check combinational timing arcs if ``sinkbus`` is a cell output
+                    if sinkbus.net_type.is_port and sinkbus.parent.is_cell:
                         for arc in NetUtils.get_timing_arcs(sink = sinkbus,
                                 types = (TimingArcType.comb_bitwise, TimingArcType.comb_matrix)):
-                            if arc.type_.is_comb_bitwise:
-                                srcs.append(arc.source if sinkidx is None else arc.source[sinkidx])
-                            else:
-                                srcs.extend(arc.source)
+                            for src in (arc.source if arc.type_.is_comb_matrix or sinkidx is None else
+                                    arc.source[sinkidx]):
+                                # attach hierarchy
+                                src = cls._attach_hierarchy(src, hierarchy)
+                                # check if ``src`` is a valid startpoint
+                                if (startpoint := node_key(src)) is not None:
+                                    # Yes it is
+                                    process_valid_startpoint(src, startpoint)
+                                    # add the edge if ``type_`` is combinational
+                                    if type_.is_comb_bitwise:
+                                        cls.__add_edge_to_graph(g, startpoint, endpoint, (src, ) + path,
+                                                edge_attrs, type_, type_ = type_)
+                                else:
+                                    # No it is not. Keep traversing
+                                    stack.append( (type_, src, endpoint, (src, ) + path, clk_nodes) )
+                    # 1.3.2 check connections if ``sinkbus`` is not a cell output
                     else:
-                        for arc in NetUtils.get_timing_arcs(sink = sink):
-                            srcs.append(arc.source)
-                    # 1.3 iterate the source(s)
-                    for src in srcs:
-                        # 1.3.1 attach hierarchy to the source
-                        src = cls._attach_hierarchy(src, hierarchy)
-                        # 1.3.2 check if this is a valid startpoint
-                        if (startpoint := node_key(src)) is not None:
-                            # Yes it is. Add the node if it's not already added
-                            if startpoint not in g:
-                                if "net" in (attrs := node_attrs(src)):
-                                    raise PRGAInternalError("'net' is a reserved attribute for a node")
-                                g.add_node(startpoint, net = src, **attrs)
-                            # add the edge, too
-                            if g.has_edge(startpoint, endpoint):
-                                raise PRGAInternalError("Bad reducing: multiple paths from {} to {}"
-                                        .format(src, path[0]))
-                            path = (src, ) + tuple(reversed(path))
-                            if (attrs := edge_attrs(path)) is not None:
-                                if "path" in (attrs := edge_attrs(path)):
-                                    raise PRGAInternalError("'path' is a reserved attribute for an edge")
-                                g.add_edge(startpoint, endpoint, path = path, **attrs)
-                            # put it in the DFS stack
-                            stack.append( (src, startpoint, (src, )) )
-                        else:
-                            # No it is not. Keep searching
-                            stack.append( (src, endpoint, path + (src, )) )
+                        for src in (NetUtils.get_multisource(sink) if sink.parent.allow_multisource else
+                                (NetUtils.get_source(sink), )):
+                            if src is None:
+                                continue
+                            # attach hierarchy
+                            src = cls._attach_hierarchy(src, hierarchy)
+                            # check if ``src`` is a valid startpoint
+                            if (startpoint := node_key(src)) is not None:
+                                # Yes it is
+                                process_valid_startpoint(src, startpoint)
+                                # add the edge if ``type_`` is combinational
+                                if type_.is_comb_bitwise:
+                                    cls.__add_edge_to_graph(g, startpoint, endpoint, (src, ) + path,
+                                            edge_attrs, type_, type_ = type_)
+                            else:
+                                # No it is not. Keep traversing
+                                stack.append( (type_, src, endpoint, (src, ) + path, clk_nodes) )
+                    # 1.3.3 check sequential timing arcs if ``sinkbus`` is a cell input/output and ``type_`` is not
+                    # sequential
+                    if type_.is_comb_bitwise:
+                        if sinkbus.net_type.is_pin:
+                            # convert from input pin to input port
+                            hierarchy = sinkbus.instance._extend_hierarchy(above = hierarchy)
+                            sinkbus = sinkbus.model
+                        if not sinkbus.parent.is_cell:
+                            continue
+                        for arc in NetUtils.get_timing_arcs(sink = sinkbus,
+                                types = (TimingArcType.seq_start, TimingArcType.seq_end)):
+                            assert arc.source.is_clock
+                            # attach hierarchy
+                            src = cls._attach_hierarchy(src, hierarchy)
+                            # check if ``src`` is a valid startpoint
+                            if (startpoint := node_key(src)) is not None:
+                                # Yes it is
+                                process_valid_startpoint(src, startpoint)
+                                # regardless of the validity, keep traversing as a different type of arc
+                                stack.append( (arc.type_, src, endpoint, (src, ) + path, clk_node + (startpoint, )) )
+                            else:
+                                # No it is not. Keep traversing as a different type of arc
+                                stack.append( (arc.type_, src, endpoint, (src, ) + path, clk_node) )
         # 2. return
         return g

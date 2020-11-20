@@ -51,7 +51,7 @@ class FileRenderer(object):
     @classmethod
     def _source2verilog(cls, net):
         """:obj:`str`: Render in verilog syntax the concatenation for the nets driving ``net``."""
-        return cls._net2verilog(NetUtils.get_source(net))
+        return cls._net2verilog(NetUtils.get_source(net, return_const_if_unconnected = True))
 
     def _get_yosys_script_task(self, script_file = None):
         """Get the specified or most recently added yosys script rending task."""

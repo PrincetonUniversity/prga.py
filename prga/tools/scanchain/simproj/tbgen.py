@@ -50,10 +50,7 @@ __doc__ = docstring_from_argparser(_parser)
 
 def _update_config_list(module, config, prefix = '', base = 0):
     cur = module.ports['cfg_o']
-    while True:
-        prev = NetUtils.get_source(cur)
-        if not prev.net_type.is_pin:
-            break
+    while (prev := NetUtils.get_source(cur)) is not None and prev.net_type.is_pin:
         instance = prev.instance
         assert not instance.is_hierarchical
         if instance.model.module_class in (ModuleClass.primitive, ModuleClass.switch, ModuleClass.cfg):

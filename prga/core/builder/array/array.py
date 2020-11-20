@@ -187,7 +187,7 @@ class ArrayBuilder(BaseArrayBuilder):
         #   using `while` for easier flow control. The loop below executes only once
         while pin.model.direction.is_input:
             # check current source
-            if (port := NetUtils.get_source(pin, return_none_if_unconnected = True)) is not None:
+            if (port := NetUtils.get_source(pin)) is not None:
                 if port.net_type.is_port and port.key in (node, alt_node):
                     break       # this is the port we want
                 raise PRGAInternalError("{} is connected incorrectly. Current source is: {}"
@@ -223,7 +223,7 @@ class ArrayBuilder(BaseArrayBuilder):
                         PortDirection.output, key = node)
                 NetUtils.connect(pin, port)
                 break
-            elif (cur_source := NetUtils.get_source(port, return_none_if_unconnected = True)) is None:
+            elif (cur_source := NetUtils.get_source(port)) is None:
                 NetUtils.connect(pin, port)
                 break
             elif cur_source is pin:
@@ -412,7 +412,7 @@ class ArrayBuilder(BaseArrayBuilder):
                     if (bridge := sbox.hierarchy[0].pins.get(sgmt_drv_node.convert(brg_type))) is not None:
                         # check across hierarchy to see if this bridge is usable
                         for i, inst in enumerate(sbox.hierarchy[1:]):
-                            if (brg_drv := NetUtils.get_source(bridge, return_none_if_unconnected = True)) is None:
+                            if (brg_drv := NetUtils.get_source(bridge)) is None:
                                 # cool! this one is unused!
                                 bridge = bridge.instance._extend_hierarchy(
                                         above = sbox.hierarchy[i + 1:]).pins[bridge.model.key]
@@ -428,7 +428,7 @@ class ArrayBuilder(BaseArrayBuilder):
                                 bridge = inst.pins[brg_drv.key]
                         if bridge is not None:
                             # this bridge might be usable
-                            if (brg_drv := NetUtils.get_source(bridge, return_none_if_unconnected = True)) is None:
+                            if (brg_drv := NetUtils.get_source(bridge)) is None:
                                 NetUtils.connect(pin, bridge)
                                 return
                             elif brg_drv is pin:
