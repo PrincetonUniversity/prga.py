@@ -42,27 +42,29 @@ class YosysScriptsCollection(AbstractPass):
             context.summary.yosys = {}
         f = context.summary.yosys["script"] = os.path.join(self.output_dir, "synth.tcl") 
         renderer.add_yosys_synth_script(f, context.summary.lut_sizes)
+        visited = set()
         for primitive_key in context.summary.active_primitives:
             primitive = context.database[ModuleView.user, primitive_key]
+            if primitive.primitive_class.is_memory:
+                rule = os.path.join(self.output_dir, "bram.rule")
+                renderer.add_yosys_bram_rule(rule, primitive,
+                        getattr(primitive, "bram_rule_template", None))
+                mmap = os.path.join(self.output_dir, "memory.techmap.v")
+                renderer.add_yosys_memory_techmap(mmap, primitive,
+                        getattr(primitive, "techmap_template", None),
+                        premap_commands = getattr(primitive, "premap_commands", tuple()),
+                        rule_script = rule,
+                        **getattr(primitive, "techmap_parameters", {}) )
+            if primitive.vpr_model in visited:
+                continue
+            visited.add(primitive.vpr_model)
             renderer.add_yosys_library(
-                    os.path.join(self.output_dir, primitive.name + ".lib.v"),
+                    os.path.join(self.output_dir, primitive.vpr_model + ".lib.v"),
                     primitive, template = getattr(primitive, "verilog_template", None))
-            if (techmap_template := getattr(primitive, "techmap_template", None)) is not None:
-                if primitive.primitive_class.is_custom:
-                    premap_commands = getattr(primitive, "premap_commands", tuple())
-                    renderer.add_yosys_techmap(
-                        os.path.join(self.output_dir, primitive.name + ".techmap.v"),
-                        techmap_template, premap_commands = premap_commands,
-                        **getattr(primitive, "techmap_parameters", {}))
-                elif primitive.primitive_class.is_memory:
-                    try:
-                        mem_infer_rule_template = primitive.mem_infer_rule_template
-                        mem_infer_rule = os.path.join(self.output_dir, "bram.rule")
-                        renderer.add_yosys_mem_infer_rule(mem_infer_rule, primitive, mem_infer_rule_template)
-                    except AttributeError:
-                        mem_infer_rule = None
-                    premap_commands = getattr(primitive, "premap_commands", tuple())
-                    renderer.add_yosys_memory_techmap(
-                        os.path.join(self.output_dir, primitive.name + ".techmap.v"),
-                        primitive, techmap_template,
-                        premap_commands = premap_commands, rule_script = mem_infer_rule)
+            if (primitive.primitive_class.is_custom and
+                    (techmap_template := getattr(primitive, "techmap_template", None)) is not None):
+                renderer.add_yosys_techmap(
+                        os.path.join(self.output_dir, primitive.vpr_model + ".techmap.v"),
+                        techmap_template,
+                        premap_commands = getattr(primitive, "premap_commands", tuple()),
+                        **getattr(primitive, "techmap_parameters", {}) )

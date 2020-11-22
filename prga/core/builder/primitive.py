@@ -4,6 +4,7 @@ from .base import BaseBuilder
 from ..common import ModuleClass, PrimitiveClass, PrimitivePortClass, NetClass, ModuleView
 from ...netlist import PortDirection, TimingArcType, Module, NetUtils, ModuleUtils
 from ...exception import PRGAAPIError, PRGAInternalError
+from ...util import uno
 
 from abc import abstractproperty
 
@@ -213,13 +214,14 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
         return None
 
     @classmethod
-    def new(cls, name, **kwargs):
+    def new(cls, name, *, vpr_model = None, **kwargs):
         """Create a new primitive in user view for building.
         
         Args:
             name (:obj:`str`): Name of the primitive
 
         Keyword Args:
+            vpr_model (:obj:`str`): Name of the VPR model. Default: "m_{name}"
             **kwargs: Additional attributes assigned to the primitive
 
         Returns:
@@ -230,10 +232,11 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
                 view = ModuleView.user,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.custom,
+                vpr_model = uno(vpr_model, "m_{}".format(name)),
                 **kwargs)
 
     @classmethod
-    def new_memory(cls, name, addr_width, data_width, *, single_port = False, **kwargs):
+    def new_memory(cls, name, addr_width, data_width, *, vpr_model = None, single_port = False, **kwargs):
         """Create a new memory primitive in user view.
         
         Args:
@@ -242,6 +245,8 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
             data_width (:obj:`int`): Width of the data port\(s\)
 
         Keyword Args:
+            vpr_model (:obj:`str`): Name of the VPR model. Default: "m_spram" if ``single_port`` is True, or
+                "m_dpram" if ``single_port`` is False
             single_port (:obj:`bool`): This method generates dual-port memory by default. Set this to ``True`` if a
                 single-port memory is needed
             **kwargs: Additional attributes assigned to the primitive
@@ -249,14 +254,13 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
         Returns:
             `Module`:
         """
-        kwargs.setdefault("techmap_template", "memory.techmap.tmpl.v")
-        kwargs.setdefault("verilog_template", "memory.tmpl.v")
-        kwargs.setdefault("mem_infer_rule_template", "builtin.tmpl.rule")
+        kwargs.setdefault("verilog_template", "bram/lib.tmpl.v")
         m = Module(name,
                 is_cell = True,
                 view = ModuleView.user,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.memory,
+                vpr_model = uno(vpr_model, "m_spram" if single_port else "m_dpram"),
                 **kwargs)
         clk = ModuleUtils.create_port(m, "clk", 1, PortDirection.input_,
                 is_clock = True, port_class = PrimitivePortClass.clock)
@@ -307,7 +311,7 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
         m = super(PrimitiveBuilder, self).commit()
         if self._module.primitive_class.is_memory and not dont_create_logical_counterpart:
             self._context.build_logical_primitive(self._module.name,
-                    verilog_template = "memory.tmpl.v").commit()
+                    verilog_template = "bram/sim.tmpl.v").commit()
         return m
 
     def build_logical_counterpart(self, *, not_cell = False, **kwargs):

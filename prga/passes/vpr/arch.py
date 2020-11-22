@@ -226,12 +226,12 @@ class _VPRArchGeneration(AbstractPass):
             self.active_primitives.add( primitive.key )
             # bitwise_timing = False
             attrs.update({"class": "memory",
-                "blif_model": ".subckt " + getattr(primitive, "vpr_model", primitive.name), })
+                "blif_model": ".subckt " + primitive.vpr_model, })
         elif primitive.primitive_class.is_custom:
             self.active_primitives.add( primitive.key )
             # bitwise_timing = getattr(primitive, "vpr_bitwise_timing", True)
             attrs.update({
-                "blif_model": ".subckt " + getattr(primitive, "vpr_model", primitive.name), })
+                "blif_model": ".subckt " + primitive.vpr_model, })
         parent_name = attrs["name"]
         with self.xml.element('pb_type', attrs):
             # 1. emit ports
@@ -460,7 +460,7 @@ class _VPRArchGeneration(AbstractPass):
             self._pb_type_body(module, hierarchy)
 
     def _model(self, primitive):
-        with self.xml.element("model", {"name": getattr(primitive, "vpr_model", primitive.name)}):
+        with self.xml.element("model", {"name": primitive.vpr_model}):
             with self.xml.element("output_ports"):
                 for port in primitive.ports.values():
                     if port.direction.is_input:
@@ -572,10 +572,8 @@ class _VPRArchGeneration(AbstractPass):
                 generated = set()
                 for model_key in self.active_primitives:
                     model = context.database[ModuleView.user, model_key]
-                    if (vpr_model := getattr(model, "vpr_model", model.name)) in generated:
-                        continue
-                    else:
-                        generated.add(vpr_model)
+                    if model.vpr_model not in generated:
+                        generated.add(model.vpr_model)
                         self._model(model)
             # device: done per subclass
             with xml.element("device"):

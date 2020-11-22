@@ -190,7 +190,7 @@ class TranslationPass(AbstractPass):
                             NetUtils.connect(NetUtils._dereference(logical, NetUtils._reference(usrcs)), lsink[i])
                             continue
                         switch_model = context.switch_database.get_switch(len(usrcs), logical)
-                        switch_name = ["_sw"]
+                        switch_name = ["i_sw"]
                         if usink.net_type.is_pin:
                             switch_name.append( usink.instance.name )
                             switch_name.append( usink.model.name )

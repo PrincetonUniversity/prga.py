@@ -351,13 +351,14 @@ class Context(Object):
         return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_primitive,
                 lambda k: (ModuleView.user, k), lambda k: k[1])
 
-    def build_primitive(self, name, **kwargs):
+    def build_primitive(self, name, *, vpr_model = None, **kwargs):
         """Create a primitive in user view.
 
         Args:
             name (:obj:`str`): Name of the primitive
 
         Keyword Args:
+            vpr_model (:obj:`str`): Name of the VPR model. Default: "m_{name}"
             **kwargs: Additional attributes to be associated with the primitive
 
         Returns:
@@ -365,10 +366,10 @@ class Context(Object):
         """
         if (ModuleView.user, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        primitive = self._database[ModuleView.user, name] = PrimitiveBuilder.new(name, **kwargs)
+        primitive = self._database[ModuleView.user, name] = PrimitiveBuilder.new(name, vpr_model = vpr_model, **kwargs)
         return PrimitiveBuilder(self, primitive)
 
-    def build_memory(self, name, addr_width, data_width, *, single_port = False, **kwargs):
+    def build_memory(self, name, addr_width, data_width, *, vpr_model = None, single_port = False, **kwargs):
         """Create a memory in user view.
 
         Args:
@@ -377,6 +378,8 @@ class Context(Object):
             data_width (:obj:`int`): Number of bits of the data ports
 
         Keyword Args:
+            vpr_model (:obj:`str`): Name of the VPR model. Default: "m_spram" if ``single_port`` is True, or
+                "m_dpram" if ``single_port`` is False
             single_port (:obj:`bool`): Create one read/write port instead of two
             **kwargs: Additional attributes to be associated with the primitive
 
@@ -386,7 +389,7 @@ class Context(Object):
         if (ModuleView.user, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
         primitive = self._database[ModuleView.user, name] = PrimitiveBuilder.new_memory(name,
-                addr_width, data_width, single_port = single_port, **kwargs)
+                addr_width, data_width, vpr_model = vpr_model, single_port = single_port, **kwargs)
         return PrimitiveBuilder(self, primitive)
 
     # -- Clusters ------------------------------------------------------------

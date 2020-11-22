@@ -96,7 +96,7 @@ class FileRenderer(object):
         # add headers
         context._add_verilog_header("prga_utils.vh", "stdlib/include/prga_utils.tmpl.vh")
 
-    def add_verilog(self, file_, module, template = 'module.tmpl.v', **kwargs):
+    def add_verilog(self, file_, module, template = None, **kwargs):
         """Add a Verilog rendering task.
 
         Args:
@@ -110,7 +110,7 @@ class FileRenderer(object):
                 "source2verilog": self._source2verilog,
                 }
         parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (template, parameters) )
+        self.tasks.setdefault(file_, []).append( (uno(template, "generic/module.tmpl.v"), parameters) )
 
     def add_generic(self, file_, template, **kwargs):
         """Add a generic file rendering task.
@@ -122,7 +122,7 @@ class FileRenderer(object):
         """
         self.tasks.setdefault(file_, []).append( (template, kwargs) )
 
-    def add_yosys_synth_script(self, file_, lut_sizes, template = 'synth.generic.tmpl.tcl', **kwargs):
+    def add_yosys_synth_script(self, file_, lut_sizes, template = None, **kwargs):
         """Add a yosys synthesis script rendering task.
 
         Args:
@@ -138,10 +138,10 @@ class FileRenderer(object):
                 "lut_sizes": lut_sizes,
                 }
         parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (template, parameters) )
+        self.tasks.setdefault(file_, []).append( (uno(template, "generic/synth.tmpl.tcl"), parameters) )
         self._yosys_synth_script_task = file_
 
-    def add_yosys_library(self, file_, module, template = "blackbox.lib.tmpl.v", script_file = None, **kwargs):
+    def add_yosys_library(self, file_, module, template = None, script_file = None, **kwargs):
         """Add a yosys library rendering task.
 
         Args:
@@ -158,7 +158,7 @@ class FileRenderer(object):
                 "module": module,
                 }
         parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (template, parameters) )
+        self.tasks.setdefault(file_, []).append( (uno(template, "generic/blackbox.lib.tmpl.v"), parameters) )
         script_file, script_task = self._get_yosys_script_task(script_file)
         if not isinstance(file_, str):
             file_ = file_.name
@@ -193,7 +193,7 @@ class FileRenderer(object):
             "techmap": file_,
             } )
 
-    def add_yosys_mem_infer_rule(self, file_, module, template, **kwargs):
+    def add_yosys_bram_rule(self, file_, module, template = None, **kwargs):
         """Add a yosys BRAM inferring rule rendering task.
 
         Args:
@@ -211,7 +211,7 @@ class FileRenderer(object):
         l = self.tasks.setdefault(file_, [])
         if l:
             l[-1][1].setdefault("not_last", True)
-        l.append( (template, parameters) )
+        l.append( (uno(template, "bram/tmpl.rule"), parameters) )
 
     def add_yosys_memory_techmap(self, file_, module, template = None, script_file = None,
             premap_commands = tuple(), rule_script = None, **kwargs):
@@ -233,7 +233,7 @@ class FileRenderer(object):
                 "module": module,
                 }
         parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (template, parameters) )
+        self.tasks.setdefault(file_, []).append( (uno(template, "bram/techmap.tmpl.v"), parameters) )
         script_file, script_task = self._get_yosys_script_task(script_file)
         if not isinstance(file_, str):
             file_ = file_.name

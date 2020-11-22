@@ -4,7 +4,7 @@ set generic_script_root [file dirname [file normalize [info script]]]
 # bring yosys commands into our script!
 yosys -import
 
-# read blackbox designs
+# read techmap libraries
 {%- for lib in libraries %}
 read_verilog -lib [file join $generic_script_root {{ lib }}]
 {%- endfor %}
@@ -27,11 +27,11 @@ techmap -map [file join $generic_script_root {{ memmap.techmap }}]
 opt -full
 memory_map
 
-# techmap onto blackboxes read with `read_verilog` above
+# techmap onto library cells read with `read_verilog` above
 {%- for entry in techmaps %}
-{%- for command in entry.premap_commands %}
+    {%- for command in entry.premap_commands %}
 {{ command }}
-{%- endfor %}
+    {%- endfor %}
     {%- if entry.techmap %}
 techmap -map [file join $generic_script_root {{ entry.techmap }}]
     {%- endif %}
