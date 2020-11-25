@@ -1,7 +1,7 @@
 # -*- encoding: ascii -*-
 
-from ..core.common import ModuleView, ModuleClass
-from ..netlist import Module, NetUtils, ModuleUtils
+from ..core.common import ModuleView, ModuleClass, PrimitiveClass, PrimitivePortClass, NetClass, IOType
+from ..netlist import Module, NetUtils, ModuleUtils, PortDirection, TimingArcType
 from ..util import uno
 from ..exception import PRGAInternalError
 
@@ -60,13 +60,160 @@ class FileRenderer(object):
         return script_file, script_task
 
     @classmethod
-    def _register_lib(cls, context):
+    def _register_lib(cls, context, dont_add_logical_primitives = tuple()):
         """Register designs shipped with PRGA into ``context`` database.
 
         Args:
             context (`Context`):
         """
-        # register designs
+        if not isinstance(dont_add_logical_primitives, set):
+            dont_add_logical_primitives = set(iter(dont_add_logical_primitives))
+
+        # register built-in primitives: LUTs
+        for i in range(2, 9):
+            name = "lut" + str(i)
+
+            # user
+            lut = context._database[ModuleView.user, name] = Module(name,
+                    is_cell = True,
+                    view = ModuleView.user,
+                    module_class = ModuleClass.primitive,
+                    primitive_class = PrimitiveClass.lut)
+            in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_,
+                    port_class = PrimitivePortClass.lut_in)
+            out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
+                    port_class = PrimitivePortClass.lut_out)
+            NetUtils.create_timing_arc(TimingArcType.comb_matrix, in_, out)
+
+            # logical
+            if name not in dont_add_logical_primitives:
+                lut = context._database[ModuleView.logical, name] = Module(name,
+                        is_cell = True,
+                        view = ModuleView.logical,
+                        module_class = ModuleClass.primitive, 
+                        primitive_class = PrimitiveClass.lut,
+                        verilog_template = "builtin/lut.tmpl.v")
+                in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_,
+                        net_class = NetClass.user, port_class = PrimitivePortClass.lut_in)
+                out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
+                        net_class = NetClass.user, port_class = PrimitivePortClass.lut_out)
+                NetUtils.create_timing_arc(TimingArcType.comb_matrix, in_, out)
+                ModuleUtils.create_port(lut, "cfg_e", 1, PortDirection.input_, net_class = NetClass.cfg)
+                ModuleUtils.create_port(lut, "prim_e", 1, PortDirection.input_, net_class = NetClass.cfg)
+                ModuleUtils.create_port(lut, "lut_data", 2 ** i, PortDirection.input_, net_class = NetClass.cfg)
+
+        # register flipflops
+        if True:
+            name = "flipflop"
+
+            # user
+            flipflop = context._database[ModuleView.user, name] = Module(name,
+                    is_cell = True,
+                    view = ModuleView.user,
+                    module_class = ModuleClass.primitive,
+                    primitive_class = PrimitiveClass.flipflop)
+            clk = ModuleUtils.create_port(flipflop, "clk", 1, PortDirection.input_, is_clock = True,
+                    port_class = PrimitivePortClass.clock)
+            D = ModuleUtils.create_port(flipflop, "D", 1, PortDirection.input_,
+                    port_class = PrimitivePortClass.D)
+            Q = ModuleUtils.create_port(flipflop, "Q", 1, PortDirection.output,
+                    port_class = PrimitivePortClass.Q)
+            NetUtils.create_timing_arc(TimingArcType.seq_end, clk, D)
+            NetUtils.create_timing_arc(TimingArcType.seq_start, clk, Q)
+
+            # logical
+            if name not in dont_add_logical_primitives:
+                flipflop = context._database[ModuleView.logical, name] = Module(name,
+                        is_cell = True,
+                        view = ModuleView.logical,
+                        module_class = ModuleClass.primitive,
+                        primitive_class = PrimitiveClass.flipflop,
+                        verilog_template = "builtin/flipflop.tmpl.v")
+                clk = ModuleUtils.create_port(flipflop, "clk", 1, PortDirection.input_, is_clock = True,
+                        net_class = NetClass.user, port_class = PrimitivePortClass.clock)
+                D = ModuleUtils.create_port(flipflop, "D", 1, PortDirection.input_,
+                        net_class = NetClass.user, port_class = PrimitivePortClass.D)
+                Q = ModuleUtils.create_port(flipflop, "Q", 1, PortDirection.output,
+                        net_class = NetClass.user, port_class = PrimitivePortClass.Q)
+                NetUtils.create_timing_arc(TimingArcType.seq_end, clk, D)
+                NetUtils.create_timing_arc(TimingArcType.seq_start, clk, Q)
+                ModuleUtils.create_port(flipflop, "cfg_e", 1, PortDirection.input_, net_class = NetClass.cfg)
+                ModuleUtils.create_port(flipflop, "prim_e", 1, PortDirection.input_, net_class = NetClass.cfg)
+
+        # register single-mode I/O
+        for name in ("inpad", "outpad"):
+            # user
+            pad = context._database[ModuleView.user, name] = Module(name,
+                    is_cell = True,
+                    view = ModuleView.user,
+                    module_class = ModuleClass.primitive,
+                    primitive_class = PrimitiveClass[name])
+            if name == "inpad":
+                ModuleUtils.create_port(pad, "inpad", 1, PortDirection.output)
+            else:
+                ModuleUtils.create_port(pad, "outpad", 1, PortDirection.input_)
+
+            # logical
+            if name not in dont_add_logical_primitives:
+                pad = context._database[ModuleView.logical, name] = Module(name,
+                        is_cell = True,
+                        view = ModuleView.logical,
+                        module_class = ModuleClass.primitive,
+                        primitive_class = PrimitiveClass[name],
+                        verilog_template = "builtin/{}.tmpl.v".format(name))
+                if name == "inpad":
+                    u = ModuleUtils.create_port(pad, "inpad", 1, PortDirection.output, net_class = NetClass.user)
+                    l = ModuleUtils.create_port(pad, "ipin", 1, PortDirection.input_,
+                            net_class = NetClass.io, key = IOType.ipin)
+                    NetUtils.create_timing_arc(TimingArcType.comb_bitwise, l, u)
+                else:
+                    u = ModuleUtils.create_port(pad, "outpad", 1, PortDirection.input_, net_class = NetClass.user)
+                    l = ModuleUtils.create_port(pad, "opin", 1, PortDirection.output,
+                            net_class = NetClass.io, key = IOType.opin)
+                    NetUtils.create_timing_arc(TimingArcType.comb_bitwise, u, l)
+                ModuleUtils.create_port(pad, "cfg_e", 1, PortDirection.input_, net_class = NetClass.cfg)
+                ModuleUtils.create_port(pad, "prim_e", 1, PortDirection.input_, net_class = NetClass.cfg)
+
+        # register dual-mode I/O
+        if True:
+            # user
+            iopad = context.build_multimode("iopad")
+            iopad.create_input("outpad", 1)
+            iopad.create_output("inpad", 1)
+
+            # user modes
+            mode_input = iopad.build_mode("mode_input", mode_sel = 0)
+            inst = mode_input.instantiate(
+                    context.database[ModuleView.user, "inpad"],
+                    "i_pad")
+            mode_input.connect(inst.pins["inpad"], mode_input.ports["inpad"])
+            mode_input.commit()
+
+            mode_output = iopad.build_mode("mode_output", mode_sel = 1)
+            inst = mode_output.instantiate(
+                    context.database[ModuleView.user, "outpad"],
+                    "o_pad")
+            mode_output.connect(mode_output.ports["outpad"], inst.pins["outpad"])
+            mode_output.commit()
+
+            # logical
+            if name not in dont_add_logical_primitives:
+                iopad = iopad.build_logical_counterpart(verilog_template = "builtin/iopad.tmpl.v")
+                ipin = ModuleUtils.create_port(iopad.module, "ipin", 1, PortDirection.input_,
+                        net_class = NetClass.io, key = IOType.ipin)
+                opin = ModuleUtils.create_port(iopad.module, "opin", 1, PortDirection.output,
+                        net_class = NetClass.io, key = IOType.opin)
+                oe = ModuleUtils.create_port(iopad.module, "oe", 1, PortDirection.output,
+                        net_class = NetClass.io, key = IOType.oe)
+                NetUtils.create_timing_arc(TimingArcType.comb_bitwise, ipin, iopad.ports["inpad"])
+                NetUtils.create_timing_arc(TimingArcType.comb_bitwise, iopad.ports["outpad"], opin)
+                iopad.create_cfg_port("cfg_e", 1, PortDirection.input_, net_class = NetClass.cfg)
+                iopad.create_cfg_port("prim_e", 1, PortDirection.input_, net_class = NetClass.cfg)
+                iopad.create_cfg_port("prim_mode", 1, PortDirection.input_, net_class = NetClass.cfg)
+
+            iopad.commit()
+
+        # register auxiliary designs
         for d in ("prga_ram_1r1w", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer",
                 "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo", "prga_valrdy_buf"):
             context._database[ModuleView.logical, d] = Module(d,
@@ -80,6 +227,8 @@ class FileRenderer(object):
                     view = ModuleView.logical,
                     module_class = ModuleClass.aux,
                     verilog_template = "cdclib/{}.v".format(d))
+
+        # module dependencies
         ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo"],
                 context._database[ModuleView.logical, "prga_ram_1r1w"], "ram")
         ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo"],

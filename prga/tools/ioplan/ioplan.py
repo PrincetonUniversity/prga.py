@@ -6,63 +6,8 @@ from ...exception import PRGAAPIError, PRGAInternalError
 from ...util import Object, uno
 
 import re, os, sys
-from collections.abc import MutableSequence
 
 __all__ = ["IOPlanner"]
-
-_reprog_bit = re.compile('^(?P<out>out:)?(?P<name>.*?)(?:\[(?P<index>\d+)\])?$')
-
-# ----------------------------------------------------------------------------
-# -- IO Constraints List -----------------------------------------------------
-# ----------------------------------------------------------------------------
-class IOConstraints(MutableSequence):
-    """IO constraints of a port.
-
-    Args:
-        type_ (`IOType`): Type of IO
-        low (:obj:`int`): LSB index of the port
-        high (:obj:`int`): MSB + 1 index of the port
-    """
-
-    __slots__ = ["type_", "low", "_elements"]
-
-    def __init__(self, type_, low = None, high = None):
-        self.type_ = type_
-        self.low = uno(low, 0)
-        high = uno(high, self.low + 1)
-        self._elements = [None] * (high - self.low)
-
-    def __getitem__(self, index):
-        return self._elements[index - self.low]
-
-    def __setitem__(self, index, value):
-        self._elements[index - self.low] = value
-
-    def __delitem__(self, index):
-        raise NotImplementedError("Cannot delete from IOConstraints")
-
-    def insert(self, index, value):
-        raise NotImplementedError("Cannot insert to IOConstraints")
-
-    def __len__(self):
-        return len(self._elements)
-
-    def __iter__(self):
-        for i in self._elements:
-            yield i
-
-    def resize(self, low = None, high = None):
-        if low is not None:
-            if low < self.low:
-                self._elements = [None] * (self.low - low) + self._elements
-            elif low > self.low:
-                self._elements = self._elements[low - self.low:]
-            self.low = low
-        if high is not None:
-            if high - self.low > len(self._elements):
-                self._elements += [None] * (high - self.low)
-            elif high - self.low < len(self._elements):
-                self._elements = self._elements[:high - self.low]
 
 # ----------------------------------------------------------------------------
 # -- IO Planner --------------------------------------------------------------
@@ -80,6 +25,8 @@ class IOPlanner(Object):
     __slots__ = ["xmax", "ymax", "avail_nonglobals", "avail_globals", "used", "globals_",
             # scanning
             "position", "subtile", "counterclockwise"]
+    
+    _reprog_bit = re.compile('^(?P<out>out:)?(?P<name>.*?)(?:\[(?P<index>\d+)\])?$')
 
     def __init__(self, summary, start_pos = (0, 0), subtile = 0, counterclockwise = False):
         self.xmax = 0
@@ -145,11 +92,11 @@ class IOPlanner(Object):
                 raise PRGAInternalError("IO at {}, {} not on edge of the fabric"
                         .format(Position(*self.position), self.subtile))
 
-    def use(self, iotype, position, subtile):
+    def use(self, direction, position, subtile):
         """Mark the IO at the specified location as used.
 
         Args:
-            iotype (`IOType`):
+            direction (`PortDirection`):
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
             subtile (:obj:`int`):
         """
@@ -159,15 +106,15 @@ class IOPlanner(Object):
                     raise PRGAAPIError("No IO found at {}, {}".format(Position(*position), subtile))
                 else:
                     raise PRGAAPIError("IO at {}, {} is already used".format(Position(*position), subtile))
-        if iotype not in io.types:
-            raise PRGAAPIError("IO at {}, {} cannot be used as {:r}".format(Position(*position), subtile, iotype))
+        if direction not in io.directions:
+            raise PRGAAPIError("IO at {}, {} cannot be used as {:r}".format(Position(*position), subtile, direction))
         self.used[position, subtile] = io
 
-    def pop(self, iotype, *, force_change_tile = False, use_global_driver_as_normal = False):
-        """Pop the next available IO of type `iotype`.
+    def pop(self, direction, *, force_change_tile = False, use_global_driver_as_normal = False):
+        """Pop the next available IO of for ``direction``.
 
         Args:
-            iotype (`IOType`):
+            direction (`PortDirection`):
 
         Keyword Args:
             force_change_tile (:obj:`bool`): If set, the scanning will start from a new tile. This is useful when
@@ -181,11 +128,19 @@ class IOPlanner(Object):
             raise PRGAAPIError("Ran out of IOs")
         if force_change_tile and self.subtile > 0:
             self.__next_position()
-        while (io := self.avail_nonglobals.pop( (self.position, self.subtile), None )) is None:
-            if (use_global_driver_as_normal and
-                    (io := self.avail_globals.pop( (self.position, self.subtile), None )) is not None):
+        io = None
+        while True:
+            key = self.position, self.subtile
+            if (io := self.avail_nonglobals.get( key, None )) is None:
+                if not use_global_driver_as_normal or (io := self.avail_globals.get( key, None )) is None:
+                    self.__next_position()
+                    continue
+            if direction in io.directions:
+                self.avail_nonglobals.pop( key, None )
+                self.avail_globals.pop( key, None )
                 break
-            self.__next_position()
+            else:
+                self.__next_position()
         self.used[io.position, io.subtile] = io
         self.subtile += 1
         return io.position, io.subtile
@@ -203,96 +158,74 @@ class IOPlanner(Object):
         self.counterclockwise = uno(counterclockwise, self.counterclockwise)
 
     @classmethod
-    def autoplan(cls, context, mod_top, fixed = None):
-        """Automatically generate IO constraints.
+    def autoplan(cls, summary, design):
+        """Automatically generate IO constraints and write into ``design``.
 
         Args:
-            context (`Context` or `ContextSummary`):
-            mod_top (`VerilogModule`): Top-level module of target design
-            fixed (:obj:`Mapping` [:obj:`str`, `IOConstraints`]): Manually constrained IOs. This mapping could be
-                incomplete
-
-        Returns:
-            :obj:`Mapping` [:obj:`str`, `IOConstraints`]): Mapping from port names to list of IOs. Output ports are
-                prefixed with "out:" to match VPR's naming convention
+            summary (`Context` or `ContextSummary`):
+            design (`DesignIntf`): Interface of the target design. May contain partial IO constraints.
         """
-        planner = cls(context)
-        # initialize constraints
-        constraints = {}
-        for port_name, port in mod_top.ports.items():
-            constraints[port_name] = IOConstraints(port.direction.case(IOType.ipin, IOType.opin), port.low, port.high)
-        # process manual constraints
-        for name, fixed_constraints in uno(fixed, {}).items():
-            if (ios := constraints.get(name)) is None:
-                continue
-                raise PRGAAPIError("Port '{}' is not found in module '{}'"
-                        .format(name, mod_top.name))
-            for i, c in enumerate(fixed_constraints, fixed_constraints.low):
-                if c is None:
-                    continue
-                planner.use(ios.type_, *c)
-                ios[i] = c
+        planner = cls(summary)
+        # process existing partial constraints
+        for port in design.ports.values():
+            for _, io in port.iter_io_constraints():
+                if io is not None:
+                    planner.use(port.direction, *io)
         # complete the constraints
-        for key, ios in constraints.items():
-            for i, c in enumerate(ios, ios.low):
-                if c is not None:
-                    continue
-                ios[i] = planner.pop(ios.type_)
-        return constraints
+        for port in design.ports.values():
+            for i, io in port.iter_io_constraints():
+                if io is None:
+                    port.set_io_constraint(*planner.pop(port.direction), i)
 
     @classmethod
-    def parse_io_constraints(cls, file_):
+    def parse_io_constraints(cls, design, f):
         """Parse a partial or complete IO constraint file.
 
         Args:
-            file_ (:obj:`str` of file-like object):
-
-        Returns:
-            :obj:`Mapping` [:obj:`str`, `IOConstraints`]: Mapping from port names in the behavioral model to
-                IO constraints
+            design (`DesignIntf`): Interface of the target design.
+            f (:obj:`str` of file-like object):
         """
-        constraints = {}
-        if isinstance(file_, str):
-            file_ = open(file_)
-        for lineno, line in enumerate(file_):
+        if isinstance(f, str):
+            f = open(f)
+
+        for lineno, line in enumerate(f):
             line = line.split("#")[0].strip()
             if line == '':
                 continue
-            name, x, y, subtile = line.split()
             try:
+                name, x, y, subtile = line.split()
                 x, y, subtile = map(int, (x, y, subtile))
             except ValueError:
                 raise PRGAAPIError("Invalid constraint at line {}".format(lineno + 1))
-            if (matched := _reprog_bit.match(name)) is None:
+            if (matched := cls._reprog_bit.match(name)) is None:
                 raise PRGAAPIError("Invalid port name at line {}: {}".format(lineno + 1, name))
             out, name, index = matched.group("out", "name", "index")
-            index = int(uno(index, 0))
-            if (ios := constraints.get(name)) is None:
-                ios = constraints[name] = IOConstraints(IOType.opin if out else IOType.ipin, index)
-            elif index < ios.low:
-                ios.resize(index)
-            elif index - ios.low >= len(ios):
-                ios.resize(high = index + 1)
-            ios[index] = Position(x, y), subtile
-        return constraints
+
+            if (port := design.ports.get(name)) is None:
+                raise PRGAAPIError("Design '{}' does not have port '{}'".format(design.name, name))
+            elif port.direction.case(bool(out), not out):
+                raise PRGAAPIError("Port '{}' of design '{}' is an {}"
+                        .format(name, design.name, port.direction.case("input", "output")))
+            port.set_io_constraint((x, y), subtile, index)
 
     @classmethod
-    def print_io_constraints(cls, constraints, ostream = sys.stdout):
+    def print_io_constraints(cls, design, ostream = sys.stdout):
         """Print IO constraints.
 
         Args:
-            constraints (:obj:`Mapping` [:obj:`str`, `IOConstraints` ]):
+            design (`DesignIntf`): Interface of the target design.
             ostream (:obj:`str` or file-like object):
         """
         if isinstance(ostream, str):
             if d := os.path.dirname(ostream):
-                makedirs(d)
+                os.makedirs(d)
             ostream = open(ostream, "w")
-        for name, ios in constraints.items():
-            key = ios.type_.case(ipin = "", opin = "out:") + name
-            if len(ios) == 1:
-                (x, y), subtile = ios[ios.low]
-                ostream.write("{} {} {} {}\n".format(key, x, y, subtile))
-            else:
-                for i, ((x, y), subtile) in enumerate(ios, ios.low):
-                    ostream.write("{}[{}] {} {} {}\n".format(key, i, x, y, subtile))
+        for port in design.ports.values():
+            for i, io in port.iter_io_constraints():
+                if io is not None:
+                    if i is None:
+                        ostream.write("{}{} {} {} {}\n"
+                                .format(port.direction.case("", "out:"), port.name, io[0][0], io[0][1], io[1]))
+                    else:
+                        ostream.write("{}{}[{}] {} {} {}\n"
+                                .format(port.direction.case("", "out:"), port.name, i, io[0][0], io[0][1], io[1]))

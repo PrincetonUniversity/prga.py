@@ -3,8 +3,8 @@
 from .delegate import FASMDelegate
 from ..base import AbstractPass
 from ...core.builder import ArrayBuilder
-from ...core.common import (Orientation, Position, IOType, ModuleView, IO)
-from ...netlist import TimingArcType, NetUtils, ModuleUtils
+from ...core.common import (Orientation, Position, ModuleView, IO)
+from ...netlist import TimingArcType, NetUtils, ModuleUtils, PortDirection
 from ...xml import XMLGenerator
 from ...exception import PRGAInternalError
 
@@ -677,6 +677,10 @@ class VPRArchGeneration(_VPRArchGeneration):
 
     @property
     def dependences(self):
+        return ("translation", )
+
+    @property
+    def passes_before_self(self):
         return ("config.injection", )
 
     @property
@@ -701,8 +705,8 @@ class VPRArchGeneration(_VPRArchGeneration):
                     if i.model.module_class.is_io_block:
                         io = i.model.instances["io"].model
                         self.ios.append( IO(
-                            io.primitive_class.case(multimode = (IOType.ipin, IOType.opin),
-                                inpad = (IOType.ipin, ), outpad = (IOType.opin, )),
+                            io.primitive_class.case(multimode = (PortDirection.input_, PortDirection.output),
+                                inpad = (PortDirection.input_, ), outpad = (PortDirection.output, )),
                             position + (x, y),
                             subtile,
                             globals_.pop( (position + (x, y), subtile), None ),

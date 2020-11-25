@@ -34,6 +34,7 @@ class ContextSummary(Object):
 
     __slots__ = [
             'cwd',                  # root directory of the project
+            'cfg_type',             # configuration type
             # generic summaries: updated by 'SummaryUpdate'
             'ios',                  # list of `IO` s
             'active_blocks',        # dict of block keys to active orientations
@@ -73,14 +74,16 @@ class Context(Object):
             '_database',            # module database
             '_top',                 # fpga top in user view
             '_system_top',          # system top in logical view
-            '_switch_database',     # switch database
+            '_switch_delegate',     # switch delegate
             '_fasm_delegate',       # FASM delegate
             '_verilog_headers',     # Verilog header rendering tasks
             'summary',              # FPGA summary
             "version",              # version of the context
+            '__dict__',
+
             # non-persistent variables
             'cwd',                  # root path of the context. Set when unpickled/created
-            '__dict__']
+            ]
 
     def __init__(self, cfg_type, *, database = None, **kwargs):
         self._cfg_type = cfg_type
@@ -94,9 +97,10 @@ class Context(Object):
             self._new_database()
         else:
             self._database = database
-        self.summary = ContextSummary()
         self.version = _VERSION
+        self.summary = ContextSummary()
         self.summary.cwd = self.cwd = os.getcwd()
+        self.summary.cfg_type = cfg_type
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -112,72 +116,10 @@ class Context(Object):
         """
         self._verilog_headers[f] = template, parameters
 
-    def _new_database(self):
+    def _new_database(self, dont_add_logical_primitives = tuple()):
         database = self._database = {}
 
-        # 1. register built-in modules: LUTs
-        for i in range(2, 9):
-            lut = Module('lut' + str(i),
-                    is_cell = True,
-                    view = ModuleView.user,
-                    module_class = ModuleClass.primitive,
-                    primitive_class = PrimitiveClass.lut)
-            in_ = ModuleUtils.create_port(lut, 'in', i, PortDirection.input_,
-                    port_class = PrimitivePortClass.lut_in)
-            out = ModuleUtils.create_port(lut, 'out', 1, PortDirection.output,
-                    port_class = PrimitivePortClass.lut_out)
-            NetUtils.create_timing_arc(TimingArcType.comb_matrix, in_, out)
-            database[ModuleView.user, lut.key] = lut
-
-        # 2. register built-in modules: D-flipflop
-        if True:
-            flipflop = Module('flipflop',
-                    is_cell = True,
-                    view = ModuleView.user,
-                    module_class = ModuleClass.primitive,
-                    primitive_class = PrimitiveClass.flipflop)
-            clk = ModuleUtils.create_port(flipflop, 'clk', 1, PortDirection.input_,
-                    is_clock = True, port_class = PrimitivePortClass.clock)
-            D = ModuleUtils.create_port(flipflop, 'D', 1, PortDirection.input_,
-                    port_class = PrimitivePortClass.D)
-            Q = ModuleUtils.create_port(flipflop, 'Q', 1, PortDirection.output,
-                    port_class = PrimitivePortClass.Q)
-            NetUtils.create_timing_arc(TimingArcType.seq_end, clk, D)
-            NetUtils.create_timing_arc(TimingArcType.seq_start, clk, Q)
-            database[ModuleView.user, flipflop.key] = flipflop
-
-        # 3. register built-in modules: I/O
-        for class_ in (PrimitiveClass.inpad, PrimitiveClass.outpad):
-            pad = Module(class_.name,
-                    is_cell = True,
-                    view = ModuleView.user,
-                    module_class = ModuleClass.primitive,
-                    primitive_class = class_)
-            if class_.is_inpad:
-                ModuleUtils.create_port(pad, 'inpad', 1, PortDirection.output)
-            else:
-                ModuleUtils.create_port(pad, 'outpad', 1, PortDirection.input_)
-            database[ModuleView.user, pad.key] = pad
-
-        # 4. register dual-mode I/O
-        if True:
-            pad = self.build_multimode("iopad")
-            pad.create_input("outpad", 1)
-            pad.create_output("inpad", 1)
-
-            mode = pad.build_mode("inpad")
-            inst = mode.instantiate(self.primitives["inpad"], "pad")
-            mode.connect(inst.pins["inpad"], mode.ports["inpad"])
-            mode.commit()
-
-            mode = pad.build_mode("outpad")
-            inst = mode.instantiate(self.primitives["outpad"], "pad")
-            mode.connect(mode.ports["outpad"], inst.pins["outpad"])
-            mode.commit()
-            database[ModuleView.user, "iopad"] = pad.commit()
-
-        # 5. register built-in designs
-        FileRenderer._register_lib(self)
+        FileRenderer._register_lib(self, dont_add_logical_primitives)
         Integration._register_lib(self)
 
     # == low-level API =======================================================
@@ -196,15 +138,15 @@ class Context(Object):
         return ReadonlyMappingProxy(self._database)
 
     @property
-    def switch_database(self):
-        """`AbstractSwitchDatabase`: Switch database.
+    def switch_delegate(self):
+        """`SwitchDelegate`: Switch delegate.
         
         This is usually set by the configuration circuitry entry point, e.g., `Scanchain`.
         """
         try:
-            return self._switch_database
+            return self._switch_delegate
         except AttributeError:
-            raise PRGAInternalError("Switch database not set.\n"
+            raise PRGAInternalError("Switch delegate not set.\n"
                     "Possible cause: the context is not created by a configuration circuitry entry point.")
 
     @property

@@ -1,6 +1,7 @@
 # -*- encoding: ascii -*-
 """Common enums for FPGA builders."""
 
+from ..netlist import PortDirection
 from ..util import Object, Enum, uno
 from ..exception import PRGAInternalError
 
@@ -280,7 +281,8 @@ class IO(Object):
     """One IO pad.
     
     Args:
-        types (`IOType` or :obj:`Sequence` [`IOType` ]): One or more `IOType` that this IO supports
+        directions (`PortDirection` or :obj:`Sequence` [`PortDirection` ]): One or more `PortDirection` that this
+            IO supports
         position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this IO
         subtile (:obj:`int`): Sub-tile ID
         global_ (`Global`): If set, this IO drives the specified global wire
@@ -289,13 +291,13 @@ class IO(Object):
         **kwargs: Additional attributes assigned to the IO pad
     """
 
-    __slots__ = ["types", "position", "subtile", "global_", "__dict__"]
+    __slots__ = ["directions", "position", "subtile", "global_", "__dict__"]
 
-    def __init__(self, types, position, subtile = 0, global_ = None, **kwargs):
-        if isinstance(types, IOType):
-            self.types = (types, )
+    def __init__(self, directions, position, subtile = 0, global_ = None, **kwargs):
+        if isinstance(directions, PortDirection):
+            self.directions = (directions, )
         else:
-            self.types = tuple(set(types))
+            self.directions = tuple(set(directions))
         self.position = Position(*position)
         self.subtile = subtile
         self.global_ = global_

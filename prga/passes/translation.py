@@ -1,30 +1,37 @@
 # -*- encoding: ascii -*-
 
 from .base import AbstractPass
-from ..netlist import PortDirection, Module, ModuleUtils, NetUtils
+from ..netlist import PortDirection, Module, ModuleUtils, NetUtils, TimingArcType
 from ..core.common import ModuleClass, NetClass, IOType, ModuleView, SegmentID, BlockPinID, Position
 from ..core.builder import ArrayBuilder
 from ..util import Object, uno
 from ..exception import PRGAInternalError, PRGAAPIError
 
-from abc import abstractmethod
 from itertools import chain
 from networkx.exception import NetworkXError
 
 import logging
 _logger = logging.getLogger(__name__)
 
-__all__ = ['AbstractSwitchDatabase', 'TranslationPass']
+__all__ = ['SwitchDelegate', 'TranslationPass']
 
 # ----------------------------------------------------------------------------
-# -- Switch Database ---------------------------------------------------------
+# -- Switch Delegate ---------------------------------------------------------
 # ----------------------------------------------------------------------------
-class AbstractSwitchDatabase(Object):
-    """Switch database supplying logical switch modules for instantiation."""
+class SwitchDelegate(Object):
+    """Switch delegate choosing logical switch modules for instantiation.
+    
+    Args:
+        context (`Context`):
+    """
+
+    __slots__ = ['context']
+
+    def __init__(self, context):
+        self.context = context
 
     # == low-level API =======================================================
     # -- properties/methods to be implemented/overriden by subclasses --------
-    @abstractmethod
     def get_switch(self, width, module = None):
         """Get a switch module with ``width`` input bits.
 
@@ -38,15 +45,34 @@ class AbstractSwitchDatabase(Object):
         Note:
             The returned switch could have more than ``width`` input bits
         """
-        raise NotImplementedError
+        key = (ModuleClass.switch, width)
 
-    def get_obuf(self):
-        """Get the output buffer module.
+        # check if the switch is already added
+        try:
+            return self.context.database[ModuleView.logical, key]
+        except KeyError:
+            pass
 
-        Returns:
-            `Module` or ``None``:
-        """
-        return None
+        # create and add new switch module
+        switch = self.context._database[ModuleView.logical, key] = Module(
+                "sw" + str(width),
+                is_cell = True,
+                view = ModuleView.logical,
+                key = key,
+                module_class = ModuleClass.switch,
+                verilog_template = "builtin/switch.tmpl.v")
+
+        # ports and timing arcs
+        i = ModuleUtils.create_port(switch, 'i', width, PortDirection.input_, net_class = NetClass.switch)
+        o = ModuleUtils.create_port(switch, 'o', 1,     PortDirection.output, net_class = NetClass.switch)
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, i, o)
+
+        ModuleUtils.create_port(switch, "cfg_e", 1,     PortDirection.input_, net_class = NetClass.cfg)
+        ModuleUtils.create_port(switch, "sel",   (width - 1).bit_length(), PortDirection.input_,
+                net_class = NetClass.cfg)
+
+        # return module
+        return switch
 
 # ----------------------------------------------------------------------------
 # -- Translation Pass --------------------------------------------------------
@@ -78,7 +104,7 @@ class TranslationPass(AbstractPass):
         if module.module_class.is_io_block:
             if (port := module.ports.get(iotype)) is None:
                 port = ModuleUtils.create_port(module,
-                        iotype.case("_ipin", "_opin", "_oe"),
+                        iotype.case("ipin", "opin", "oe"),
                         1,
                         iotype.case(PortDirection.input_, PortDirection.output, PortDirection.output),
                         key = iotype,
@@ -189,7 +215,7 @@ class TranslationPass(AbstractPass):
                         if len(usrcs) == 1:
                             NetUtils.connect(NetUtils._dereference(logical, NetUtils._reference(usrcs)), lsink[i])
                             continue
-                        switch_model = context.switch_database.get_switch(len(usrcs), logical)
+                        switch_model = context.switch_delegate.get_switch(len(usrcs), logical)
                         switch_name = ["i_sw"]
                         if usink.net_type.is_pin:
                             switch_name.append( usink.instance.name )
