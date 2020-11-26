@@ -28,12 +28,14 @@ __all__.extend([
 from .core.context import Context
 __all__.extend(["Context"])
 
-# Configuration Circuitry Entry Points
-from .cfg.scanchain.lib import Scanchain
-from .cfg.pktchain.lib import Pktchain
+# Programming Circuitry Entry Points
+from .prog.magic.lib import Magic
+# from .cfg.scanchain.lib import Scanchain
+# from .cfg.pktchain.lib import Pktchain
 __all__.extend([
-    "Scanchain",
-    "Pktchain",
+    "Magic",
+    # "Scanchain",
+    # "Pktchain",
     ])
 
 # Flow Manager and Passes

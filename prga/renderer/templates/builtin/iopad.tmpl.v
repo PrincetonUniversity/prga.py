@@ -8,27 +8,31 @@ module {{ module.name }} (
     , output reg [0:0] opin
     , output reg [0:0] oe
 
-    , input wire [0:0] cfg_e        // programming
-    , input wire [0:0] prim_e       // this primitive is enabled in app-emulation
-    , input wire [0:0] prim_mode    // mode selection
+    , input wire [0:0] prog_done    // programming
+    , input wire [1:0] prog_data    // mode:
+                                    //  - 00: disabled
+                                    //  - 01: input mode
+                                    //  - 10: output mode
     );
 
-    localparam  MODE_INPUT = 1'b0,
-                MODE_OUTPUT = 1'b1;
+    localparam  MODE_INPUT      = 2'h1,
+                MODE_OUTPUT     = 2'h2;
 
     always @* begin
-        if (cfg_e || ~prim_e) begin
-            inpad = 1'b0;
-            opin = 1'b0;
-            oe = 1'b0;
-        end else if (prim_mode == MODE_INPUT) begin
-            inpad = ipin;
-            opin = 1'b0;
-            oe = 1'b0;
-        end else if (prim_mode == MODE_OUTPUT) begin
-            inpad = 1'b0;
-            opin = outpad;
-            oe = 1'b1;
+        inpad = 1'b0;
+        opin = 1'b0;
+        oe = 1'b0;
+
+        if (prog_done) begin
+            case ({prog_done, prog_data})
+                {1'b1, MODE_INPUT}: begin
+                    inpad = ipin;
+                end
+                {1'b1, MODE_OUTPUT}: begin
+                    opin = outpad;
+                    oe = 1'b1;
+                end
+            endcase
         end
     end
 

@@ -5,10 +5,13 @@ module {{ module.name }} (
     input wire [{{ width - 1 }}:0] in
     , output reg [0:0] out
 
-    , input wire [0:0] cfg_e
-    , input wire [0:0] prim_e
-    , input wire [{{ 2 ** width - 1}}:0] lut_data
+    , input wire [0:0] prog_done
+    , input wire [{{ 2 ** width }}:0] prog_data
+        // prog_data[{{ 2 ** width - 1}}:0]: LUT content
+        // prog_data[{{ 2 ** width }}]: LUT enabled (not disabled)
     );
+
+    localparam  IDX_LUT_ENABLE = {{ 2 ** width }};
 
     reg [{{ width - 1 }}:0] internal_in;
     
@@ -33,12 +36,12 @@ module {{ module.name }} (
     end
 
     always @* begin
-        if (cfg_e || ~prim_e) begin
+        if (~prog_done || ~prog_data[IDX_LUT_ENABLE]) begin
             out = 1'b0;
         end else begin
             case (internal_in)
                 {%- for i in range(2 ** width) %}
-                {{ width }}'d{{ i }}: out = lut_data[{{ i }}];
+                {{ width }}'d{{ i }}: out = prog_data[{{ i }}];
                 {%- endfor %}
             endcase
         end

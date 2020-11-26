@@ -5,12 +5,12 @@ module {{ module.name }} (
 
     , input wire [0:0] ipin
 
-    , input wire [0:0] cfg_e    // programming
-    , input wire [0:0] prim_e   // this primitive is enabled in app-emulation
+    , input wire [0:0] prog_done    // programming finished
+    , input wire [0:0] prog_data    // mode: enabled (not disabled)
     );
 
     always @* begin
-        if (cfg_e || ~prim_e) begin
+        if (~prog_done || ~prog_data) begin
             inpad = 1'b0;
         end else begin
             inpad = ipin;

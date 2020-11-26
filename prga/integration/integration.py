@@ -7,7 +7,7 @@ from ..netlist.module.util import ModuleUtils
 from ..netlist.net.common import PortDirection
 from ..netlist.net.util import NetUtils
 from ..exception import PRGAAPIError, PRGAInternalError
-from ..tools.ioplan.ioplan import IOConstraints, IOPlanner
+# from ..tools.ioplan.ioplan import IOConstraints, IOPlanner
 from ..util import uno
 
 __all__ = ["Integration"]

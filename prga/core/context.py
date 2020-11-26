@@ -3,11 +3,11 @@
 from .common import (Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView, OrientationTuple,
         DirectTunnel)
 from .builder import (LogicalPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder,
-        ClusterBuilder, IOBlockBuilder, LogicBlockBuilder,
+        SliceBuilder, IOBlockBuilder, LogicBlockBuilder,
         SwitchBoxBuilder, TileBuilder, ArrayBuilder)
 from ..integration import Integration
 from ..netlist import TimingArcType, PortDirection, Module, ModuleUtils, NetUtils
-from ..renderer import FileRenderer
+from ..renderer.lib import BuiltinCellLibrary
 from ..util import Object, ReadonlyMappingProxy, uno
 from ..exception import PRGAAPIError, PRGAInternalError
 
@@ -34,7 +34,7 @@ class ContextSummary(Object):
 
     __slots__ = [
             'cwd',                  # root directory of the project
-            'cfg_type',             # configuration type
+            'prog_type',            # programming circuitry type
             # generic summaries: updated by 'SummaryUpdate'
             'ios',                  # list of `IO` s
             'active_blocks',        # dict of block keys to active orientations
@@ -55,7 +55,7 @@ class Context(Object):
     """The main interface to PRGA architecture description.
 
     Args:
-        cfg_type (:obj:`str`): Configuration type
+        prog_type (:obj:`str`): Programming circuitry type
 
     Keyword Args:
         database (:obj:`MutableMapping` [:obj:`Hashable`, `Module` ]): The module database. If not set, a new
@@ -63,11 +63,11 @@ class Context(Object):
         **kwargs: Custom attributes assigned to the created context 
 
     Architecture context manages all resources created/added to the FPGA, including all modules, the
-    routing graph, configration circuitry and more.
+    routing graph, programming circuitry and more.
     """
 
     __slots__ = [
-            "_cfg_type",            # configuration type
+            "_prog_type",           # programming circuitry type
             '_globals',             # global wires
             '_tunnels',             # direct inter-block tunnels
             '_segments',            # wire segments
@@ -85,8 +85,8 @@ class Context(Object):
             'cwd',                  # root path of the context. Set when unpickled/created
             ]
 
-    def __init__(self, cfg_type, *, database = None, **kwargs):
-        self._cfg_type = cfg_type
+    def __init__(self, prog_type, *, database = None, **kwargs):
+        self._prog_type = prog_type
         self._globals = {}
         self._tunnels = {}
         self._segments = {}
@@ -100,7 +100,7 @@ class Context(Object):
         self.version = _VERSION
         self.summary = ContextSummary()
         self.summary.cwd = self.cwd = os.getcwd()
-        self.summary.cfg_type = cfg_type
+        self.summary.prog_type = prog_type
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -119,7 +119,7 @@ class Context(Object):
     def _new_database(self, dont_add_logical_primitives = tuple()):
         database = self._database = {}
 
-        FileRenderer._register_lib(self, dont_add_logical_primitives)
+        BuiltinCellLibrary.register(self, dont_add_logical_primitives)
         Integration._register_lib(self)
 
     # == low-level API =======================================================
@@ -141,25 +141,25 @@ class Context(Object):
     def switch_delegate(self):
         """`SwitchDelegate`: Switch delegate.
         
-        This is usually set by the configuration circuitry entry point, e.g., `Scanchain`.
+        This is usually set by the programming circuitry entry point, e.g., `Scanchain`.
         """
         try:
             return self._switch_delegate
         except AttributeError:
             raise PRGAInternalError("Switch delegate not set.\n"
-                    "Possible cause: the context is not created by a configuration circuitry entry point.")
+                    "Possible cause: the context is not created by a programming circuitry entry point.")
 
     @property
     def fasm_delegate(self):
         """`FASMDelegate`: FASM delegate for bitstream generation.
         
-        This is usually set by the configuration circuitry entry point, e.g., `Scanchain`.
+        This is usually set by the programming circuitry entry point, e.g., `Scanchain`.
         """
         try:
             return self._fasm_delegate
         except AttributeError:
             raise PRGAInternalError("FASM delegate not set.\n"
-                    "Possible cause: the context is not created by a configuration circuitry entry point.")
+                    "Possible cause: the context is not created by a programming circuitry entry point.")
 
     def build_multimode(self, name, **kwargs):
         """Create a multi-mode primitive in user view.
@@ -334,30 +334,30 @@ class Context(Object):
                 addr_width, data_width, vpr_model = vpr_model, single_port = single_port, **kwargs)
         return PrimitiveBuilder(self, primitive)
 
-    # -- Clusters ------------------------------------------------------------
+    # -- Slices --------------------------------------------------------------
     @property
-    def clusters(self):
-        """:obj:`Mapping` [:obj:`str`, `Module` ]: A mapping from names to clusters."""
-        return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_cluster,
+    def slices(self):
+        """:obj:`Mapping` [:obj:`str`, `Module` ]: A mapping from names to slices."""
+        return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_slice,
                 lambda k: (ModuleView.user, k), lambda k: k[1])
 
-    def build_cluster(self, name, **kwargs):
-        """Create a cluster in user view.
+    def build_slice(self, name, **kwargs):
+        """Create a slice in user view.
 
         Args:
-            name (:obj:`str`): Name of the cluster
+            name (:obj:`str`): Name of the slice
 
         Keyword Args:
-            **kwargs: Additional attributes to be associated with the cluster. Beware that these attributes are
+            **kwargs: Additional attributes to be associated with the slice. Beware that these attributes are
                 **NOT** carried over to the logical view automatically generated by `TranslationPass`
         
         Returns:
-            `ClusterBuilder`:
+            `SliceBuilder`:
         """
         if (ModuleView.user, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        cluster = self._database[ModuleView.user, name] = ClusterBuilder.new(name, **kwargs)
-        return ClusterBuilder(self, cluster)
+        slice_ = self._database[ModuleView.user, name] = SliceBuilder.new(name, **kwargs)
+        return SliceBuilder(self, slice_)
 
     # -- IO/Logic Blocks -----------------------------------------------------
     @property

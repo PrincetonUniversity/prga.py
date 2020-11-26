@@ -6,13 +6,13 @@ from ...netlist import PortDirection, Module, NetUtils, ModuleUtils
 from ...util import uno
 from ...exception import PRGAAPIError, PRGAInternalError
 
-__all__ = ['ClusterBuilder', 'LogicBlockBuilder', 'IOBlockBuilder']
+__all__ = ['SliceBuilder', 'LogicBlockBuilder', 'IOBlockBuilder']
 
 # ----------------------------------------------------------------------------
-# -- Base Builder for Cluster-like Modules -----------------------------------
+# -- Base Builder for Slice-like Modules -------------------------------------
 # ----------------------------------------------------------------------------
-class _BaseClusterLikeBuilder(BaseBuilder):
-    """Base class for cluster-like module builders.
+class _BaseSliceLikeBuilder(BaseBuilder):
+    """Base class for slice-like module builders.
 
     Args:
         context (`Context`): The context of the builder
@@ -28,14 +28,14 @@ class _BaseClusterLikeBuilder(BaseBuilder):
         At the moment only one clock is supported in the module.
         """
         if self._module.clock is not None:
-            raise PRGAAPIError("Cluster '{}' already has a clock ('{}')"
+            raise PRGAAPIError("Slice '{}' already has a clock ('{}')"
                     .format(self._module, self._module.clock))
         self._module.clock = port
         return port
 
     @property
     def clock(self):
-        """`Port`: Clock of the cluster."""
+        """`Port`: Clock of the slice."""
         return self._module.clock
 
     def connect(self, sources, sinks, *, fully = False, vpr_pack_patterns = None, **kwargs):
@@ -86,10 +86,10 @@ class _BaseClusterLikeBuilder(BaseBuilder):
                 key = (name, i), vpr_num_pb = reps, **kwargs) for i in range(reps))
 
 # ----------------------------------------------------------------------------
-# -- ClusterBuilder ----------------------------------------------------------
+# -- SliceBuilder ------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class ClusterBuilder(_BaseClusterLikeBuilder):
-    """Cluster builder.
+class SliceBuilder(_BaseSliceLikeBuilder):
+    """Slice builder.
 
     Args:
         context (`Context`): The context of the builder
@@ -97,7 +97,7 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
     """
 
     def create_clock(self, name, **kwargs):
-        """Create and add a clock input port to the cluster.
+        """Create and add a clock input port to the slice.
 
         Args:
             name (:obj:`str`): Name of this clock
@@ -112,7 +112,7 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
             **kwargs))
 
     def create_input(self, name, width, **kwargs):
-        """Create and add a non-clock input port to the cluster.
+        """Create and add a non-clock input port to the slice.
 
         Args:
             name (:obj:`str`): Name of this port
@@ -127,7 +127,7 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
         return ModuleUtils.create_port(self._module, name, width, PortDirection.input_, **kwargs)
 
     def create_output(self, name, width, **kwargs):
-        """Create and add a non-clock output port to the cluster.
+        """Create and add a non-clock output port to the slice.
 
         Args:
             name (:obj:`str`): Name of this port
@@ -149,7 +149,7 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
             name (:obj:`str`): Name of the module
 
         Keyword Args:
-            **kwargs: Additional attributes assigned to the cluster
+            **kwargs: Additional attributes assigned to the slice
 
         Returns:
             `Module`: The created module
@@ -157,14 +157,14 @@ class ClusterBuilder(_BaseClusterLikeBuilder):
         return Module(name,
                 view = ModuleView.user,
                 allow_multisource = True,
-                module_class = ModuleClass.cluster,
+                module_class = ModuleClass.slice_,
                 clock = None,
                 **kwargs)
 
 # ----------------------------------------------------------------------------
 # -- IO Block Builder --------------------------------------------------------
 # ----------------------------------------------------------------------------
-class IOBlockBuilder(_BaseClusterLikeBuilder):
+class IOBlockBuilder(_BaseSliceLikeBuilder):
     """IO block builder.
 
     Args:
@@ -252,7 +252,7 @@ class IOBlockBuilder(_BaseClusterLikeBuilder):
 # ----------------------------------------------------------------------------
 # -- Logic Block Builder -----------------------------------------------------
 # ----------------------------------------------------------------------------
-class LogicBlockBuilder(_BaseClusterLikeBuilder):
+class LogicBlockBuilder(_BaseSliceLikeBuilder):
     """Logic block builder.
 
     Args:

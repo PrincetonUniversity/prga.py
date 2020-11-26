@@ -180,22 +180,22 @@ class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
                         is_clock = port.is_clock, net_class = NetClass.user, port_class = port_class)
         return m
 
-    def create_cfg_port(self, name, width, direction, *, is_clock = False, **kwargs):
-        """Create a configuration port.
+    def create_prog_port(self, name, width, direction, *, is_clock = False, **kwargs):
+        """Create a programming port.
 
         Args:
-            name (:obj:`str`): Name of the configuration port
+            name (:obj:`str`): Name of the programming port
             width (:obj:`int`): Number of bits in this port
             direction (`PortDirection`): Direction of this port
 
         Keyword Args:
-            is_clock (:obj:`bool`): Mark this port as a configuration clock
+            is_clock (:obj:`bool`): Mark this port as a programming clock
             **kwargs: Custom attibutes assigned to the port
 
         Returns:
             `Port`:
         """
-        kwargs["net_class"] = NetClass.cfg
+        kwargs["net_class"] = NetClass.prog
         return ModuleUtils.create_port(self._module, name, width, direction, is_clock = is_clock, **kwargs)
 
 # ----------------------------------------------------------------------------

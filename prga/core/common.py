@@ -241,7 +241,7 @@ class Position(namedtuple('Position', 'x y')):
 class NetClass(Enum):
     """Class for nets."""
     # within block
-    user = 0                #: input/outputs of user-visible modules (e.g. primitive, mode, cluster)
+    user = 0                #: input/outputs of user-visible modules (e.g. primitive, mode, slice)
 
     # routing resources
     block = 1               #: block ports
@@ -252,7 +252,7 @@ class NetClass(Enum):
     io = 4                  #: chip-level inputs/outputs
     global_ = 5             #: global nets
     switch = 6              #: switch input/outputs
-    cfg = 7                 #: configuration ports
+    prog = 7                #: programming ports
 
 # ----------------------------------------------------------------------------
 # -- IO Type -----------------------------------------------------------------
@@ -311,7 +311,7 @@ class ModuleClass(Enum):
     """Class for modules."""
     # below block
     primitive = 0           #: user available primitive cells
-    cluster = 1             #: clusters
+    slice_ = 1              #: slices
     mode = 2                #: one logical mode of a multi-mode primitive
 
     # block
@@ -328,7 +328,7 @@ class ModuleClass(Enum):
 
     # logical-only modules
     switch = 9              #: switch
-    cfg = 10                #: configuration modules
+    prog = 10               #: programming modules
     aux = 11                #: auxiliary modules
 
     @property

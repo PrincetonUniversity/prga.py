@@ -67,9 +67,10 @@ class SwitchDelegate(Object):
         o = ModuleUtils.create_port(switch, 'o', 1,     PortDirection.output, net_class = NetClass.switch)
         NetUtils.create_timing_arc(TimingArcType.comb_matrix, i, o)
 
-        ModuleUtils.create_port(switch, "cfg_e", 1,     PortDirection.input_, net_class = NetClass.cfg)
-        ModuleUtils.create_port(switch, "sel",   (width - 1).bit_length(), PortDirection.input_,
-                net_class = NetClass.cfg)
+        ModuleUtils.create_port(switch, "prog_done", 1, PortDirection.input_, net_class = NetClass.prog)
+        ModuleUtils.create_port(switch, "prog_data", width.bit_length(), PortDirection.input_,
+                net_class = NetClass.prog)
+        switch.sel_map = tuple(range(1, width + 1))
 
         # return module
         return switch
@@ -126,7 +127,7 @@ class TranslationPass(AbstractPass):
             return logical
 
         # make sure the user module is tranlatible
-        if not (module.module_class.is_cluster or
+        if not (module.module_class.is_slice or
                 module.module_class.is_block or
                 module.module_class.is_routing_box or
                 module.module_class.is_tile or
@@ -167,7 +168,7 @@ class TranslationPass(AbstractPass):
                 attrs["net_class"] = NetClass.user
                 if (port_class := getattr(port, "port_class", None)) is not None:
                     attrs["port_class"] = port_class
-            elif module.module_class.is_cluster:
+            elif module.module_class.is_slice:
                 attrs["net_class"] = NetClass.user
             elif module.module_class.is_block:
                 if (global_ := getattr(port, "global_", None)) is not None:
@@ -212,9 +213,17 @@ class TranslationPass(AbstractPass):
                         if len(usrcs := NetUtils.get_multisource(bit)) == 0:
                             continue
                         bitref = NetUtils._reference(bit)
-                        if len(usrcs) == 1:
+
+                        if (len(usrcs) == 1
+                                # always instantiate switch for switch boxes
+                                and not module.module_class.is_switch_box 
+                                # always instantiate switch for primitive inputs 
+                                and not (usink.net_type.is_pin and usink.instance.model.module_class.is_primitive)):
+
+                            # direct connect (no programmability)
                             NetUtils.connect(NetUtils._dereference(logical, NetUtils._reference(usrcs)), lsink[i])
                             continue
+
                         switch_model = context.switch_delegate.get_switch(len(usrcs), logical)
                         switch_name = ["i_sw"]
                         if usink.net_type.is_pin:

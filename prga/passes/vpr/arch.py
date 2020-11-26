@@ -405,7 +405,7 @@ class _VPRArchGeneration(AbstractPass):
             else:
                 leaves.append( (instance.key, 0, instance) )
             cur_hierarchy = instance._extend_hierarchy(above = hierarchy)
-            if instance.model.module_class.is_cluster:
+            if instance.model.module_class.is_slice:
                 self._pb_type(instance.model, cur_hierarchy)
             elif instance.model.module_class.is_primitive:
                 self._leaf_pb_type(cur_hierarchy)
@@ -677,11 +677,7 @@ class VPRArchGeneration(_VPRArchGeneration):
 
     @property
     def dependences(self):
-        return ("translation", )
-
-    @property
-    def passes_before_self(self):
-        return ("config.injection", )
+        return ("prog.insertion", )
 
     @property
     def _update_summary(self):
