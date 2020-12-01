@@ -79,6 +79,9 @@ FASM_LOG := fasm.log
 BITGEN_RESULT := bitgen.out
 BITGEN_LOG := bitgen.log
 
+# ** Implementation Wrapper **
+IMPLWRAP_V := implwrap.v
+
 # ----------------------------------------------------------------------------
 # -- Aggregated Variables ----------------------------------------------------
 # ----------------------------------------------------------------------------
@@ -89,7 +92,7 @@ JUNKS := vpr_stdout.log *.rpt pack.out.post_routing
 # ----------------------------------------------------------------------------
 # -- Phony Rules -------------------------------------------------------------
 # ----------------------------------------------------------------------------
-.PHONY: all syn pack ioplan place route fasm bitgen disp clean
+.PHONY: all syn pack ioplan place route fasm bitgen implwrap disp clean
 
 all: $(BITGEN_RESULT)
 
@@ -106,6 +109,8 @@ route: $(ROUTE_RESULT)
 fasm: $(FASM_RESULT)
 
 bitgen: $(BITGEN_RESULT)
+
+implwrap: $(IMPLWRAP_V)
 
 disp: $(VPR_ARCHDEF) $(VPR_RRGRAPH) $(SYN_EBLIF) $(PACK_RESULT) $(PLACE_RESULT) $(ROUTE_RESULT)
 	$(VPR) $(VPR_ARCHDEF) $(SYN_EBLIF) --circuit_format eblif --constant_net_method route \
@@ -158,3 +163,6 @@ $(FASM_RESULT): $(VPR_ARCHDEF) $(VPR_RRGRAPH) $(SYN_EBLIF) $(PACK_RESULT) $(PLAC
 
 $(BITGEN_RESULT): $(SUMMARY) $(FASM_RESULT)
 	$(PYTHON) -O -m prga.tools.bitgen -c $(SUMMARY) -f $(FASM_RESULT) -o $@ --verif
+
+$(IMPLWRAP_V): $(SUMMARY) $(SYN_EBLIF) $(IOPLAN_RESULT)
+	$(PYTHON) -O -m prga.tools.wizard.implwrap -c $(SUMMARY) -d $(SYN_EBLIF) -f $(IOPLAN_RESULT) -o $@

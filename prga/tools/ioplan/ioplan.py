@@ -199,7 +199,10 @@ class IOPlanner(Object):
                 raise PRGAAPIError("Invalid constraint at line {}".format(lineno + 1))
             if (matched := cls._reprog_bit.match(name)) is None:
                 raise PRGAAPIError("Invalid port name at line {}: {}".format(lineno + 1, name))
+
             out, name, index = matched.group("out", "name", "index")
+            if index is not None:
+                index = int(index)
 
             if (port := design.ports.get(name)) is None:
                 raise PRGAAPIError("Design '{}' does not have port '{}'".format(design.name, name))

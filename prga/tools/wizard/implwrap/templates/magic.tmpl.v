@@ -4,28 +4,28 @@
 module implwrap (
     input wire tb_clk
     , input wire tb_rst
-    , output wire tb_prog_done
+    , output reg tb_prog_done
     {%- for name, port in design.ports.items() %}
     , {{ port.direction.case("input", "output") }} wire
-        {%- if not none(port.range_) %} [{{ port.range_.stop - port.range_.step }}:{{ port.range_.start }}]{% endif %} {{ name }}
+        {%- if port.range_ is not none %} [{{ port.range_.stop - port.range_.step }}:{{ port.range_.start }}]{% endif %} {{ name }}
     {%- endfor %}
     );
 
     // FPGA instance
-    {{ summary.top_name }} dut (
+    {{ summary.top }} dut (
         .prog_clk(tb_clk)
         ,.prog_rst(tb_rst)
         ,.prog_done(tb_prog_done)
         {%- for port in design.ports.values() %}
-            {%- for idx, ((x, y), subtile) in port.iter_ioconstraints() %}
-        ,.{%- port.direction.case("ipin", "opin") %}_x{{ x }}y{{ y }}_{{ subtile }}({{ port.name }}{%- if not none(idx) %}[{{ idx }}]{%- endif %})
+            {%- for idx, ((x, y), subtile) in port.iter_io_constraints() %}
+        ,.{{- port.direction.case("ipin", "opin") }}_x{{ x }}y{{ y }}_{{ subtile }}({{ port.name }}{%- if idx is not none %}[{{ idx }}]{%- endif %})
             {%- endfor %}
         {%- endfor %}
         );
 
     // Force load fake bitstream
     initial begin
-        `include `BITSTREAM
+        `include "bitgen.out"
 
         tb_prog_done = 1'b1;    // always done
     end

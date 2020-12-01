@@ -1,6 +1,6 @@
 # -*- encoding: ascii -*-
 
-from ..util import create_argparser, docstring_from_argparser
+from ...util import create_argparser, docstring_from_argparser
 import argparse
 
 def def_argparser(name):
@@ -14,7 +14,7 @@ def def_argparser(name):
     parser.add_argument('-o', '--output', type=str, dest="output",
             help="Output file for the IO constraints")
     parser.add_argument('-f', '--fix', type=str, dest="fixed",
-            help="Partial IO constraints")
+            help="IO constraints")
 
     return parser
 
