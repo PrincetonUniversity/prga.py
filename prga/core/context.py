@@ -34,8 +34,9 @@ class ContextSummary(Object):
 
     __slots__ = [
             'cwd',                  # root directory of the project
-            'prog_type',            # programming circuitry type
             # generic summaries: updated by 'SummaryUpdate'
+            'prog_type',            # programming circuitry type
+            'top',                  # top-level FPGA module name
             'ios',                  # list of `IO` s
             'active_blocks',        # dict of block keys to active orientations
             'active_primitives',    # set of primitive keys
@@ -131,6 +132,7 @@ class Context(Object):
     @system_top.setter
     def system_top(self, v):
         self._system_top = v
+        self.summary.top = v.name
 
     @property
     def database(self):

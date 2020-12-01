@@ -3,10 +3,10 @@
 
 from .exception import PRGAInternalError, PRGAIndexError
 
-from abc import ABCMeta
 import enum
 import logging
 import sys
+from abc import ABCMeta
 from collections.abc import Mapping, Sequence
 
 __all__ = ["ReadonlyMappingProxy", "ReadonlySequenceProxy", "uno", "Object", "Enum", 'enable_stdout_logging']

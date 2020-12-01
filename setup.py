@@ -20,6 +20,6 @@ setup(
             "Programming Language :: Python :: 3.8",
             "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
             ],
-        install_requires = ["future", "jinja2", "lxml", "networkx", "bitarray", "hdlparse"],
+        install_requires = ["future", "jinja2", "lxml", "networkx", "bitarray", "ruamel.yaml>=0.16"],
         extras_require = {"cocotb": ["cocotb"]},
         )

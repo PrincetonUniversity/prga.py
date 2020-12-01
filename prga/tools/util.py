@@ -5,104 +5,11 @@ from ..netlist.net.common import PortDirection
 from ..exception import PRGAAPIError
 from ..util import Object, uno
 
-from hdlparse.verilog_parser import VerilogExtractor as Vex
 from io import StringIO
 import re, argparse
 
-_reprog_width = re.compile('^.*?\[\s*(?P<start>\d+)\s*:\s*(?P<end>\d+)\s*\].*?$')
-
-__all__ = ['find_verilog_top', 'parse_parameters', 'create_argparser', 'docstring_from_argparser']
-
-class VerilogPort(Object):
-    """A port of a Verilog module.
-
-    Args:
-        name (:obj:`str`): Name of the connection
-        direction (`PortDirection`): Direction of this port
-        low (:obj:`int`): LSB
-        high (:obj:`int`): MSB
-    """
-
-    __slots__ = ['name', 'direction', 'low', 'high']
-    def __init__(self, name, direction, low = None, high = None):
-        self.name = name
-        self.direction = direction
-        self.low = low
-        self.high = high
-
-class VerilogModule(Object):
-    """A Verilog module.
-
-    Args:
-        name (:obj:`str`): Name of the module
-        ports (:obj:`Mapping` [:obj:`str`, `VerilogPort` ]): Mapping from port names to ports
-        parameters (:obj:`Mapping` [:obj:`str`, :obj:`str` ]): Parameters for this module
-    """
-
-    __slots__ = ['name', 'ports', 'parameters']
-    def __init__(self, name, ports, parameters = None):
-        self.name = name
-        self.ports = ports
-        self.parameters = uno(parameters, {})
-
-def find_verilog_top(files, top = None):
-    """Find and parse the top-level module in a list of Verilog files.
-
-    Args:
-        files (:obj:`Sequence` [:obj:`str` ]): Verilog files
-        top (:obj:`str`): the name of the top-level module if there are more than one modules in the Verilog
-            files
-
-    Returns:
-        `VerilogModule`:
-    """
-    mods = {x.name : x for f in files for x in Vex().extract_objects(f)}
-    mod = next(iter(mods.values()))
-    if len(mods) > 1:
-        if top is not None:
-            try:
-                mod = mods[top]
-            except KeyError:
-                raise PRGAAPIError("Module '{}' is not found in the file(s)")
-        else:
-            raise PRGAAPIError('Multiple modules found in the file(s) but no top is specified')
-    ports = {}
-    for port in mod.ports:
-        matched = _reprog_width.match(port.data_type)
-        direction = port.mode.strip()
-        if direction == 'input':
-            direction = PortDirection.input_
-        elif direction == 'output':
-            direction = PortDirection.output
-        else:
-            raise PRGAAPIError("Unknown port direction '{}'".format(direction))
-        low, high = None, None
-        matched = _reprog_width.match(port.data_type)
-        if matched is not None:
-            start, end = map(int, matched.group('start', 'end'))
-            if start > end:
-                low, high = end, start + 1
-            elif end > start:
-                low, high = start, end + 1
-            else:
-                low, high = start, start + 1
-        ports[port.name] = VerilogPort(port.name, direction, low, high)
-    return VerilogModule(mod.name, ports)
-
-def parse_parameters(parameters):
-    """Parse the parameters defined via command-line arguments.
-
-    Args:
-        parameters (:obj:`list` [:obj:`str` ]): a list of 'PARAMETER=VALUE' strings
-
-    Returns:
-        :obj:`dict`: a mapping from parameter name to value
-    """
-    mapping = {}
-    for p in parameters:
-        k, v = p.split('=')
-        mapping[k] = v
-    return mapping
+__all__ = ['create_argparser', 'docstring_from_argparser',
+        'DesignIntf']
 
 def create_argparser(module, *args, **kwargs):
     """Create an argument parser.
@@ -134,3 +41,256 @@ def docstring_from_argparser(parser):
     usage = StringIO()
     parser.print_usage(usage)
     return "This is an executable module:\n\n" + usage.getvalue()
+
+class DesignIntf(Object):
+    """Interface of the target design to be mapped onto the FPGA.
+
+    Args:
+        name (:obj:`str`): Name of the design
+    """
+
+    class Port(Object):
+        """Port of the targe design to be mapped onto the FPGA.
+
+        Args:
+            name (:obj:`str`): Name of the port
+            direction (`PortDirection`): Direction of the port
+            range_ (:obj:`slice`): Range specifier of the port
+        """
+
+        __slots__ = ["name", "direction", "range_", "ioconstraints"]
+
+        def __init__(self, name, direction, range_ = None):
+            self.name = name
+            self.direction = direction
+            self.range_ = range_
+            if range_ is None:
+                self.ioconstraints = None
+            else:
+                self.ioconstraints = [None for _ in range(self.width)]
+
+        @property
+        def width(self):
+            """:obj:`int`: Width of this port."""
+            if self.range_ is None:
+                return 1
+            elif self.range_.step == 1:
+                return self.range_.stop - self.range_.start
+            else:
+                return self.range_.start - self.range_.stop
+
+        def iter_indices(self):
+            """Iterate through the indices of this port.
+
+            Yields:
+                :obj:`int` or ``None``:
+            """
+            if self.range_ is None:
+                yield None
+            else:
+                for i in range(self.range_.start, self.range_.stop, self.range_.step):
+                    yield i
+
+        def iter_io_constraints(self):
+            """Iterate through the indices and IO constraints of this port.
+
+            Yields:
+                :obj:`int` or ``None`: Index
+                :obj:`tuple` [`Position`, :obj:`int`] or ``None``: Position and subtile ID of the IOB assigned for
+                    the bit in the port
+            """
+            if self.range_ is None:
+                yield None, self.ioconstraints
+            else:
+                for i in range(self.range_.start, self.range_.stop, self.range_.step):
+                    yield i, self.ioconstraints[i]
+
+        def get_io_constraint(self, index = None):
+            """Get the IO constraint assigned to this port, or a bit in this port.
+
+            Args:
+                index (:obj:`int`): Index of a bit in this port. Not applicable if this port is single-bit; Required
+                    if this port is multi-bit.
+
+            Returns:
+                `Position`, :obj:`int`: Position and subtile ID of the assigned IOB
+
+            Notes:
+                ``index`` respects the range specifier, i.e. if ``range_`` is ``7:4``, ``index = 4`` returns the last
+                IO constraint.
+            """
+            if self.range_ is None:
+                if index is None:
+                    return self.ioconstraints
+                else:
+                    raise PRGAAPIError("Design port {} is single-bit".format(self.name))
+            elif self.range_.step == 1:
+                if self.range_.start <= index < self.range_.stop:
+                    return self.ioconstraints[index - self.range_.start]
+                else:
+                    raise PRGAAPIError("Index ({}) out of bound ({}:{})"
+                            .format(index, self.range_.start, self.range_.stop - 1))
+            else:
+                assert self.range_.step == -1
+                if self.range_.start >= index > self.range_.stop:
+                    return self.ioconstraints[self.range_.start - index]
+                else:
+                    raise PRGAAPIError("Index ({}) out of bound ({}:{})"
+                            .format(index, self.range_.start, self.range_.stop + 1))
+
+        def set_io_constraint(self, position, subtile = 0, index = None):
+            """Set IO constraint to this port or a bit in this port.
+
+            Args:
+                position (:obj:`tuple` [:obj:`int`, :obj:`int`]): Position of the IOB
+                subtile (:obj:`int`): Subtile ID of the IOB
+                index (:obj:`int`): Index of a bit in this port. Not applicable if this port is single-bit; Required
+                    if this port is multi-bit.
+            Notes:
+                ``index`` respects the range specifier, i.e. if ``range_`` is ``7:4``, ``index = 4`` returns the last
+                IO constraint.
+            """
+            if self.range_ is None:
+                if index is None:
+                    self.ioconstraints = Position(*position), subtile
+                else:
+                    raise PRGAAPIError("Design port {} is single-bit".format(self.name))
+            elif self.range_.step == 1:
+                if self.range_.start <= index < self.range_.stop:
+                    self.ioconstraints[index - self.range_.start] = Position(*position), subtile
+                else:
+                    raise PRGAAPIError("Index ({}) out of bound ({}:{})"
+                            .format(index, self.range_.start, self.range_.stop - 1))
+            else:
+                assert self.range_.step == -1
+                if self.range_.start >= index > self.range_.stop:
+                    self.ioconstraints[self.range_.start - index] = Position(*position), subtile
+                else:
+                    raise PRGAAPIError("Index ({}) out of bound ({}:{})"
+                            .format(index, self.range_.start, self.range_.stop + 1))
+
+    __slots__ = ["name", "ports", "__dict__"]
+    _port_reprog = re.compile("^(?P<bus>.*)\[(?P<index>\d+)\]$")
+
+    def __init__(self, name):
+        self.name = name
+        self.ports = {}
+
+    def add_port(self, name, direction, range_ = None):
+        """Add a port to this interface.
+
+        Args:
+            name (:obj:`str`): Name of the port
+            direction (`PortDirection`): Direction of the port
+            range_ (:obj:`int`): [Overloaded] Width of the port. When using a single :obj:`int`, the port is assumed
+                to be equivalent to Verilog ``{input|output} [0:{range_ - 1}] {name}``.
+            range_ (:obj:`slice`): [Overloaded] Range specifier of the port. ``step`` must be ``None``, ``1`` or
+                ``-1``. When using a :obj:`slice` object, the port is equivalent to Verilog ``{input|output}
+                [{range_.start}:{range_.stop - range_.step}] {name}``. Note the extra ``step`` caused by the
+                difference between Python and Verilog range specification conventions \(i.e. ``7:4`` in Verilog is
+                equivalent to ``7:3:-1`` in Python, and ``2:4`` in Verilog is equivalent to ``2:5`` in Python\).
+            range_ (``None``): [Overloaded] When using ``None``, this port is treated as single-bit, i.e. equivalent
+                to Verilog ``{input|output} {name}``.
+
+        Returns:
+            `DesignIntf.Port`: The created port
+        """
+        if name in self.ports:
+            raise PRGAAPIError("Duplicate port name: {}".format(name))
+
+        if range_ is None:
+            port = self.ports[name] = self.Port(name, direction, range_)
+            return port
+
+        elif isinstance(range_, int):
+            if range_ > 0:
+                port = self.ports[name] = self.Port(name, direction, slice(0, range_, 1))
+                return port
+
+        elif isinstance(range_, slice):
+            if range_.stop > range_.start and range_.step in (None, 1):
+                port = self.ports[name] = self.Port(name, direction,
+                        slice(range_.start, range_.stop, 1))
+                return port
+
+            elif range_.stop < range_.start and range_.step in (None, -1):
+                port = self.ports[name] = self.Port(name, direction,
+                        slice(range_.start, range_.stop, -1))
+                return port
+
+        raise PRGAAPIError("Unsupported range specifier: {}".format(range_))
+
+    @classmethod
+    def parse_eblif(cls, f):
+        """Parse a synthesized eblif file for the target design interface.
+
+        Args:
+            f (:obj:`str` or a file-like object): File name, or a file-like object
+        """
+        if isinstance(f, str):
+            f = open(f, "r")
+        design = cls(None)
+
+        for line in f:
+            tokens = line.split()
+            if not tokens:
+                continue
+
+            elif tokens[0] == ".model":
+                if design.name is None:
+                    design.name = tokens[1]
+                else:
+                    raise PRGAAPIError("Multiple models found in EBLIF.\n"
+                            "\tPossible reason: synthesis ran without `flatten`")
+
+            elif tokens[0] in (".inputs",  ".outputs"):
+                bus, range_ = None, None
+                direction = PortDirection.input_ if tokens[0] == ".inputs" else PortDirection.output
+
+                for bit in tokens[1:]:
+                    cur_bus, idx = bit, None
+                    if (matched := cls._port_reprog.match(bit)):
+                        cur_bus, s_idx = matched.group("bus", "index")
+                        idx = int(s_idx)
+
+                    if cur_bus == bus:
+                        if idx is None:
+                            raise PRGAAPIError("Non-continuous range specifier found: {}".format(bit))
+                        elif idx == range_.stop + 1 and range_.stop >= range_.start:
+                            range_ = slice(range_.start, idx, 1)
+                        elif idx == range_.stop - 1 and range_.stop <= range_.start:
+                            range_ = slice(range_.start, idx, -1)
+                        else:
+                            raise PRGAAPIError("Non-continuous range specifier found: {}".format(bit))
+                        continue
+
+                    if bus is not None:
+                        if range_ is not None:
+                            if range_.step in (None, 1):
+                                design.ports[bus] = cls.Port(bus, direction,
+                                        slice(range_.start, range_.stop + 1, 1))
+                            else:
+                                design.ports[bus] = cls.Port(bus, direction,
+                                        slice(range_.start, range_.stop - 1, -1))
+                        else:
+                            design.ports[bus] = cls.Port(bus, direction, range_)
+
+                    if cur_bus in design.ports:
+                        raise PRGAAPIError("Duplicate port name: {}".format(cur_bus))
+                    elif idx is None:
+                        bus, range_ = cur_bus, None
+                    else:
+                        bus, range_ = cur_bus, slice(idx, idx)
+
+                if bus is not None:
+                    if range_ is not None:
+                        if range_.step in (None, 1):
+                            design.ports[bus] = cls.Port(bus, direction,
+                                    slice(range_.start, range_.stop + 1, 1))
+                        else:
+                            design.ports[bus] = cls.Port(bus, direction,
+                                    slice(range_.start, range_.stop - 1, -1))
+                    else:
+                        design.ports[bus] = cls.Port(bus, direction, range_)
+
+        return design
