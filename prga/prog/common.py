@@ -3,12 +3,23 @@
 from ..netlist import ModuleUtils, NetUtils, PortDirection
 from ..core.common import ModuleClass, ModuleView, NetClass
 from ..renderer import FileRenderer
-from ..util import Object, uno
+from ..util import Object, Enum, uno
 from ..exception import PRGAInternalError
 
 from abc import abstractmethod
+from collections import namedtuple
 
-__all__ = []
+__all__ = ["ProgDataRange", "ProgDataValue"]
+
+class ProgDataRange(namedtuple("ProgDataRange", "base length")):
+    """Range specifier for programming data."""
+    pass
+
+class ProgDataValue(namedtuple("ProgDataValue", "range_ value mask")):
+    """Value with optional bit mask for programming data."""
+
+    def __new__(cls, range_, value, mask = None):
+        return super(ProgDataValue, cls).__new__(cls, range_, value, mask)
 
 # ----------------------------------------------------------------------------
 # -- Programming Circuitry Main Entry ----------------------------------------

@@ -108,7 +108,7 @@ module prga_tb_top;
     {%- endfor %}
 
     // DUT
-    implwrap i_impl (
+    implwrap i_postimpl (
         .tb_clk(f_tb_clk)
         ,.tb_rst(f_tb_rst)
         ,.tb_prog_done(w_tb_prog_done)

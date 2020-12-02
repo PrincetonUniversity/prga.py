@@ -121,7 +121,7 @@ class Flow(Object):
                         if all (not self.__key_is_prefix(rule, key) for key in passes))
                         for pass_ in self._passes}
                 raise PRGAAPIError("Missing dependent passes:\n\t" +
-                        "\n\t".join(map(lambda kv: "{} required by {}".format(", ".join(kv[1]), kv[0]),
+                        "\n\t".join(map(lambda kv: "'{}' required by '{}'".format(", ".join(kv[2]), kv[0]),
                             missing.items())))
             else:
                 del self._passes[i]

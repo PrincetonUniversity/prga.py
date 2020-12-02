@@ -176,7 +176,9 @@ class _VPRArchGeneration(AbstractPass):
 
     def _leaf_pb_type(self, instance):
         leaf, primitive, attrs = instance.hierarchy[0], instance.model, {}
-        fasm_prefixes, fasm_features = None, None
+        
+        # FASM prefixes (one per each vpr_num_pb)
+        fasm_prefixes = None
         if hasattr(leaf, "vpr_num_pb"):
             attrs = {"name": leaf.key[0], "num_pb": leaf.vpr_num_pb}
             fasm_prefixes = []
@@ -190,7 +192,10 @@ class _VPRArchGeneration(AbstractPass):
         else:
             attrs = {"name": leaf.name, "num_pb": 1}
             fasm_prefixes = self.fasm.fasm_prefix_for_intrablock_module(primitive, instance)
-            fasm_features = self.fasm.fasm_features_for_intrablock_module(primitive, instance)
+
+        # FASM features
+        fasm_features = self.fasm.fasm_features_for_intrablock_module(primitive, instance)
+
         if primitive.primitive_class.is_multimode:
             with self.xml.element("pb_type", attrs):
                 # 1. emit ports:
@@ -259,7 +264,8 @@ class _VPRArchGeneration(AbstractPass):
                             "port": self._net2vpr(arc.sink, parent_name),
                             "clock": arc.source.name})
             # 3. FASM parameters
-            fasm_params = self.fasm.fasm_params_for_primitive(instance)
+            fasm_params = ({} if primitive.primitive_class.is_lut else
+                    self.fasm.fasm_params_for_primitive(instance)) 
             if fasm_prefixes or fasm_features or any(fasm_params.values()):
                 with self.xml.element("metadata"):
                     if fasm_prefixes:

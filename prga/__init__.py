@@ -39,9 +39,9 @@ __all__.extend([
     ])
 
 # Flow Manager and Passes
-from .passes import (Flow, TranslationPass, VerilogCollection, YosysScriptsCollection,
+from .passes import (Flow, TranslationPass, LogicalPathAnnotationPass, VerilogCollection, YosysScriptsCollection,
         VPRScalableDelegate, VPRScalableArchGeneration, VPRArchGeneration, VPR_RRG_Generation)
 __all__.extend([
-    "Flow", "TranslationPass", "VerilogCollection", "VPRArchGeneration", "VPRScalableDelegate",
-    "VPRScalableArchGeneration", "VPR_RRG_Generation", "YosysScriptsCollection",
+    "Flow", "TranslationPass", "LogicalPathAnnotationPass", "VerilogCollection", "VPRArchGeneration",
+    "VPRScalableDelegate", "VPRScalableArchGeneration", "VPR_RRG_Generation", "YosysScriptsCollection",
     ])

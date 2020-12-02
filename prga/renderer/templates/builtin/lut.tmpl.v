@@ -16,7 +16,8 @@ module {{ module.name }} (
     reg [{{ width - 1 }}:0] internal_in;
     
     // synopsys translate_off
-    // in case the sensitivity list is never triggered
+    // in case the sensitivity list is not triggered at the beginning of
+    // simulation
     initial begin
         internal_in = $random % 64;
     end
@@ -26,7 +27,7 @@ module {{ module.name }} (
         internal_in = in;
 
         // synopsys translate_off
-        // in simulation, force unconnected LUT input to be random values
+        // in simulation resolve x to random values
         {%- for i in range(width) %}
         if (in[{{ i }}] === 1'bx) begin
             internal_in[{{ i }}] = $random % 2;

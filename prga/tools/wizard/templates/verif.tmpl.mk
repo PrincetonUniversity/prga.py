@@ -81,6 +81,8 @@ TEST := {{ test_name }}
 {{- input_vars("BEHAV", design) }}
 
 # ** Post-Synthesis Model **
+{{- input_vars("LIB", libs) }}
+
 POSTSYN_SRCS := $(V2B_DIR)/postsyn.v
 
 # ** FPGA (Post-Implementation Model) **
@@ -155,21 +157,21 @@ $(BEHAV_SIM): $(TB_SRCS) $(TEST_SRCS) $(TEST_INCS) $(BEHAV_SRCS) $(BEHAV_INCS)
 $(POSTSYN_SIM_LOG): $(POSTSYN_SIM)
 	./$< $(RUN_FLAGS) | tee $@
 
-$(POSTSYN_SIM): $(TB_SRCS) $(TEST_SRCS) $(TEST_INCS) $(BEHAV_SRCS) $(BEHAV_INCS) $(POSTSYN_SRCS)
+$(POSTSYN_SIM): $(TB_SRCS) $(TEST_SRCS) $(TEST_INCS) $(BEHAV_SRCS) $(BEHAV_INCS) $(LIB_SRCS) $(LIB_INCS) $(POSTSYN_SRCS)
 	$(COMP) $(COMP_FLAGS) $(DEFPREFIX)PRGA_TEST_POSTSYN $(TB_COMP_FLAGS) $(TB_SRCS) \
 		$(TEST_COMP_FLAGS) $(addprefix -v ,$(TEST_SRCS)) \
 		$(BEHAV_COMP_FLAGS) $(addprefix -v ,$(BEHAV_SRCS)) \
-		$(POSTSYN_COMP_FLAGS) $(addprefix -v ,$(POSTSYN_SRCS)) \
+		$(LIB_COMP_FLAGS) $(addprefix -v ,$(LIB_SRCS)) $(addprefix -v ,$(POSTSYN_SRCS)) \
 		-o $@
 
 $(POSTIMPL_SIM_LOG): $(POSTIMPL_SIM)
 	./$< $(RUN_FLAGS) | tee $@
 
-$(POSTIMPL_SIM): $(TB_SRCS) $(TEST_SRCS) $(TEST_INCS) $(BEHAV_SRCS) $(BEHAV_INCS) $(POSTSYN_SRCS) $(FPGA_SRCS) $(FPGA_INCS) $(IMPLWRAP_V) $(BITSTREAM)
+$(POSTIMPL_SIM): $(TB_SRCS) $(TEST_SRCS) $(TEST_INCS) $(BEHAV_SRCS) $(BEHAV_INCS) $(LIB_SRCS) $(LIB_INCS) $(POSTSYN_SRCS) $(FPGA_SRCS) $(FPGA_INCS) $(IMPLWRAP_V) $(BITSTREAM)
 	$(COMP) $(COMP_FLAGS) $(DEFPREFIX)PRGA_TEST_POSTIMPL $(TB_COMP_FLAGS) $(TB_SRCS) \
 		$(TEST_COMP_FLAGS) $(addprefix -v ,$(TEST_SRCS)) \
 		$(BEHAV_COMP_FLAGS) $(addprefix -v ,$(BEHAV_SRCS)) \
-		$(POSTSYN_COMP_FLAGS) $(addprefix -v ,$(POSTSYN_SRCS)) \
+		$(LIB_COMP_FLAGS) $(addprefix -v ,$(LIB_SRCS)) $(addprefix -v ,$(POSTSYN_SRCS)) \
 		$(FPGA_COMP_FLAGS) $(addprefix -v ,$(FPGA_SRCS)) \
 		$(DEFPREFIX)BITSTREAM=$(shell realpath $(BITSTREAM)) $(INCPREFIX)$(V2B_DIR) -v $(IMPLWRAP_V) \
 		-o $@

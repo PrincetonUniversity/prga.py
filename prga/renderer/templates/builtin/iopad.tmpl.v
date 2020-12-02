@@ -24,11 +24,11 @@ module {{ module.name }} (
         oe = 1'b0;
 
         if (prog_done) begin
-            case ({prog_done, prog_data})
-                {1'b1, MODE_INPUT}: begin
+            case (prog_data)
+                MODE_INPUT: begin
                     inpad = ipin;
                 end
-                {1'b1, MODE_OUTPUT}: begin
+                MODE_OUTPUT: begin
                     opin = outpad;
                     oe = 1'b1;
                 end

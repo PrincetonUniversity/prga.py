@@ -61,6 +61,11 @@ def generate_verif_makefile(summary, renderer, v2b_dir, config_f, config = None,
     output = uno(output, os.getcwd())
     os.makedirs(output, exist_ok = True)
 
+    # gather VPR models (lib cells)
+    libs = {
+            "sources": tuple(os.path.join(summary.cwd, src) for src in summary.yosys["libs"].values()),
+            }
+
     # gather FPGA resources
     fpga = {
             "sources": tuple(os.path.join(summary.cwd, src) for src in summary.rtl["sources"].values()),
@@ -79,6 +84,7 @@ def generate_verif_makefile(summary, renderer, v2b_dir, config_f, config = None,
             design = config["design"],
             test_name = test,
             test = config["tests"][test],
+            libs = libs,
             fpga = fpga,
             abspath = os.path.abspath)
 

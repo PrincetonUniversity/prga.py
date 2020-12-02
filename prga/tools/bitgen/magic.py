@@ -43,8 +43,9 @@ class MagicBitstreamGenerator(AbstractBitstreamGenerator):
                         raise PRGAAPIError("Width mismatch at line No. {}".format(lineno))
                     elif range_ is not None and range_ != width:
                         raise PRGAAPIError("Width mismatch at line No. {}".format(lineno))
+                    base += low
                     range_ = width
                 else:
                     s.append(token)
-            output.write("\t\tforce {}.prog_data[{}:{}] = {}'h{:x};\n".format(
+            output.write("force {}.prog_data[{}:{}] = {}'h{:x};\n".format(
                 ".".join(s), base + range_ - 1, base, range_, value))

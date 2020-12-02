@@ -4,6 +4,7 @@ from .base import AbstractPass
 from ..netlist import PortDirection, Module, ModuleUtils, NetUtils, TimingArcType
 from ..core.common import ModuleClass, NetClass, IOType, ModuleView, SegmentID, BlockPinID, Position
 from ..core.builder import ArrayBuilder
+from ..prog import ProgDataRange, ProgDataValue
 from ..util import Object, uno
 from ..exception import PRGAInternalError, PRGAAPIError
 
@@ -43,7 +44,7 @@ class SwitchDelegate(Object):
             `Module`: Switch module found
 
         Note:
-            The returned switch could have more than ``width`` input bits
+            The returned switch may have more than ``width`` input bits
         """
         key = (ModuleClass.switch, width)
 
@@ -70,7 +71,9 @@ class SwitchDelegate(Object):
         ModuleUtils.create_port(switch, "prog_done", 1, PortDirection.input_, net_class = NetClass.prog)
         ModuleUtils.create_port(switch, "prog_data", width.bit_length(), PortDirection.input_,
                 net_class = NetClass.prog)
-        switch.sel_map = tuple(range(1, width + 1))
+        switch.prog_enable = tuple(
+                ProgDataValue(ProgDataRange(0, width.bit_length()), i + 1)
+                for i in range(width))
 
         # return module
         return switch

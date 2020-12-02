@@ -41,8 +41,8 @@ class YosysScriptsCollection(AbstractPass):
         if not hasattr(context.summary, "yosys"):
             context.summary.yosys = {}
         f = context.summary.yosys["script"] = os.path.join(self.output_dir, "synth.tcl") 
+        libs = context.summary.yosys["libs"] = {}
         renderer.add_yosys_synth_script(f, context.summary.lut_sizes)
-        visited = set()
         for primitive_key in context.summary.active_primitives:
             primitive = context.database[ModuleView.user, primitive_key]
             if primitive.primitive_class.is_memory:
@@ -55,16 +55,16 @@ class YosysScriptsCollection(AbstractPass):
                         premap_commands = getattr(primitive, "premap_commands", tuple()),
                         rule_script = rule,
                         **getattr(primitive, "techmap_parameters", {}) )
-            if primitive.vpr_model in visited:
+            if primitive.vpr_model in libs:
                 continue
-            visited.add(primitive.vpr_model)
-            renderer.add_yosys_library(
-                    os.path.join(self.output_dir, primitive.vpr_model + ".lib.v"),
-                    primitive, template = getattr(primitive, "verilog_template", None))
+            lib = libs[primitive.vpr_model] = os.path.join(self.output_dir, primitive.vpr_model + ".lib.v")
+            renderer.add_yosys_library(lib, primitive,
+                    template = getattr(primitive, "verilog_template", None))
             if (primitive.primitive_class.is_custom and
                     (techmap_template := getattr(primitive, "techmap_template", None)) is not None):
                 renderer.add_yosys_techmap(
                         os.path.join(self.output_dir, primitive.vpr_model + ".techmap.v"),
                         techmap_template,
                         premap_commands = getattr(primitive, "premap_commands", tuple()),
+                        model = primitive.vpr_model,
                         **getattr(primitive, "techmap_parameters", {}) )
