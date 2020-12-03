@@ -9,12 +9,12 @@ module fle6 (
 
     , input wire [0:0] prog_done
     , input wire [69:0] prog_data
-        // prog_data[31: 0] LUT5A
-        // prog_data[63:32] LUT5B
-        // prog_data[65:64] adder carry-in select
-        // prog_data[   66] FFA disable (FF enabled by default)
-        // prog_data[   67] FFB disable (FF enabled by default)
-        // prog_data[69:68] FLE6 mode select
+        // prog_data[ 0 +: 32] LUT5A
+        // prog_data[32 +: 32] LUT5B
+        // prog_data[64 +:  2] adder carry-in select
+        // prog_data[66 +:  1] FFA disable (FF enabled by default)
+        // prog_data[67 +:  1] FFB disable (FF enabled by default)
+        // prog_data[68 +:  2] FLE6 mode select
     );
 
     // -- Parameters ---------------------------------------------------------
@@ -43,7 +43,6 @@ module fle6 (
     localparam FLE6_MODE = FFB_DISABLE + 1;
 
     // -- Internal Signals ---------------------------------------------------
-    reg [5:0] internal_in;
     reg internal_cin;
     reg [1:0] internal_lut;
     reg [1:0] internal_sum;
@@ -64,41 +63,19 @@ module fle6 (
     assign ffb_disable = prog_data[FFB_DISABLE];
     assign fle6_mode = prog_data[FLE6_MODE+:FLE6_MODE_WIDTH];
 
-    // -- preprocess inputs --
-    // in case the sensitivity list is not triggered at the beginning of
-    // simulation
-    // synopsys translate_off
-    initial begin
-        internal_in = $random % 64;
-    end
-    // synopsys translate_on
-
-    always @* begin
-        internal_in = in;
-
-        // synopsys translate_off
-        // in simulation resolve x to random values
-        {%- for i in range(6) %}
-        if (in[{{ i }}] === 1'bx) begin
-            internal_in[{{ i }}] = $random % 2;
-        end
-        {%- endfor %}
-        // synopsys translate_on
-    end
-
     // -- select carry-in --
     always @* begin
         case (adder_mode)
             ADDER_MODE_CONST0: internal_cin = 1'b0;
             ADDER_MODE_CONST1: internal_cin = 1'b1;
             ADDER_MODE_CHAIN:  internal_cin = cin;
-            ADDER_MODE_FABRIC: internal_cin = internal_in[5];
+            ADDER_MODE_FABRIC: internal_cin = in[5];
         endcase
     end
 
     // -- implement LUT5s --
     always @* begin
-        case (internal_in[4:0])
+        case (in[4:0])
             {%- for i in range(32) %}
             5'd{{ i }}: begin
                 internal_lut[0] = lut5a_data[{{ i }}];
@@ -121,7 +98,7 @@ module fle6 (
             case (fle6_mode)
                 FLE6_MODE_DISABLED: internal_ff <= 2'b0;
                 FLE6_MODE_ARITH: internal_ff <= internal_sum;
-                FLE6_MODE_LUT6X1: internal_ff <= {1'b0, internal_in[5] ? internal_lut[1] : internal_lut[0]};
+                FLE6_MODE_LUT6X1: internal_ff <= {1'b0, in[5] ? internal_lut[1] : internal_lut[0]};
                 FLE6_MODE_LUT5X2: internal_ff <= internal_lut;
             endcase
         end
@@ -144,7 +121,7 @@ module fle6 (
                     cout = 1'b0;
                     out[1] = 1'b0;
 
-                    case ({ffa_disable, internal_in[5]})
+                    case ({ffa_disable, in[5]})
                         2'b00, 2'b01: out[0] = internal_ff[0];
                         2'b10:        out[0] = internal_lut[0];
                         2'b11:        out[0] = internal_lut[1];

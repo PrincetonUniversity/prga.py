@@ -7,40 +7,17 @@ module {{ module.name }} (
 
     , input wire [0:0] prog_done
     , input wire [{{ 2 ** width }}:0] prog_data
-        // prog_data[{{ 2 ** width - 1}}:0]: LUT content
+        // prog_data[ 0 +: {{ 2 ** width - 1}}]: LUT content
         // prog_data[{{ 2 ** width }}]: LUT enabled (not disabled)
     );
 
     localparam  IDX_LUT_ENABLE = {{ 2 ** width }};
 
-    reg [{{ width - 1 }}:0] internal_in;
-    
-    // synopsys translate_off
-    // in case the sensitivity list is not triggered at the beginning of
-    // simulation
-    initial begin
-        internal_in = $random % 64;
-    end
-    // synopsys translate_on
-
-    always @* begin
-        internal_in = in;
-
-        // synopsys translate_off
-        // in simulation resolve x to random values
-        {%- for i in range(width) %}
-        if (in[{{ i }}] === 1'bx) begin
-            internal_in[{{ i }}] = $random % 2;
-        end
-        {%- endfor %}
-        // synopsys translate_on
-    end
-
     always @* begin
         if (~prog_done || ~prog_data[IDX_LUT_ENABLE]) begin
             out = 1'b0;
         end else begin
-            case (internal_in)
+            case (in)
                 {%- for i in range(2 ** width) %}
                 {{ width }}'d{{ i }}: out = prog_data[{{ i }}];
                 {%- endfor %}
