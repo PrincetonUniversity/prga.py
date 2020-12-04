@@ -47,16 +47,16 @@ class ScanchainFASMDelegate(FASMDelegate):
             range_ = bitmap._bitmap[0][1]
             return "[{}:{}]".format(range_.offset + range_.length - 1, range_.offset)
         else:
-            return "".join("<{}>{}".format(o, l) for _, (o, l) in bitmap._bitmap[:-1])
+            return "".join("+{}#{}".format(o, l) for _, (o, l) in bitmap._bitmap[:-1])
 
     @classmethod
     def __value(cls, value, breakdown = False, prefix = None):
         if breakdown:
             if prefix is None:
-                return tuple("<{}>{}.~{}'h{:x}".format(o, l, l, v)
+                return tuple("+{}#{}.~{}'h{:x}".format(o, l, l, v)
                         for v, (o, l) in value.breakdown())
             else:
-                return tuple("{}.<{}>{}.~{}'h{:x}".format(prefix, o, l, l, v)
+                return tuple("{}.+{}#{}.~{}'h{:x}".format(prefix, o, l, l, v)
                         for v, (o, l) in value.breakdown())
         else:
             if prefix is None:
@@ -77,7 +77,7 @@ class ScanchainFASMDelegate(FASMDelegate):
         for net in getattr(conn, "logical_path", tuple()):
             bus, idx = (net.bus, net.index) if net.net_type.is_bit else (net, 0)
             fasm_features.extend(self.__value(bus.instance.model.prog_enable[idx], True,
-                "<{}>{}".format(bus.instance.scanchain_offset, len(bus))))
+                "+{}#{}".format(bus.instance.scanchain_offset, len(bus.instance.pins["prog_data"]))))
         return tuple(fasm_features)
 
     def fasm_params_for_primitive(self, instance):
@@ -132,8 +132,10 @@ class ScanchainFASMDelegate(FASMDelegate):
 
     def fasm_features_for_interblock_switch(self, source, sink, hierarchy = None):
         if (features := self.fasm_mux_for_intrablock_switch(source, sink, hierarchy)):
-            prefix = self.__hierarchy_prefix(hierarchy)
-            return tuple(prefix + feature for feature in features)
+            if prefix := self.__hierarchy_prefix(hierarchy):
+                return tuple(prefix + "." + feature for feature in features)
+            else:
+                return features
         else:
             return tuple()
 
@@ -372,6 +374,7 @@ class Scanchain(AbstractProgCircuitryEntry):
                     for key in ("prog_clk", "prog_rst", "prog_done", "prog_we", "prog_din"):
                         NetUtils.connect(prog_nets[key], delim.pins[key])
                     prog_nets["prog_din"] = delim.pins["prog_dout"]
+                    prog_nets["prog_we"] = delim.pins["prog_we_o"]
                     prog_nets["prog_we_o"] = True
 
             # connect outputs

@@ -8,14 +8,14 @@ import re
 class AbstractBitstreamGenerator(Object):
     """Abstract base class for bitstream generators."""
 
-    _reprog_bitmap_full = re.compile("(?:<\d+>\d+)+")
-    _reprog_bitmap      = re.compile("<(?P<offset>\d+)>(?P<length>\d+)")
+    _reprog_bitmap_full = re.compile("(?:\+\d+#\d+)+")
+    _reprog_bitmap      = re.compile("\+(?P<offset>\d+)#(?P<length>\d+)")
     _reprog_last_type0  = re.compile("~(?P<length>\d+)"
             "'(?P<notation>[bdh])(?P<value>[a-fA-F0-9]+)")
     _reprog_last_type1  = re.compile("\[(?P<high>\d+):(?P<low>\d+)\]=(?P<length>\d+)"
             "'(?P<notation>[bdh])(?P<value>[a-fA-F0-9]+)")
-    _reprog_last_type2  = re.compile("(?P<bitmap>(?:<\d+>\d+)+)=(?P<length>\d+)'"
-            "(?P<notation>[bdh])(?P<value>[a-fA-F0-9]+)")
+    _reprog_last_type2  = re.compile("(?P<bitmap>(?:\+\d+#\d+)+)=(?P<length>\d+)"
+            "'(?P<notation>[bdh])(?P<value>[a-fA-F0-9]+)")
 
     def generate_verif(self, summary, fasm, output):
         """Generate bitstream for verification purpose."""

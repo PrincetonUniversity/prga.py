@@ -61,12 +61,12 @@ class ReadonlyMappingProxy(Mapping):
 
     def __iter__(self):
         """Return an iterator over the keys of the filtered mapping."""
-        if callable(self.uncast):
-            for k in (filter(self.filter_, self.m.items()) if callable(self.filter_) else iter(self.m)):
-                yield self.uncast(k)
+        if callable(self.filter_):
+            for k, _ in filter(self.filter_, self.m.items()):
+                yield self.uncast(k) if callable(self.uncast) else k
         else:
-            for k in (filter(self.filter_, self.m.items()) if callable(self.filter_) else iter(self.m)):
-                yield k
+            for k in self.m:
+                yield self.uncast(k) if callable(self.uncast) else k
 
 class ReadonlySequenceProxy(Sequence):
     """A read-only proxy of a :obj:`Sequence` object.

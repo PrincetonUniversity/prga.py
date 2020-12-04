@@ -5,6 +5,8 @@ module implwrap (
     input wire tb_clk
     , input wire tb_rst
     , output reg tb_prog_done
+    , input wire [31:0] tb_verbosity
+    , input wire [31:0] tb_cycle_cnt
     {%- for name, port in design.ports.items() %}
     , {{ port.direction.case("input", "output") }} wire
         {%- if port.range_ is not none %} [{{ port.range_.stop - port.range_.step }}:{{ port.range_.start }}]{% endif %} {{ name }}

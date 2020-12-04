@@ -2,6 +2,7 @@
 
 from . import def_argparser
 from .magic import generate_implwrap_magic
+from .scanchain import generate_implwrap_scanchain
 from ...ioplan import IOPlanner
 from ...util import DesignIntf
 from ....core.context import Context
@@ -12,6 +13,7 @@ import logging, os
 
 generators = {
         "magic": generate_implwrap_magic,
+        "scanchain": generate_implwrap_scanchain,
         }
 
 _logger = logging.getLogger(__name__)

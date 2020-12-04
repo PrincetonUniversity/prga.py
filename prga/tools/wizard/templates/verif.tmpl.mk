@@ -173,7 +173,7 @@ $(POSTIMPL_SIM): $(TB_SRCS) $(TEST_SRCS) $(TEST_INCS) $(BEHAV_SRCS) $(BEHAV_INCS
 		$(BEHAV_COMP_FLAGS) $(addprefix -v ,$(BEHAV_SRCS)) \
 		$(LIB_COMP_FLAGS) $(addprefix -v ,$(LIB_SRCS)) $(addprefix -v ,$(POSTSYN_SRCS)) \
 		$(FPGA_COMP_FLAGS) $(addprefix -v ,$(FPGA_SRCS)) \
-		$(DEFPREFIX)BITSTREAM=$(shell realpath $(BITSTREAM)) $(INCPREFIX)$(V2B_DIR) -v $(IMPLWRAP_V) \
+		$(DEFPREFIX)BITSTREAM='"$(shell realpath $(BITSTREAM))"' $(INCPREFIX)$(V2B_DIR) -v $(IMPLWRAP_V) \
 		-o $@
 
 $(TB_SRCS): $(POSTSYN_SRCS)

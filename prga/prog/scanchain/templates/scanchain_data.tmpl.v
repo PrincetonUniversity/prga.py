@@ -8,14 +8,14 @@ module {{ module.name }} (
     , input wire [0:0] prog_we
     , input wire [{{ module.ports.prog_din|length }} - 1:0] prog_din
 
-    , output wire [{{ module.ports.prog_data|length }} - 1:0] prog_data
-    , output reg [{{ module.ports.prog_dout|length }} - 1:0] prog_dout
+    , output reg [{{ module.ports.prog_data|length }} - 1:0] prog_data
+    , output wire [{{ module.ports.prog_dout|length }} - 1:0] prog_dout
     );
 
     localparam CHAIN_BITCOUNT = {{ module.ports.prog_data|length }};
     localparam CHAIN_WIDTH = {{ module.ports.prog_din|length }};
 
-    wire [CHAIN_BITCOUNT + CHAIN_WIDTH] prog_data_next;
+    wire [CHAIN_BITCOUNT + CHAIN_WIDTH - 1:0] prog_data_next;
     assign prog_data_next = {prog_data, prog_din};
 
     always @(posedge prog_clk) begin

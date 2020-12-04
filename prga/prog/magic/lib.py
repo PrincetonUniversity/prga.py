@@ -41,16 +41,16 @@ class MagicFASMDelegate(FASMDelegate):
             range_ = bitmap._bitmap[0][1]
             return "[{}:{}]".format(range_.offset + range_.length - 1, range_.offset)
         else:
-            return "".join("<{}>{}".format(o, l) for _, (o, l) in bitmap._bitmap[:-1])
+            return "".join("+{}#{}".format(o, l) for _, (o, l) in bitmap._bitmap[:-1])
 
     @classmethod
     def __value(cls, value, breakdown = False, prefix = None):
         if breakdown:
             if prefix is None:
-                return tuple("<{}>{}.~{}'h{:x}".format(o, l, l, v)
+                return tuple("+{}#{}.~{}'h{:x}".format(o, l, l, v)
                         for v, (o, l) in value.breakdown())
             else:
-                return tuple("{}.<{}>{}.~{}'h{:x}".format(prefix, o, l, l, v)
+                return tuple("{}.+{}#{}.~{}'h{:x}".format(prefix, o, l, l, v)
                         for v, (o, l) in value.breakdown())
         else:
             if prefix is None:

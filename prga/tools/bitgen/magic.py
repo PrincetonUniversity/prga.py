@@ -1,14 +1,9 @@
 # -*- encoding: ascii -*-
 
 from .common import AbstractBitstreamGenerator
-from ...exception import PRGAAPIError
-
-import re
 
 class MagicBitstreamGenerator(AbstractBitstreamGenerator):
     """Bitstream generator for 'magic' programming circuitry."""
-
-    _reprog_assign = re.compile("^\[(?P<high>\d+):(?P<low>\d+)\]=(?P<width>\d+)'b(?P<value>[01]+)$")
 
     def generate_verif(self, summary, fasm, output):
         if isinstance(fasm, str):

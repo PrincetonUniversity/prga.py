@@ -112,6 +112,8 @@ module prga_tb_top;
         .tb_clk(f_tb_clk)
         ,.tb_rst(f_tb_rst)
         ,.tb_prog_done(w_tb_prog_done)
+        ,.tb_verbosity(f_tb_verbosity)
+        ,.tb_cycle_cnt(f_tb_cycle_cnt)
         {%- for name, port in design.ports.items() %}
             {%- if port.direction.is_output %}
         ,.{{ name }}(w_impl_{{ name }})
