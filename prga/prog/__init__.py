@@ -1,5 +1,5 @@
 # -*- encoding: ascii -*-
 
-from .common import ProgDataRange, ProgDataValue
+from .common import ProgDataBitmap, ProgDataValue
 
-__all__ = ["ProgDataRange", "ProgDataValue"]
+__all__ = ["ProgDataBitmap", "ProgDataValue"]

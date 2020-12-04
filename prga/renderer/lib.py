@@ -1,7 +1,7 @@
 # -*- encoding: ascii -*-
 
 from ..core.common import ModuleView, ModuleClass, PrimitiveClass, PrimitivePortClass, NetClass, IOType
-from ..prog import ProgDataRange, ProgDataValue
+from ..prog import ProgDataBitmap, ProgDataValue
 from ..netlist import Module, NetUtils, ModuleUtils, PortDirection, TimingArcType
 
 from itertools import product
@@ -46,8 +46,8 @@ class BuiltinCellLibrary(object):
                 ModuleUtils.create_port(lmod, "prog_data", 2 ** i + 1, PortDirection.input_, net_class = NetClass.prog)
 
                 # mark programming data bitmap
-                umod.prog_enable = ProgDataValue(ProgDataRange(2 ** i, 1), 1)
-                umod.prog_parameters = { "lut": ProgDataRange(0, 2 ** i) }
+                umod.prog_enable = ProgDataValue(1, (2 ** i, 1))
+                umod.prog_parameters = { "lut": ProgDataBitmap( (0, 2 ** i) ) }
 
     @classmethod
     def _register_flipflop(cls, context, dont_add_logical_primitives):
@@ -88,7 +88,7 @@ class BuiltinCellLibrary(object):
             ModuleUtils.create_port(lmod, "prog_data", 1, PortDirection.input_, net_class = NetClass.prog)
 
             # mark programming data bitmap
-            umod.prog_enable = ProgDataValue(ProgDataRange(0, 1), 1)
+            umod.prog_enable = ProgDataValue(1, (0, 1))
 
     @classmethod
     def _register_io(cls, context, dont_add_logical_primitives):
@@ -127,7 +127,7 @@ class BuiltinCellLibrary(object):
                 ModuleUtils.create_port(lmod, "prog_data", 1, PortDirection.input_, net_class = NetClass.prog)
 
                 # mark programming data bitmap
-                umod.prog_enable = ProgDataValue(ProgDataRange(0, 1), 1)
+                umod.prog_enable = ProgDataValue(1, (0, 1))
 
         # register dual-mode I/O
         if True:
@@ -169,12 +169,12 @@ class BuiltinCellLibrary(object):
 
                 # mark programming data bitmap
                 i = ubdr.module.modes["mode_input"].instances["i_pad"]
-                i.prog_enable = ProgDataValue(ProgDataRange(0, 2), 1)
-                i.prog_offset = 0
+                i.prog_enable = ProgDataValue(1, (0, 2))
+                i.prog_bitmap = ProgDataBitmap( (0, 2) )
 
                 o = ubdr.module.modes["mode_output"].instances["o_pad"]
-                o.prog_enable = ProgDataValue(ProgDataRange(0, 2), 2)
-                o.prog_offset = 0
+                o.prog_enable = ProgDataValue(2, (0, 2))
+                o.prog_bitmap = ProgDataBitmap( (0, 2) )
 
             else:
                 ubdr.commit()
@@ -185,7 +185,7 @@ class BuiltinCellLibrary(object):
                 techmap_template = "adder/techmap.tmpl.v",
                 verilog_template = "adder/lib.tmpl.v",
                 vpr_model = "m_adder",
-                prog_parameters = { "CIN_MODE": ProgDataRange(0, 2), },
+                prog_parameters = { "CIN_MODE": ProgDataBitmap( (0, 2) ), },
                 )
         inputs = [
                 ubdr.create_input("a", 1),
@@ -276,65 +276,64 @@ class BuiltinCellLibrary(object):
             # mark programming data bitmap
             # mode (1): arith
             mode = ubdr.module.modes["arith"]
-            mode.prog_enable = ProgDataValue(ProgDataRange(68, 2), 1)
+            mode.prog_enable = ProgDataValue(1, (68, 2))
 
             adder = mode.instances["i_adder"]
-            adder.prog_offset = 0
-            adder.prog_parameters = { "CIN_MODE": ProgDataRange(64, 2), }
+            adder.prog_bitmap = ProgDataBitmap( (64, 2) )
 
             for i, p in enumerate(["s", "cout_fabric"]):
                 conn = NetUtils.get_connection(mode.instances["i_flipflop", i].pins["Q"],
                         mode.ports["out"][i], skip_validations = True)
-                conn.prog_enable = ProgDataValue(ProgDataRange(66 + i, 1), 0)
+                conn.prog_enable = ProgDataValue(0, (66 + i, 1))
 
                 conn = NetUtils.get_connection(adder.pins[p], mode.ports["out"][i], skip_validations = True)
-                conn.prog_enable = ProgDataValue(ProgDataRange(66 + i, 1), 1)
+                conn.prog_enable = ProgDataValue(1, (66 + i, 1))
 
             for i in range(2):
                 lut = mode.instances["i_lut5", i]
-                lut.prog_offset = 32 * i
+                lut.prog_bitmap = ProgDataBitmap( (32 * i, 32) )
                 lut.prog_enable = None
 
                 ff = mode.instances["i_flipflop", i]
-                ff.prog_offset = 0
+                ff.prog_bitmap = None
                 ff.prog_enable = None
 
             # mode (2): lut6x1
             mode = ubdr.module.modes["lut6x1"]
-            mode.prog_enable = ProgDataValue(ProgDataRange(68, 2), 2)
+            mode.prog_enable = ProgDataValue(2, (68, 2))
 
             lut = mode.instances["i_lut6"]
-            lut.prog_offset = 0
+            lut.prog_bitmap = ProgDataBitmap( (0, 64) )
             lut.prog_enable = None
 
             ff = mode.instances["i_flipflop"]
-            ff.prog_offset = 0
+            ff.prog_bitmap = None
             ff.prog_enable = None
 
             conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"][0], skip_validations = True)
-            conn.prog_enable = ProgDataValue(ProgDataRange(66, 1), 0)
+            conn.prog_enable = ProgDataValue(0, (66, 1))
 
             conn = NetUtils.get_connection(lut.pins["out"], mode.ports["out"][0], skip_validations = True)
-            conn.prog_enable = ProgDataValue(ProgDataRange(66, 1), 1)
+            conn.prog_enable = ProgDataValue(1, (66, 1))
 
             # mode (3): lut5x2
             mode = ubdr.module.modes["lut5x2"]
-            mode.prog_enable = ProgDataValue(ProgDataRange(68, 2), 3)
+            mode.prog_enable = ProgDataValue(3, (68, 2))
 
             for i in range(2):
                 lut = mode.instances["i_lut5", i]
-                lut.prog_offset = 32 * i
+                lut.prog_bitmap = ProgDataBitmap( (32 * i, 32) )
                 lut.prog_enable = None
 
                 ff = mode.instances["i_flipflop", i]
-                ff.prog_offset = 0
+                ff.prog_bitmap = None
                 ff.prog_enable = None
 
                 conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"][i], skip_validations = True)
-                conn.prog_enable = ProgDataValue(ProgDataRange(66 + i, 1), 0)
+                conn.prog_enable = ProgDataValue(0, (66 + i, 1))
 
                 conn = NetUtils.get_connection(lut.pins["out"], mode.ports["out"][i], skip_validations = True)
-                conn.prog_enable = ProgDataValue(ProgDataRange(66 + i, 1), 1)
+                conn.prog_enable = ProgDataValue(1, (66 + i, 1))
         else:
             ubdr.commit()
 
@@ -445,44 +444,43 @@ class BuiltinCellLibrary(object):
             # BLE5
             # mode (1): arith
             mode = ble5.modes["arith"]
-            mode.prog_enable = ProgDataValue(ProgDataRange(34, 2), 1)
+            mode.prog_enable = ProgDataValue(1, (34, 2))
 
             adder = mode.instances["i_adder"]
-            adder.prog_offset = 0
-            adder.prog_parameters = { "CIN_MODE": ProgDataRange(32, 2) }
+            adder.prog_bitmap = ProgDataBitmap( (32, 2) )
 
             conn = NetUtils.get_connection(adder.pins["s"], mode.ports["out"], skip_validations = True)
-            conn.prog_enable = ProgDataValue(ProgDataRange(36, 1), 1)
+            conn.prog_enable = ProgDataValue(1, (36, 1))
 
             ff = mode.instances["i_flipflop"]
-            ff.prog_offset = 0
+            ff.prog_bitmap = None
             ff.prog_enable = None
 
             conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
-            conn.prog_enable = ProgDataValue(ProgDataRange(36, 1), 0)
+            conn.prog_enable = ProgDataValue(0, (36, 1))
 
             for i in range(2):
                 lut = mode.instances["i_lut4", i]
-                lut.prog_offset = 16 * i
+                lut.prog_bitmap = ProgDataBitmap( (16 * i, 16) )
                 lut.prog_enable = None
 
             # mode (2): lut5
             mode = ble5.modes["lut5"]
-            mode.prog_enable = ProgDataValue(ProgDataRange(34, 2), 2)
+            mode.prog_enable = ProgDataValue(2, (34, 2))
 
             lut = mode.instances["i_lut5"]
-            lut.prog_offset = 0
+            lut.prog_bitmap = ProgDataBitmap( (0, 32) )
             lut.prog_enable = None
 
             conn = NetUtils.get_connection(lut.pins["out"], mode.ports["out"], skip_validations = True)
-            conn.prog_enable = ProgDataValue(ProgDataRange(36, 1), 1)
+            conn.prog_enable = ProgDataValue(1, (36, 1))
 
             ff = mode.instances["i_flipflop"]
-            ff.prog_offset = 0
+            ff.prog_bitmap = None
             ff.prog_enable = None
 
             conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
-            conn.prog_enable = ProgDataValue(ProgDataRange(36, 1), 0)
+            conn.prog_enable = ProgDataValue(0, (36, 1))
 
             # FLE8
             # mode (1): ble5x2
@@ -491,11 +489,11 @@ class BuiltinCellLibrary(object):
 
             for i in range(2):
                 inst = mode.instances["i_ble5", i]
-                inst.prog_offset = i * 37
+                inst.prog_bitmap = ProgDataBitmap( (i * 37, 37) )
 
                 conn = NetUtils.get_connection(inst.pins["cout_fabric"], mode.ports["cout_fabric"],
                         skip_validations = True)
-                conn.prog_enable = ProgDataValue(ProgDataRange(74, 1), i)
+                conn.prog_enable = ProgDataValue(i, (74, 1))
 
             # # mode (2): lut6
             # mode = ubdr.module.modes["lut6"]

@@ -14,7 +14,7 @@ import os, gzip
 
 __all__ = ["VPRArchGeneration", "VPRScalableDelegate"]
 
-FASM_NONE = "__none__"
+FASM_NONE = "$"
 
 # ----------------------------------------------------------------------------
 # -- Base Class for VPR arch.xml Generation ----------------------------------

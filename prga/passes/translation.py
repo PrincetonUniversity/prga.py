@@ -4,7 +4,7 @@ from .base import AbstractPass
 from ..netlist import PortDirection, Module, ModuleUtils, NetUtils, TimingArcType
 from ..core.common import ModuleClass, NetClass, IOType, ModuleView, SegmentID, BlockPinID, Position
 from ..core.builder import ArrayBuilder
-from ..prog import ProgDataRange, ProgDataValue
+from ..prog import ProgDataValue
 from ..util import Object, uno
 from ..exception import PRGAInternalError, PRGAAPIError
 
@@ -72,7 +72,7 @@ class SwitchDelegate(Object):
         ModuleUtils.create_port(switch, "prog_data", width.bit_length(), PortDirection.input_,
                 net_class = NetClass.prog)
         switch.prog_enable = tuple(
-                ProgDataValue(ProgDataRange(0, width.bit_length()), i + 1)
+                ProgDataValue(i + 1, (0, len(switch.ports["prog_data"])))
                 for i in range(width))
 
         # return module

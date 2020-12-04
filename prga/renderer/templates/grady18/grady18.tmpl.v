@@ -107,7 +107,7 @@ module grady18 (
         endcase
 
         // BLE5B.LUT4A, BLE5B.LUT4B
-        case (ble5b_mode == BLE5_MODE_LUT6 ? in[3:0] : {in[5:4], in[1:0]})
+        case ({in[5:4], in[1:0]})
             {%- for i in range(16) %}
             4'd{{ i }}: begin
                 internal_lut4[0][1] = prog_data[BLE5B_DATA + LUT4A_DATA + {{ i }}];

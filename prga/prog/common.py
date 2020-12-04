@@ -8,18 +8,75 @@ from ..exception import PRGAInternalError
 
 from abc import abstractmethod
 from collections import namedtuple
+from bisect import bisect
 
-__all__ = ["ProgDataRange", "ProgDataValue"]
+__all__ = ["ProgDataBitmap", "ProgDataValue"]
 
-class ProgDataRange(namedtuple("ProgDataRange", "base length")):
-    """Range specifier for programming data."""
-    pass
+ProgDataRange = namedtuple("ProgDataRange", "offset length")
 
-class ProgDataValue(namedtuple("ProgDataValue", "range_ value mask")):
-    """Value with optional bit mask for programming data."""
+class ProgDataBitmap(object):
 
-    def __new__(cls, range_, value, mask = None):
-        return super(ProgDataValue, cls).__new__(cls, range_, value, mask)
+    __slots__ = ["_bitmap"]
+    def __init__(self, *args):
+        bitmap, offset = [], 0
+        for arg in args:
+            arg = ProgDataRange(*arg)
+            bitmap.append( (offset, arg) )
+            offset += arg.length
+        bitmap.append( (offset, None) )
+        self._bitmap = tuple(bitmap)
+
+    def query(self, offset, length):
+        """Query how ``offset +: length`` should be mapped.
+
+        Args:
+            offset (:obj:`int`): Source offset
+            length (:obj:`int`):
+
+        Yields:
+            `ProgDataRange`: Destination offset and length
+        """
+        lo = 0
+        while length:
+            lo = bisect(self._bitmap, (offset + 1, ), lo)
+            src, range_ = self._bitmap[lo - 1]
+            if range_ is None:
+                raise PRGAInternalError("Bit offset ({}) out of bitmap bound ({})".format(offset, src))
+            maxlen = min(length, src + range_.length - offset)
+            yield ProgDataRange(range_.offset + (offset - src), maxlen)
+            length -= maxlen
+            offset += maxlen
+
+    def remap(self, bitmap):
+        """Remap ``self`` onto ``bitmap``.
+
+        Args:
+            bitmap (`ProgDataBitmap`):
+
+        Returns:
+            `ProgDataBitmap`:
+        """
+        args = []
+        for _, srcmap in self._bitmap[:-1]:
+            for dstmap in bitmap.query(*srcmap):
+                args.append(dstmap)
+        return type(self)(*args)
+
+class ProgDataValue(object):
+
+    __slots__ = ["value", "bitmap"]
+    def __init__(self, value, *args):
+        self.value = value
+        self.bitmap = ProgDataBitmap(*args)
+
+    def breakdown(self):
+        """Break bitmapped value into multiple simple values.
+
+        Yields:
+            :obj:`tuple` [:obj:`int`, `ProgDataRange` ]: value and range
+        """
+        for src, range_ in self.bitmap._bitmap[:-1]:
+            yield (self.value >> src) & ((1 << range_.length) - 1), range_
 
 # ----------------------------------------------------------------------------
 # -- Programming Circuitry Main Entry ----------------------------------------
