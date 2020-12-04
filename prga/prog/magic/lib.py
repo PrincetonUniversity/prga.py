@@ -132,7 +132,7 @@ class MagicFASMDelegate(FASMDelegate):
         return tuple(prefix + feature for feature in self.fasm_mux_for_intrablock_switch(source, sink, hierarchy))
 
 # ----------------------------------------------------------------------------
-# -- Magic Configuration Circuitry Main Entry --------------------------------
+# -- Magic Programming Circuitry Main Entry ----------------------------------
 # ----------------------------------------------------------------------------
 class Magic(AbstractProgCircuitryEntry):
     """Entry point for magic programming circuitry (not ASIC implementable)."""

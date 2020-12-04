@@ -30,11 +30,11 @@ __all__.extend(["Context"])
 
 # Programming Circuitry Entry Points
 from .prog.magic.lib import Magic
-# from .cfg.scanchain.lib import Scanchain
+from .prog.scanchain.lib import Scanchain
 # from .cfg.pktchain.lib import Pktchain
 __all__.extend([
     "Magic",
-    # "Scanchain",
+    "Scanchain",
     # "Pktchain",
     ])
 

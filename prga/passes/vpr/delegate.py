@@ -11,6 +11,23 @@ __all__ = ['FASMDelegate', 'VPRScalableDelegate']
 class FASMDelegate(Object):
     """FASM delegate used for FASM metadata generation."""
 
+    @classmethod
+    def _bitmap(cls, bitmap, allow_alternative = False):
+        if allow_alternative and len(bitmap._bitmap) == 2:
+            range_ = bitmap._bitmap[0][1]
+            return "[{}:{}]".format(range_.offset + range_.length - 1, range_.offset)
+        else:
+            return "".join("<{}>{}".format(o, l) for _, (o, l) in bitmap._bitmap[:-1])
+
+    @classmethod
+    def _value(cls, value, breakdown = False):
+        if breakdown:
+            return tuple("<{}>{}.~{}'h{:x}".format(o, l, l, v)
+                    for v, (o, l) in value.breakdown())
+        else:
+            return cls._bitmap(value.bitmap) + ".~{}'h{:x}".format(
+                    value.bitmap._bitmap[-1][0], value.value)
+
     def reset(self):
         """Reset the delegate."""
         pass
