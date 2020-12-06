@@ -52,7 +52,7 @@ module implwrap (
         {%- endfor %}
         );
 
-    // Force load fake bitstream
+    // Load bitstream
     initial begin
         tb_prog_done = 1'b0;
 

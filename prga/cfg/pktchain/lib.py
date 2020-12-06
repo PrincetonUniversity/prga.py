@@ -6,7 +6,6 @@ from ...core.common import ModuleClass, ModuleView, NetClass, Orientation
 from ...core.context import Context
 from ...netlist import PortDirection, Const, Module, NetUtils, ModuleUtils
 from ...passes.base import AbstractPass
-from ...passes.vpr import FASMDelegate
 from ...renderer import FileRenderer
 from ...integration import Integration
 from ...tools.ioplan.ioplan import IOPlanner

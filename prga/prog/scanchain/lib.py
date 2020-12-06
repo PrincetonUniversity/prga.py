@@ -1,12 +1,11 @@
 # -*- encoding: ascii -*-
 
-from ..common import AbstractProgCircuitryEntry
+from ..common import AbstractProgCircuitryEntry, ProgDataBitmap
 from ...core.common import NetClass, ModuleClass, ModuleView
 from ...core.context import Context
 from ...passes.base import AbstractPass
 from ...passes.translation import SwitchDelegate
 from ...passes.vpr.delegate import FASMDelegate
-from ...prog import ProgDataBitmap
 from ...netlist import Module, ModuleUtils, PortDirection, NetUtils
 from ...renderer import FileRenderer
 from ...util import uno
@@ -39,32 +38,7 @@ class ScanchainFASMDelegate(FASMDelegate):
         if hierarchy is None:
             return ""
         else:
-            return ".".join(cls.__bitmap(i.prog_bitmap) for i in reversed(hierarchy.hierarchy))
-
-    @classmethod
-    def __bitmap(cls, bitmap, allow_alternative = False):
-        if allow_alternative and len(bitmap._bitmap) == 2:
-            range_ = bitmap._bitmap[0][1]
-            return "[{}:{}]".format(range_.offset + range_.length - 1, range_.offset)
-        else:
-            return "".join("+{}#{}".format(o, l) for _, (o, l) in bitmap._bitmap[:-1])
-
-    @classmethod
-    def __value(cls, value, breakdown = False, prefix = None):
-        if breakdown:
-            if prefix is None:
-                return tuple("+{}#{}.~{}'h{:x}".format(o, l, l, v)
-                        for v, (o, l) in value.breakdown())
-            else:
-                return tuple("{}.+{}#{}.~{}'h{:x}".format(prefix, o, l, l, v)
-                        for v, (o, l) in value.breakdown())
-        else:
-            if prefix is None:
-                return cls.__bitmap(value.bitmap) + ".~{}'h{:x}".format(
-                        value.bitmap._bitmap[-1][0], value.value)
-            else:
-                return prefix + "." + cls.__bitmap(value.bitmap) + ".~{}'h{:x}".format(
-                        value.bitmap._bitmap[-1][0], value.value)
+            return ".".join(cls._bitmap(i.prog_bitmap) for i in reversed(hierarchy.hierarchy))
 
     def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy = None):
         conn = NetUtils.get_connection(source, sink, skip_validations = True)
@@ -72,12 +46,13 @@ class ScanchainFASMDelegate(FASMDelegate):
             if prog_enable is None:
                 return tuple()
             else:
-                return self.__value(prog_enable, True)
+                return self._value(prog_enable, True)
         fasm_features = []
         for net in getattr(conn, "logical_path", tuple()):
             bus, idx = (net.bus, net.index) if net.net_type.is_bit else (net, 0)
-            fasm_features.extend(self.__value(bus.instance.model.prog_enable[idx], True,
-                "+{}#{}".format(bus.instance.scanchain_offset, len(bus.instance.pins["prog_data"]))))
+            fasm_features.extend("+{}#{}.{}".format(
+                bus.instance.scanchain_offset, len(bus.instance.pins["prog_data"]), v)
+                for v in self._value(bus.instance.model.prog_enable[idx], True))
         return tuple(fasm_features)
 
     def fasm_params_for_primitive(self, instance):
@@ -86,13 +61,13 @@ class ScanchainFASMDelegate(FASMDelegate):
             if (parameters := getattr(leaf.model, "prog_parameters", self._none)) is self._none:
                 return {}
         return {k: bitmap for k, v in uno(parameters, {}).items()
-                if (bitmap := self.__bitmap(v, True))}
+                if (bitmap := self._bitmap(v, True))}
 
     def fasm_prefix_for_intrablock_module(self, module, hierarchy = None):
         if hierarchy:
             leaf = hierarchy.hierarchy[0]
             if (prog_bitmap := getattr(leaf, "prog_bitmap", None)) is not None:
-                return self.__bitmap(prog_bitmap)
+                return self._bitmap(prog_bitmap)
             else:
                 return None
         else:
@@ -106,7 +81,7 @@ class ScanchainFASMDelegate(FASMDelegate):
         if prog_enable is None:
             return tuple()
         else:
-            return self.__value(prog_enable, True)
+            return self._value(prog_enable, True)
 
     def fasm_lut(self, instance):
         leaf = instance.hierarchy[0]
@@ -116,7 +91,7 @@ class ScanchainFASMDelegate(FASMDelegate):
         if (bitmap := parameters.get("lut")) is not None:
             if len(bitmap._bitmap) != 2:
                 raise PRGAInternalError("Invalid bitmap for LUT: {}".format(instance.model))
-            return self.__bitmap(bitmap, True)
+            return self._bitmap(bitmap, True)
         else:
             return None
 
@@ -156,108 +131,11 @@ class Scanchain(AbstractProgCircuitryEntry):
 
     @classmethod
     def new_renderer(cls, additional_template_search_paths = tuple()):
-        """Create a new file renderer.
-
-        Args:
-            additional_template_search_paths (:obj:`Sequence` [:obj:`str` ]): Additional paths where the renderer
-                should search for template files
-
-        Returns:
-            `FileRenderer`:
-        """
-        r = FileRenderer(*additional_template_search_paths, ADDITIONAL_TEMPLATE_SEARCH_PATH)
-        return r
-
-    @classmethod
-    def _get_or_create_prog_nets(cls, module, chain_width):
-        nets = {}
-
-        # prog_clk
-        if (prog_clk := module.ports.get("prog_clk")) is None:
-            prog_clk = ModuleUtils.create_port(module, "prog_clk", 1, PortDirection.input_,
-                    is_clock = True, net_class = NetClass.prog)
-        nets["prog_clk"] = prog_clk
-
-        # prog_rst
-        if (buf := module.instances.get("i_buf_prog_rst_l0")) is None:
-            if (port := module.ports.get("prog_rst")) is None:
-                port = ModuleUtils.create_port(module, "prog_rst", 1, PortDirection.input_,
-                        net_class = NetClass.prog)
-            nets["prog_rst"] = port
-        else:
-            nets["prog_rst"] = buf.pins["Q"]
-
-        # prog_done
-        if (buf := module.instances.get("i_buf_prog_done_l0")) is None:
-            if (port := module.ports.get("prog_done")) is None:
-                port = ModuleUtils.create_port(module, "prog_done", 1, PortDirection.input_,
-                        net_class = NetClass.prog)
-            nets["prog_done"] = port
-        else:
-            nets["prog_done"] = buf.pins["Q"]
-
-        # prog_we
-        if (delim := module.instances.get("i_scanchain_head")) is None:
-            if (port := module.ports.get("prog_we")) is None:
-                port = ModuleUtils.create_port(module, "prog_we", 1, PortDirection.input_,
-                        net_class = NetClass.prog)
-            nets["prog_we"] = port
-        else:
-            nets["prog_we"] = delim.pins["prog_we_o"]
-
-        # prog_din, prog_dout
-        for key, direction in zip(("prog_din", "prog_dout"), PortDirection):
-            if (port := module.ports.get(key)) is None:
-                port = ModuleUtils.create_port(module, key, chain_width, direction,
-                        net_class = NetClass.prog)
-            nets[key] = port
-        
-        return nets
-
-    @classmethod
-    def _register_cells(cls, context):
-        # register scanchain delimeter
-        delim = Module("scanchain_delim",
-                is_cell = True,
-                view = ModuleView.logical,
-                module_class = ModuleClass.prog,
-                verilog_template = "scanchain_delim.tmpl.v")
-        cls._get_or_create_prog_nets(delim, context.summary.scanchain["chain_width"])
-        ModuleUtils.create_port(delim, "prog_we_o", 1, PortDirection.output, net_class = NetClass.prog)
-
-        context._database[ModuleView.logical, "scanchain_delim"] = delim
-
-    @classmethod
-    def _get_prog_data_cell(cls, context, data_width):
-        """Get the programming data module for ``data_width`` bits.
-
-        Args:
-            context (`Context`):
-            data_width (:obj:`int`):
-
-        Returns:
-            `Module`:
-        """
-        key = ("scanchain_data", data_width)
-
-        if (module := context.database.get( (ModuleView.logical, key) )) is None:
-            module = Module("scanchain_data_d{}".format(data_width),
-                    is_cell = True,
-                    view = ModuleView.logical,
-                    module_class = ModuleClass.prog,
-                    verilog_template = "scanchain_data.tmpl.v",
-                    key = key)
-
-            cls._get_or_create_prog_nets(module, context.summary.scanchain["chain_width"])
-            ModuleUtils.create_port(module, "prog_data", data_width, PortDirection.output, net_class = NetClass.prog)
-
-            context._database[ModuleView.logical, key] = module
-
-        return module
+        return FileRenderer(*additional_template_search_paths, ADDITIONAL_TEMPLATE_SEARCH_PATH)
 
     @classmethod
     def insert_scanchain(cls, context, logical_module = None, *,
-            iter_instances = None):
+            iter_instances = None, insert_delimiter = None):
         """Insert the scanchain.
         
         Args:
@@ -268,6 +146,9 @@ class Scanchain(AbstractProgCircuitryEntry):
         Keyword Args:
             iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
                 the instances in a module
+            insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if `we` buffers are inserted at
+                the beginning and end of the scanchain inside ``logical_module``. By default, buffers are inserted in
+                all logic/IO blocks and routing boxes.
 
         This method calls itself recursively to process all the instances (sub-modules).
         """
@@ -276,11 +157,13 @@ class Scanchain(AbstractProgCircuitryEntry):
         lmod = uno(logical_module, context.database[ModuleView.logical, context.top.key])
         umod = context.database[ModuleView.user, lmod.key]
         iter_instances = uno(iter_instances, lambda m: m.instances.values())
+        insert_delimiter = uno(insert_delimiter, lambda m: m.module_class.is_block or m.module_class.is_routing_box)
 
         # quick check
         if lmod.module_class.is_primitive:
-            raise PRGAInternalError("No programming information about module: {}"
-                    .format(lmod))
+            return 0
+            # raise PRGAInternalError("No programming information about module: {}"
+            #         .format(lmod))
 
         # traverse programmable instances, instantiate programming cells and connect stuff
         offset = 0
@@ -305,10 +188,10 @@ class Scanchain(AbstractProgCircuitryEntry):
 
             # if we haven't initialize programming nets in this module, do it now
             if not prog_nets:
-                prog_nets = cls._get_or_create_prog_nets(lmod, chain_width)
+                prog_nets = cls._get_or_create_scanchain_prog_nets(lmod, chain_width)
 
                 # insert delimeter if necessary
-                if lmod.module_class.is_block or lmod.module_class.is_routing_box:
+                if insert_delimiter(lmod):
                     if (delim := lmod.instances.get("i_scanchain_head")) is None:
                         delim = ModuleUtils.instantiate(lmod,
                                 context.database[ModuleView.logical, "scanchain_delim"], "i_scanchain_head")
@@ -320,30 +203,30 @@ class Scanchain(AbstractProgCircuitryEntry):
                     prog_nets["prog_din"] = delim.pins["prog_dout"]
 
             # data loading: 2 types
-            idata, bitcount = None, None
+            ichain, bitcount = None, None
 
             # type (A): Embedded programming. `prog_we`, `prog_din` and `prog_dout` ports
             if prog_data is None:
-                idata, bitcount = linst, linst.model.scanchain_bitcount
+                ichain, bitcount = linst, linst.model.scanchain_bitcount
 
             # type (B): External programming. `prog_data` ports
             else:
-                idata = ModuleUtils.instantiate(lmod,
-                        cls._get_prog_data_cell(context, len(prog_data)),
+                ichain = ModuleUtils.instantiate(lmod,
+                        cls._get_or_create_scanchain_data_cell(context, len(prog_data)),
                         "i_prog_data_{}".format(linst.name))
-                NetUtils.connect(idata.pins["prog_data"], prog_data)
+                NetUtils.connect(ichain.pins["prog_data"], prog_data)
                 bitcount = len(prog_data)
 
             # connect
             for key in ("prog_clk", "prog_rst", "prog_done"):
-                if (src := NetUtils.get_source(idata.pins[key])) is None:
-                    NetUtils.connect(prog_nets[key], idata.pins[key])
+                if (src := NetUtils.get_source(ichain.pins[key])) is None:
+                    NetUtils.connect(prog_nets[key], ichain.pins[key])
             for key in ("prog_we", "prog_din"):
-                NetUtils.connect(prog_nets[key], idata.pins[key])
-            if (prog_we_o := idata.pins.get("prog_we_o")) is not None:
+                NetUtils.connect(prog_nets[key], ichain.pins[key])
+            if (prog_we_o := ichain.pins.get("prog_we_o")) is not None:
                 prog_nets["prog_we"] = prog_we_o
                 prog_nets["prog_we_o"] = True
-            prog_nets["prog_din"] = idata.pins["prog_dout"]
+            prog_nets["prog_din"] = ichain.pins["prog_dout"]
 
             # update
             linst.scanchain_offset = offset
@@ -355,16 +238,16 @@ class Scanchain(AbstractProgCircuitryEntry):
         if prog_nets:
 
             # insert delimeter if necessary
-            if lmod.module_class.is_block or lmod.module_class.is_routing_box:
+            if insert_delimiter(lmod):
                 # align to `chain_width`
                 if offset % chain_width != 0:
                     remainder = chain_width - (offset % chain_width)
-                    idata = ModuleUtils.instantiate(lmod,
-                            cls._get_prog_data_cell(context, remainder),
+                    ichain = ModuleUtils.instantiate(lmod,
+                            cls._get_or_create_scanchain_data_cell(context, remainder),
                             "i_prog_align")
                     for key in ("prog_clk", "prog_rst", "prog_done", "prog_we", "prog_din"):
-                        NetUtils.connect(prog_nets[key], idata.pins[key])
-                    prog_nets["prog_din"] = idata.pins["prog_dout"]
+                        NetUtils.connect(prog_nets[key], ichain.pins[key])
+                    prog_nets["prog_din"] = ichain.pins["prog_dout"]
                     offset += remainder
 
                 # insert trailing delimeter
@@ -389,10 +272,100 @@ class Scanchain(AbstractProgCircuitryEntry):
         lmod.scanchain_bitcount = offset
         _logger.info("Scanchain inserted to {}. Total bits: {}".format(lmod, offset))
 
-        if lmod.key == context.top.key:
-            context.summary.scanchain["bitstream_size"] = offset
-
         return offset
+
+    @classmethod
+    def _register_cells(cls, context):
+        # register scanchain delimeter
+        delim = Module("scanchain_delim",
+                is_cell = True,
+                view = ModuleView.logical,
+                module_class = ModuleClass.prog,
+                verilog_template = "scanchain_delim.tmpl.v")
+        cls._get_or_create_scanchain_prog_nets(delim, context.summary.scanchain["chain_width"])
+        ModuleUtils.create_port(delim, "prog_we_o", 1, PortDirection.output, net_class = NetClass.prog)
+
+        context._database[ModuleView.logical, "scanchain_delim"] = delim
+
+    @classmethod
+    def _get_or_create_scanchain_data_cell(cls, context, data_width):
+        """Get the programming data module for ``data_width`` bits.
+
+        Args:
+            context (`Context`):
+            data_width (:obj:`int`):
+
+        Returns:
+            `Module`:
+        """
+        key = ("scanchain_data", data_width)
+
+        if (module := context.database.get( (ModuleView.logical, key) )) is None:
+            module = Module("scanchain_data_d{}".format(data_width),
+                    is_cell = True,
+                    view = ModuleView.logical,
+                    module_class = ModuleClass.prog,
+                    verilog_template = "scanchain_data.tmpl.v",
+                    key = key)
+
+            cls._get_or_create_scanchain_prog_nets(module, context.summary.scanchain["chain_width"])
+            ModuleUtils.create_port(module, "prog_data", data_width, PortDirection.output, net_class = NetClass.prog)
+
+            context._database[ModuleView.logical, key] = module
+
+        return module
+
+    @classmethod
+    def _get_or_create_scanchain_prog_nets(cls, module, chain_width, excludes = None):
+        nets = {}
+        excludes = set(uno(excludes, []))
+
+        # prog_clk
+        if "prog_clk" not in excludes:
+            if (prog_clk := module.ports.get("prog_clk")) is None:
+                prog_clk = ModuleUtils.create_port(module, "prog_clk", 1, PortDirection.input_,
+                        is_clock = True, net_class = NetClass.prog)
+            nets["prog_clk"] = prog_clk
+
+        # prog_rst
+        if "prog_rst" not in excludes:
+            if (buf := module.instances.get("i_buf_prog_rst_l0")) is None:
+                if (port := module.ports.get("prog_rst")) is None:
+                    port = ModuleUtils.create_port(module, "prog_rst", 1, PortDirection.input_,
+                            net_class = NetClass.prog)
+                nets["prog_rst"] = port
+            else:
+                nets["prog_rst"] = buf.pins["Q"]
+
+        # prog_done
+        if "prog_done" not in excludes:
+            if (buf := module.instances.get("i_buf_prog_done_l0")) is None:
+                if (port := module.ports.get("prog_done")) is None:
+                    port = ModuleUtils.create_port(module, "prog_done", 1, PortDirection.input_,
+                            net_class = NetClass.prog)
+                nets["prog_done"] = port
+            else:
+                nets["prog_done"] = buf.pins["Q"]
+
+        # prog_we
+        if "prog_we" not in excludes:
+            if (delim := module.instances.get("i_scanchain_head")) is None:
+                if (port := module.ports.get("prog_we")) is None:
+                    port = ModuleUtils.create_port(module, "prog_we", 1, PortDirection.input_,
+                            net_class = NetClass.prog)
+                nets["prog_we"] = port
+            else:
+                nets["prog_we"] = delim.pins["prog_we_o"]
+
+        # prog_din, prog_dout
+        for key, direction in zip(("prog_din", "prog_dout"), PortDirection):
+            if key not in excludes:
+                if (port := module.ports.get(key)) is None:
+                    port = ModuleUtils.create_port(module, key, chain_width, direction,
+                            net_class = NetClass.prog)
+                nets[key] = port
+        
+        return nets
 
     class InsertProgCircuitry(AbstractPass):
         """Insert programming circuitry.
@@ -400,17 +373,22 @@ class Scanchain(AbstractProgCircuitryEntry):
         Keyword Args:
             iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
                 the instances in a module
+            insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if `we` buffers are inserted at
+                the beginning and end of the scanchain inside ``logical_module``. By default, buffers are inserted in
+                all logic/IO blocks and routing boxes.
         
         """
 
-        __slots__ = ["iter_instances"]
+        __slots__ = ["iter_instances", "insert_delimiter"]
 
-        def __init__(self, *, iter_instances = None):
+        def __init__(self, *, iter_instances = None, insert_delimiter = None):
             self.iter_instances = iter_instances
+            self.insert_delimiter = insert_delimiter
 
         def run(self, context, renderer = None):
-            AbstractProgCircuitryEntry.buffer_prog_ctrl(context)
-            Scanchain.insert_scanchain(context)
+            Scanchain.buffer_prog_ctrl(context)
+            context.summary.scanchain["bitstream_size"] = Scanchain.insert_scanchain(context,
+                    iter_instances = self.iter_instances, insert_delimiter = self.insert_delimiter)
 
         @property
         def key(self):

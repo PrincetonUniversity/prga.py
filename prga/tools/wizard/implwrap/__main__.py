@@ -1,8 +1,6 @@
 # -*- encoding: ascii -*-
 
 from . import def_argparser
-from .magic import generate_implwrap_magic
-from .scanchain import generate_implwrap_scanchain
 from ...ioplan import IOPlanner
 from ...util import DesignIntf
 from ....core.context import Context
@@ -11,9 +9,19 @@ from ....util import enable_stdout_logging
 
 import logging, os
 
+def generate_implwrap_common(summary, design, renderer, f, template):
+    if ((templates_dir := os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates"))
+            not in renderer.template_search_paths):
+        renderer.template_search_paths.insert(0, templates_dir)
+
+    renderer.add_generic(f, template,
+            design = design,
+            summary = summary)
+
 generators = {
-        "magic": generate_implwrap_magic,
-        "scanchain": generate_implwrap_scanchain,
+        "magic": "magic.tmpl.v",
+        "scanchain": "scanchain.tmpl.v",
+        "pktchain": "pktchain.tmpl.v",
         }
 
 _logger = logging.getLogger(__name__)
@@ -56,7 +64,10 @@ _logger.info("Programming circuitry type: {}".format(summary.prog_type))
 # generate implementation wrapper
 _logger.info("Generating implementation wrapper")
 r = FileRenderer()
-f(summary, design, r, args.output)
+if callable(f):
+    f(summary, design, r, args.output)
+else:
+    generate_implwrap_common(summary, design, r, args.output, f)
 
 r.render()
 

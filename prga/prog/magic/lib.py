@@ -35,42 +35,18 @@ class MagicFASMDelegate(FASMDelegate):
         else:
             return ".".join(i.name for i in reversed(hierarchy.hierarchy)) + "."
 
-    @classmethod
-    def __bitmap(cls, bitmap, allow_alternative = False):
-        if allow_alternative and len(bitmap._bitmap) == 2:
-            range_ = bitmap._bitmap[0][1]
-            return "[{}:{}]".format(range_.offset + range_.length - 1, range_.offset)
-        else:
-            return "".join("+{}#{}".format(o, l) for _, (o, l) in bitmap._bitmap[:-1])
-
-    @classmethod
-    def __value(cls, value, breakdown = False, prefix = None):
-        if breakdown:
-            if prefix is None:
-                return tuple("+{}#{}.~{}'h{:x}".format(o, l, l, v)
-                        for v, (o, l) in value.breakdown())
-            else:
-                return tuple("{}.+{}#{}.~{}'h{:x}".format(prefix, o, l, l, v)
-                        for v, (o, l) in value.breakdown())
-        else:
-            if prefix is None:
-                return cls.__bitmap(value.bitmap) + ".~{}'h{:x}".format(
-                        value.bitmap._bitmap[-1][0], value.value)
-            else:
-                return prefix + "." + cls.__bitmap(value.bitmap) + ".~{}'h{:x}".format(
-                        value.bitmap._bitmap[-1][0], value.value)
-
     def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy = None):
         conn = NetUtils.get_connection(source, sink, skip_validations = True)
         if (prog_enable := getattr(conn, "prog_enable", self._none)) is not self._none:
             if prog_enable is None:
                 return tuple()
             else:
-                return self.__value(prog_enable, True)
+                return self._value(prog_enable, True)
         fasm_features = []
         for net in getattr(conn, "logical_path", tuple()):
             bus, idx = (net.bus, net.index) if net.net_type.is_bit else (net, 0)
-            fasm_features.extend(self.__value(bus.instance.model.prog_enable[idx], True, bus.instance.name))
+            fasm_features.extend('{}.{}'.format(bus.instance.name, v)
+                    for v in self._value(bus.instance.model.prog_enable[idx], True))
         return tuple(fasm_features)
 
     def fasm_params_for_primitive(self, instance):
@@ -79,7 +55,7 @@ class MagicFASMDelegate(FASMDelegate):
             if (parameters := getattr(leaf.model, "prog_parameters", self._none)) is self._none:
                 return {}
         return {k: bitmap for k, v in uno(parameters, {}).items()
-                if (bitmap := self.__bitmap(v, True))}
+                if (bitmap := self._bitmap(v, True))}
 
     def fasm_prefix_for_intrablock_module(self, module, hierarchy = None):
         if hierarchy:
@@ -88,7 +64,7 @@ class MagicFASMDelegate(FASMDelegate):
                 if prog_bitmap is None:
                     return None
                 else:
-                    return self.__bitmap(prog_bitmap)
+                    return self._bitmap(prog_bitmap)
             else:
                 return leaf.name
         else:
@@ -102,7 +78,7 @@ class MagicFASMDelegate(FASMDelegate):
         if prog_enable is None:
             return tuple()
         else:
-            return self.__value(prog_enable, True)
+            return self._value(prog_enable, True)
 
     def fasm_lut(self, instance):
         leaf = instance.hierarchy[0]
@@ -112,7 +88,7 @@ class MagicFASMDelegate(FASMDelegate):
         if (bitmap := parameters.get("lut")) is not None:
             if len(bitmap._bitmap) != 2:
                 raise PRGAInternalError("Invalid bitmap for LUT: {}".format(instance.model))
-            return self.__bitmap(bitmap, True)
+            return self._bitmap(bitmap, True)
         else:
             return None
 
