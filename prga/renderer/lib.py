@@ -3,8 +3,16 @@
 from ..core.common import ModuleView, ModuleClass, PrimitiveClass, PrimitivePortClass, NetClass, IOType
 from ..prog import ProgDataBitmap, ProgDataValue
 from ..netlist import Module, NetUtils, ModuleUtils, PortDirection, TimingArcType
+from ..exception import PRGAInternalError
 
 from itertools import product
+from math import floor
+
+import logging
+
+_logger = logging.getLogger(__name__)
+
+__all__ = ['BuiltinCellLibrary']
 
 # ----------------------------------------------------------------------------
 # -- Builtin Cell Libraries --------------------------------------------------
@@ -182,8 +190,8 @@ class BuiltinCellLibrary(object):
     @classmethod
     def _register_u_adder(cls, context, dont_add_logical_primitives):
         ubdr = context.build_primitive("adder",
-                techmap_template = "adder/techmap.tmpl.v",
-                verilog_template = "adder/lib.tmpl.v",
+                techmap_template = "builtin/adder.techmap.tmpl.v",
+                verilog_template = "builtin/adder.lib.tmpl.v",
                 vpr_model = "m_adder",
                 prog_parameters = { "CIN_MODE": ProgDataBitmap( (0, 2) ), },
                 )
@@ -339,7 +347,21 @@ class BuiltinCellLibrary(object):
 
     @classmethod
     def _register_grady18(cls, context, dont_add_logical_primitives):
-        # register a non-instantiate-able, non-translate-able multi-mode primitive: "grady18.ble5"
+        # register a user-only mux2
+        ubdr = context.build_primitive("grady18.mux2",
+                verilog_template = "builtin/mux.lib.tmpl.v",
+                postlutmap_template = "grady18/postlut.techmap.tmpl.v",
+                vpr_model = "m_mux2")
+        inputs = [
+                ubdr.create_input("i", 2),
+                ubdr.create_input("sel", 1),
+                ]
+        output = ubdr.create_output("o", 1)
+        for i in inputs:
+            ubdr.create_timing_arc(TimingArcType.comb_matrix, i, output)
+        mux2 = ubdr.commit()
+
+        # register a user-only multi-mode primitive: "grady18.ble5"
         ubdr = context.build_multimode("grady18.ble5")
         ubdr.create_clock("clk")
         ubdr.create_input("in", 5)
@@ -360,7 +382,8 @@ class BuiltinCellLibrary(object):
             mode.connect(mode.ports["in"][4], adder.pins["cin_fabric"])
             for i, (p, lut) in enumerate(zip(["a", "b"], luts)):
                 mode.connect(mode.ports["in"][3:0], lut.pins["in"])
-                mode.connect(lut.pins["out"], adder.pins[p], vpr_pack_patterns = ["carrychain"])
+                # mode.connect(lut.pins["out"], adder.pins[p], vpr_pack_patterns = ["carrychain"])
+                mode.connect(lut.pins["out"], adder.pins[p])
             mode.connect(adder.pins["s"], ff.pins["D"], vpr_pack_patterns = ["carrychain"])
             mode.connect(adder.pins["s"], mode.ports["out"])
             mode.connect(ff.pins["Q"], mode.ports["out"])
@@ -383,7 +406,8 @@ class BuiltinCellLibrary(object):
         ble5 = ubdr.commit()
 
         # build FLE8
-        ubdr = context.build_multimode("grady18")
+        ubdr = context.build_multimode("grady18",
+                emulate_luts = (6, ))
         ubdr.create_clock("clk")
         ubdr.create_input("in", 8)
         ubdr.create_input("cin", 1)
@@ -409,19 +433,22 @@ class BuiltinCellLibrary(object):
             mode.connect(ble5s[1].pins["cout"], mode.ports["cout"], vpr_pack_patterns = ["carrychain"])
             mode.commit()
 
-        # # mode (2): lut6x1
-        # if True:
-        #     mode = ubdr.build_mode("lut6x1")
-        #     lut = mode.instantiate(context.primitives["lut6"], "i_lut6")
-        #     ff = mode.instantiate(context.primitives["flipflop"], "i_flipflop")
-        #     mode.connect(mode.ports["clk"], ff.pins["clk"])
-        #     # FIXME: add LUT remap (LUT6 -> 2xLUT5 + MUXF6) and modify grady18.tmpl.v
-        #     mode.connect(mode.ports["in"][3:0], lut.pins["in"][3:0])
-        #     mode.connect(mode.ports["in"][7:6], lut.pins["in"][5:4])
-        #     mode.connect(lut.pins["out"], ff.pins["D"], vpr_pack_patterns = ["lut6_dff"])
-        #     mode.connect(lut.pins["out"], mode.ports["out"][0])
-        #     mode.connect(ff.pins["Q"], mode.ports["out"][0])
-        #     mode.commit()
+        # mode (2): lut6x1
+        if True:
+            mode = ubdr.build_mode("lut6x1")
+            mux = mode.instantiate(context.primitives["grady18.mux2"], "i_mux2") 
+            mode.connect(mode.ports["in"][7], mux.pins["sel"])
+            for i, lut in enumerate(mode.instantiate(context.primitives["lut5"], "i_lut5", 2)):
+                mode.connect(mode.ports["in"][0:2],                 lut.pins["in"][0:2])
+                mode.connect(mode.ports["in"][2 + 2 * i:4 + 2 * i], lut.pins["in"][2:4])
+                mode.connect(mode.ports["in"][6],                   lut.pins["in"][4])
+                mode.connect(lut.pins["out"], mux.pins["i"][i], vpr_pack_patterns = ["lut6"])
+            ff = mode.instantiate(context.primitives["flipflop"], "i_flipflop")
+            mode.connect(mux.pins["o"], ff.pins["D"])
+            mode.connect(mode.ports["clk"], ff.pins["clk"])
+            mode.connect(mux.pins["o"], mode.ports["out"][0])
+            mode.connect(ff.pins["Q"],  mode.ports["out"][0])
+            mode.commit()
 
         # logical view
         if "grady18" not in dont_add_logical_primitives:
@@ -496,8 +523,23 @@ class BuiltinCellLibrary(object):
                 conn.prog_enable = ProgDataValue(i, (74, 1))
 
             # # mode (2): lut6
-            # mode = ubdr.module.modes["lut6"]
-            # mode.prog_enable = ProgDataValue(ProgDataRange(34, 39), ((3 << 37) + 3), ((3 << 37) + 3))
+            mode = ubdr.module.modes["lut6x1"]
+            mode.prog_enable = ProgDataValue(0xf, (34, 2), (71, 2))
+
+            for i in range(2):
+                lut = mode.instances["i_lut5", i]
+                lut.prog_bitmap = ProgDataBitmap( (37 * i, 32) )
+                lut.prog_enable = None
+
+            conn = NetUtils.get_connection(mode.instances["i_mux2"].pins["o"], mode.ports["out"][0])
+            conn.prog_enable = ProgDataValue(1, (36, 1))
+
+            ff = mode.instances["i_flipflop"]
+            ff.prog_bitmap = None
+            ff.prog_enable = None
+
+            conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"][0])
+            conn.prog_enable = ProgDataValue(0, (36, 1))
 
             lbdr.commit()
         else:

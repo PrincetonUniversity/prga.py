@@ -92,7 +92,7 @@ JUNKS := vpr_stdout.log *.rpt pack.out.post_routing
 # ----------------------------------------------------------------------------
 # -- Phony Rules -------------------------------------------------------------
 # ----------------------------------------------------------------------------
-.PHONY: all syn pack ioplan place route fasm bitgen implwrap disp clean
+.PHONY: all syn synth pack ioplan place route fasm bitgen bitstream implwrap disp display clean
 
 all: $(BITGEN_RESULT)
 
@@ -119,6 +119,15 @@ disp: $(VPR_ARCHDEF) $(VPR_RRGRAPH) $(SYN_EBLIF) $(PACK_RESULT) $(PLACE_RESULT) 
 
 clean:
 	rm -rf $(OUTPUTS) $(LOGS) $(JUNKS)
+
+# alias of 'syn'
+synth: syn
+
+# alias of 'bitgen'
+bitstream: bitgen
+
+# alias of 'disp'
+display: disp
 
 # ----------------------------------------------------------------------------
 # -- Regular Rules -----------------------------------------------------------

@@ -179,14 +179,6 @@ class Pktchain(Scanchain):
                 none_once = not none_once
                 continue
 
-            elif linst.model.module_class.is_prog:
-                raise PRGAInternalError("Existing programming cell found during programming cell insertion: {}"
-                        .format(linst))
-            elif linst.model.module_class.is_aux:
-                # _logger.warning("Auxiliary cell found during programming cell insertion: {}"
-                #         .format(linst))
-                continue
-
             # handling instances
             none_once = False
 
@@ -195,6 +187,14 @@ class Pktchain(Scanchain):
                 linst, sub_branch_id = linst
             except (TypeError, ValueError):
                 sub_branch_id = len(getattr(linst, "pktchain_branchmap", []))
+
+            if linst.model.module_class.is_prog:
+                raise PRGAInternalError("Existing programming cell found during programming cell insertion: {}"
+                        .format(linst))
+            elif linst.model.module_class.is_aux:
+                # _logger.warning("Auxiliary cell found during programming cell insertion: {}"
+                #         .format(linst))
+                continue
 
             # insert programming circuitry into ``linst``
             if linst.model.module_class.is_array:
@@ -649,7 +649,7 @@ class Pktchain(Scanchain):
             for i, branch in enumerate(branches[1:]):
                 if len(branch) != num_leaves:
                     raise PRGAInternalError("Unbalanced branch. Branch No. {} has {} leaves but others have {}"
-                            .format(i, len(branch), num_leaves))
+                            .format(i + 1, len(branch), num_leaves))
 
             _logger.info("Pktchain inserted: {} branches on primary backbone, {} leaves per branch"
                     .format(len(branches), num_leaves))

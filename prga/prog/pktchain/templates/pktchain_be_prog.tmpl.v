@@ -4,14 +4,14 @@
 `include "prga_system.vh"
 `include "pktchain_system.vh"
 
-module pktchain_cfg #(
+module pktchain_be_prog #(
     parameter   DECOUPLED_INPUT = 1
 ) (
     input wire                                      clk,
     input wire                                      rst_n,
 
-    // == CTRL <-> CFG ========================================================
-    output reg [`PRGA_CFG_STATUS_WIDTH-1:0]         status,
+    // == CTRL <-> PROG =======================================================
+    output reg [`PRGA_PROG_STATUS_WIDTH-1:0]        status,
 
     output wire                                     req_rdy,
     input wire                                      req_val,
@@ -24,9 +24,9 @@ module pktchain_cfg #(
     output reg                                      resp_err,
     output reg [`PRGA_CREG_DATA_WIDTH-1:0]          resp_data,
 
-    // == CFG <-> FABRIC ======================================================
-    output reg                                      cfg_rst,
-    output reg                                      cfg_e,
+    // == PROG <-> FABRIC =====================================================
+    output reg                                      prog_rst,
+    output reg                                      prog_done,
 
     // configuration output
     input wire                                      phit_o_full,
@@ -207,7 +207,7 @@ module pktchain_cfg #(
                 ST_CTRL_Q_NORMAL                = 2'h1,
                 ST_CTRL_Q_ERR_SENT              = 2'h2;
 
-    reg [ST_CTRL_Q_WIDTH-1:0]         ctrl_state_q, ctrl_state_q_next;
+    reg [ST_CTRL_Q_WIDTH-1:0]       ctrl_state_q, ctrl_state_q_next;
 
     reg                             resp_val_next, resp_err_next;
     reg [`PRGA_CREG_DATA_WIDTH-1:0] resp_data_next;
@@ -269,7 +269,7 @@ module pktchain_cfg #(
                             stall_ctrl_q = 1'b1;
                             resp_val_next = 1'b1;
                             resp_err_next = 1'b1;
-                            resp_data_next[`PRGA_EFLAGS_CFG_REG_UNDEF] = 1'b1;
+                            resp_data_next[`PRGA_EFLAGS_PROG_REG_UNDEF] = 1'b1;
 
                             if (resp_err || ~stall_ctrl_r) begin
                                 ctrl_state_q_next = ST_CTRL_Q_ERR_SENT;
@@ -329,8 +329,8 @@ module pktchain_cfg #(
                 TILE_STATUS_OP_CLEAR    = 2'h1,
                 TILE_STATUS_OP_UPDATE   = 2'h2;
 
-    localparam  LOG2_PKTCHAIN_X_TILES = `CLOG2(`PRGA_PKTCHAIN_NUM_BRANCHES),
-                LOG2_PKTCHAIN_Y_TILES = `CLOG2(`PRGA_PKTCHAIN_NUM_LEAVES);
+    localparam  LOG2_PKTCHAIN_X_TILES   = `CLOG2(`PRGA_PKTCHAIN_NUM_BRANCHES),
+                LOG2_PKTCHAIN_Y_TILES   = `CLOG2(`PRGA_PKTCHAIN_NUM_LEAVES);
 
     reg [TILE_STATUS_OP_WIDTH-1:0]      tile_status_op;
     reg [LOG2_PKTCHAIN_X_TILES - 1:0]   tile_status_rd_xpos,
@@ -388,8 +388,8 @@ module pktchain_cfg #(
     pktchain_frame_disassemble #(
         .DEPTH_LOG2             (1)
     ) i_frameq (
-        .cfg_clk                (clk)
-        ,.cfg_rst               (cfg_rst)
+        .prog_clk               (clk)
+        ,.prog_rst              (prog_rst)
         ,.frame_full            (frame_o_stall)
         ,.frame_wr              (frame_o_val)
         ,.frame_i               (frame_i)
@@ -409,8 +409,8 @@ module pktchain_cfg #(
     pktchain_frame_assemble #(
         .DEPTH_LOG2             (1)
     ) i_brespq (
-        .cfg_clk                (clk)
-        ,.cfg_rst               (cfg_rst)
+        .prog_clk               (clk)
+        ,.prog_rst              (prog_rst)
         ,.phit_full             (phit_i_full)
         ,.phit_wr               (phit_i_wr)
         ,.phit_i                (phit_i)
@@ -435,8 +435,8 @@ module pktchain_cfg #(
                 ST_BL_SUCCESS                   = 3'h5,
                 ST_BL_FAIL                      = 3'h6;
 
-    reg [ST_BL_WIDTH-1:0]                       bl_state, bl_state_next;
-    reg [`PRGA_PKTCHAIN_CHAIN_ID_WIDTH * 2 - 1:0]    init_tiles, init_tiles_next, pending_tiles, pending_tiles_next;
+    reg [ST_BL_WIDTH-1:0]                           bl_state, bl_state_next;
+    reg [`PRGA_PKTCHAIN_CHAIN_ID_WIDTH * 2 - 1:0]   init_tiles, init_tiles_next, pending_tiles, pending_tiles_next;
 
     always @(posedge clk) begin
         if (~rst_n) begin
@@ -477,9 +477,9 @@ module pktchain_cfg #(
     reg pkt_sob, pkt_eob;
 
     always @* begin
-        status = `PRGA_CFG_STATUS_STANDBY;
-        cfg_rst = 1'b0;
-        cfg_e = 1'b0;
+        status = `PRGA_PROG_STATUS_STANDBY;
+        prog_rst = 1'b0;
+        prog_done = 1'b0;
         bl_state_next = bl_state;
         resource_arb = ARB_PKT;
         tile_status_op_candidate[ARB_MAIN]      = TILE_STATUS_OP_INVAL;
@@ -489,12 +489,12 @@ module pktchain_cfg #(
 
         case (bl_state)
             ST_BL_RST: begin
-                cfg_rst = 1'b1;
+                prog_rst = 1'b1;
                 bl_state_next = ST_BL_CLR_TILE_STATUS;
                 resource_arb = ARB_MAIN;
             end
             ST_BL_CLR_TILE_STATUS: begin
-                cfg_rst = 1'b1;
+                prog_rst = 1'b1;
                 resource_arb = ARB_MAIN;
                 tile_status_op_candidate[ARB_MAIN] = TILE_STATUS_OP_CLEAR;
                 tile_status_rd_xpos_candidate[ARB_MAIN] = tile_status_rd_xpos_f + 1;
@@ -504,8 +504,6 @@ module pktchain_cfg #(
                 end
             end
             ST_BL_STANDBY: begin
-                cfg_e = 1'b1;
-
                 // error?
                 if (|xtra_eflags) begin
                     bl_state_next = ST_BL_FAIL;
@@ -517,8 +515,7 @@ module pktchain_cfg #(
                 end
             end
             ST_BL_PROG: begin
-                status = `PRGA_CFG_STATUS_PROGRAMMING;
-                cfg_e = 1'b1;
+                status = `PRGA_PROG_STATUS_PROGRAMMING;
 
                 // error?
                 if (|xtra_eflags) begin
@@ -531,8 +528,7 @@ module pktchain_cfg #(
                 end
             end
             ST_BL_STBLIZ: begin
-                status = `PRGA_CFG_STATUS_PROGRAMMING;
-                cfg_e = 1'b1;
+                status = `PRGA_PROG_STATUS_PROGRAMMING;
 
                 // error?
                 if (|xtra_eflags) begin
@@ -545,10 +541,11 @@ module pktchain_cfg #(
                 end
             end
             ST_BL_SUCCESS: begin
-                status = `PRGA_CFG_STATUS_DONE;
+                status = `PRGA_PROG_STATUS_DONE;
+                prog_done = 1'b1;
             end
             ST_BL_FAIL: begin
-                status = `PRGA_CFG_STATUS_ERR;
+                status = `PRGA_PROG_STATUS_ERR;
             end
         endcase
     end

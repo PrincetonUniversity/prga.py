@@ -42,7 +42,18 @@ opt -full
 techmap     ;# generic techmap onto basic logic elements
 {%- set comma = joiner(",") %}
 abc9 -luts {% for size in lut_sizes|sort %}{{ comma() }}{{ size }}:{{ size }}{% endfor %}
-opt -fast -full
+opt -full
+
+# post-LUTmap commands
+{%- for entry in postlutmaps %}
+    {%- for command in entry.premap_commands %}
+{{ command }}
+    {%- endfor %}
+    {%- if entry.techmap %}
+techmap -map [file join $generic_script_root {{ entry.techmap }}]
+    {%- endif %}
+{%- endfor %}
+opt -full
 clean
 
 # final check

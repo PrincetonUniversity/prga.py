@@ -97,6 +97,7 @@ class FileRenderer(object):
                 "libraries": [],
                 "memory_techmaps": [],
                 "techmaps": [],
+                "postlutmaps": [],
                 "lut_sizes": lut_sizes,
                 }
         parameters.update(kwargs)
@@ -151,6 +152,32 @@ class FileRenderer(object):
         if not os.path.isabs(file_) and not os.path.isabs(script_file):
             file_ = os.path.relpath(file_, os.path.dirname(script_file))
         script_task[0][1]["techmaps"].append( {
+            "premap_commands": premap_commands,
+            "techmap": file_,
+            } )
+
+    def add_yosys_postlutmap(self, file_, template, script_file = None, premap_commands = tuple(), **kwargs):
+        """Add a yosys post-lutmap techmap rendering task.
+
+        Args:
+            file_ (:obj:`str` of file-like object): The output file
+            template (:obj:`str`): The template to be used
+
+        Keyword Args:
+            script_file (:obj:`str` of file-like object): The main script file. If not specified, the most recently
+                added yosys script file will be used
+            premap_commands (:obj:`Sequence` [:obj:`str` ]): Commands to be run before running the techmap step
+            **kwargs: Additional key-value parameters to be passed into the template when rendering
+        """
+        parameters = {}
+        parameters.update(kwargs)
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
+        script_file, script_task = self._get_yosys_script_task(script_file)
+        if not isinstance(file_, str):
+            file_ = file_.name
+        if not os.path.isabs(file_) and not os.path.isabs(script_file):
+            file_ = os.path.relpath(file_, os.path.dirname(script_file))
+        script_task[0][1]["postlutmaps"].append( {
             "premap_commands": premap_commands,
             "techmap": file_,
             } )

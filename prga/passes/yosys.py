@@ -60,11 +60,18 @@ class YosysScriptsCollection(AbstractPass):
             lib = libs[primitive.vpr_model] = os.path.join(self.output_dir, primitive.vpr_model + ".lib.v")
             renderer.add_yosys_library(lib, primitive,
                     template = getattr(primitive, "verilog_template", None))
-            if (primitive.primitive_class.is_custom and
-                    (techmap_template := getattr(primitive, "techmap_template", None)) is not None):
-                renderer.add_yosys_techmap(
-                        os.path.join(self.output_dir, primitive.vpr_model + ".techmap.v"),
-                        techmap_template,
-                        premap_commands = getattr(primitive, "premap_commands", tuple()),
-                        model = primitive.vpr_model,
-                        **getattr(primitive, "techmap_parameters", {}) )
+            if primitive.primitive_class.is_custom:
+                if (techmap_template := getattr(primitive, "techmap_template", None)) is not None:
+                    renderer.add_yosys_techmap(
+                            os.path.join(self.output_dir, primitive.vpr_model + ".techmap.v"),
+                            techmap_template,
+                            premap_commands = getattr(primitive, "premap_commands", tuple()),
+                            model = primitive.vpr_model,
+                            **getattr(primitive, "techmap_parameters", {}) )
+                if (techmap_template := getattr(primitive, "postlutmap_template", None)) is not None:
+                    renderer.add_yosys_postlutmap(
+                            os.path.join(self.output_dir, primitive.vpr_model + ".postlutmap.v"),
+                            techmap_template,
+                            premap_commands = getattr(primitive, "postlut_commands", tuple()),
+                            model = primitive.vpr_model,
+                            **getattr(primitive, "postlutmap_parameters", {}) )

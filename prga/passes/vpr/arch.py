@@ -197,6 +197,9 @@ class _VPRArchGeneration(AbstractPass):
         fasm_features = self.fasm.fasm_features_for_intrablock_module(primitive, instance)
 
         if primitive.primitive_class.is_multimode:
+            for lut_size in getattr(primitive, "emulate_luts", []):
+                self.lut_sizes.add( lut_size )
+
             with self.xml.element("pb_type", attrs):
                 # 1. emit ports:
                 for port in primitive.ports.values():
