@@ -7,10 +7,10 @@ module grady18 (
     , output reg [1:0] out
     , input wire [0:0] cin
     , output reg [0:0] cout
-    , output reg [0:0] cout_fabric
+    , output reg [1:0] cout_fabric
 
     , input wire [0:0] prog_done
-    , input wire [74:0] prog_data
+    , input wire [73:0] prog_data
         // prog_data[ 0 +: 37] BLE5A
         //          [ 0 +: 16] LUT4A
         //          [16 +: 16] LUT4B
@@ -18,7 +18,6 @@ module grady18 (
         //          [34 +:  2] Mode select: disabled, arith, LUT5, LUT6
         //          [36 +:  1] FF disable (FF enabled by default)
         // prog_data[37 +: 37] BLE5B
-        // prog_data[74 +:  1] cout_fabric select
     );
 
     // -- Parameters ---------------------------------------------------------
@@ -179,17 +178,21 @@ module grady18 (
             end
 
             // cout_fabric
-            if (~prog_data[COUT_FABRIC_SEL] && ble5a_mode == BLE5_MODE_ARITH) begin
-                cout_fabric = internal_sum[0][1];
-            end else if (prog_data[COUT_FABRIC_SEL] && ble5b_mode == BLE5_MODE_ARITH) begin
-                cout_fabric = internal_sum[1][1];
+            if (ble5a_mode == BLE5_MODE_ARITH) begin
+                cout_fabric[0] = internal_sum[0][1];
             end else begin
-                cout_fabric = 1'b0;
-            end 
+                cout_fabric[0] = 1'b0;
+            end
+
+            if (ble5b_mode == BLE5_MODE_ARITH) begin
+                cout_fabric[1] = internal_sum[1][1];
+            end else begin
+                cout_fabric[1] = 1'b0;
+            end
         end else begin
             out = 2'b0;
             cout = 1'b0;
-            cout_fabric = 1'b0;
+            cout_fabric = 2'b0;
         end
     end
 

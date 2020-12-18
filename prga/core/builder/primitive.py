@@ -236,7 +236,8 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
                 **kwargs)
 
     @classmethod
-    def new_memory(cls, name, addr_width, data_width, *, vpr_model = None, single_port = False, **kwargs):
+    def new_memory(cls, name, addr_width, data_width, *,
+            vpr_model = None, memory_type = "1r1w", **kwargs):
         """Create a new memory primitive in user view.
         
         Args:
@@ -245,28 +246,40 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
             data_width (:obj:`int`): Width of the data port\(s\)
 
         Keyword Args:
-            vpr_model (:obj:`str`): Name of the VPR model. Default: "m_spram" if ``single_port`` is True, or
-                "m_dpram" if ``single_port`` is False
-            single_port (:obj:`bool`): This method generates dual-port memory by default. Set this to ``True`` if a
-                single-port memory is needed
+            vpr_model (:obj:`str`): Name of the VPR model. Default: "m_{memory_type}"
+            memory_type (:obj:`str`): ``"1r1w"``, ``"1rw"`` or ``"2rw"``. Default is ``"1r1w"``
             **kwargs: Additional attributes assigned to the primitive
 
         Returns:
             `Module`:
         """
-        kwargs.setdefault("verilog_template", "bram/lib.tmpl.v")
+        if memory_type == "1r1w":
+            kwargs.setdefault("verilog_template", "bram/1r1w.lib.tmpl.v")
+            kwargs.setdefault("bram_rule_template", "bram/1r1w.tmpl.rule")
+            kwargs.setdefault("techmap_template", "bram/1r1w.techmap.tmpl.v")
+        elif memory_type in ("1rw", "2rw"):
+            kwargs.setdefault("verilog_template", "bram/lib.tmpl.v")
+            kwargs.setdefault("bram_rule_template", "bram/tmpl.rule")
+            kwargs.setdefault("techmap_template", "bram/techmap.tmpl.v")
+        else:
+            raise PRGAAPIError("Unsupported memory type: {}. Supported values are: 1r1w, 1rw, 2rw"
+                    .format(memory_type))
+
         m = Module(name,
                 is_cell = True,
                 view = ModuleView.user,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.memory,
-                vpr_model = uno(vpr_model, "m_spram" if single_port else "m_dpram"),
+                vpr_model = uno(vpr_model, "m_{}".format(memory_type)),
+                memory_type = memory_type,
                 **kwargs)
+
         clk = ModuleUtils.create_port(m, "clk", 1, PortDirection.input_,
                 is_clock = True, port_class = PrimitivePortClass.clock)
         i, o = PortDirection.input_, PortDirection.output
         inputs, outputs = [], []
-        if single_port:
+
+        if memory_type == "1rw":
             inputs.append(ModuleUtils.create_port(m, "we", 1, i,
                 port_class = PrimitivePortClass.write_en))
             inputs.append(ModuleUtils.create_port(m, "addr", addr_width, i,
@@ -275,7 +288,7 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
                 port_class = PrimitivePortClass.data_in))
             outputs.append(ModuleUtils.create_port(m, "out", data_width, o,
                 port_class = PrimitivePortClass.data_out))
-        else:
+        elif memory_type == "2rw":
             inputs.append(ModuleUtils.create_port(m, "we1", 1, i,
                 port_class = PrimitivePortClass.write_en1))
             inputs.append(ModuleUtils.create_port(m, "addr1", addr_width, i,
@@ -291,6 +304,17 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
             inputs.append(ModuleUtils.create_port(m, "data2", data_width, i,
                 port_class = PrimitivePortClass.data_in2))
             outputs.append(ModuleUtils.create_port(m, "out2", data_width, o,
+                port_class = PrimitivePortClass.data_out2))
+        elif memory_type == "1r1w":
+            inputs.append(ModuleUtils.create_port(m, "we", 1, i,
+                port_class = PrimitivePortClass.write_en1))
+            inputs.append(ModuleUtils.create_port(m, "waddr", addr_width, i,
+                port_class = PrimitivePortClass.address1))
+            inputs.append(ModuleUtils.create_port(m, "din", data_width, i,
+                port_class = PrimitivePortClass.data_in1))
+            inputs.append(ModuleUtils.create_port(m, "raddr", addr_width, i,
+                port_class = PrimitivePortClass.address2))
+            outputs.append(ModuleUtils.create_port(m, "dout", data_width, o,
                 port_class = PrimitivePortClass.data_out2))
         for i in inputs:
             NetUtils.create_timing_arc(TimingArcType.seq_end, clk, i)
@@ -310,8 +334,15 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
         """
         m = super(PrimitiveBuilder, self).commit()
         if self._module.primitive_class.is_memory and not dont_create_logical_counterpart:
-            self._context.build_logical_primitive(self._module.name,
-                    verilog_template = "bram/sim.tmpl.v").commit()
+            if m.memory_type == "1r1w":
+                lmod = self._context.build_logical_primitive(self._module.name,
+                        verilog_template = "bram/1r1w.sim.tmpl.v").commit()
+                ModuleUtils.instantiate(lmod,
+                        self._context.database[ModuleView.logical, "prga_ram_1r1w_byp"],
+                        "i_ram")
+            else:
+                self._context.build_logical_primitive(self._module.name,
+                        verilog_template = "bram/sim.tmpl.v").commit()
         return m
 
     def build_logical_counterpart(self, *, not_cell = False, **kwargs):

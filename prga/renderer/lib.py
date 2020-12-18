@@ -4,9 +4,10 @@ from ..core.common import ModuleView, ModuleClass, PrimitiveClass, PrimitivePort
 from ..prog import ProgDataBitmap, ProgDataValue
 from ..netlist import Module, NetUtils, ModuleUtils, PortDirection, TimingArcType
 from ..exception import PRGAInternalError
+from ..util import uno
 
 from itertools import product
-from math import floor
+from math import floor, log2
 
 import logging
 
@@ -413,7 +414,7 @@ class BuiltinCellLibrary(object):
         ubdr.create_input("cin", 1)
         ubdr.create_output("out", 2)
         ubdr.create_output("cout", 1)
-        ubdr.create_output("cout_fabric", 1)
+        ubdr.create_output("cout_fabric", 2)
 
         # user modes
         # mode (1): ble5x2
@@ -424,7 +425,7 @@ class BuiltinCellLibrary(object):
                 mode.connect(mode.ports["clk"], inst.pins["clk"])
                 mode.connect(mode.ports["in"][6], inst.pins["in"][4])
                 mode.connect(inst.pins["out"], mode.ports["out"][i])
-                mode.connect(inst.pins["cout_fabric"], mode.ports["cout_fabric"])
+                mode.connect(inst.pins["cout_fabric"], mode.ports["cout_fabric"][i])
             mode.connect(mode.ports["in"][3:0], ble5s[0].pins["in"][3:0])
             mode.connect(mode.ports["cin"], ble5s[0].pins["cin"], vpr_pack_patterns = ["carrychain"])
             mode.connect(mode.ports["in"][5:4], ble5s[1].pins["in"][3:2])
@@ -463,7 +464,7 @@ class BuiltinCellLibrary(object):
             NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["in"])
             NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["cin"])
             lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
-            lbdr.create_prog_port("prog_data", 75, PortDirection.input_)
+            lbdr.create_prog_port("prog_data", 74, PortDirection.input_)
 
             lbdr.commit()
 
@@ -518,10 +519,6 @@ class BuiltinCellLibrary(object):
                 inst = mode.instances["i_ble5", i]
                 inst.prog_bitmap = ProgDataBitmap( (i * 37, 37) )
 
-                conn = NetUtils.get_connection(inst.pins["cout_fabric"], mode.ports["cout_fabric"],
-                        skip_validations = True)
-                conn.prog_enable = ProgDataValue(i, (74, 1))
-
             # # mode (2): lut6
             mode = ubdr.module.modes["lut6x1"]
             mode.prog_enable = ProgDataValue(0xf, (34, 2), (71, 2))
@@ -544,6 +541,82 @@ class BuiltinCellLibrary(object):
             lbdr.commit()
         else:
             ubdr.commit()
+
+    # @classmethod
+    # def build_multimode_ram(cls, context, core_addr_width, data_width, *,
+    #         addr_width = None, name = None):
+    #     """Build a multi-mode RAM.
+
+    #     Args:
+    #         context (`Context`):
+    #         core_addr_width (:obj:`int`): The address width of the single-mode, 1R1W RAM core behind the multi-mode
+    #             logic
+    #         data_width (:obj:`int`): The data width of the single-mode, 1R1W RAM core behind the multi-mode logic
+
+    #     Keyword Args:
+    #         name (:obj:`str`): Name of the multi-mode primitive. ``"fracram_a{addr_width}d{data_width}"`` by default.
+    #         addr_width (:obj:`int`): The maximum address width. See notes for more information
+    #     
+    #     Notes:
+    #         This method builds a multi-mode, fracturable 1R1W RAM. For example, ``build_multimode_ram(ctx, 9, 64)``
+    #         creates a multimode primitive with the following modes: ``512x64b``, ``1K32b``, ``2K16b``, ``4K8b``,
+    #         ``8K4b``, ``16K2b``, and ``32K1b``.
+
+    #         If 1b is not the desired smallest data width, change ``addr_width`` to a number between
+    #         ``core_addr_width`` and ``core_addr_width + floor(log2(data_width))``.
+
+    #         When ``data_width`` is not a power of 2, the actual data width of each mode is determined by the actual
+    #         address width. For example, ``build_multimode_ram(ctx, 9, 72)`` creates the following modes: ``512x72b``,
+    #         ``1K36b``, ``2K18b``, ``4K9b``, ``8K4b``, ``16K2b``, ``32K1b``. Note that instead of a ``9K4b``, we got a
+    #         ``8K4b``.
+    #     """
+    #     default_addr_width = core_addr_width + int(floor(log2(data_width)))
+    #     addr_width = uno(addr_width, default_addr_width)
+
+    #     if not (core_addr_width <= addr_width <= default_addr_width):
+    #         raise PRGAInternalError("Invalid addr_width ({}). Valid numbers {} <= addr_width <= {}"
+    #                 .format(addr_width, core_addr_width, default_addr_width))
+
+    #     multimode = context.build_multimode(uno(name, "fracram_a{}d{}".format(addr_width, data_width)))
+    #     multimode.create_clock("clk")
+    #     multimode.create_input("waddr", addr_width)
+    #     multimode.create_input("din", data_width)
+    #     multimode.create_input("we", 1)
+    #     multimode.create_input("raddr", addr_width)
+    #     multimode.create_output("dout", data_width)
+
+    #     logical_modes = {}
+    #     for mode_addr_width in range(core_addr_width, addr_width):
+    #         mode_name = None
+
+    #         if mode_addr_width >= 40:
+    #             mode_name = "{}T".format(2 ** (mode_addr_width - 40))
+    #         elif mode_addr_width >= 30:
+    #             mode_name = "{}G".format(2 ** (mode_addr_width - 30))
+    #         elif mode_addr_width >= 20:
+    #             mode_name = "{}M".format(2 ** (mode_addr_width - 20))
+    #         elif mode_addr_width >= 10:
+    #             mode_name = "{}K".format(2 ** (mode_addr_width - 10))
+    #         else:
+    #             mode_name = "{}x".format(2 ** mode_addr_width)
+
+    #         mode_data_width = data_width // (2 ** (mode_addr_width - core_addr_width))
+    #         mode_name += str(mode_data_width) + "b"
+
+    #         mode = multimode.build_mode(mode_name)
+
+    #         core = mode.instantiate(
+    #                 context.build_memory("dpram_a{}d{}".format(mode_addr_width, mode_data_width),
+    #                     mode_addr_width, mode_data_width),
+    #                 "i_ram_a{}d{}".format(mode_addr_width, mode_data_width),
+    #                 )
+    #         ModuleUtils.connect(mode.ports["clk"], core.ports["clk"])
+    #         ModuleUtils.connect(
+
+    #     multimode.build_logical_counterpart(
+    #             core_addr_width = core_addr_width,
+    #             verilog_template = "bram/fracbram.tmpl.v",
+    #             modes = logical_modes)
 
     @classmethod
     def register(cls, context, dont_add_logical_primitives = tuple()):
@@ -591,7 +664,7 @@ class BuiltinCellLibrary(object):
             ModuleUtils.create_port(buf, "Q", 1, PortDirection.output)
 
         # register auxiliary designs
-        for d in ("prga_ram_1r1w", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer",
+        for d in ("prga_ram_1r1w", "prga_ram_1r1w_byp", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer",
                 "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo", "prga_valrdy_buf"):
             context._database[ModuleView.logical, d] = Module(d,
                     is_cell = True,
@@ -606,6 +679,8 @@ class BuiltinCellLibrary(object):
                     verilog_template = "cdclib/{}.v".format(d))
 
         # module dependencies
+        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_ram_1r1w_byp"],
+                context._database[ModuleView.logical, "prga_ram_1r1w"], "i_ram")
         ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo"],
                 context._database[ModuleView.logical, "prga_ram_1r1w"], "ram")
         ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo"],

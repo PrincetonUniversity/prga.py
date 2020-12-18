@@ -182,7 +182,7 @@ class FileRenderer(object):
             "techmap": file_,
             } )
 
-    def add_yosys_bram_rule(self, file_, module, template = None, **kwargs):
+    def add_yosys_bram_rule(self, file_, module, template, **kwargs):
         """Add a yosys BRAM inferring rule rendering task.
 
         Args:
@@ -200,9 +200,9 @@ class FileRenderer(object):
         l = self.tasks.setdefault(file_, [])
         if l:
             l[-1][1].setdefault("not_last", True)
-        l.append( (uno(template, "bram/tmpl.rule"), parameters) )
+        l.append( (template, parameters) )
 
-    def add_yosys_memory_techmap(self, file_, module, template = None, script_file = None,
+    def add_yosys_memory_techmap(self, file_, module, template, script_file = None,
             premap_commands = tuple(), rule_script = None, **kwargs):
         """Add a yosys memory techmap rendering task.
 
@@ -222,7 +222,7 @@ class FileRenderer(object):
                 "module": module,
                 }
         parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (uno(template, "bram/techmap.tmpl.v"), parameters) )
+        self.tasks.setdefault(file_, []).append( (template, parameters) )
         script_file, script_task = self._get_yosys_script_task(script_file)
         if not isinstance(file_, str):
             file_ = file_.name
