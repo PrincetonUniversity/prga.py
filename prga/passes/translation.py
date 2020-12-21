@@ -220,8 +220,9 @@ class TranslationPass(AbstractPass):
                         if (len(usrcs) == 1
                                 # always instantiate switch for switch boxes
                                 and not module.module_class.is_switch_box 
-                                # always instantiate switch for primitive inputs 
-                                and not (usink.net_type.is_pin and usink.instance.model.module_class.is_primitive)):
+                                # always instantiate switch for non-clock primitive inputs 
+                                and not (usink.net_type.is_pin and usink.instance.model.module_class.is_primitive
+                                    and not usink.model.is_clock)):
 
                             # direct connect (no programmability)
                             NetUtils.connect(NetUtils._dereference(logical, NetUtils._reference(usrcs)), lsink[i])

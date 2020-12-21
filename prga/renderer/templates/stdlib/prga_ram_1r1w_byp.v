@@ -52,7 +52,7 @@ module prga_ram_1r1w_byp #(
     reg [DATA_WIDTH - 1:0]          wbuf_data;
     reg [DATA_WIDTH - 1:0]          wbuf_bw;
 
-    always @* begin
+    always @(posedge clk) begin
         if (rst) begin
             wbuf_vld    <= 1'b0;
             wbuf_addr   <= {ADDR_WIDTH {1'b0} };

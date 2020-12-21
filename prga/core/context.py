@@ -313,7 +313,7 @@ class Context(Object):
         primitive = self._database[ModuleView.user, name] = PrimitiveBuilder.new(name, vpr_model = vpr_model, **kwargs)
         return PrimitiveBuilder(self, primitive)
 
-    def build_memory(self, name, addr_width, data_width, *, vpr_model = None, single_port = False, **kwargs):
+    def build_memory(self, name, addr_width, data_width, *, vpr_model = None, memory_type = "1r1w", **kwargs):
         """Create a memory in user view.
 
         Args:
@@ -322,9 +322,8 @@ class Context(Object):
             data_width (:obj:`int`): Number of bits of the data ports
 
         Keyword Args:
-            vpr_model (:obj:`str`): Name of the VPR model. Default: "m_spram" if ``single_port`` is True, or
-                "m_dpram" if ``single_port`` is False
-            single_port (:obj:`bool`): Create one read/write port instead of two
+            vpr_model (:obj:`str`): Name of the VPR model. Default: "m_ram_{memory_type}"
+            memory_type (:obj:`str`): ``"1r1w"``, ``"1rw"`` or ``"2rw"``. Default is ``"1r1w"``
             **kwargs: Additional attributes to be associated with the primitive
 
         Returns:
@@ -333,8 +332,37 @@ class Context(Object):
         if (ModuleView.user, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
         primitive = self._database[ModuleView.user, name] = PrimitiveBuilder.new_memory(name,
-                addr_width, data_width, vpr_model = vpr_model, single_port = single_port, **kwargs)
+                addr_width, data_width, vpr_model = vpr_model, memory_type = memory_type, **kwargs)
         return PrimitiveBuilder(self, primitive)
+
+    def build_multimode_memory(self, core_addr_width, data_width, *,
+            addr_width = None, name = None):
+        """Build a multi-mode RAM.
+
+        Args:
+            core_addr_width (:obj:`int`): The address width of the single-mode, 1R1W RAM core behind the multi-mode
+                logic
+            data_width (:obj:`int`): The data width of the single-mode, 1R1W RAM core behind the multi-mode logic
+
+        Keyword Args:
+            name (:obj:`str`): Name of the multi-mode primitive. ``"fracram_a{addr_width}d{data_width}"`` by default.
+            addr_width (:obj:`int`): The maximum address width. See notes for more information
+        
+        Notes:
+            This method builds a multi-mode, fracturable 1R1W RAM. For example,
+            ``build_multimode_memory(ctx, 9, 64)`` creates a multimode primitive with the following modes:
+            ``512x64b``, ``1K32b``, ``2K16b``, ``4K8b``, ``8K4b``, ``16K2b``, and ``32K1b``.
+
+            If 1b is not the desired smallest data width, change ``addr_width`` to a number between
+            ``core_addr_width`` and ``core_addr_width + floor(log2(data_width))``.
+
+            When ``data_width`` is not a power of 2, the actual data width of each mode is determined by the actual
+            address width. For example, ``build_multimode_memory(ctx, 9, 72)`` creates the following modes:
+            ``512x72b``, ``1K36b``, ``2K18b``, ``4K9b``, ``8K4b``, ``16K2b``, ``32K1b``. Note that instead of a
+            ``9K4b``, we got a ``8K4b``.
+        """
+        return BuiltinCellLibrary.build_multimode_memory(self, core_addr_width, data_width,
+                addr_width = addr_width, name = name)
 
     # -- Slices --------------------------------------------------------------
     @property

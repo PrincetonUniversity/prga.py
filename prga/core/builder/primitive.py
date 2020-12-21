@@ -246,7 +246,7 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
             data_width (:obj:`int`): Width of the data port\(s\)
 
         Keyword Args:
-            vpr_model (:obj:`str`): Name of the VPR model. Default: "m_{memory_type}"
+            vpr_model (:obj:`str`): Name of the VPR model. Default: "m_ram_{memory_type}"
             memory_type (:obj:`str`): ``"1r1w"``, ``"1rw"`` or ``"2rw"``. Default is ``"1r1w"``
             **kwargs: Additional attributes assigned to the primitive
 
@@ -270,7 +270,7 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
                 view = ModuleView.user,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.memory,
-                vpr_model = uno(vpr_model, "m_{}".format(memory_type)),
+                vpr_model = uno(vpr_model, "m_ram_{}".format(memory_type)),
                 memory_type = memory_type,
                 **kwargs)
 

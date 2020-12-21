@@ -13,6 +13,14 @@ module {{ module.vpr_model }} (
 
     reg data [0:{{ 2 ** module.ports.waddr|length - 1 }}];
 
+    integer i;
+    initial begin
+        dout = $unsigned($random) % 2;
+
+        for (i = 0; i < {{ 2 ** module.ports.waddr|length }}; i = i + 1)
+            data[i] = $unsigned($random) % 2;
+    end
+
     always @(posedge clk) begin
         if (we) begin
             data[waddr] <= din;

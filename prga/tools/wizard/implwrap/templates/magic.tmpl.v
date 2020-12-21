@@ -17,7 +17,7 @@ module implwrap (
     {{ summary.top }} dut (
         .prog_clk(tb_clk)
         ,.prog_rst(tb_rst)
-        ,.prog_done(tb_prog_done)
+        ,.prog_done(1'b1)
         {%- for port in design.ports.values() %}
             {%- for idx, ((x, y), subtile) in port.iter_io_constraints() %}
         ,.{{- port.direction.case("ipin", "opin") }}_x{{ x }}y{{ y }}_{{ subtile }}({{ port.name }}{%- if idx is not none %}[{{ idx }}]{%- endif %})
@@ -25,11 +25,26 @@ module implwrap (
         {%- endfor %}
         );
 
+    reg [31:0] rst_cnt;
+
     // Force load fake bitstream
     initial begin
         `include "bitgen.out"
 
-        tb_prog_done = 1'b1;    // always done
+        rst_cnt = 32'b0;
+        tb_prog_done = 1'b0;
+    end
+
+    always @(posedge tb_clk) begin
+        if (tb_rst) begin
+            rst_cnt <= 100;
+            tb_prog_done <= 1'b0;
+        end else if (rst_cnt > 0) begin
+            rst_cnt <= rst_cnt - 1;
+
+            if (rst_cnt == 1)
+                tb_prog_done <= 1'b1;
+        end
     end
 
 endmodule

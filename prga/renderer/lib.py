@@ -232,10 +232,12 @@ class BuiltinCellLibrary(object):
             mode.connect(mode.ports["in"][5], adder.pins["cin_fabric"])
             for i, (p, lut) in enumerate(zip(["a", "b"], luts)):
                 mode.connect(mode.ports["in"][4:0], lut.pins["in"])
-                mode.connect(lut.pins["out"], adder.pins[p], vpr_pack_patterns = ["carrychain"])
+                # mode.connect(lut.pins["out"], adder.pins[p], vpr_pack_patterns = ["carrychain"])
+                mode.connect(lut.pins["out"], adder.pins[p])
             for i, (p, ff) in enumerate(zip(["s", "cout_fabric"], ffs)):
                 mode.connect(mode.ports["clk"], ff.pins["clk"])
-                mode.connect(adder.pins[p], ff.pins["D"], vpr_pack_patterns = ["carrychain"])
+                # mode.connect(adder.pins[p], ff.pins["D"], vpr_pack_patterns = ["carrychain"])
+                mode.connect(adder.pins[p], ff.pins["D"])
                 mode.connect(adder.pins[p], mode.ports["out"][i])
                 mode.connect(ff.pins["Q"], mode.ports["out"][i])
             mode.connect(adder.pins["cout"], mode.ports["cout"], vpr_pack_patterns = ["carrychain"])
@@ -542,81 +544,102 @@ class BuiltinCellLibrary(object):
         else:
             ubdr.commit()
 
-    # @classmethod
-    # def build_multimode_ram(cls, context, core_addr_width, data_width, *,
-    #         addr_width = None, name = None):
-    #     """Build a multi-mode RAM.
+    @classmethod
+    def build_multimode_memory(cls, context, core_addr_width, data_width, *,
+            addr_width = None, name = None):
+        """Build a multi-mode RAM.
 
-    #     Args:
-    #         context (`Context`):
-    #         core_addr_width (:obj:`int`): The address width of the single-mode, 1R1W RAM core behind the multi-mode
-    #             logic
-    #         data_width (:obj:`int`): The data width of the single-mode, 1R1W RAM core behind the multi-mode logic
+        Args:
+            context (`Context`):
+            core_addr_width (:obj:`int`): The address width of the single-mode, 1R1W RAM core behind the multi-mode
+                logic
+            data_width (:obj:`int`): The data width of the single-mode, 1R1W RAM core behind the multi-mode logic
 
-    #     Keyword Args:
-    #         name (:obj:`str`): Name of the multi-mode primitive. ``"fracram_a{addr_width}d{data_width}"`` by default.
-    #         addr_width (:obj:`int`): The maximum address width. See notes for more information
-    #     
-    #     Notes:
-    #         This method builds a multi-mode, fracturable 1R1W RAM. For example, ``build_multimode_ram(ctx, 9, 64)``
-    #         creates a multimode primitive with the following modes: ``512x64b``, ``1K32b``, ``2K16b``, ``4K8b``,
-    #         ``8K4b``, ``16K2b``, and ``32K1b``.
+        Keyword Args:
+            name (:obj:`str`): Name of the multi-mode primitive. ``"fracram_a{addr_width}d{data_width}"`` by default.
+            addr_width (:obj:`int`): The maximum address width. See notes for more information
+        
+        Notes:
+            This method builds a multi-mode, fracturable 1R1W RAM. For example,
+            ``build_multimode_memory(ctx, 9, 64)`` creates a multimode primitive with the following modes:
+            ``512x64b``, ``1K32b``, ``2K16b``, ``4K8b``, ``8K4b``, ``16K2b``, and ``32K1b``.
 
-    #         If 1b is not the desired smallest data width, change ``addr_width`` to a number between
-    #         ``core_addr_width`` and ``core_addr_width + floor(log2(data_width))``.
+            If 1b is not the desired smallest data width, change ``addr_width`` to a number between
+            ``core_addr_width`` and ``core_addr_width + floor(log2(data_width))``.
 
-    #         When ``data_width`` is not a power of 2, the actual data width of each mode is determined by the actual
-    #         address width. For example, ``build_multimode_ram(ctx, 9, 72)`` creates the following modes: ``512x72b``,
-    #         ``1K36b``, ``2K18b``, ``4K9b``, ``8K4b``, ``16K2b``, ``32K1b``. Note that instead of a ``9K4b``, we got a
-    #         ``8K4b``.
-    #     """
-    #     default_addr_width = core_addr_width + int(floor(log2(data_width)))
-    #     addr_width = uno(addr_width, default_addr_width)
+            When ``data_width`` is not a power of 2, the actual data width of each mode is determined by the actual
+            address width. For example, ``build_multimode_memory(ctx, 9, 72)`` creates the following modes:
+            ``512x72b``, ``1K36b``, ``2K18b``, ``4K9b``, ``8K4b``, ``16K2b``, ``32K1b``. Note that instead of a
+            ``9K4b``, we got a ``8K4b``.
+        """
+        default_addr_width = core_addr_width + int(floor(log2(data_width)))
+        addr_width = uno(addr_width, default_addr_width)
 
-    #     if not (core_addr_width <= addr_width <= default_addr_width):
-    #         raise PRGAInternalError("Invalid addr_width ({}). Valid numbers {} <= addr_width <= {}"
-    #                 .format(addr_width, core_addr_width, default_addr_width))
+        if not (core_addr_width <= addr_width <= default_addr_width):
+            raise PRGAInternalError("Invalid addr_width ({}). Valid numbers {} <= addr_width <= {}"
+                    .format(addr_width, core_addr_width, default_addr_width))
 
-    #     multimode = context.build_multimode(uno(name, "fracram_a{}d{}".format(addr_width, data_width)))
-    #     multimode.create_clock("clk")
-    #     multimode.create_input("waddr", addr_width)
-    #     multimode.create_input("din", data_width)
-    #     multimode.create_input("we", 1)
-    #     multimode.create_input("raddr", addr_width)
-    #     multimode.create_output("dout", data_width)
+        multimode = context.build_multimode(uno(name, "fracram_a{}d{}".format(addr_width, data_width)))
+        multimode.create_clock("clk")
+        multimode.create_input("waddr", addr_width)
+        multimode.create_input("din", data_width)
+        multimode.create_input("we", 1)
+        multimode.create_input("raddr", addr_width)
+        multimode.create_output("dout", data_width)
 
-    #     logical_modes = {}
-    #     for mode_addr_width in range(core_addr_width, addr_width):
-    #         mode_name = None
+        logical_modes = {}
+        for mode_addr_width in range(core_addr_width, addr_width + 1):
+            mode_name = None
 
-    #         if mode_addr_width >= 40:
-    #             mode_name = "{}T".format(2 ** (mode_addr_width - 40))
-    #         elif mode_addr_width >= 30:
-    #             mode_name = "{}G".format(2 ** (mode_addr_width - 30))
-    #         elif mode_addr_width >= 20:
-    #             mode_name = "{}M".format(2 ** (mode_addr_width - 20))
-    #         elif mode_addr_width >= 10:
-    #             mode_name = "{}K".format(2 ** (mode_addr_width - 10))
-    #         else:
-    #             mode_name = "{}x".format(2 ** mode_addr_width)
+            if mode_addr_width >= 40:
+                mode_name = "{}T".format(2 ** (mode_addr_width - 40))
+            elif mode_addr_width >= 30:
+                mode_name = "{}G".format(2 ** (mode_addr_width - 30))
+            elif mode_addr_width >= 20:
+                mode_name = "{}M".format(2 ** (mode_addr_width - 20))
+            elif mode_addr_width >= 10:
+                mode_name = "{}K".format(2 ** (mode_addr_width - 10))
+            else:
+                mode_name = "{}x".format(2 ** mode_addr_width)
 
-    #         mode_data_width = data_width // (2 ** (mode_addr_width - core_addr_width))
-    #         mode_name += str(mode_data_width) + "b"
+            mode_data_width = data_width // (2 ** (mode_addr_width - core_addr_width))
+            mode_name += str(mode_data_width) + "b"
 
-    #         mode = multimode.build_mode(mode_name)
+            mode = multimode.build_mode(mode_name)
 
-    #         core = mode.instantiate(
-    #                 context.build_memory("dpram_a{}d{}".format(mode_addr_width, mode_data_width),
-    #                     mode_addr_width, mode_data_width),
-    #                 "i_ram_a{}d{}".format(mode_addr_width, mode_data_width),
-    #                 )
-    #         ModuleUtils.connect(mode.ports["clk"], core.ports["clk"])
-    #         ModuleUtils.connect(
+            core = mode.instantiate(
+                    context.build_memory("ram_1r1w_a{}d{}".format(mode_addr_width, mode_data_width),
+                        mode_addr_width, mode_data_width).commit(),
+                    "i_ram_a{}".format(mode_addr_width),
+                    )
+            NetUtils.connect(mode.ports["clk"], core.pins["clk"])
+            NetUtils.connect(mode.ports["waddr"][:mode_addr_width], core.pins["waddr"])
+            NetUtils.connect(mode.ports["din"][:mode_data_width], core.pins["din"])
+            NetUtils.connect(mode.ports["we"], core.pins["we"])
+            NetUtils.connect(mode.ports["raddr"][:mode_addr_width], core.pins["raddr"])
+            NetUtils.connect(core.pins["dout"], mode.ports["dout"][0:mode_data_width])
 
-    #     multimode.build_logical_counterpart(
-    #             core_addr_width = core_addr_width,
-    #             verilog_template = "bram/fracbram.tmpl.v",
-    #             modes = logical_modes)
+            mode.commit()
+            logical_modes[mode_name] = mode_addr_width - core_addr_width
+
+        prog_data_width = len(logical_modes).bit_length()
+        for value, mode_name in enumerate(list(logical_modes), 1):
+            prog_enable = ProgDataValue(value, (0, prog_data_width) )
+            multimode.module.modes[mode_name].prog_enable = prog_enable
+            logical_modes[mode_name] = prog_enable, logical_modes[mode_name]
+
+        lbdr = multimode.build_logical_counterpart(
+                core_addr_width = core_addr_width,
+                verilog_template = "bram/fracbram.tmpl.v",
+                modes = logical_modes)
+        lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
+        lbdr.create_prog_port("prog_data", prog_data_width, PortDirection.input_)
+        lbdr.instantiate(context.database[ModuleView.logical, "prga_ram_1r1w_byp"],
+                "i_ram",
+                parameters = {"DATA_WIDTH": "DATA_WIDTH", "ADDR_WIDTH": "ADDR_WIDTH"})
+        lbdr.commit()
+
+        return multimode.module
 
     @classmethod
     def register(cls, context, dont_add_logical_primitives = tuple()):

@@ -24,6 +24,8 @@ _help = """PRGA verification project generator.
             defines \(map of strings to strings, numbers or null\): [optional] Define macros for Verilog
                 preprocessing
             parameters \(map of strings to strings or numbers\): [optional] Parameterization of the top-level test
+            comp_flags \(list of strings\): Additional flags for compilation
+            run_flags \(list of strings\): Additional flags for simulation
 """
 
 _parser = create_argparser(__name__, description=_help, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -96,6 +98,7 @@ def generate_verif_testbench(renderer, v2b_dir, config, test = None, output = No
 
     # read synthesized netlist
     design = DesignIntf.parse_eblif(os.path.join(v2b_dir, "syn.eblif"))
+    design.parameters = config["design"].get("parameters")
 
     # add testbench generation tasks
     renderer.add_generic(os.path.join(output, "tb.v"), "tb.tmpl.v",

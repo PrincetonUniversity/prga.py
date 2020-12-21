@@ -25,13 +25,14 @@ module {{ module.name }} #(
     reg [DATA_WIDTH - 1:0]          int_din, int_bw;
     wire [DATA_WIDTH - 1:0]         int_dout;
 
-    {{ i_ram.model.name }} {% if i_ram.parameters %}#(
+    {{ module.instances["i_ram"].model.name }} {% if module.instances["i_ram"].parameters %}#(
         {%- set comma = joiner(",") %}
-        {%- for k, v in i_ram.parameters.items() %}
+        {%- for k, v in module.instances["i_ram"].parameters.items() %}
         {{ comma() }}.{{ k }} ({{ v }})
         {%- endfor %}
     ){% endif %}i_ram (
         .clk                        (clk)
+        ,.rst                       (~prog_done)
         ,.waddr                     (int_waddr)
         ,.din                       (int_din)
         ,.we                        (int_we)
@@ -39,7 +40,6 @@ module {{ module.name }} #(
         ,.raddr                     (int_raddr)
         ,.re                        (int_re)
         ,.dout                      (int_dout)
-        ,.prog_done                 (prog_done)
         );
 
     // sub-words
@@ -101,7 +101,7 @@ module {{ module.name }} #(
             {%- for mode_name, (prog_enable, sr) in module.modes.items() %}
             {{ endelse() }}if ({{ prog_enable.value }} == {
                 {%- set comma2 = joiner(", ") -%}
-                {%- for o, l in prog_enable.bitmap._bitmap -%}
+                {%- for _, (o, l) in prog_enable.bitmap._bitmap[:-1] -%}
                 {{ comma2() }}prog_data[{{ o }}+:{{ l }}]
                 {%- endfor -%}
             }) begin
@@ -114,8 +114,6 @@ module {{ module.name }} #(
                 int_bw  = {DATA_WIDTH {1'b1} };
                 dout    = int_dout;
                 {%- else %}
-                int_din = din[0 +: DATA_WIDTH_SR{{ sr }}] << DATA_OFFSET_SR{{ sr }}_{{ 
-
                 case (wr_offset[ADDR_WIDTH - CORE_ADDR_WIDTH - 1 -: {{ sr }}])
                     {%- for i in range(2 ** sr) %}
                     {{ sr }}'d{{ i }}: begin

@@ -40,7 +40,7 @@ module implwrap (
     {{ summary.top }} dut (
         .prog_clk(tb_clk)
         ,.prog_rst(tb_rst)
-        ,.prog_done(tb_prog_done)
+        ,.prog_done(state == PROG_DONE)
         ,.prog_we(prog_we)
         ,.prog_we_o(prog_we_o)
         ,.prog_din(prog_din)
@@ -137,7 +137,6 @@ module implwrap (
 
     // Programming data
     always @* begin
-        tb_prog_done = state == PROG_DONE;
         prog_din = {bs_data[prog_progress / 64], bs_data[prog_progress / 64 + 1]} >> (128 - BS_WORD_SIZE - prog_progress % 64);
     end
 
@@ -154,6 +153,21 @@ module implwrap (
                 if (tb_verbosity > 0)
                     $display("[INFO] Programming progress: %02d%%", prog_percentage + 1);
             end
+        end
+    end
+
+    // tb prog_done
+    reg [31:0]  prog_done_cnt;
+
+    always @(posedge tb_clk) begin
+        if (tb_rst) begin
+            prog_done_cnt <= 100;
+            tb_prog_done <= 1'b0;
+        end else if (state == PROG_DONE && prog_done_cnt > 0) begin
+            prog_done_cnt <= prog_done_cnt - 1;
+
+            if (prog_done_cnt == 1)
+                tb_prog_done <= 1'b1;
         end
     end
 

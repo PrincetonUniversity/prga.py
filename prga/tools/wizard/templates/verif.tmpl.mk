@@ -55,6 +55,13 @@ endif
 # Makefile generated with unsupported compiler: {{ compiler }}
 {%- endif %}
 
+{% for v in test.comp_flags|default([]) %}
+COMP_FLAGS += {{ v }}
+{%- endfor %}
+{% for v in test.run_flags|default([]) %}
+RUN_FLAGS += {{ v }}
+{%- endfor %}
+
 # ----------------------------------------------------------------------------
 # -- Make Config -------------------------------------------------------------
 # ----------------------------------------------------------------------------

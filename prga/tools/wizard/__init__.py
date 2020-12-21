@@ -32,6 +32,8 @@ def def_argparser(name):
                 defines \(map of strings to strings, numbers or null\): [optional] Define macros for Verilog
                     preprocessing
                 parameters \(map of strings to strings or numbers\): [optional] Parameterization of the top-level test
+                comp_flags \(list of strings\): Additional flags for compilation
+                run_flags \(list of strings\): Additional flags for simulation
     """
 
     parser = create_argparser(name, description=help_)

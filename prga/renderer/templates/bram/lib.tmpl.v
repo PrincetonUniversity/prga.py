@@ -45,12 +45,18 @@ module {{ module.vpr_model }} (
         {{ memport('', module.ports.addr|length) }}
     {%- endif %}
     );
-
-    {% if dualport -%}
-    reg mem [0:{{ 2 ** module.ports.addr1|length - 1 }}];
-    {%- else -%}
-    reg mem [0:{{ 2 ** module.ports.addr|length - 1 }}];
+    {% if dualport %}
+    localparam  NUM_ROWS = {{ 2 ** module.ports.addr1|length }};
+    {%- else %}
+    localparam  NUM_ROWS = {{ 2 ** module.ports.addr|length }};
     {%- endif %}
+
+    reg mem [0:NUM_ROWS - 1];
+
+    integer i;
+    initial
+        for (i = 0; i < NUM_ROWS; i = i + 1)
+            mem[i] = $unsigned($random) % 2;
 
     {% if dualport -%}
         {{ memproc('1', module.ports.addr2|length) }}

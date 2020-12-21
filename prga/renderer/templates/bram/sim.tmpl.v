@@ -48,8 +48,30 @@ module {{ module.name }} (
 
     {% if dualport -%}
     reg [{{ module.ports.data1|length - 1}}:0] mem [0:{{ 2 ** module.ports.addr1|length - 1 }}];
+
+    integer i;
+    initial
+        for (i = 0; i < {{ 2 ** module.ports.addr1|length }}; i = i + 1)
+            data[i] = {
+                {%- set vcomma = joiner(", ") -%}
+                {%- for base in range(0, module.ports.data1|length, 32)|reverse -%}
+                    {{- vcomma() -}}$unsigned($random)
+                    {%- if module.ports.data1|length - base < 32 %} % (1 << {{ module.ports.data1|length - base }}){%- endif %}
+                {%- endfor -%}
+            };  
     {%- else -%}
     reg [{{ module.ports.data|length - 1}}:0] mem [0:{{ 2 ** module.ports.addr|length - 1 }}];
+
+    integer i;
+    initial
+        for (i = 0; i < {{ 2 ** module.ports.addr|length }}; i = i + 1)
+            data[i] = {
+                {%- set vcomma = joiner(", ") -%}
+                {%- for base in range(0, module.ports.data|length, 32)|reverse -%}
+                    {{- vcomma() -}}$unsigned($random)
+                    {%- if module.ports.data|length - base < 32 %} % (1 << {{ module.ports.data|length - base }}){%- endif %}
+                {%- endfor -%}
+            };  
     {%- endif %}
 
     {% if dualport -%}
