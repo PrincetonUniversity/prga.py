@@ -14,7 +14,9 @@ module _mmap__{{ module.name }}_ (CLK1, A1ADDR, A1DATA, A1EN, B1ADDR, B1DATA, B1
 
     wire gnd = 1'b0;
 
-    {{ module.vpr_model }} _TECHMAP_REPLACE_ (
+    {{ module.vpr_model }} #(
+        .ADDR_WIDTH         ({{ module.ports.addr1|length }})
+    ) _TECHMAP_REPLACE_ (
         .clk(CLK1),
         .addr1(A1ADDR),
         .data1(A1DATA),

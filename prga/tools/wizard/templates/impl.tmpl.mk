@@ -40,7 +40,7 @@ SYN_SCRIPT := {{ syn.design }}
 VPR_CHAN_WIDTH := {{ vpr.channel_width }}
 VPR_ARCHDEF := {{ vpr.archdef }}
 VPR_RRGRAPH := {{ vpr.rrgraph }}
-VPR_IOCONSTRAINTS := {{ abspath(constraints.io) }}
+VPR_IOCONSTRAINTS := {% if constraints is defined -%}{{ abspath(constraints.io) }}{%- endif %}
 
 # ----------------------------------------------------------------------------
 # -- Outputs -----------------------------------------------------------------

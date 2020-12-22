@@ -313,7 +313,8 @@ class Context(Object):
         primitive = self._database[ModuleView.user, name] = PrimitiveBuilder.new(name, vpr_model = vpr_model, **kwargs)
         return PrimitiveBuilder(self, primitive)
 
-    def build_memory(self, name, addr_width, data_width, *, vpr_model = None, memory_type = "1r1w", **kwargs):
+    def create_memory(self, name, addr_width, data_width, *, vpr_model = None, memory_type = "1r1w",
+            dont_create_logical_counterpart = False, **kwargs):
         """Create a memory in user view.
 
         Args:
@@ -324,20 +325,23 @@ class Context(Object):
         Keyword Args:
             vpr_model (:obj:`str`): Name of the VPR model. Default: "m_ram_{memory_type}"
             memory_type (:obj:`str`): ``"1r1w"``, ``"1rw"`` or ``"2rw"``. Default is ``"1r1w"``
+            dont_create_logical_counterpart (:obj:`bool`): If set to ``True``, the logical view of this module won't
+                be created automatically
             **kwargs: Additional attributes to be associated with the primitive
 
         Returns:
-            `PrimitiveBuilder`:
+            `Module`:
         """
         if (ModuleView.user, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
         primitive = self._database[ModuleView.user, name] = PrimitiveBuilder.new_memory(name,
                 addr_width, data_width, vpr_model = vpr_model, memory_type = memory_type, **kwargs)
-        return PrimitiveBuilder(self, primitive)
+        return PrimitiveBuilder(self, primitive).commit(
+                dont_create_logical_counterpart = dont_create_logical_counterpart)
 
-    def build_multimode_memory(self, core_addr_width, data_width, *,
+    def create_multimode_memory(self, core_addr_width, data_width, *,
             addr_width = None, name = None):
-        """Build a multi-mode RAM.
+        """Create a multi-mode RAM.
 
         Args:
             core_addr_width (:obj:`int`): The address width of the single-mode, 1R1W RAM core behind the multi-mode
@@ -347,6 +351,9 @@ class Context(Object):
         Keyword Args:
             name (:obj:`str`): Name of the multi-mode primitive. ``"fracram_a{addr_width}d{data_width}"`` by default.
             addr_width (:obj:`int`): The maximum address width. See notes for more information
+
+        Returns:
+            `Module`: User view of the multi-modal primitive
         
         Notes:
             This method builds a multi-mode, fracturable 1R1W RAM. For example,
@@ -361,8 +368,24 @@ class Context(Object):
             ``512x72b``, ``1K36b``, ``2K18b``, ``4K9b``, ``8K4b``, ``16K2b``, ``32K1b``. Note that instead of a
             ``9K4b``, we got a ``8K4b``.
         """
-        return BuiltinCellLibrary.build_multimode_memory(self, core_addr_width, data_width,
+        return BuiltinCellLibrary.create_multimode_memory(self, core_addr_width, data_width,
                 addr_width = addr_width, name = name)
+
+    def create_multiplier(self, width_a, width_b = None, *,
+            name = None):
+        """Create a basic combinational multiplier.
+
+        Args:
+            width_a (:obj:`int`): Width of the multiplier/multiplicand
+            width_b (:obj:`int`): Width of the other multiplier/multiplicand. Equal to ``width_a`` if not set.
+
+        Keyword Args:
+            name (:obj:`str`): Name of the primitive. ``"mul_a{width_a}b{width_b}"`` by default.
+
+        Returns:
+            `Module`: User view of the multiplier
+        """
+        return BuiltinCellLibrary.create_multiplier(self, width_a, width_b, name = name)
 
     # -- Slices --------------------------------------------------------------
     @property

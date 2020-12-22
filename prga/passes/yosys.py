@@ -67,6 +67,7 @@ class YosysScriptsCollection(AbstractPass):
                             techmap_template,
                             premap_commands = getattr(primitive, "premap_commands", tuple()),
                             model = primitive.vpr_model,
+                            module = primitive,
                             **getattr(primitive, "techmap_parameters", {}) )
                 if (techmap_template := getattr(primitive, "postlutmap_template", None)) is not None:
                     renderer.add_yosys_postlutmap(
@@ -74,4 +75,5 @@ class YosysScriptsCollection(AbstractPass):
                             techmap_template,
                             premap_commands = getattr(primitive, "postlut_commands", tuple()),
                             model = primitive.vpr_model,
+                            module = primitive,
                             **getattr(primitive, "postlutmap_parameters", {}) )

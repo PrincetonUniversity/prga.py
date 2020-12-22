@@ -22,6 +22,30 @@ class BuiltinCellLibrary(object):
     """A host class for built-in cells."""
 
     @classmethod
+    def _register_u_adder(cls, context):
+        ubdr = context.build_primitive("adder",
+                techmap_template = "builtin/adder.techmap.tmpl.v",
+                verilog_template = "builtin/adder.lib.tmpl.v",
+                vpr_model = "m_adder",
+                prog_parameters = { "CIN_MODE": ProgDataBitmap( (0, 2) ), },
+                )
+        inputs = [
+                ubdr.create_input("a", 1),
+                ubdr.create_input("b", 1),
+                ubdr.create_input("cin", 1),
+                ubdr.create_input("cin_fabric", 1),
+                ]
+        outputs = [
+                ubdr.create_output("cout", 1),
+                ubdr.create_output("s", 1),
+                ubdr.create_output("cout_fabric", 1),
+                ]
+        for i, o in product(inputs, outputs):
+            ubdr.create_timing_arc(TimingArcType.comb_bitwise, i, o)
+
+        ubdr.commit()
+
+    @classmethod
     def _register_luts(cls, context, dont_add_logical_primitives):
         for i in range(2, 9):
             name = "lut" + str(i)
@@ -187,30 +211,6 @@ class BuiltinCellLibrary(object):
 
             else:
                 ubdr.commit()
-
-    @classmethod
-    def _register_u_adder(cls, context, dont_add_logical_primitives):
-        ubdr = context.build_primitive("adder",
-                techmap_template = "builtin/adder.techmap.tmpl.v",
-                verilog_template = "builtin/adder.lib.tmpl.v",
-                vpr_model = "m_adder",
-                prog_parameters = { "CIN_MODE": ProgDataBitmap( (0, 2) ), },
-                )
-        inputs = [
-                ubdr.create_input("a", 1),
-                ubdr.create_input("b", 1),
-                ubdr.create_input("cin", 1),
-                ubdr.create_input("cin_fabric", 1),
-                ]
-        outputs = [
-                ubdr.create_output("cout", 1),
-                ubdr.create_output("s", 1),
-                ubdr.create_output("cout_fabric", 1),
-                ]
-        for i, o in product(inputs, outputs):
-            ubdr.create_timing_arc(TimingArcType.comb_bitwise, i, o)
-
-        ubdr.commit()
 
     @classmethod
     def _register_fle6(cls, context, dont_add_logical_primitives):
@@ -545,7 +545,7 @@ class BuiltinCellLibrary(object):
             ubdr.commit()
 
     @classmethod
-    def build_multimode_memory(cls, context, core_addr_width, data_width, *,
+    def create_multimode_memory(cls, context, core_addr_width, data_width, *,
             addr_width = None, name = None):
         """Build a multi-mode RAM.
 
@@ -558,17 +558,20 @@ class BuiltinCellLibrary(object):
         Keyword Args:
             name (:obj:`str`): Name of the multi-mode primitive. ``"fracram_a{addr_width}d{data_width}"`` by default.
             addr_width (:obj:`int`): The maximum address width. See notes for more information
+
+        Returns:
+            `Module`: User view of the multi-modal primitive
         
         Notes:
             This method builds a multi-mode, fracturable 1R1W RAM. For example,
-            ``build_multimode_memory(ctx, 9, 64)`` creates a multimode primitive with the following modes:
+            ``create_multimode_memory(ctx, 9, 64)`` creates a multimode primitive with the following modes:
             ``512x64b``, ``1K32b``, ``2K16b``, ``4K8b``, ``8K4b``, ``16K2b``, and ``32K1b``.
 
             If 1b is not the desired smallest data width, change ``addr_width`` to a number between
             ``core_addr_width`` and ``core_addr_width + floor(log2(data_width))``.
 
             When ``data_width`` is not a power of 2, the actual data width of each mode is determined by the actual
-            address width. For example, ``build_multimode_memory(ctx, 9, 72)`` creates the following modes:
+            address width. For example, ``create_multimode_memory(ctx, 9, 72)`` creates the following modes:
             ``512x72b``, ``1K36b``, ``2K18b``, ``4K9b``, ``8K4b``, ``16K2b``, ``32K1b``. Note that instead of a
             ``9K4b``, we got a ``8K4b``.
         """
@@ -608,8 +611,9 @@ class BuiltinCellLibrary(object):
             mode = multimode.build_mode(mode_name)
 
             core = mode.instantiate(
-                    context.build_memory("ram_1r1w_a{}d{}".format(mode_addr_width, mode_data_width),
-                        mode_addr_width, mode_data_width).commit(),
+                    context.create_memory("ram_1r1w_a{}d{}".format(mode_addr_width, mode_data_width),
+                        mode_addr_width, mode_data_width,
+                        dont_create_logical_counterpart = True),
                     "i_ram_a{}".format(mode_addr_width),
                     )
             NetUtils.connect(mode.ports["clk"], core.pins["clk"])
@@ -642,6 +646,47 @@ class BuiltinCellLibrary(object):
         return multimode.module
 
     @classmethod
+    def create_multiplier(cls, context, width_a, width_b = None, *,
+            name = None):
+        """Create a basic combinational multiplier.
+
+        Args:
+            context (`Context`):
+            width_a (:obj:`int`): Width of the multiplier/multiplicand
+            width_b (:obj:`int`): Width of the other multiplier/multiplicand. Equal to ``width_a`` if not set.
+
+        Keyword Args:
+            name (:obj:`str`): Name of the primitive. ``"mul_a{width_a}b{width_b}"`` by default.
+
+        Returns:
+            `Module`: User view of the multiplier
+        """
+        width_b = uno(width_b, width_a)
+
+        ubdr = context.build_primitive(uno(name, "mul_a{}b{}".format(width_a, width_b)),
+                techmap_template = "mul/techmap.tmpl.v",
+                verilog_template = "mul/lib.tmpl.v",
+                vpr_model = "m_mul_a{}b{}".format(width_a, width_b),
+                prog_parameters = { "SIGNED": ProgDataBitmap( (1, 1) ), },
+                prog_enable = ProgDataValue(1, (0, 1)),
+                )
+
+        inputs = [
+                ubdr.create_input("a", width_a),
+                ubdr.create_input("b", width_b),
+                ]
+        output = ubdr.create_output("x", width_a + width_b)
+        for i in inputs:
+            ubdr.create_timing_arc(TimingArcType.comb_matrix, i, output)
+
+        lbdr = ubdr.build_logical_counterpart( verilog_template = "mul/mul.tmpl.v" )
+        lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
+        lbdr.create_prog_port("prog_data", 2, PortDirection.input_)
+        lbdr.commit()
+
+        return ubdr.module
+
+    @classmethod
     def register(cls, context, dont_add_logical_primitives = tuple()):
         """Register designs shipped with PRGA into ``context`` database.
 
@@ -661,7 +706,7 @@ class BuiltinCellLibrary(object):
         cls._register_io(context, dont_add_logical_primitives)
 
         # register adder (user-only)
-        cls._register_u_adder(context, dont_add_logical_primitives)
+        cls._register_u_adder(context)
 
         # register FLE6
         cls._register_fle6(context, dont_add_logical_primitives)
