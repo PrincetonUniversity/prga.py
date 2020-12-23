@@ -13,7 +13,7 @@ endbram
 
 match _mmap__{{ module.name }}_
     make_outreg
-    {%- if not_last %}
+    {%- if _task_id < _num_tasks - 1 %}
     or_next_if_better
     {%- endif %}
 endmatch

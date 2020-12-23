@@ -46,6 +46,25 @@ class BuiltinCellLibrary(object):
         ubdr.commit()
 
     @classmethod
+    def _register_u_dffe(cls, context):
+        ubdr = context.build_primitive("dffe",
+                techmap_template = "builtin/dffe.techmap.tmpl.v",
+                premap_commands = "dffsr2dff; dff2dffe",
+                verilog_template = "builtin/dffe.lib.tmpl.v",
+                vpr_model = "m_dffe",
+                prog_parameters = { "ENABLE_CE": ProgDataBitmap( (0, 1) ), },
+                )
+        clock = ubdr.create_clock("C")
+        for input_ in (
+                ubdr.create_input("D", 1),
+                ubdr.create_input("E", 1),
+                ):
+            ubdr.create_timing_arc(TimingArcType.seq_end, clock, input_)
+        ubdr.create_timing_arc(TimingArcType.seq_start, clock, ubdr.create_output("Q", 1))
+
+        ubdr.commit()
+
+    @classmethod
     def _register_luts(cls, context, dont_add_logical_primitives):
         for i in range(2, 9):
             name = "lut" + str(i)
@@ -353,7 +372,8 @@ class BuiltinCellLibrary(object):
         # register a user-only mux2
         ubdr = context.build_primitive("grady18.mux2",
                 verilog_template = "builtin/mux.lib.tmpl.v",
-                postlutmap_template = "grady18/postlut.techmap.tmpl.v",
+                techmap_template = "grady18/postlut.techmap.tmpl.v",
+                techmap_order = -1.,    # post-lutmap techmap
                 vpr_model = "m_mux2")
         inputs = [
                 ubdr.create_input("i", 2),
@@ -545,6 +565,186 @@ class BuiltinCellLibrary(object):
             ubdr.commit()
 
     @classmethod
+    def _register_grady18v2(cls, context, dont_add_logical_primitives):
+        # register a user-only multi-mode primitive: "grady18v2.ble5"
+        ubdr = context.build_multimode("grady18v2.ble5")
+        ubdr.create_clock("clk")
+        ubdr.create_input("in", 5)
+        ubdr.create_input("cin", 1)
+        ubdr.create_input("ce", 1)
+        ubdr.create_output("out", 1)
+        ubdr.create_output("cout", 1)
+
+        # user modes
+        # mode (1): arith
+        if True:
+            mode = ubdr.build_mode("arith")
+            adder = mode.instantiate(context.primitives["adder"], "i_adder")
+            luts = mode.instantiate(context.primitives["lut4"], "i_lut4", 2)
+            ff = mode.instantiate(context.primitives["dffe"], "i_flipflop")
+            mode.connect(mode.ports["clk"], ff.pins["C"])
+            mode.connect(mode.ports["ce"], ff.pins["E"])
+            mode.connect(mode.ports["cin"], adder.pins["cin"], vpr_pack_patterns = ["carrychain"])
+            mode.connect(mode.ports["in"][4], adder.pins["cin_fabric"])
+            for i, (p, lut) in enumerate(zip(["a", "b"], luts)):
+                mode.connect(mode.ports["in"][3:0], lut.pins["in"])
+                # mode.connect(lut.pins["out"], adder.pins[p], vpr_pack_patterns = ["carrychain"])
+                mode.connect(lut.pins["out"], adder.pins[p])
+            mode.connect(adder.pins["s"], ff.pins["D"], vpr_pack_patterns = ["carrychain"])
+            mode.connect(adder.pins["s"], mode.ports["out"])
+            mode.connect(ff.pins["Q"], mode.ports["out"])
+            mode.connect(adder.pins["cout"], mode.ports["cout"], vpr_pack_patterns = ["carrychain"])
+            mode.commit()
+
+        # mode (2): lut5
+        if True:
+            mode = ubdr.build_mode("lut5")
+            lut = mode.instantiate(context.primitives["lut5"], "i_lut5")
+            ff = mode.instantiate(context.primitives["dffe"], "i_flipflop")
+            mode.connect(mode.ports["clk"], ff.pins["C"])
+            mode.connect(mode.ports["ce"], ff.pins["E"])
+            mode.connect(mode.ports["in"], lut.pins["in"])
+            mode.connect(lut.pins["out"], ff.pins["D"], vpr_pack_patterns = ["lut5_dff"])
+            mode.connect(lut.pins["out"], mode.ports["out"])
+            mode.connect(ff.pins["Q"], mode.ports["out"])
+            mode.commit()
+
+        ble5 = ubdr.commit()
+
+        # build FLE8
+        ubdr = context.build_multimode("grady18v2",
+                emulate_luts = (6, ))
+        ubdr.create_clock("clk")
+        ubdr.create_input("in", 8)
+        ubdr.create_input("ce", 1)
+        ubdr.create_input("cin", 1)
+        ubdr.create_output("out", 2)
+        ubdr.create_output("cout", 1)
+
+        # user modes
+        # mode (1): ble5x2
+        if True:
+            mode = ubdr.build_mode("ble5x2")
+            ble5s = mode.instantiate(ble5, "i_ble5", 2)
+            for i, inst in enumerate(ble5s):
+                mode.connect(mode.ports["clk"], inst.pins["clk"])
+                mode.connect(mode.ports["ce"], inst.pins["ce"])
+                mode.connect(mode.ports["in"][6], inst.pins["in"][4])
+                mode.connect(inst.pins["out"], mode.ports["out"][i])
+            mode.connect(mode.ports["in"][3:0], ble5s[0].pins["in"][3:0])
+            mode.connect(mode.ports["cin"], ble5s[0].pins["cin"], vpr_pack_patterns = ["carrychain"])
+            mode.connect(mode.ports["in"][5:4], ble5s[1].pins["in"][3:2])
+            mode.connect(mode.ports["in"][1:0], ble5s[1].pins["in"][1:0])
+            mode.connect(ble5s[0].pins["cout"], ble5s[1].pins["cin"], vpr_pack_patterns = ["carrychain"])
+            mode.connect(ble5s[1].pins["cout"], mode.ports["cout"], vpr_pack_patterns = ["carrychain"])
+            mode.commit()
+
+        # mode (2): lut6x1
+        if True:
+            mode = ubdr.build_mode("lut6x1")
+            mux = mode.instantiate(context.primitives["grady18.mux2"], "i_mux2") 
+            mode.connect(mode.ports["in"][7], mux.pins["sel"])
+            for i, lut in enumerate(mode.instantiate(context.primitives["lut5"], "i_lut5", 2)):
+                mode.connect(mode.ports["in"][0:2],                 lut.pins["in"][0:2])
+                mode.connect(mode.ports["in"][2 + 2 * i:4 + 2 * i], lut.pins["in"][2:4])
+                mode.connect(mode.ports["in"][6],                   lut.pins["in"][4])
+                mode.connect(lut.pins["out"], mux.pins["i"][i], vpr_pack_patterns = ["lut6"])
+            ff = mode.instantiate(context.primitives["dffe"], "i_flipflop")
+            mode.connect(mux.pins["o"], ff.pins["D"])
+            mode.connect(mode.ports["clk"], ff.pins["C"])
+            mode.connect(mode.ports["ce"], ff.pins["E"])
+            mode.connect(mux.pins["o"], mode.ports["out"][0])
+            mode.connect(ff.pins["Q"],  mode.ports["out"][0])
+            mode.commit()
+
+        # logical view
+        if "grady18v2" not in dont_add_logical_primitives:
+            lbdr = ubdr.build_logical_counterpart(verilog_template = "grady18/grady18v2.tmpl.v")
+            NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["out"])
+            NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["out"])
+            NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["cout"])
+            NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["cout"])
+            NetUtils.create_timing_arc(TimingArcType.seq_start, lbdr.ports["clk"], lbdr.ports["out"])
+            NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["in"])
+            NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["ce"])
+            NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["cin"])
+            lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
+            lbdr.create_prog_port("prog_data", 76, PortDirection.input_)
+
+            lbdr.commit()
+
+            # mark programming data bitmap
+            # BLE5
+            # mode (1): arith
+            mode = ble5.modes["arith"]
+            mode.prog_enable = ProgDataValue(1, (34, 2))
+
+            adder = mode.instances["i_adder"]
+            adder.prog_bitmap = ProgDataBitmap( (32, 2) )
+
+            conn = NetUtils.get_connection(adder.pins["s"], mode.ports["out"], skip_validations = True)
+            conn.prog_enable = ProgDataValue(1, (36, 1))
+
+            ff = mode.instances["i_flipflop"]
+            ff.prog_bitmap = ProgDataBitmap( (37, 1) )
+
+            conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
+            conn.prog_enable = ProgDataValue(0, (36, 1))
+
+            for i in range(2):
+                lut = mode.instances["i_lut4", i]
+                lut.prog_bitmap = ProgDataBitmap( (16 * i, 16) )
+                lut.prog_enable = None
+
+            # mode (2): lut5
+            mode = ble5.modes["lut5"]
+            mode.prog_enable = ProgDataValue(2, (34, 2))
+
+            lut = mode.instances["i_lut5"]
+            lut.prog_bitmap = ProgDataBitmap( (0, 32) )
+            lut.prog_enable = None
+
+            conn = NetUtils.get_connection(lut.pins["out"], mode.ports["out"], skip_validations = True)
+            conn.prog_enable = ProgDataValue(1, (36, 1))
+
+            ff = mode.instances["i_flipflop"]
+            ff.prog_bitmap = ProgDataBitmap( (37, 1) )
+
+            conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
+            conn.prog_enable = ProgDataValue(0, (36, 1))
+
+            # FLE8
+            # mode (1): ble5x2
+            mode = ubdr.module.modes["ble5x2"]
+            mode.prog_enable = None
+
+            for i in range(2):
+                inst = mode.instances["i_ble5", i]
+                inst.prog_bitmap = ProgDataBitmap( (i * 38, 38) )
+
+            # # mode (2): lut6
+            mode = ubdr.module.modes["lut6x1"]
+            mode.prog_enable = ProgDataValue(0xf, (34, 2), (72, 2))
+
+            for i in range(2):
+                lut = mode.instances["i_lut5", i]
+                lut.prog_bitmap = ProgDataBitmap( (38 * i, 32) )
+                lut.prog_enable = None
+
+            conn = NetUtils.get_connection(mode.instances["i_mux2"].pins["o"], mode.ports["out"][0])
+            conn.prog_enable = ProgDataValue(1, (36, 1))
+
+            ff = mode.instances["i_flipflop"]
+            ff.prog_bitmap = ProgDataBitmap( (37, 1) )
+
+            conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"][0])
+            conn.prog_enable = ProgDataValue(0, (36, 1))
+
+            lbdr.commit()
+        else:
+            ubdr.commit()
+
+    @classmethod
     def create_multimode_memory(cls, context, core_addr_width, data_width, *,
             addr_width = None, name = None):
         """Build a multi-mode RAM.
@@ -613,7 +813,8 @@ class BuiltinCellLibrary(object):
             core = mode.instantiate(
                     context.create_memory("ram_1r1w_a{}d{}".format(mode_addr_width, mode_data_width),
                         mode_addr_width, mode_data_width,
-                        dont_create_logical_counterpart = True),
+                        dont_create_logical_counterpart = True,
+                        techmap_order = 1. + 1 / float(mode_addr_width)),
                     "i_ram_a{}".format(mode_addr_width),
                     )
             NetUtils.connect(mode.ports["clk"], core.pins["clk"])
@@ -708,11 +909,17 @@ class BuiltinCellLibrary(object):
         # register adder (user-only)
         cls._register_u_adder(context)
 
+        # register configurable DFFE
+        cls._register_u_dffe(context)
+
         # register FLE6
         cls._register_fle6(context, dont_add_logical_primitives)
 
         # register grady18 (FLE8 from Brett Grady, FPL'18)
         cls._register_grady18(context, dont_add_logical_primitives)
+
+        # register grady18 variation #2
+        cls._register_grady18v2(context, dont_add_logical_primitives)
 
         # register simple buffers
         for name in ("prga_simple_buf", "prga_simple_bufr", "prga_simple_bufe", "prga_simple_bufre"):

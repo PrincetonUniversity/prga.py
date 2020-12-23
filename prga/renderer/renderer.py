@@ -58,187 +58,165 @@ class FileRenderer(object):
             raise PRGAInternalError("Main synthesis script is produced by multiple templates")
         return script_file, script_task
 
-    def add_verilog(self, file_, module, template = None, **kwargs):
+    def add_verilog(self, file_, module, template = None, order = 1., **kwargs):
         """Add a Verilog rendering task.
 
         Args:
-            file_ (:obj:`str` of file-like object): The output file
+            file_ (:obj:`str`): The output file
             module (`Module`): The module to be rendered
             template (:obj:`str`): The template to be used
+            order (:obj:`float`): Rendering ordering when multiple ``template`` s are used to render ``file_``. The
+                higher this value is, the earlier it is rendered.
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        parameters = {
-                "module": module,
-                "source2verilog": self._source2verilog,
-                }
-        parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (uno(template, "generic/module.tmpl.v"), parameters) )
+        self.tasks.setdefault(file_, []).append( (order, uno(template, "generic/module.tmpl.v"),
+            dict(module = module,
+                source2verilog = self._source2verilog,
+                **kwargs)) )
 
-    def add_generic(self, file_, template, **kwargs):
+    def add_generic(self, file_, template, order = 1., **kwargs):
         """Add a generic file rendering task.
 
         Args:
-            file_ (:obj:`str` of file-like object): The output file
+            file_ (:obj:`str`): The output file
             template (:obj:`str`): The template to be used
+            order (:obj:`float`): Rendering ordering when multiple ``template`` s are used to render ``file_``. The
+                higher this value is, the earlier it is rendered.
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        self.tasks.setdefault(file_, []).append( (template, kwargs) )
+        self.tasks.setdefault(file_, []).append( (order, template, kwargs) )
 
     def add_yosys_synth_script(self, file_, lut_sizes, template = None, **kwargs):
         """Add a yosys synthesis script rendering task.
 
         Args:
-            file_ (:obj:`str` of file-like object): The output file
+            file_ (:obj:`str`): The output file
             lut_sizes (:obj:`Sequence` [:obj:`int` ]): LUT sizes active in the FPGA
             template (:obj:`str`): The template to be used
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        parameters = {
-                "libraries": [],
-                "memory_techmaps": [],
-                "techmaps": [],
-                "postlutmaps": [],
-                "lut_sizes": lut_sizes,
-                }
-        parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (uno(template, "generic/synth.tmpl.tcl"), parameters) )
+        self.tasks.setdefault(file_, []).append( (1., uno(template, "generic/synth.tmpl.tcl"),
+            dict(libraries = [],
+                memory_techmap = {},    # {"premap_commands": list[{"order": float, "commands": str}],
+                                        #  "techmap": str,
+                                        #  "techmap_task": str,
+                                        #  "rule": str,
+                                        #  "rule_task": str,}
+                techmaps = [],          # {"premap_commands": str, "techmap": str, "order": float}
+                lut_sizes = lut_sizes,
+                **kwargs)) )
         self._yosys_synth_script_task = file_
 
-    def add_yosys_library(self, file_, module, template = None, script_file = None, **kwargs):
-        """Add a yosys library rendering task.
+    def add_yosys_library(self, file_, module, template = None, order = 1., **kwargs):
+        """Add a yosys library rendering task and link it in the currently active synthesis script.
 
         Args:
-            file_ (:obj:`str` of file-like object): The output file
+            file_ (:obj:`str`): The output file
             module (`Module`): The blackbox module
 
         Keyword Args:
             template (:obj:`str`): The template to be used
-            script_file (:obj:`str` of file-like object): The main script file. If not specified, the most recently
-                added yosys script file will be used
+            order (:obj:`float`): Rendering ordering when multiple ``template`` s are used to render ``file_``. The
+                higher this value is, the earlier it is rendered.
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        parameters = {
-                "module": module,
-                }
-        parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (uno(template, "generic/blackbox.lib.tmpl.v"), parameters) )
-        script_file, script_task = self._get_yosys_script_task(script_file)
-        if not isinstance(file_, str):
-            file_ = file_.name
+        self.tasks.setdefault(file_, []).append( (order, uno(template, "generic/blackbox.lib.tmpl.v"),
+            dict(module = module,
+                **kwargs)) )
+
+        script_file, script_task = self._get_yosys_script_task()
         if not os.path.isabs(file_) and not os.path.isabs(script_file):
             file_ = os.path.relpath(file_, os.path.dirname(script_file))
-        if file_ not in script_task[0][1]["libraries"]:
-            script_task[0][1]["libraries"].append( file_ )
+        if file_ not in script_task[0][2]["libraries"]:
+            script_task[0][2]["libraries"].append( file_ )
 
-    def add_yosys_techmap(self, file_, template, script_file = None, premap_commands = tuple(), **kwargs):
-        """Add a yosys techmap rendering task.
+    def add_yosys_techmap(self, file_, template, premap_commands = None, order = 1., **kwargs):
+        """Add a yosys techmap rendering task to the currently active synthesis script.
 
         Args:
-            file_ (:obj:`str` of file-like object): The output file
+            file_ (:obj:`str`): The output file
             template (:obj:`str`): The template to be used
 
         Keyword Args:
-            script_file (:obj:`str` of file-like object): The main script file. If not specified, the most recently
-                added yosys script file will be used
-            premap_commands (:obj:`Sequence` [:obj:`str` ]): Commands to be run before running the techmap step
+            premap_commands (:obj:`str`): Commands to be run before running the techmap step
+            order (:obj:`float`): Rendering ordering when multiple ``template`` s are used to render ``file_``. The
+                higher this value is, the earlier it is rendered. In addition, ``order`` is used to sort techmap
+                commands in the synthesis script. Techmaps are executed before lutmap if ``order`` is non-negative,
+                and after lutmap if ``order`` is negative.
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        parameters = {}
-        parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (template, parameters) )
-        script_file, script_task = self._get_yosys_script_task(script_file)
-        if not isinstance(file_, str):
-            file_ = file_.name
+        self.tasks.setdefault(file_, []).append( (order, template, dict(**kwargs)) )
+
+        script_file, script_task = self._get_yosys_script_task()
         if not os.path.isabs(file_) and not os.path.isabs(script_file):
             file_ = os.path.relpath(file_, os.path.dirname(script_file))
-        script_task[0][1]["techmaps"].append( {
+        script_task[0][2]["techmaps"].append( {
             "premap_commands": premap_commands,
             "techmap": file_,
+            "order": order,
             } )
 
-    def add_yosys_postlutmap(self, file_, template, script_file = None, premap_commands = tuple(), **kwargs):
-        """Add a yosys post-lutmap techmap rendering task.
+    def add_yosys_bram_rule(self, module, template, file_ = None, order = 1., **kwargs):
+        """Add a yosys BRAM inferring rule rendering task to the currently active synthesis script.
 
         Args:
-            file_ (:obj:`str` of file-like object): The output file
-            template (:obj:`str`): The template to be used
-
-        Keyword Args:
-            script_file (:obj:`str` of file-like object): The main script file. If not specified, the most recently
-                added yosys script file will be used
-            premap_commands (:obj:`Sequence` [:obj:`str` ]): Commands to be run before running the techmap step
-            **kwargs: Additional key-value parameters to be passed into the template when rendering
-        """
-        parameters = {}
-        parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (template, parameters) )
-        script_file, script_task = self._get_yosys_script_task(script_file)
-        if not isinstance(file_, str):
-            file_ = file_.name
-        if not os.path.isabs(file_) and not os.path.isabs(script_file):
-            file_ = os.path.relpath(file_, os.path.dirname(script_file))
-        script_task[0][1]["postlutmaps"].append( {
-            "premap_commands": premap_commands,
-            "techmap": file_,
-            } )
-
-    def add_yosys_bram_rule(self, file_, module, template, **kwargs):
-        """Add a yosys BRAM inferring rule rendering task.
-
-        Args:
-            file_ (:obj:`str` of file-like object): The output file
             module (`Module`): The memory module
             template (:obj:`str`): The template to be used
 
         Keyword Args:
+            file_ (:obj:`str`): The output file. If ``add_yosys_bram_rule`` is called the first
+                time after a new synthesis script is activated, this argument is required. Otherwise, this argument
+                must either match the previously set value, or remain ``None``.
+            order (:obj:`float`): Rendering ordering when multiple ``template`` s are used to render ``file_``. The
+                higher this value is, the earlier it is rendered.
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        parameters = {
-                "module": module,
-                }
-        parameters.update(kwargs)
-        l = self.tasks.setdefault(file_, [])
-        if l:
-            l[-1][1].setdefault("not_last", True)
-        l.append( (template, parameters) )
+        script_file, script_task = self._get_yosys_script_task()
+        if (rule := script_task[0][2].setdefault("memory_techmap", {}).setdefault("rule_task", file_)) is None:
+            raise PRGAInternalError("`file_` is required because `add_yosys_bram_rule` is called the first time")
+        elif file_ is not None and rule != file_:
+            raise PRGAInternalError("Active synthesis script uses '{}' for BRAM inferrence, but got '{}' this time"
+                    .format(rule, file_))
 
-    def add_yosys_memory_techmap(self, file_, module, template, script_file = None,
-            premap_commands = tuple(), rule_script = None, **kwargs):
-        """Add a yosys memory techmap rendering task.
+        self.tasks.setdefault(rule, []).append( (order, template, dict(module = module, **kwargs)) )
+
+        if not os.path.isabs(rule) and not os.path.isabs(script_file):
+            rule = os.path.relpath(rule, os.path.dirname(script_file))
+        script_task[0][2]["memory_techmap"]["rule"] = rule
+
+    def add_yosys_memory_techmap(self, module, template,
+            file_ = None, premap_commands = None, order = 1., **kwargs):
+        """Add a yosys memory techmap rendering task to the currently active synthesis script.
 
         Args:
-            file_ (:obj:`str` or file-like object): The output file
+            file_ (:obj:`str`): The output file
             module (`Module`): The memory module
+            template (:obj:`str`): The template to be used
 
         Keyword Args:
-            template (:obj:`str`): The template to be used
-            script_file (:obj:`str` of file-like object): The main script file. If not specified, the most recently
-                added yosys script file will be used
-            premap_commands (:obj:`Sequence` [:obj:`str` ]): Commands to be run before running the techmap step
-            rule_script (:obj:`str` or file-like object): The BRAM inferring rule
+            file_ (:obj:`str`): The output file. If ``add_yosys_memory_techmap`` is called the
+                first time after a new synthesis script is activated, this argument is required. Otherwise, this
+                argument must either match the previously set value, or remain ``None``.
+            premap_commands (:obj:`str`): Commands to be run before running the techmap step
+            order (:obj:`float`): Rendering ordering when multiple ``template`` s are used to render ``file_``. The
+                higher this value is, the earlier it is rendered.
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        parameters = {
-                "module": module,
-                }
-        parameters.update(kwargs)
-        self.tasks.setdefault(file_, []).append( (template, parameters) )
-        script_file, script_task = self._get_yosys_script_task(script_file)
-        if not isinstance(file_, str):
-            file_ = file_.name
-        if not os.path.isabs(file_) and not os.path.isabs(script_file):
-            file_ = os.path.relpath(file_, os.path.dirname(script_file))
-        d = {
-                "premap_commands": premap_commands,
-                "techmap": file_,
-                }
-        if rule_script is not None:
-            if not isinstance(rule_script, str):
-                rule_script = rule_script.name
-            if not os.path.isabs(rule_script) and not os.path.isabs(script_file):
-                rule_script = os.path.relpath(rule_script, os.path.dirname(script_file))
-            d["rule"] = rule_script
-        script_task[0][1]["memory_techmaps"].append( d )
+        script_file, script_task = self._get_yosys_script_task()
+        if (techmap := script_task[0][2].setdefault("memory_techmap", {}).setdefault("techmap_task", file_)) is None:
+            raise PRGAInternalError("`file_` is required because `add_yosys_memory_techmap` is called the first time")
+        elif file_ is not None and techmap != file_:
+            raise PRGAInternalError("Active synthesis script uses '{}' for memory map, but got '{}' this time"
+                    .format(techmap, file_))
+
+        self.tasks.setdefault(techmap, []).append( (order, template, dict(module = module, **kwargs)) )
+
+        if not os.path.isabs(techmap) and not os.path.isabs(script_file):
+            techmap = os.path.relpath(techmap, os.path.dirname(script_file))
+        script_task[0][2]["memory_techmap"]["techmap"] = techmap
+
+        if premap_commands:
+            script_task[0][2]["memory_techmap"].setdefault("premap_commands", []).append( (order, premap_commands) )
 
     def render(self):
         """Render all added files and clear the task queue."""
@@ -250,5 +228,7 @@ class FileRenderer(object):
                 if d:
                     os.makedirs(d, exist_ok = True)
                 file_ = open(file_, "wb")
-            for template, parameters in l:
-                env.get_template(template).stream(parameters).dump(file_, encoding="ascii")
+            for i, (_, template, parameters) in enumerate(sorted(l, key=lambda i: i[0], reverse=True)):
+                env.get_template(template
+                        ).stream(dict(_task_id = i, _num_tasks = len(l), **parameters)
+                        ).dump(file_, encoding="ascii")

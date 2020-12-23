@@ -10,33 +10,42 @@ read_verilog -lib [file join $generic_script_root {{ lib }}]
 {%- endfor %}
 
 # coarse synthesis
-synth -flatten -run coarse
+synth -flatten -noalumacc -run coarse
+
+# print coarse synthesis report
+stat -width
 
 # memory map
-{%- for memmap in memory_techmaps %}
-    {%- if memmap.rule %}
-memory_bram -rules [file join $generic_script_root {{ memmap.rule }}]
+{%- if memory_techmap is defined %}
+    {%- if memory_techmap.rule %}
+memory_bram -rules [file join $generic_script_root {{ memory_techmap.rule }}]
     {%- endif %}
-    {%- for command in memmap.premap_commands %}
-{{ command }}
+    {%- for command in memory_techmap.premap_commands|sort(reverse=true,attribute="order") %}
+{{ command.commands }}
     {%- endfor %}
-    {%- if memmap.techmap %}
-techmap -map [file join $generic_script_root {{ memmap.techmap }}]
+    {%- if memory_techmap.techmap %}
+techmap -map [file join $generic_script_root {{ memory_techmap.techmap }}]
     {%- endif %}
-{%- endfor %}
+{%- endif %}
 opt -full
 memory_map
 
+# print memory map report
+stat -width
+
 # techmap onto library cells read with `read_verilog` above
-{%- for entry in techmaps %}
-    {%- for command in entry.premap_commands %}
-{{ command }}
-    {%- endfor %}
+{%- for entry in techmaps|sort(reverse=true,attribute="order") if entry.order >= 0 %}
+    {%- if entry.premap_commands %}
+{{ entry.premap_commands }}
+    {%- endif %}
     {%- if entry.techmap %}
 techmap -map [file join $generic_script_root {{ entry.techmap }}]
     {%- endif %}
 {%- endfor %}
 opt -full
+
+# print techmap report
+stat -width
 
 # LUT map
 techmap     ;# generic techmap onto basic logic elements
@@ -44,11 +53,14 @@ techmap     ;# generic techmap onto basic logic elements
 abc9 -luts {% for size in lut_sizes|sort %}{{ comma() }}{{ size }}:{{ size }}{% endfor %}
 opt -full
 
+# print LUT map report
+stat -width
+
 # post-LUTmap commands
-{%- for entry in postlutmaps %}
-    {%- for command in entry.premap_commands %}
-{{ command }}
-    {%- endfor %}
+{%- for entry in techmaps|sort(reverse=true,attribute="order") if entry.order < 0 %}
+    {%- if entry.premap_commands %}
+{{ entry.premap_commands }}
+    {%- endif %}
     {%- if entry.techmap %}
 techmap -map [file join $generic_script_root {{ entry.techmap }}]
     {%- endif %}
@@ -56,6 +68,8 @@ techmap -map [file join $generic_script_root {{ entry.techmap }}]
 opt -full
 clean
 
+# print final report
+stat -width
+
 # final check
-stat
 check -noinit
