@@ -7,12 +7,14 @@
 
 `include "prga_system.vh"
 
-module prga_sysintf (
-    // == System Control Signals ==============================================
+module prga_sysintf #(
+    parameter   DECOUPLED = 1
+) (
+    // == System Control Signals =============================================
     input wire                                      clk,
     input wire                                      rst_n,
 
-    // == Generic Register-based Interface ====================================
+    // == Generic Register-based Interface ===================================
     output wire                                     reg_req_rdy,
     input wire                                      reg_req_val,
     input wire [`PRGA_CREG_ADDR_WIDTH-1:0]          reg_req_addr,
@@ -40,20 +42,20 @@ module prga_sysintf (
     input wire [`PRGA_CCM_CACHETAG_INDEX]           ccm_resp_addr,  // only used for invalidations
     input wire [`PRGA_CCM_CACHELINE_WIDTH-1:0]      ccm_resp_data,
 
-    // == CTRL <-> CFG ========================================================
-    output wire                                     cfg_rst_n,
-    input wire [`PRGA_CFG_STATUS_WIDTH-1:0]         cfg_status,
+    // == CTRL <-> PROG ======================================================
+    output wire                                     prog_rst_n,
+    input wire [`PRGA_PROG_STATUS_WIDTH-1:0]        prog_status,
 
-    input wire                                      cfg_req_rdy,
-    output wire                                     cfg_req_val,
-    output wire [`PRGA_CREG_ADDR_WIDTH-1:0]         cfg_req_addr,
-    output wire [`PRGA_CREG_DATA_BYTES-1:0]         cfg_req_strb,
-    output wire [`PRGA_CREG_DATA_WIDTH-1:0]         cfg_req_data,
+    input wire                                      prog_req_rdy,
+    output wire                                     prog_req_val,
+    output wire [`PRGA_CREG_ADDR_WIDTH-1:0]         prog_req_addr,
+    output wire [`PRGA_CREG_DATA_BYTES-1:0]         prog_req_strb,
+    output wire [`PRGA_CREG_DATA_WIDTH-1:0]         prog_req_data,
 
-    input wire                                      cfg_resp_val,
-    output wire                                     cfg_resp_rdy,
-    input wire                                      cfg_resp_err,
-    input wire [`PRGA_CREG_DATA_WIDTH-1:0]          cfg_resp_data,
+    input wire                                      prog_resp_val,
+    output wire                                     prog_resp_rdy,
+    input wire                                      prog_resp_err,
+    input wire [`PRGA_CREG_DATA_WIDTH-1:0]          prog_resp_data,
 
     // == Application Control Signals ========================================
     output wire                                     aclk,
@@ -102,7 +104,9 @@ module prga_sysintf (
     wire [`PRGA_CREG_DATA_WIDTH-1:0] app_features, app_features_aclk;
     wire [`PRGA_PROT_TIMER_WIDTH-1:0] timeout_limit;
 
-    prga_ctrl i_ctrl (
+    prga_ctrl #(
+        .DECOUPLED                              (DECOUPLED)
+    ) i_ctrl (
         .clk                                    (clk)
         ,.rst_n                                 (rst_n)
 
@@ -121,17 +125,17 @@ module prga_sysintf (
         ,.app_en_aclk                           (app_en_aclk)
         ,.app_features                          (app_features)
 
-        ,.cfg_rst_n		                        (cfg_rst_n)
-        ,.cfg_status		                    (cfg_status)
-        ,.cfg_req_rdy		                    (cfg_req_rdy)
-        ,.cfg_req_val		                    (cfg_req_val)
-        ,.cfg_req_addr		                    (cfg_req_addr)
-        ,.cfg_req_strb		                    (cfg_req_strb)
-        ,.cfg_req_data		                    (cfg_req_data)
-        ,.cfg_resp_val		                    (cfg_resp_val)
-        ,.cfg_resp_rdy		                    (cfg_resp_rdy)
-        ,.cfg_resp_err		                    (cfg_resp_err)
-        ,.cfg_resp_data		                    (cfg_resp_data)
+        ,.prog_rst_n		                    (prog_rst_n)
+        ,.prog_status		                    (prog_status)
+        ,.prog_req_rdy		                    (prog_req_rdy)
+        ,.prog_req_val		                    (prog_req_val)
+        ,.prog_req_addr		                    (prog_req_addr)
+        ,.prog_req_strb		                    (prog_req_strb)
+        ,.prog_req_data		                    (prog_req_data)
+        ,.prog_resp_val		                    (prog_resp_val)
+        ,.prog_resp_rdy		                    (prog_resp_rdy)
+        ,.prog_resp_err		                    (prog_resp_err)
+        ,.prog_resp_data		                (prog_resp_data)
 
         ,.sax_rdy                               (sax_ctrl_rdy)
         ,.sax_val                               (ctrl_sax_val)
@@ -208,7 +212,9 @@ module prga_sysintf (
         ,.sax_mprot_data		                (sax_mprot_data)
         );
 
-    prga_uprot i_uprot (
+    prga_uprot #(
+        .DECOUPLED                              (DECOUPLED)
+    ) i_uprot (
         .clk                                    (aclk)
         ,.rst_n                                 (arst_n)
 
@@ -235,7 +241,9 @@ module prga_sysintf (
         ,.ureg_resp_ecc                         (ureg_resp_ecc)
         );
 
-    prga_mprot i_mprot (
+    prga_mprot #(
+        .DECOUPLED                              (DECOUPLED)
+    ) i_mprot (
         .clk                                    (aclk)
         ,.rst_n                                 (arst_n)
 

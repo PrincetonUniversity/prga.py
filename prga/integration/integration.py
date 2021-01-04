@@ -2,13 +2,10 @@
 
 from .common import InterfaceClass
 from ..core.common import ModuleView, ModuleClass, IOType
-from ..netlist.module.module import Module
-from ..netlist.module.util import ModuleUtils
-from ..netlist.net.common import PortDirection
-from ..netlist.net.util import NetUtils
+from ..netlist import Module, PortDirection, ModuleUtils, NetUtils
+from ..tools.util import DesignIntf
+from ..tools.ioplan import IOPlanner
 from ..exception import PRGAAPIError, PRGAInternalError
-# from ..tools.ioplan.ioplan import IOConstraints, IOPlanner
-from ..util import uno
 
 __all__ = ["Integration"]
 
@@ -24,7 +21,8 @@ class Integration(object):
 
         Args:
             module (`Module`):
-            slave (:obj:`bool`): If set, slave interface is added to ``module``
+            slave (:obj:`bool`): If set, create slave interface \(``clk`` and ``rst_n`` as input\) instead of master
+                interface 
             prefix (:obj:`str`): Prefix of the port names
         """
         i, o = ((PortDirection.output, PortDirection.input_) if slave else
@@ -33,28 +31,29 @@ class Integration(object):
                 prefix + "rst_n": ModuleUtils.create_port(module, prefix + "rst_n", 1, o)}
 
     @classmethod
-    def _create_intf_cfg(cls, module, slave = False, prefix = ""):
-        """Create generic configuration interface. By default this creates the master interface that outputs
-        configuration data.
+    def _create_intf_simpleprog(cls, module, slave = False, prefix = ""):
+        """Create generic programming interface. By default this creates the master interface that outputs
+        programming data.
 
         Args:
             module (`Module`):
-            slave (:obj:`bool`): If set, slave interface is added to ``module``
+            slave (:obj:`bool`): If set, create slave interface \(accepts programming data\) instead of master
+                interface
             prefix (:obj:`str`): Prefix of the port names
         """
         i, o = ((PortDirection.output, PortDirection.input_) if slave else
                 (PortDirection.input_, PortDirection.output))
-        return {prefix + "rst_n": ModuleUtils.create_port(module, prefix + "rst_n", 1, o),
-                prefix + "status": ModuleUtils.create_port(module, prefix + "status", 2, i),
-                prefix + "req_rdy": ModuleUtils.create_port(module, prefix + "req_rdy", 1, i),
-                prefix + "req_val": ModuleUtils.create_port(module, prefix + "req_val", 1, o),
-                prefix + "req_addr": ModuleUtils.create_port(module, prefix + "req_addr", 12, o),
-                prefix + "req_strb": ModuleUtils.create_port(module, prefix + "req_strb", 8, o),
-                prefix + "req_data": ModuleUtils.create_port(module, prefix + "req_data", 64, o),
-                prefix + "resp_rdy": ModuleUtils.create_port(module, prefix + "resp_rdy", 1, o),
-                prefix + "resp_val": ModuleUtils.create_port(module, prefix + "resp_val", 1, i),
-                prefix + "resp_err": ModuleUtils.create_port(module, prefix + "resp_err", 1, i),
-                prefix + "resp_data": ModuleUtils.create_port(module, prefix + "resp_data", 64, i),
+        return {prefix + "rst_n":       ModuleUtils.create_port(module, prefix + "rst_n",       1,  o),
+                prefix + "status":      ModuleUtils.create_port(module, prefix + "status",      2,  i),
+                prefix + "req_rdy":     ModuleUtils.create_port(module, prefix + "req_rdy",     1,  i),
+                prefix + "req_val":     ModuleUtils.create_port(module, prefix + "req_val",     1,  o),
+                prefix + "req_addr":    ModuleUtils.create_port(module, prefix + "req_addr",    12, o),
+                prefix + "req_strb":    ModuleUtils.create_port(module, prefix + "req_strb",    8,  o),
+                prefix + "req_data":    ModuleUtils.create_port(module, prefix + "req_data",    64, o),
+                prefix + "resp_rdy":    ModuleUtils.create_port(module, prefix + "resp_rdy",    1,  o),
+                prefix + "resp_val":    ModuleUtils.create_port(module, prefix + "resp_val",    1,  i),
+                prefix + "resp_err":    ModuleUtils.create_port(module, prefix + "resp_err",    1,  i),
+                prefix + "resp_data":   ModuleUtils.create_port(module, prefix + "resp_data",   64, i),
                 }
 
     @classmethod
@@ -116,7 +115,7 @@ class Integration(object):
         return d
 
     @classmethod
-    def _register_lib(cls, context):
+    def _register_cells(cls, context):
         """Register integration-related modules in to the module database.
 
         Args:
@@ -157,6 +156,8 @@ class Integration(object):
 
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_mprot"],
                 context.database[ModuleView.logical, "prga_ecc_parity"], "i_ecc_checker")
+        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_mprot"],
+                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_buf")
 
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_sax"],
                 context.database[ModuleView.logical, "prga_async_fifo"], "i_sax_fifo")
@@ -165,6 +166,8 @@ class Integration(object):
 
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_uprot"],
                 context.database[ModuleView.logical, "prga_ecc_parity"], "i_ecc_checker")
+        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_uprot"],
+                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_buf")
 
         ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
                 context.database[ModuleView.logical, "prga_valrdy_buf"], "i_awaddr")
@@ -186,287 +189,90 @@ class Integration(object):
                 view = ModuleView.logical,
                 module_class = ModuleClass.aux,
                 verilog_template = "prga_sysintf.tmpl.v")
-        cls._create_intf_syscon(sysintf, True)
-        cls._create_intf_reg(sysintf, True, "reg_")
-        cls._create_intf_ccm(sysintf, False, "ccm_")
-        cls._create_intf_cfg(sysintf, False, "cfg_")
-        cls._create_intf_syscon(sysintf, False, "a")
+        cls._create_intf_syscon     (sysintf, True)          # programming clock and reset
+        cls._create_intf_syscon     (sysintf, False, "a")    # application clock and reset
+        cls._create_intf_reg        (sysintf, True, "reg_")
+        cls._create_intf_ccm        (sysintf, False, "ccm_")
+        cls._create_intf_simpleprog (sysintf, False, "prog_")
+        cls._create_intf_reg        (sysintf, False, "ureg_", True)
+        cls._create_intf_ccm        (sysintf, True, "uccm_", True)
         ModuleUtils.create_port(sysintf, "urst_n", 1, PortDirection.output)
-        cls._create_intf_reg(sysintf, False, "ureg_", True)
-        cls._create_intf_ccm(sysintf, True, "uccm_", True)
         ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_ctrl"], "i_ctrl")
         ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_ccm_transducer"], "i_transducer")
         ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_sax"], "i_sax")
         ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_uprot"], "i_uprot")
         ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_mprot"], "i_mprot")
 
+
     @classmethod
-    def ioplan_syscon(cls, context, 
-            start_pos = None, subtile = None, counterclockwise = None, planner = None):
-        """Constrain IOs for cache-coherent memory interface.
+    def _create_design_intf(cls, context, interfaces):
+        """Create a `DesignIntf` object with the specified ``interfaces``.
 
         Args:
             context (`Context`):
-
-        Keyword Args:
-            start_pos (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Starting position for IO scanning
-            subtile (:obj:`int`): Starting subtile for IO scanning
-            counterclockwise (:obj:`bool`): If set to True, scan IO in counter-clockwise direction
-            planner (`IOPlanner`): The IO planner used for planning IO. If not specified, a new IO planner is used
+            interfaces (:obj:`Container` [`InterfaceClass` ]): `InterfaceClass.syscon` is always added
 
         Returns:
-            :obj:`Mapping` [:obj:`str`, `IOConstraints` ]): Mapping from port names to IOs
+            `DesignIntf`:
         """
+        d = DesignIntf("design")
 
-        # get the summary
-        if (interfaces := getattr(context.summary, "intf", None)) is None:
-            interfaces = context.summary.intf = {}
+        # 1. add InterfaceClass.syscon first
+        if True:
+            # create the ports
+            clk = d.add_port("clk", PortDirection.input_)
+            rst_n = d.add_port("rst_n", PortDirection.input_)
 
-        # get or create constraints entry
-        interface = interfaces.setdefault(InterfaceClass.syscon, {})
-        if (constraints := interface.get("constraints", None)) is not None:
-            return constraints
-        else:
-            constraints = interface["constraints"] = {}
+            # needs special handling of clock
+            for g in context.globals_.values():
+                if g.is_clock:
+                    clk.set_io_constraint(g.bound_to_position, g.bound_to_subtile)
+                    break
+            if clk.get_io_constraint() is None:
+                raise PRGAAPIError("No clock found in the fabric")
 
-        # create IOPlanner
-        if planner is None:
-            planner = IOPlanner(context, uno(start_pos, (0, 0)), uno(subtile, 0), uno(counterclockwise, False))
-        else:
-            planner.reset_scanning(start_pos, subtile, counterclockwise)
+        # 2. process other interfaces
+        for interface in (set(iter(interfaces)) - {InterfaceClass.syscon}):
+            if interface.is_reg_simple:
+                d.add_port("ureg_req_rdy",          PortDirection.output)
+                d.add_port("ureg_req_val",          PortDirection.input_)
+                d.add_port("ureg_req_addr",         PortDirection.input_,   12)
+                d.add_port("ureg_req_strb",         PortDirection.input_,   8)
+                d.add_port("ureg_req_data",         PortDirection.input_,   64)
+                d.add_port("ureg_resp_val",         PortDirection.output)
+                d.add_port("ureg_resp_rdy",         PortDirection.input_)
+                d.add_port("ureg_resp_data",        PortDirection.output,   64)
+                d.add_port("ureg_resp_ecc",         PortDirection.output,   1)
+            elif interface.is_ccm_simple:
+                d.add_port("uccm_req_rdy",          PortDirection.input_)
+                d.add_port("uccm_req_val",          PortDirection.output)
+                d.add_port("uccm_req_type",         PortDirection.output,   3)
+                d.add_port("uccm_req_addr",         PortDirection.output,   40)
+                d.add_port("uccm_req_data",         PortDirection.output,   64)
+                d.add_port("uccm_req_size",         PortDirection.output,   3)
+                d.add_port("uccm_req_threadid",     PortDirection.output,   1)
+                d.add_port("uccm_req_amo_opcode",   PortDirection.output,   4)
+                d.add_port("uccm_req_ecc",          PortDirection.output,   1)
+                d.add_port("uccm_resp_rdy",         PortDirection.output)
+                d.add_port("uccm_resp_val",         PortDirection.input_)
+                d.add_port("uccm_resp_type",        PortDirection.input_,   3)
+                d.add_port("uccm_resp_threadid",    PortDirection.input_,   1)
+                d.add_port("uccm_resp_addr",        PortDirection.input_,   slice(10, 3, -1))
+                d.add_port("uccm_resp_data",        PortDirection.input_,   128)
+            else:
+                raise PRGAAPIError("Unsupported interface class: {:r}".format(interface))
 
-        # find and constrain clock
-        for g in context.globals_.values():
-            if g.is_clock:
-                ios = constraints["clk"] = IOConstraints(IOType.ipin)
-                planner.use(IOType.ipin, g.bound_to_position, g.bound_to_subtile)
-                ios[0] = g.bound_to_position, g.bound_to_subtile
-                break
-        if "clk" not in constraints:
-            raise PRGAAPIError("No clock found in the fabric")
-
-        # constrain reset
-        for g in context.globals_.values():
-            # FIXME: matching reset net based on name
-            if not g.is_clock and g.width == 1 and "rst" in g.name.lower():
-                ios = constraints["rst_n"] = IOConstraints(IOType.ipin)
-                planner.use(IOType.ipin, g.bound_to_position, g.bound_to_subtile)
-                ios[0] = g.bound_to_position, g.bound_to_subtile
-                break
-        if "rst_n" not in constraints:
-            ios = constraints["rst_n"] = IOConstraints(IOType.ipin)
-            ios[0] = planner.pop(IOType.ipin)
-
-        return constraints
+        # 3. return design interface object
+        return d
 
     @classmethod
-    def ioplan_ccm(cls, context, *,
-            start_pos = None, subtile = None, counterclockwise = None, planner = None):
-        """Constrain IOs for cache-coherent memory interface.
-
-        Args:
-            context (`Context`):
-
-        Keyword Args:
-            start_pos (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Starting position for IO scanning
-            subtile (:obj:`int`): Starting subtile for IO scanning
-            counterclockwise (:obj:`bool`): If set to True, scan IO in counter-clockwise direction
-            planner (`IOPlanner`): The IO planner used for planning IO. If not specified, a new IO planner is used
-
-        Returns:
-            :obj:`Mapping` [:obj:`str`, `IOConstraints` ]): Mapping from port names to IOs
-        """
-
-        # get or create constraints entry
-        if (interfaces := getattr(context.summary, "intf", None)) is None:
-            interfaces = context.summary.intf = {}
-        interface = interfaces.setdefault(InterfaceClass.ccm, {})
-        if (constraints := interface.get("constraints", None)) is not None:
-            return constraints
-        else:
-            constraints = interface["constraints"] = {}
-
-        # create IOPlanner
-        if planner is None:
-            planner = IOPlanner(context, uno(start_pos, (0, 0)), uno(subtile, 0), uno(counterclockwise, False))
-        else:
-            planner.reset_scanning(start_pos, subtile, counterclockwise)
-
-        # constrain clock/reset
-        cls.ioplan_syscon(context, planner = planner)
-
-        # generate constraints
-        for channel in (
-                # Request
-                {   "uccm_req_rdy":         (IOType.ipin, 1),
-                    "uccm_req_val":         (IOType.opin, 1),
-                    "uccm_req_type":        (IOType.opin, 3),
-                    "uccm_req_size":        (IOType.opin, 3),
-                    "uccm_req_threadid":    (IOType.opin, 1),
-                    "uccm_req_amo_opcode":  (IOType.opin, 4),
-                    "uccm_req_ecc":         (IOType.opin, 1), },
-                {   "uccm_req_addr":        (IOType.opin, 40), },
-                {   "uccm_req_data":        (IOType.opin, 64), },
-                # Response
-                {   "uccm_resp_rdy":        (IOType.opin, 1),
-                    "uccm_resp_val":        (IOType.ipin, 1),
-                    "uccm_resp_type":       (IOType.ipin, 3),
-                    "uccm_resp_threadid":   (IOType.ipin, 1),
-                    "uccm_resp_addr":       (IOType.ipin, 7), },
-                {   "uccm_resp_data":       (IOType.ipin, 128), },
-                ):
-            first = True
-            for p, (t, w) in channel.items():
-                ios = constraints[p] = IOConstraints(t, 0, w)
-                for i in range(w):
-                    ios[i] = planner.pop(t, force_change_tile = first)
-                    first = False
-        return constraints
-
-    @classmethod
-    def ioplan_reg(cls, context, data_bytes = 8, addr_width = 12, *,
-            start_pos = None, subtile = None, counterclockwise = None, planner = None):
-        """Constrain IOs for register-based interface.
-
-        Args:
-            context (`Context`):
-            data_bytes (:obj:`int`): Number of bytes of the data bus. Supported values are: 1, 2, 4, 8
-            addr_width (:obj:`int`): Width of the address bus. Supported values are: \(0, 12]
-
-        Keyword Args:
-            start_pos (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Starting position for IO scanning
-            subtile (:obj:`int`): Starting subtile for IO scanning
-            counterclockwise (:obj:`bool`): If set to True, scan IO in counter-clockwise direction
-            planner (`IOPlanner`): The IO planner used for planning IO. If not specified, a new IO planner is used
-
-        Returns:
-            :obj:`Mapping` [:obj:`str`, `IOConstraints` ]): Mapping from port names to IOs
-        """
-
-        # validate arguments
-        if data_bytes not in (1, 2, 4, 8):
-            raise PRGAAPIError("Invalid data_bytes: {}".format(data_bytes))
-        elif not 0 < addr_width <= 12:
-            raise PRGAAPIError("Invalid addr_width: {}".format(data_bytes))
-
-        # get or create constraints entry
-        if (interfaces := getattr(context.summary, "intf", None)) is None:
-            interfaces = context.summary.intf = {}
-        interface = interfaces.setdefault(InterfaceClass.reg, {})
-        if (interface.setdefault("data_bytes", data_bytes) != data_bytes or
-                interface.setdefault("addr_width", addr_width) != addr_width):
-            raise PRGAAPIError("Existing register-based interface is configured (data_bytes: {}, addr_width: {})"
-                    .format(data_bytes, addr_width))
-        if (constraints := interface.get("constraints", None)) is not None:
-            return constraints
-        else:
-            constraints = interface["constraints"] = {}
-
-        # create IOPlanner
-        if planner is None:
-            planner = IOPlanner(context, uno(start_pos, (0, 0)), uno(subtile, 0), uno(counterclockwise, False))
-        else:
-            planner.reset_scanning(start_pos, subtile, counterclockwise)
-
-        # constrain clock/reset
-        cls.ioplan_syscon(context, planner = planner)
-
-        # other ports
-        for channel in (
-                # Request
-                {   "ureg_req_rdy":     (IOType.opin, 1),
-                    "ureg_req_val":     (IOType.ipin, 1),
-                    "ureg_req_strb":    (IOType.ipin, data_bytes), },
-                {   "ureg_req_addr":    (IOType.ipin, addr_width), },
-                {   "ureg_req_data":    (IOType.ipin, data_bytes * 8), },
-                # Response
-                {   "ureg_resp_rdy":    (IOType.ipin, 1),
-                    "ureg_resp_val":    (IOType.opin, 1),
-                    "ureg_resp_ecc":    (IOType.opin, 1), },
-                {   "ureg_resp_data":   (IOType.opin, data_bytes * 8), },
-                ):
-            first = True
-            for p, (t, w) in channel.items():
-                ios = constraints[p] = IOConstraints(t, 0, w)
-                for i in range(w):
-                    ios[i] = planner.pop(t, force_change_tile = first)
-                    first = False
-        return constraints
-
-    @classmethod
-    def ioplan_axi4lite(cls, context, data_bytes = 8, addr_width = 12, *,
-            start_pos = None, subtile = None, counterclockwise = None, planner = None):
-        """Constrain IOs for AXI4Lite interface.
-
-        Args:
-            context (`Context`):
-            data_bytes (:obj:`int`): Number of bytes of the AXI4Lite interface. Supported values are: 1, 2, 4, 8
-            addr_width (:obj:`int`): Width of the address buses of the AXI4Lite interface. Supported values are: \(0,
-                12]
-
-        Keyword Args:
-            start_pos (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Starting position for IO scanning
-            subtile (:obj:`int`): Starting subtile for IO scanning
-            counterclockwise (:obj:`bool`): If set to True, scan IO in counter-clockwise direction
-            planner (`IOPlanner`): The IO planner used for planning IO. If not specified, a new IO planner is used
-
-        Returns:
-            :obj:`Mapping` [:obj:`str`, `IOConstraints` ]): Mapping from port names to IOs
-        """
-
-        # validate arguments
-        if data_bytes not in (1, 2, 4, 8):
-            raise PRGAAPIError("Invalid data_bytes: {}".format(data_bytes))
-        elif not 0 < addr_width <= 12:
-            raise PRGAAPIError("Invalid addr_width: {}".format(data_bytes))
-
-        # get or create constraints entry
-        if (interfaces := getattr(context.summary, "intf", None)) is None:
-            interfaces = context.summary.intf = {}
-        interface = interfaces.setdefault(InterfaceClass.axi4lite, {})
-        if (interface.setdefault("data_bytes", data_bytes) != data_bytes or
-                interface.setdefault("addr_width", addr_width) != addr_width):
-            raise PRGAAPIError("Existing AXI4Lite interface is configured (data_bytes: {}, addr_width: {})"
-                    .format(data_bytes, addr_width))
-        if (constraints := interface.get("constraints", None)) is not None:
-            return constraints
-        else:
-            constraints = interface["constraints"] = {}
-
-        # create IOPlanner
-        if planner is None:
-            planner = IOPlanner(context, uno(start_pos, (0, 0)), uno(subtile, 0), uno(counterclockwise, False))
-        else:
-            planner.reset_scanning(start_pos, subtile, counterclockwise)
-
-        # constrain clock/reset
-        cls.ioplan_syscon(context, planner = planner)
-
-        # other ports
-        ti, to = IOType.ipin, IOType.opin
-        for channel in (
-                {"AWREADY": (to, 1), "AWVALID": (ti, 1), "AWPROT": (ti, 3), "AWADDR": (ti, addr_width), },
-                {"WREADY": (to, 1), "WVALID": (ti, 1), "WSTRB": (ti, data_bytes), "WDATA": (ti, data_bytes * 8), },
-                {"BVALID": (to, 1), "BRESP": (to, 2), "BREADY": (ti, 1), },
-                {"ARREADY": (to, 1), "ARVALID": (ti, 1), "ARPROT": (ti, 3), "ARADDR": (ti, addr_width), },
-                {"RVALID": (to, 1), "RRESP": (to, 2), "RDATA": (to, data_bytes * 8), "RREADY": (ti, 1), },
-                ):
-            first = True
-            for p, (t, w) in channel.items():
-                ios = constraints[p] = IOConstraints(t, 0, w)
-                for i in range(w):
-                    ios[i] = planner.pop(t, force_change_tile = first)
-                    first = False
-        return constraints
-
-    @classmethod
-    def build_system(cls, context, interfaces = (InterfaceClass.ccm, InterfaceClass.reg), *,
+    def build_system(cls, context, interfaces = (InterfaceClass.ccm_simple, InterfaceClass.reg_simple), *,
             name = "prga_system", core = None):
         """Create the system top wrapping the reconfigurable fabric.
 
         Args:
             context (`Context`):
-            interfaces (:obj:`Sequence` [`InterfaceClass` ]): Interfaces added
+            interfaces (:obj:`Container` [`InterfaceClass` ]): Interfaces added
 
         Keyword Args:
             name (:obj:`str`): Name of the system top module
@@ -474,18 +280,16 @@ class Integration(object):
                 converted to ``{name}_core``\), an extra layer of wrapper is created around the fabric and
                 instantiated in the top-level module
         """
-        if set(iter(interfaces)) != {InterfaceClass.ccm, InterfaceClass.reg}:
-            raise NotImplementedError("The only implemented interface is (ccm, reg) at the moment")
+        if set(iter(interfaces)) != {InterfaceClass.ccm_simple, InterfaceClass.reg_simple}:
+            raise NotImplementedError("The only implemented interface is (ccm_simple, reg_simple) at the moment")
 
         if core is True:
             core = name + "_core"
 
-        # get or create IO constraints
-        planner = IOPlanner(context)
-        constraints = dict(
-                **cls.ioplan_syscon(context, planner = planner),
-                **cls.ioplan_reg(context, planner = planner),
-                **cls.ioplan_ccm(context, planner = planner))
+        # get or create design interface
+        if (intf := getattr(context.summary, "intf", None)) is None:
+            intf = context.summary.intf = cls._create_design_intf(context, interfaces)
+        IOPlanner.autoplan(context, intf)
 
         # create system
         system = context.system_top = Module(name, view = ModuleView.logical, module_class = ModuleClass.aux)
@@ -505,6 +309,8 @@ class Integration(object):
             else:
                 NetUtils.connect(sysintf.pins[port_name], port)
 
+        # instantiate fabric
+        nets = None
         if core:
             # build system core (fabric wrapper)
             core = context._database[ModuleView.logical, core] = Module(core,
@@ -518,20 +324,8 @@ class Integration(object):
             # instantiate fabric within core
             fabric = ModuleUtils.instantiate(core,
                     context.database[ModuleView.logical, context.top.key], "i_fabric")
+            nets = core.ports
 
-            # connect within core
-            for name, ios in constraints.items():
-                if name == "clk":
-                    NetUtils.connect(core.ports["uclk"], fabric.pins[(IOType.ipin, ) + ios[0]])
-                elif name == "rst_n":
-                    NetUtils.connect(core.ports["urst_n"], fabric.pins[(IOType.ipin, ) + ios[0]])
-                elif ios.type_.is_ipin:
-                    for i, key in enumerate(ios, ios.low):
-                        NetUtils.connect(core.ports[name][i], fabric.pins[(IOType.ipin, ) + key])
-                else:
-                    for i, key in enumerate(ios, ios.low):
-                        NetUtils.connect(fabric.pins[(IOType.opin, ) + key], core.ports[name][i])
-            
             # instantiate core in system
             core = ModuleUtils.instantiate(system, core, "i_core")
 
@@ -550,16 +344,23 @@ class Integration(object):
             # instantiate fabric within system
             fabric = ModuleUtils.instantiate(system,
                     context.database[ModuleView.logical, context.top.key], "i_fabric")
+            nets = sysintf.pins
 
-            # connect sysintf with fabric
-            NetUtils.connect(sysintf.pins["aclk"], fabric.pins[(IOType.ipin, ) + constraints["clk"][0]])
-            NetUtils.connect(sysintf.pins["urst_n"], fabric.pins[(IOType.ipin, ) + constraints["rst_n"][0]])
-            for name, ios in constraints.items():
-                if name in ("clk", "rst_n"):
-                    continue
-                elif ios.type_.is_ipin:
-                    for i, key in enumerate(ios, ios.low):
-                        NetUtils.connect(sysintf.pins[name][i], fabric.pins[(IOType.ipin, ) + key])
-                else:
-                    for i, key in enumerate(ios, ios.low):
-                        NetUtils.connect(fabric.pins[(IOType.opin, ) + key], sysintf.pins[name][i])
+        # connect fabric
+        for name, port in intf.ports.items():
+            if name == "clk":
+                NetUtils.connect(nets["uclk"],      fabric.pins[(IOType.ipin, ) + port.get_io_constraint()])
+            elif name == "rst_n":
+                NetUtils.connect(nets["urst_n"],    fabric.pins[(IOType.ipin, ) + port.get_io_constraint()])
+            elif port.direction.is_input:
+                for i, (idx, io) in enumerate(port.iter_io_constraints()):
+                    if idx is None:
+                        NetUtils.connect(nets[name],    fabric.pins[(IOType.ipin, ) + io])
+                    else:
+                        NetUtils.connect(nets[name][i], fabric.pins[(IOType.ipin, ) + io])
+            else:
+                for i, (idx, io) in enumerate(port.iter_io_constraints()):
+                    if idx is None:
+                        NetUtils.connect(fabric.pins[(IOType.opin, ) + io], nets[name])
+                    else:
+                        NetUtils.connect(fabric.pins[(IOType.opin, ) + io], nets[name][i])

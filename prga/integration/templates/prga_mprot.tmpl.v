@@ -11,7 +11,9 @@
 `default_nettype none
 `endif
 
-module prga_mprot (
+module prga_mprot #(
+    parameter   DECOUPLED = 1
+) (
     input wire                                  clk,
     input wire                                  rst_n,
 
@@ -33,7 +35,7 @@ module prga_mprot (
     input wire                                  urst_n,
 
     // == Generic Cache-Coherent Memory Interface ============================
-    output reg                                  ccm_req_rdy,
+    output wire                                 ccm_req_rdy,
     input wire                                  ccm_req_val,
     input wire [`PRGA_CCM_REQTYPE_WIDTH-1:0]    ccm_req_type,
     input wire [`PRGA_CCM_ADDR_WIDTH-1:0]       ccm_req_addr,
@@ -44,11 +46,11 @@ module prga_mprot (
     input wire [`PRGA_ECC_WIDTH-1:0]            ccm_req_ecc,
 
     input wire                                  ccm_resp_rdy,
-    output reg                                  ccm_resp_val,
-    output reg [`PRGA_CCM_RESPTYPE_WIDTH-1:0]   ccm_resp_type,
-    output reg [`PRGA_CCM_THREADID_WIDTH-1:0]   ccm_resp_threadid,
-    output reg [`PRGA_CCM_CACHETAG_INDEX]       ccm_resp_addr,  // only used for invalidations
-    output reg [`PRGA_CCM_CACHELINE_WIDTH-1:0]  ccm_resp_data
+    output wire                                 ccm_resp_val,
+    output wire [`PRGA_CCM_RESPTYPE_WIDTH-1:0]  ccm_resp_type,
+    output wire [`PRGA_CCM_THREADID_WIDTH-1:0]  ccm_resp_threadid,
+    output wire [`PRGA_CCM_CACHETAG_INDEX]      ccm_resp_addr,  // only used for invalidations
+    output wire [`PRGA_CCM_CACHELINE_WIDTH-1:0] ccm_resp_data
     );
 
     // =======================================================================
@@ -90,42 +92,91 @@ module prga_mprot (
     assign ccm_intf_en = rst_n && app_en && ccm_en && urst_n && ~error_reported;
 
     // == Register All Inputs ==
-    reg                                     ccm_req_val_f, ccm_req_stall;
-    reg [`PRGA_CCM_REQTYPE_WIDTH-1:0]       ccm_req_type_f;
-    reg [`PRGA_CCM_ADDR_WIDTH-1:0]          ccm_req_addr_f;
-    reg [`PRGA_CCM_DATA_WIDTH-1:0]          ccm_req_data_f;
-    reg [`PRGA_CCM_SIZE_WIDTH-1:0]          ccm_req_size_f;
-    reg [`PRGA_CCM_THREADID_WIDTH-1:0]      ccm_req_threadid_f;
-    reg [`PRGA_CCM_AMO_OPCODE_WIDTH-1:0]    ccm_req_amo_opcode_f;
-    reg [`PRGA_ECC_WIDTH-1:0]               ccm_req_ecc_f;
+    reg  ccm_req_rdy_p;
+    wire ccm_req_val_f;
+    wire [`PRGA_CCM_REQTYPE_WIDTH-1:0]      ccm_req_type_f;
+    wire [`PRGA_CCM_ADDR_WIDTH-1:0]         ccm_req_addr_f;
+    wire [`PRGA_CCM_DATA_WIDTH-1:0]         ccm_req_data_f;
+    wire [`PRGA_CCM_SIZE_WIDTH-1:0]         ccm_req_size_f;
+    wire [`PRGA_CCM_THREADID_WIDTH-1:0]     ccm_req_threadid_f;
+    wire [`PRGA_CCM_AMO_OPCODE_WIDTH-1:0]   ccm_req_amo_opcode_f;
+    wire [`PRGA_ECC_WIDTH-1:0]              ccm_req_ecc_f;
 
-    always @(posedge clk) begin
-        if (~ccm_intf_en) begin
-            ccm_req_val_f           <= 1'b0;
-            ccm_req_type_f          <= {`PRGA_CCM_REQTYPE_WIDTH {1'b0} };
-            ccm_req_addr_f          <= {`PRGA_CCM_ADDR_WIDTH {1'b0} };
-            ccm_req_data_f          <= {`PRGA_CCM_DATA_WIDTH {1'b0} };
-            ccm_req_size_f          <= {`PRGA_CCM_SIZE_WIDTH {1'b0} };
-            ccm_req_threadid_f      <= {`PRGA_CCM_THREADID_WIDTH {1'b0} };
-            ccm_req_amo_opcode_f    <= `PRGA_CCM_AMO_OPCODE_NONE;
-            ccm_req_ecc_f           <= {`PRGA_ECC_WIDTH {1'b0} };
-        end else if (ccm_req_rdy && ccm_req_val) begin
-            ccm_req_val_f           <= 1'b1;
-            ccm_req_type_f          <= ccm_req_type;
-            ccm_req_addr_f          <= ccm_req_addr;
-            ccm_req_data_f          <= ccm_req_data;
-            ccm_req_size_f          <= ccm_req_size;
-            ccm_req_threadid_f      <= ccm_req_threadid;
-            ccm_req_amo_opcode_f    <= ccm_req_amo_opcode;
-            ccm_req_ecc_f           <= ccm_req_ecc;
-        end else if (~ccm_req_stall) begin
-            ccm_req_val_f           <= 1'b0;
-        end
-    end
+    prga_valrdy_buf #(
+        .REGISTERED         (DECOUPLED)
+        ,.DECOUPLED         (DECOUPLED)
+        ,.DATA_WIDTH        (
+            `PRGA_CCM_REQTYPE_WIDTH
+            + `PRGA_CCM_ADDR_WIDTH
+            + `PRGA_CCM_DATA_WIDTH
+            + `PRGA_CCM_SIZE_WIDTH
+            + `PRGA_CCM_THREADID_WIDTH
+            + `PRGA_CCM_AMO_OPCODE_WIDTH
+            + `PRGA_ECC_WIDTH
+        )
+    ) uccm_req_valrdy_buf (
+        .clk                (clk)
+        ,.rst               (~ccm_intf_en)
+        ,.rdy_o             (ccm_req_rdy)
+        ,.val_i             (ccm_req_val)
+        ,.data_i            ({
+            ccm_req_type
+            , ccm_req_addr
+            , ccm_req_data
+            , ccm_req_size
+            , ccm_req_threadid
+            , ccm_req_amo_opcode
+            , ccm_req_ecc
+        })
+        ,.rdy_i             (ccm_req_rdy_p)
+        ,.val_o             (ccm_req_val_f)
+        ,.data_o            ({
+            ccm_req_type_f
+            , ccm_req_addr_f
+            , ccm_req_data_f
+            , ccm_req_size_f
+            , ccm_req_threadid_f
+            , ccm_req_amo_opcode_f
+            , ccm_req_ecc_f
+        })
+        );
 
-    always @* begin
-        ccm_req_rdy = ccm_intf_en && (~ccm_req_val_f || ~ccm_req_stall);
-    end
+    wire ccm_resp_rdy_f;
+    reg  ccm_resp_val_p;
+    wire [`PRGA_CCM_RESPTYPE_WIDTH-1:0]       ccm_resp_type_p;
+    wire [`PRGA_CCM_THREADID_WIDTH-1:0]       ccm_resp_threadid_p;
+    wire [`PRGA_CCM_CACHETAG_INDEX]           ccm_resp_addr_p;
+    wire [`PRGA_CCM_CACHELINE_WIDTH-1:0]      ccm_resp_data_p;
+
+    prga_valrdy_buf #(
+        .REGISTERED         (DECOUPLED)
+        ,.DECOUPLED         (DECOUPLED)
+        ,.DATA_WIDTH        (
+            `PRGA_CCM_RESPTYPE_WIDTH
+            + `PRGA_CCM_THREADID_WIDTH
+            + (`PRGA_CCM_CACHETAG_HIGH - `PRGA_CCM_CACHETAG_LOW + 1)
+            + `PRGA_CCM_CACHELINE_WIDTH
+        )
+    ) uccm_resp_valrdy_buf (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.rdy_o             (ccm_resp_rdy_f)
+        ,.val_i             (ccm_resp_val_p)
+        ,.data_i            ({
+            ccm_resp_type_p
+            , ccm_resp_threadid_p
+            , ccm_resp_addr_p
+            , ccm_resp_data_p
+        })
+        ,.rdy_i             (ccm_resp_rdy)
+        ,.val_o             (ccm_resp_val)
+        ,.data_o            ({
+            ccm_resp_type
+            , ccm_resp_threadid
+            , ccm_resp_addr
+            , ccm_resp_data
+        })
+        );
 
     // == ECC Checker ==
     localparam ECC_CHECKER_WIDTH = (`PRGA_CCM_REQTYPE_WIDTH +
@@ -187,7 +238,7 @@ module prga_mprot (
 
     always @* begin
         req_state_next = req_state;
-        ccm_req_stall = 1'b1;
+        ccm_req_rdy_p = 1'b0;
         sax2asx_stall = 1'b1;
         asx_val = 1'b0;
         asx_data = {`PRGA_ASX_DATA_WIDTH {1'b0} };
@@ -216,7 +267,7 @@ module prga_mprot (
                     req_state_next = ST_REQ_INACTIVE;
                 end else if (~sax2asx_val && ccm_req_val_f) begin
                     asx_val = 1'b1;
-                    ccm_req_stall = ~asx_rdy;
+                    ccm_req_rdy_p = asx_rdy;
 
                     if (ccm_req_ecc_fail) begin
                         asx_data[`PRGA_ASX_MSGTYPE_INDEX] = `PRGA_ASX_MSGTYPE_ERR;
@@ -374,9 +425,9 @@ module prga_mprot (
             resp_timeout_f <= 1'b0;
             resp_timer <= {`PRGA_PROT_TIMER_WIDTH{1'b0} };
         end else if (~resp_timeout_f) begin
-            if (ccm_resp_rdy) begin
+            if (ccm_resp_rdy_f) begin
                 resp_timer <= {`PRGA_PROT_TIMER_WIDTH{1'b0} };
-            end else if (ccm_resp_val) begin
+            end else if (ccm_resp_val_p) begin
                 resp_timer <= resp_timer + 1;
                 resp_timeout_f <= resp_timer >= timeout_limit;
             end
@@ -404,11 +455,11 @@ module prga_mprot (
         sax2asx_val = 1'b0;
         sax2asx_data = {`PRGA_ASX_DATA_WIDTH {1'b0} };
 
-        ccm_resp_val = 1'b0;
-        ccm_resp_type = {`PRGA_CCM_RESPTYPE_WIDTH {1'b0} };
-        ccm_resp_threadid = {`PRGA_CCM_THREADID_WIDTH {1'b0} };
-        ccm_resp_addr = { (`PRGA_CCM_CACHETAG_HIGH - `PRGA_CCM_CACHETAG_LOW + 1) {1'b0} };
-        ccm_resp_data = {`PRGA_CCM_CACHELINE_WIDTH {1'b0} };
+        ccm_resp_val_p = 1'b0;
+        ccm_resp_type_p = {`PRGA_CCM_RESPTYPE_WIDTH {1'b0} };
+        ccm_resp_threadid_p = {`PRGA_CCM_THREADID_WIDTH {1'b0} };
+        ccm_resp_addr_p = { (`PRGA_CCM_CACHETAG_HIGH - `PRGA_CCM_CACHETAG_LOW + 1) {1'b0} };
+        ccm_resp_data_p = {`PRGA_CCM_CACHELINE_WIDTH {1'b0} };
 
         case (resp_state)
             ST_RESP_RST: begin
@@ -434,35 +485,35 @@ module prga_mprot (
                 case (sax_data_f[`PRGA_SAX_MSGTYPE_INDEX])
                     `PRGA_SAX_MSGTYPE_CCM_LOAD_ACK,
                     `PRGA_SAX_MSGTYPE_CCM_LOAD_NC_ACK: begin
-                        ccm_resp_val = 1'b1;
-                        ccm_resp_threadid = sax_data_f[`PRGA_SAX_THREADID_INDEX];
-                        ccm_resp_data = sax_data_f[0+:`PRGA_CCM_CACHELINE_WIDTH];
-                        sax_stall = ~ccm_resp_rdy;
+                        ccm_resp_val_p = 1'b1;
+                        ccm_resp_threadid_p = sax_data_f[`PRGA_SAX_THREADID_INDEX];
+                        ccm_resp_data_p = sax_data_f[0+:`PRGA_CCM_CACHELINE_WIDTH];
+                        sax_stall = ~ccm_resp_rdy_f;
 
                         if (sax_data_f[`PRGA_SAX_MSGTYPE_INDEX] == `PRGA_SAX_MSGTYPE_CCM_LOAD_NC_ACK) begin
-                            ccm_resp_type = `PRGA_CCM_RESPTYPE_LOAD_NC_ACK;
+                            ccm_resp_type_p = `PRGA_CCM_RESPTYPE_LOAD_NC_ACK;
                         end else begin
-                            ccm_resp_type = `PRGA_CCM_RESPTYPE_LOAD_ACK;
+                            ccm_resp_type_p = `PRGA_CCM_RESPTYPE_LOAD_ACK;
                         end
                     end
                     `PRGA_SAX_MSGTYPE_CCM_STORE_ACK,
                     `PRGA_SAX_MSGTYPE_CCM_STORE_NC_ACK: begin
-                        ccm_resp_val = 1'b1;
-                        ccm_resp_threadid = sax_data_f[`PRGA_SAX_THREADID_INDEX];
-                        sax_stall = ~ccm_resp_rdy;
+                        ccm_resp_val_p = 1'b1;
+                        ccm_resp_threadid_p = sax_data_f[`PRGA_SAX_THREADID_INDEX];
+                        sax_stall = ~ccm_resp_rdy_f;
 
                         if (sax_data_f[`PRGA_SAX_MSGTYPE_INDEX] == `PRGA_SAX_MSGTYPE_CCM_STORE_NC_ACK) begin
-                            ccm_resp_type = `PRGA_CCM_RESPTYPE_STORE_NC_ACK;
+                            ccm_resp_type_p = `PRGA_CCM_RESPTYPE_STORE_NC_ACK;
                         end else begin
-                            ccm_resp_type = `PRGA_CCM_RESPTYPE_STORE_ACK;
+                            ccm_resp_type_p = `PRGA_CCM_RESPTYPE_STORE_ACK;
                         end
                     end
                     `PRGA_SAX_MSGTYPE_CCM_AMO_ACK: begin
-                        ccm_resp_val = 1'b1;
-                        ccm_resp_type = `PRGA_CCM_RESPTYPE_AMO_ACK;
-                        ccm_resp_threadid = sax_data_f[`PRGA_SAX_THREADID_INDEX];
-                        ccm_resp_data = sax_data_f[0+:`PRGA_CCM_CACHELINE_WIDTH];
-                        sax_stall = ~ccm_resp_rdy;
+                        ccm_resp_val_p = 1'b1;
+                        ccm_resp_type_p = `PRGA_CCM_RESPTYPE_AMO_ACK;
+                        ccm_resp_threadid_p = sax_data_f[`PRGA_SAX_THREADID_INDEX];
+                        ccm_resp_data_p = sax_data_f[0+:`PRGA_CCM_CACHELINE_WIDTH];
+                        sax_stall = ~ccm_resp_rdy_f;
                     end
                 endcase
             end

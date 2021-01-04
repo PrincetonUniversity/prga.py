@@ -121,7 +121,7 @@ class Context(Object):
         database = self._database = {}
 
         BuiltinCellLibrary.register(self, dont_add_logical_primitives)
-        Integration._register_lib(self)
+        Integration._register_cells(self)
 
     # == low-level API =======================================================
     @property

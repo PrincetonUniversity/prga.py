@@ -30,7 +30,7 @@ if (dir_ := os.path.dirname(args.configuration)):
 
 # unpickle context
 _logger.info("Unpickling architecture context: {}".format(config["context"]))
-context = Context.unpickle(config["context"])
+context = Context.unpickle(os.path.expandvars(config["context"]))
 
 r = FileRenderer(os.path.join(os.path.dirname(__file__), "templates"))
 

@@ -11,7 +11,9 @@
     `default_nettype none
 `endif
 
-module prga_uprot (
+module prga_uprot #(
+    parameter   DECOUPLED = 1
+) (
     input wire                                  clk,
     input wire                                  rst_n,
 
@@ -34,16 +36,81 @@ module prga_uprot (
 
     // == Generic UREG Interface ==============================================
     input wire                                  ureg_req_rdy,
-    output reg                                  ureg_req_val,
-    output reg [`PRGA_CREG_ADDR_WIDTH-1:0]      ureg_req_addr,
-    output reg [`PRGA_CREG_DATA_BYTES-1:0]      ureg_req_strb,
-    output reg [`PRGA_CREG_DATA_WIDTH-1:0]      ureg_req_data,
+    output wire                                 ureg_req_val,
+    output wire [`PRGA_CREG_ADDR_WIDTH-1:0]     ureg_req_addr,
+    output wire [`PRGA_CREG_DATA_BYTES-1:0]     ureg_req_strb,
+    output wire [`PRGA_CREG_DATA_WIDTH-1:0]     ureg_req_data,
 
     input wire                                  ureg_resp_val,
-    output reg                                  ureg_resp_rdy,
+    output wire                                 ureg_resp_rdy,
     input wire [`PRGA_CREG_DATA_WIDTH-1:0]      ureg_resp_data,
     input wire [`PRGA_ECC_WIDTH-1:0]            ureg_resp_ecc
     );
+
+    // =======================================================================
+    // -- Val/Rdy Buffer -----------------------------------------------------
+    // =======================================================================
+    wire ureg_req_rdy_f;
+    reg  ureg_req_val_p;
+    reg  [`PRGA_CREG_ADDR_WIDTH-1:0] ureg_req_addr_p;
+    reg  [`PRGA_CREG_DATA_BYTES-1:0] ureg_req_strb_p;
+    reg  [`PRGA_CREG_DATA_WIDTH-1:0] ureg_req_data_p;
+
+    prga_valrdy_buf #(
+        .REGISTERED         (DECOUPLED)
+        ,.DECOUPLED         (DECOUPLED)
+        ,.DATA_WIDTH        (
+            `PRGA_CREG_ADDR_WIDTH
+            + `PRGA_CREG_DATA_BYTES
+            + `PRGA_CREG_DATA_WIDTH
+        )
+    ) ureg_req_valrdy_buf (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.rdy_o             (ureg_req_rdy_f)
+        ,.val_i             (ureg_req_val_p)
+        ,.data_i            ({
+            ureg_req_addr_p
+            , ureg_req_strb_p
+            , ureg_req_data_p
+        })
+        ,.rdy_i             (ureg_req_rdy)
+        ,.val_o             (ureg_req_val)
+        ,.data_o            ({
+            ureg_req_addr
+            , ureg_req_strb
+            , ureg_req_data
+        })
+        );
+
+    reg ureg_resp_rdy_p;
+    wire ureg_resp_val_f;
+    wire [`PRGA_CREG_DATA_WIDTH-1:0] ureg_resp_data_f;
+    wire [`PRGA_ECC_WIDTH-1:0] ureg_resp_ecc_f;
+
+    prga_valrdy_buf #(
+        .REGISTERED         (DECOUPLED)
+        ,.DECOUPLED         (DECOUPLED)
+        ,.DATA_WIDTH        (
+            `PRGA_CREG_DATA_WIDTH
+            + `PRGA_ECC_WIDTH
+        )
+    ) ureg_resp_valrdy_buf (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.rdy_o             (ureg_resp_rdy)
+        ,.val_i             (ureg_resp_val)
+        ,.data_i            ({
+            ureg_resp_data
+            , ureg_resp_ecc
+        })
+        ,.rdy_i             (ureg_resp_rdy_p)
+        ,.val_o             (ureg_resp_val_f)
+        ,.data_o            ({
+            ureg_resp_data_f
+            , ureg_resp_ecc_f
+        })
+        );
 
     // =======================================================================
     // -- Ctrl Registers -----------------------------------------------------
@@ -188,9 +255,9 @@ module prga_uprot (
             req_timeout_f <= 1'b0;
             req_timer <= {`PRGA_PROT_TIMER_WIDTH {1'b0} };
         end else if (~req_timeout_f) begin
-            if (ureg_req_rdy) begin
+            if (ureg_req_rdy_f) begin
                 req_timer <= {`PRGA_PROT_TIMER_WIDTH {1'b0} };
-            end else if (ureg_req_val) begin
+            end else if (ureg_req_val_p) begin
                 req_timer <= req_timer + 1;
                 req_timeout_f <= req_timer >= timeout_limit;
             end
@@ -203,10 +270,10 @@ module prga_uprot (
         op_r_next = OP_INVAL;
         data_r_next = {`PRGA_CREG_DATA_WIDTH {1'b0} };
 
-        ureg_req_val = 1'b0;
-        ureg_req_addr = {`PRGA_CREG_ADDR_WIDTH {1'b0} };
-        ureg_req_strb = {`PRGA_CREG_DATA_BYTES {1'b0} };
-        ureg_req_data = {`PRGA_CREG_DATA_WIDTH {1'b0} };
+        ureg_req_val_p = 1'b0;
+        ureg_req_addr_p = {`PRGA_CREG_ADDR_WIDTH {1'b0} };
+        ureg_req_strb_p = {`PRGA_CREG_DATA_BYTES {1'b0} };
+        ureg_req_data_p = {`PRGA_CREG_DATA_WIDTH {1'b0} };
 
         app_features_update = 1'b0;
         app_features_next = app_features;
@@ -245,11 +312,11 @@ module prga_uprot (
 
                 // Send UREG request
                 else begin
-                    ureg_req_val = 1'b1;
-                    ureg_req_addr = data_q[`PRGA_SAX_CREG_ADDR_INDEX];
-                    ureg_req_strb = {`PRGA_CREG_DATA_BYTES {1'b0} };
+                    ureg_req_val_p = 1'b1;
+                    ureg_req_addr_p = data_q[`PRGA_SAX_CREG_ADDR_INDEX];
+                    ureg_req_strb_p = {`PRGA_CREG_DATA_BYTES {1'b0} };
 
-                    if (ureg_req_rdy) begin
+                    if (ureg_req_rdy_f) begin
                         stall_q = 1'b0;
                         op_r_next = OP_READ_UREG;
                     end else begin
@@ -293,26 +360,26 @@ module prga_uprot (
 
                 // Send UREG requst
                 else begin
-                    ureg_req_val = 1'b1;
-                    ureg_req_addr = data_q[`PRGA_SAX_CREG_ADDR_INDEX];
-                    ureg_req_data = data_q[0+:`PRGA_CREG_DATA_WIDTH];
+                    ureg_req_val_p = 1'b1;
+                    ureg_req_addr_p = data_q[`PRGA_SAX_CREG_ADDR_INDEX];
+                    ureg_req_data_p = data_q[0+:`PRGA_CREG_DATA_WIDTH];
 
                     case (app_dwidth)
                         `PRGA_APP_UREG_DWIDTH_1B: begin
-                            ureg_req_strb = 8'h01 & data_q[`PRGA_SAX_CREG_STRB_INDEX];
+                            ureg_req_strb_p = 8'h01 & data_q[`PRGA_SAX_CREG_STRB_INDEX];
                         end
                         `PRGA_APP_UREG_DWIDTH_2B: begin
-                            ureg_req_strb = 8'h03 & data_q[`PRGA_SAX_CREG_STRB_INDEX];
+                            ureg_req_strb_p = 8'h03 & data_q[`PRGA_SAX_CREG_STRB_INDEX];
                         end
                         `PRGA_APP_UREG_DWIDTH_4B: begin
-                            ureg_req_strb = 8'h0f & data_q[`PRGA_SAX_CREG_STRB_INDEX];
+                            ureg_req_strb_p = 8'h0f & data_q[`PRGA_SAX_CREG_STRB_INDEX];
                         end
                         default: begin
-                            ureg_req_strb =         data_q[`PRGA_SAX_CREG_STRB_INDEX];
+                            ureg_req_strb_p =         data_q[`PRGA_SAX_CREG_STRB_INDEX];
                         end
                     endcase
 
-                    if (ureg_req_rdy) begin
+                    if (ureg_req_rdy_f) begin
                         stall_q = 1'b0;
                         op_r_next = OP_WRITE_UREG;
                     end else begin
@@ -336,9 +403,9 @@ module prga_uprot (
             resp_timeout_f <= 1'b0;
             resp_timer <= {`PRGA_PROT_TIMER_WIDTH {1'b0} };
         end else if (~resp_timeout_f) begin
-            if (ureg_resp_val) begin
+            if (ureg_resp_val_f) begin
                 resp_timer <= {`PRGA_PROT_TIMER_WIDTH {1'b0} };
-            end else if (ureg_resp_rdy) begin
+            end else if (ureg_resp_rdy_p) begin
                 resp_timer <= resp_timer + 1;
                 resp_timeout_f <= resp_timer >= timeout_limit;
             end
@@ -363,7 +430,7 @@ module prga_uprot (
         data_x_next = {`PRGA_CREG_DATA_WIDTH {1'b0} };
         ecc_x_next = {`PRGA_ECC_WIDTH {1'b0} };
 
-        ureg_resp_rdy = 1'b0;
+        ureg_resp_rdy_p = 1'b0;
 
         if (~stall_x) begin
             case (op_r)
@@ -388,12 +455,12 @@ module prga_uprot (
 
                     // Collect UREG response
                     else begin
-                        ureg_resp_rdy = 1'b1;
+                        ureg_resp_rdy_p = 1'b1;
 
-                        if (ureg_resp_val) begin
+                        if (ureg_resp_val_f) begin
                             op_x_next = OP_READ_UREG;
-                            ecc_x_next = ureg_resp_ecc;
-                            data_x_next = ureg_resp_data;
+                            ecc_x_next = ureg_resp_ecc_f;
+                            data_x_next = ureg_resp_data_f;
                         end else begin
                             stall_r = 1'b1;
                         end
@@ -413,9 +480,9 @@ module prga_uprot (
 
                     // Collect UREG response
                     else begin
-                        ureg_resp_rdy = 1'b1;
+                        ureg_resp_rdy_p = 1'b1;
 
-                        if (ureg_resp_val) begin
+                        if (ureg_resp_val_f) begin
                             op_x_next = OP_WRITE_UREG;
                         end else begin
                             stall_r = 1'b1;

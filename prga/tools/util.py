@@ -102,8 +102,8 @@ class DesignIntf(Object):
             if self.range_ is None:
                 yield None, self.ioconstraints
             else:
-                for i in range(self.range_.start, self.range_.stop, self.range_.step):
-                    yield i, self.ioconstraints[i]
+                for i, io in enumerate(self.ioconstraints):
+                    yield self.range_.start + i * self.range_.step, io
 
         def get_io_constraint(self, index = None):
             """Get the IO constraint assigned to this port, or a bit in this port.
@@ -120,7 +120,7 @@ class DesignIntf(Object):
                 IO constraint.
             """
             if self.range_ is None:
-                if index is None:
+                if index in (None, 0):
                     return self.ioconstraints
                 else:
                     raise PRGAAPIError("Design port {} is single-bit".format(self.name))
@@ -151,7 +151,7 @@ class DesignIntf(Object):
                 IO constraint.
             """
             if self.range_ is None:
-                if index is None:
+                if index in (None, 0):
                     self.ioconstraints = Position(*position), subtile
                 else:
                     raise PRGAAPIError("Design port {} is single-bit".format(self.name))
@@ -183,7 +183,7 @@ class DesignIntf(Object):
             name (:obj:`str`): Name of the port
             direction (`PortDirection`): Direction of the port
             range_ (:obj:`int`): [Overloaded] Width of the port. When using a single :obj:`int`, the port is assumed
-                to be equivalent to Verilog ``{input|output} [0:{range_ - 1}] {name}``.
+                to be equivalent to Verilog ``{input|output} [{range_ - 1}:0] {name}``.
             range_ (:obj:`slice`): [Overloaded] Range specifier of the port. ``step`` must be ``None``, ``1`` or
                 ``-1``. When using a :obj:`slice` object, the port is equivalent to Verilog ``{input|output}
                 [{range_.start}:{range_.stop - range_.step}] {name}``. Note the extra ``step`` caused by the

@@ -3,6 +3,7 @@
 module prga_ram_1r1w #(
     parameter   DATA_WIDTH = 32
     , parameter ADDR_WIDTH = 10
+    , parameter RAM_ROWS = 0        // default: 2 ** ADDR_WIDTH
 ) (
     input wire clk
     , input wire rst
@@ -17,7 +18,7 @@ module prga_ram_1r1w #(
     , input wire [DATA_WIDTH - 1:0] bw
     );
 
-    localparam  DATA_ROWS = 1 << ADDR_WIDTH;
+    localparam  DATA_ROWS = RAM_ROWS == 0 ? (1 << ADDR_WIDTH) : RAM_ROWS;
     reg [DATA_WIDTH - 1:0] data [0:DATA_ROWS - 1];
 
     integer i, j;

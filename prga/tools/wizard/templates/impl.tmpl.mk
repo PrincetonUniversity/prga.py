@@ -30,7 +30,7 @@ DESIGN_SRCS += {{ abspath(src) }}
 
 DESIGN_INCS :=
 {%- for dir_ in design.includes|default([]) %}
-DESIGN_INCS += $(shell find -type f {{ abspath(dir_) }})
+DESIGN_INCS += $(shell find {{ abspath(dir_) }} -type f)
 {%- endfor %}
 
 # ** SYN **

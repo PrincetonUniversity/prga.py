@@ -23,14 +23,18 @@ class VerilogCollection(AbstractPass):
         header_output_dir (:obj:`str`): Verilog header files are generated in the specified directory. Default value
             is "{src_output_dir}/include"
         view (`ModuleView`): Generate Verilog source files with the specified view
+        incremental (:obj:`bool`): If set to ``True``, the RTL sources already listed in
+            ``context.summary.rtl["sources"]`` will not be overwritten
     """
 
-    __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'view', 'visited']
-    def __init__(self, src_output_dir = ".", header_output_dir = None, view = ModuleView.logical):
+    __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'view', 'visited', 'incremental']
+    def __init__(self, src_output_dir = ".", header_output_dir = None, view = ModuleView.logical,
+            incremental = False):
         self.src_output_dir = src_output_dir
         self.header_output_dir = uno(header_output_dir, os.path.join(src_output_dir, "include"))
         self.view = view
         self.visited = {}
+        self.incremental = incremental
 
     def _process_module(self, module):
         if module.key in self.visited:
@@ -68,9 +72,16 @@ class VerilogCollection(AbstractPass):
         self.renderer = renderer
         if (top := context.system_top) is None:
             raise PRGAAPIError("System top module is not set")
-        if not hasattr(context.summary, "rtl"):
-            context.summary.rtl = {}
-        self.visited = context.summary.rtl["sources"] = {}
-        context.summary.rtl["includes"] = [self.header_output_dir]
+
         self._collect_headers(context)
         self._process_module(top)
+
+        if not hasattr(context.summary, "rtl"):
+            context.summary.rtl = {}
+        context.summary.rtl["includes"] = set([self.header_output_dir]) & context.summary.rtl.get("includes", set())
+
+        if self.incremental:
+            for k, v in self.visited.items():
+                context.summary.rtl.setdefault("sources", {}).setdefault(k, v)
+        else:
+            context.summary.rtl.setdefault("sources", {}).update(**self.visited)

@@ -9,7 +9,9 @@ from ...netlist import PortDirection, Const, Module, NetUtils, ModuleUtils
 from ...passes.base import AbstractPass
 from ...passes.translation import SwitchDelegate
 from ...renderer import FileRenderer
+from ...integration import Integration
 from ...exception import PRGAInternalError
+from ...tools.ioplan import IOPlanner
 from ...util import uno
 
 import os, logging
@@ -404,6 +406,30 @@ class Pktchain(Scanchain):
             mis(mod, db[mvl, "pktchain_frame_disassemble"], "ofifo")
             db[mvl, "pktchain_gatherer"] = mod
 
+        # register pktchain programming controller backend
+        if True:
+            mod = Module("prga_be_prog_pktchain",
+                    is_cell = True,
+                    view = mvl,
+                    module_class = ModuleClass.aux,
+                    verilog_template = "prga_be_prog_pktchain.tmpl.v")
+            # create ports
+            ModuleUtils.create_port(mod, "clk", 1, PortDirection.input_, is_clock = True)
+            Integration._create_intf_simpleprog(mod, True)
+            ModuleUtils.create_port(mod, "prog_rst", 1, PortDirection.output)
+            ModuleUtils.create_port(mod, "prog_done", 1, PortDirection.output)
+            cls._get_or_create_pktchain_fifo_nets(mod, phit_width)
+
+            # sub-instances (hierarchy-only)
+            mis(mod, db[mvl, "prga_valrdy_buf"], "i_valrdy_buf")
+            mis(mod, db[mvl, "prga_fifo"], "i_fifo")
+            mis(mod, db[mvl, "prga_fifo_resizer"], "i_fifo_resizer")
+            mis(mod, db[mvl, "prga_ram_1r1w_byp"], "i_ram_1r1w")
+            mis(mod, db[mvl, "pktchain_frame_disassemble"], "i_frame_disassemble")
+            mis(mod, db[mvl, "pktchain_frame_assemble"], "i_frame_assemble")
+
+            db[mvl, "prga_be_prog_pktchain"] = mod
+
     @classmethod
     def _pktchain_phit_port_name(cls, type_, branch_id = None):
         if branch_id is None:
@@ -668,6 +694,122 @@ class Pktchain(Scanchain):
         @property
         def dependences(self):
             return ("annotation.logical_path", )
+
+        @property
+        def passes_after_self(self):
+            return ("rtl", )
+
+    class BuildSystem(AbstractPass):
+        """Create a system for SoC integration."""
+
+        __slots__ = ["io_constraints_f", "name", "core", "prog_be_in_core"]
+
+        def __init__(self, io_constraints_f = "io.pads",
+                name = "prga_system", core = None, prog_be_in_core = False):
+
+            if prog_be_in_core and core is None:
+                raise PRGAAPIError("`core` must be set when `cfg_in_core` is set")
+
+            self.io_constraints_f = io_constraints_f
+            self.name = name
+            self.core = core
+            self.prog_be_in_core = prog_be_in_core
+            
+        def run(self, context, renderer = None):
+            # build system
+            Integration.build_system(context, name = self.name, core = self.core)
+
+            # get system module
+            system = context.system_top
+
+            # which backend should we connect?
+            sysintf_slave, sysintf_prefix = None, ""
+            prog_inst, prog_slave = None, None
+
+            # check core
+            if self.core and self.prog_be_in_core:
+                core = system.instances["i_core"]
+                fabric = core.model.instances["i_fabric"]
+
+                sysintf_slave, sysintf_prefix, prog_slave = core, "prog_", fabric
+
+                # create prog ports
+                core_ports = Integration._create_intf_simpleprog(core.model, True, sysintf_prefix)
+                core_ports["prog_clk"] = ModuleUtils.create_port(core.model, "prog_clk", 1, PortDirection.input_,
+                        is_clock = True)
+
+                # instantiate
+                prog_inst = ModuleUtils.instantiate(core.model,
+                        context.database[ModuleView.logical, "prga_be_prog_pktchain"],
+                        "i_prog_be")
+
+                # connect prog backend with core ports
+                for port_name, port in core_ports.items():
+                    if port.direction.is_input:
+                        NetUtils.connect(port, prog_inst.pins[port_name[5:]])
+                    else:
+                        NetUtils.connect(prog_inst.pins[port_name[5:]], port)
+
+                # connect prog backend with fabric
+                NetUtils.connect(core_ports["prog_clk"], fabric.pins["prog_clk"])
+
+            else:
+                if self.core:
+                    prog_slave = core = system.instances["i_core"]
+                    fabric = core.model.instances["i_fabric"]
+
+                    # expose fabric programming ports out of core
+                    NetUtils.connect(
+                            ModuleUtils.create_port(core.model, "prog_clk", 1, PortDirection.input_, is_clock = True),
+                            fabric.pins["prog_clk"])
+                    NetUtils.connect(system.ports["clk"], core.pins["prog_clk"])
+
+                    for pin_name in ["prog_rst", "prog_done", "phit_o_full", "phit_i_wr", "phit_i"]:
+                        pin = fabric.pins[pin_name]
+                        NetUtils.connect(
+                                ModuleUtils.create_port(core.model, pin_name, len(pin), PortDirection.input_),
+                                pin)
+
+                    for pin_name in ["phit_i_full", "phit_o_wr", "phit_o"]:
+                        NetUtils.connect( (pin := fabric.pins[pin_name]),
+                                ModuleUtils.create_port(core.model, pin_name, len(pin), PortDirection.input_))
+                else:
+                    prog_slave = system.instances["i_fabric"]
+                    NetUtils.connect(system.ports["clk"], prog_slave.pins["prog_clk"])
+
+                # instantiate
+                sysintf_slave = prog_inst = ModuleUtils.instantiate(system,
+                        context.database[ModuleView.logical, "prga_be_prog_pktchain"],
+                        "i_prog_be")
+
+            # connect programming backend with its slave
+            NetUtils.connect(prog_inst.pins ["prog_rst"],       prog_slave.pins["prog_rst"])
+            NetUtils.connect(prog_inst.pins ["prog_done"],      prog_slave.pins["prog_done"])
+            NetUtils.connect(prog_inst.pins ["phit_i_full"],    prog_slave.pins["phit_o_full"])
+            NetUtils.connect(prog_slave.pins["phit_o_wr"],      prog_inst.pins ["phit_i_wr"])
+            NetUtils.connect(prog_slave.pins["phit_o"],         prog_inst.pins ["phit_i"])
+            NetUtils.connect(prog_slave.pins["phit_i_full"],    prog_inst.pins ["phit_o_full"])
+            NetUtils.connect(prog_inst.pins ["phit_o_wr"],      prog_slave.pins["phit_i_wr"])
+            NetUtils.connect(prog_inst.pins ["phit_o"],         prog_slave.pins["phit_i"])
+
+            # connect sysintf with its slave
+            intf = system.instances["i_sysintf"]
+            NetUtils.connect(system.ports["clk"], sysintf_slave.pins[sysintf_prefix + "clk"])
+            for pin_name in ["rst_n", "req_val", "req_addr", "req_strb", "req_data", "resp_rdy"]:
+                NetUtils.connect(intf.pins["prog_" + pin_name], sysintf_slave.pins[sysintf_prefix + pin_name])
+            for pin_name in ["status", "req_rdy", "resp_val", "resp_err", "resp_data"]:
+                NetUtils.connect(sysintf_slave.pins[sysintf_prefix + pin_name], intf.pins["prog_" + pin_name])
+
+            # print IO constraints
+            IOPlanner.print_io_constraints(context.summary.intf, self.io_constraints_f)
+
+        @property
+        def key(self):
+            return "system.pktchain"
+
+        @property
+        def dependences(self):
+            return ("vpr", )
 
         @property
         def passes_after_self(self):

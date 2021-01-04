@@ -4,8 +4,9 @@ from ..netlist import NetUtils
 from ..util import uno
 from ..exception import PRGAInternalError
 
-import os
+import os, time, logging
 import jinja2 as jj
+_logger = logging.getLogger(__name__)
 
 __all__ = ['FileRenderer']
 
@@ -221,14 +222,22 @@ class FileRenderer(object):
     def render(self):
         """Render all added files and clear the task queue."""
         env = jj.Environment(loader = jj.FileSystemLoader(self.template_search_paths))
+        _logger.info("********************")
+        _logger.info("Rendering files ...")
+        t = time.time()
         while self.tasks:
             file_, l = self.tasks.popitem()
             if isinstance(file_, str):
+                _logger.info(" .. Rendering: {}".format(file_))
                 d = os.path.dirname(file_)
                 if d:
                     os.makedirs(d, exist_ok = True)
                 file_ = open(file_, "wb")
+            else:
+                _logger.info(" .. Rendering: {}".format(file_.name))
             for i, (_, template, parameters) in enumerate(sorted(l, key=lambda i: i[0], reverse=True)):
                 env.get_template(template
                         ).stream(dict(_task_id = i, _num_tasks = len(l), **parameters)
                         ).dump(file_, encoding="ascii")
+        _logger.info("Completed rendering files ...")
+        _logger.info("File rendering took %f seconds", time.time() - t)

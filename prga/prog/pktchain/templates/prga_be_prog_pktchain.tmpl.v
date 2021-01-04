@@ -4,7 +4,7 @@
 `include "prga_system.vh"
 `include "pktchain_system.vh"
 
-module pktchain_be_prog #(
+module prga_be_prog_pktchain #(
     parameter   DECOUPLED_INPUT = 1
 ) (
     input wire                                      clk,
@@ -329,35 +329,38 @@ module pktchain_be_prog #(
                 TILE_STATUS_OP_CLEAR    = 2'h1,
                 TILE_STATUS_OP_UPDATE   = 2'h2;
 
-    localparam  LOG2_PKTCHAIN_X_TILES   = `CLOG2(`PRGA_PKTCHAIN_NUM_BRANCHES),
-                LOG2_PKTCHAIN_Y_TILES   = `CLOG2(`PRGA_PKTCHAIN_NUM_LEAVES);
+    localparam  LOG2_PKTCHAIN_NUM_BRANCHES  = `CLOG2(`PRGA_PKTCHAIN_NUM_BRANCHES),
+                LOG2_PKTCHAIN_NUM_LEAVES    = `CLOG2(`PRGA_PKTCHAIN_NUM_LEAVES);
 
     reg [TILE_STATUS_OP_WIDTH-1:0]      tile_status_op;
-    reg [LOG2_PKTCHAIN_X_TILES - 1:0]   tile_status_rd_xpos,
+    reg [LOG2_PKTCHAIN_NUM_BRANCHES - 1:0]   tile_status_rd_xpos,
                                         tile_status_rd_xpos_f;
-    reg [LOG2_PKTCHAIN_Y_TILES - 1:0]   tile_status_rd_ypos,
+    reg [LOG2_PKTCHAIN_NUM_LEAVES - 1:0]   tile_status_rd_ypos,
                                         tile_status_rd_ypos_f;
     wire [`PRGA_PKTCHAIN_NUM_LEAVES * TILE_STATUS_WIDTH - 1:0] tile_status_col_dout;
     reg [`PRGA_PKTCHAIN_NUM_LEAVES * TILE_STATUS_WIDTH - 1:0] tile_status_col_din;
     reg [TILE_STATUS_WIDTH-1:0]         tile_status_dout, tile_status_din;
 
-    prga_ram_1r1w #(
+    prga_ram_1r1w_byp #(
         .DATA_WIDTH                     (`PRGA_PKTCHAIN_NUM_LEAVES * TILE_STATUS_WIDTH)
-        ,.ADDR_WIDTH                    (LOG2_PKTCHAIN_X_TILES)
-        ,.RAM_ROWS                      (`PRGA_PKTCHAIN_X_TILES)
+        ,.ADDR_WIDTH                    (LOG2_PKTCHAIN_NUM_BRANCHES)
+        ,.RAM_ROWS                      (`PRGA_PKTCHAIN_NUM_BRANCHES)
     ) i_tile_status (
         .clk                            (clk)
+        ,.rst                           (~rst_n)
+        ,.re                            (1'b1)
         ,.raddr                         (tile_status_rd_xpos)
         ,.dout                          (tile_status_col_dout)
+        ,.we                            (tile_status_op == TILE_STATUS_OP_CLEAR || tile_status_op == TILE_STATUS_OP_UPDATE)
         ,.waddr                         (tile_status_rd_xpos_f)
         ,.din                           (tile_status_col_din)
-        ,.we                            (tile_status_op == TILE_STATUS_OP_CLEAR || tile_status_op == TILE_STATUS_OP_UPDATE)
+        ,.bw                            ({(`PRGA_PKTCHAIN_NUM_LEAVES * TILE_STATUS_WIDTH) {1'b1} })
         );
 
     always @(posedge clk) begin
         if (~rst_n) begin
-            tile_status_rd_xpos_f <= {LOG2_PKTCHAIN_X_TILES {1'b0} };
-            tile_status_rd_ypos_f <= {LOG2_PKTCHAIN_Y_TILES {1'b0} };
+            tile_status_rd_xpos_f <= {LOG2_PKTCHAIN_NUM_BRANCHES {1'b0} };
+            tile_status_rd_ypos_f <= {LOG2_PKTCHAIN_NUM_LEAVES {1'b0} };
         end else begin
             tile_status_rd_xpos_f <= tile_status_rd_xpos;
             tile_status_rd_ypos_f <= tile_status_rd_ypos;
@@ -459,7 +462,7 @@ module pktchain_be_prog #(
 
     // tile status array
     reg [TILE_STATUS_OP_WIDTH-1:0]  tile_status_op_candidate            [0:1];  // PKT or MAIN
-    reg [LOG2_PKTCHAIN_X_TILES-1:0] tile_status_rd_xpos_candidate       [0:1];  // PKT or MAIN
+    reg [LOG2_PKTCHAIN_NUM_BRANCHES-1:0] tile_status_rd_xpos_candidate       [0:1];  // PKT or MAIN
 
     // init_tiles
     reg [`PRGA_PKTCHAIN_CHAIN_ID_WIDTH*2-1:0] init_tiles_next_candidate      [0:1];  // PKT or MAIN
@@ -483,7 +486,7 @@ module pktchain_be_prog #(
         bl_state_next = bl_state;
         resource_arb = ARB_PKT;
         tile_status_op_candidate[ARB_MAIN]      = TILE_STATUS_OP_INVAL;
-        tile_status_rd_xpos_candidate[ARB_MAIN] = {LOG2_PKTCHAIN_X_TILES {1'b0} };
+        tile_status_rd_xpos_candidate[ARB_MAIN] = {LOG2_PKTCHAIN_NUM_BRANCHES {1'b0} };
         init_tiles_next_candidate[ARB_MAIN]     = {(`PRGA_PKTCHAIN_CHAIN_ID_WIDTH*2) {1'b0} };
         pending_tiles_next_candidate[ARB_MAIN]  = {(`PRGA_PKTCHAIN_CHAIN_ID_WIDTH*2) {1'b0} };
 
@@ -499,7 +502,7 @@ module pktchain_be_prog #(
                 tile_status_op_candidate[ARB_MAIN] = TILE_STATUS_OP_CLEAR;
                 tile_status_rd_xpos_candidate[ARB_MAIN] = tile_status_rd_xpos_f + 1;
 
-                if (tile_status_rd_xpos_f + 1 == `PRGA_PKTCHAIN_X_TILES) begin
+                if (tile_status_rd_xpos_f + 1 == `PRGA_PKTCHAIN_NUM_BRANCHES) begin
                     bl_state_next = ST_BL_STANDBY;
                 end
             end
@@ -597,7 +600,7 @@ module pktchain_be_prog #(
 
         case (pkt_i_state)
             ST_PKT_IDLE: if ((bl_state == ST_BL_PROG || bl_state == ST_BL_STBLIZ) && bresp_val) begin
-                if (bresp[`PRGA_PKTCHAIN_BRANCH_ID_INDEX] < `PRGA_PKTCHAIN_X_TILES &&
+                if (bresp[`PRGA_PKTCHAIN_BRANCH_ID_INDEX] < `PRGA_PKTCHAIN_NUM_BRANCHES &&
                     bresp[`PRGA_PKTCHAIN_LEAF_ID_INDEX] < `PRGA_PKTCHAIN_NUM_LEAVES &&
                     bresp[`PRGA_PKTCHAIN_PAYLOAD_INDEX] == 0
                 ) begin
@@ -696,7 +699,7 @@ module pktchain_be_prog #(
                         end else begin
                             pkt_eob = 1'b1;
                         end
-                    end else if (frame_i[`PRGA_PKTCHAIN_BRANCH_ID_INDEX] < `PRGA_PKTCHAIN_X_TILES &&
+                    end else if (frame_i[`PRGA_PKTCHAIN_BRANCH_ID_INDEX] < `PRGA_PKTCHAIN_NUM_BRANCHES &&
                         frame_i[`PRGA_PKTCHAIN_LEAF_ID_INDEX] < `PRGA_PKTCHAIN_NUM_LEAVES && (
                             frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA ||
                             frame_i[`PRGA_PKTCHAIN_MSG_TYPE_INDEX] == `PRGA_PKTCHAIN_MSG_TYPE_DATA_INIT ||

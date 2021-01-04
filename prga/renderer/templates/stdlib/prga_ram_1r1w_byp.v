@@ -3,6 +3,7 @@
 module prga_ram_1r1w_byp #(
     parameter   DATA_WIDTH = 32
     , parameter ADDR_WIDTH = 10
+    , parameter RAM_ROWS = 0        // default: 2 ** ADDR_WIDTH
 ) (
     input wire                      clk
     , input wire                    rst
@@ -26,6 +27,7 @@ module prga_ram_1r1w_byp #(
     prga_ram_1r1w #(
         .DATA_WIDTH                 (DATA_WIDTH)
         ,.ADDR_WIDTH                (ADDR_WIDTH)
+        ,.RAM_ROWS                  (RAM_ROWS)
     ) i_ram (
         .clk                        (clk)
         ,.rst                       (rst)

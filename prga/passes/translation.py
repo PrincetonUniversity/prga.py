@@ -278,7 +278,7 @@ class TranslationPass(AbstractPass):
 
         # add to the database
         context._database[ModuleView.logical, module.key] = logical
-        _logger.info("Translated: {}".format(module))
+        _logger.info(" .. Translated: {}".format(module))
         return logical
 
     def run(self, context, renderer = None):

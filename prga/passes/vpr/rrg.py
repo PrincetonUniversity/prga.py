@@ -34,7 +34,7 @@ class VPR_RRG_Generation(AbstractPass):
     __slots__ = ['output_file', 'fasm', 'timing',                       # customizable variables
             # temporary variables:
             'xml', 'tile2id', 'tilepin2ptc', 'switch2id', 'sgmt2id', 'sgmt2ptc',
-            'chanx', 'chany', 'conn_graph',
+            'chanx', 'chany', 'conn_graph', 'num_nodes', 'num_edges',
             ]
     def __init__(self, output_file, *, fasm = None, timing = None):
         self.output_file = output_file
@@ -158,7 +158,7 @@ class VPR_RRG_Generation(AbstractPass):
                     node_id += 2 * len(n)
                 return d
 
-        _logger.info("Start constructing coarse-grained routing graph for VPR RRG generation")
+        _logger.info(" .. Start constructing coarse-grained routing graph for VPR RRG generation")
         t = time.time()
         self.conn_graph = ModuleUtils.reduce_conn_graph(top,
                 coalesce_connections = True,
@@ -167,8 +167,8 @@ class VPR_RRG_Generation(AbstractPass):
                 node_attrs = node_attrs
                 )
         t = time.time() - t
-        _logger.info("Completed constructing coarse-grained routing graph for VPR RRG generation")
-        _logger.info(" .. Construction took %f seconds", t)
+        _logger.info(" .. Completed constructing coarse-grained routing graph for VPR RRG generation")
+        _logger.info("   .. Construction took %f seconds", t)
 
     def _tile_pinlist(self, pin, srcsink_ptc, iopin_ptc):
         subtile_name = pin.parent.name
@@ -247,6 +247,10 @@ class VPR_RRG_Generation(AbstractPass):
             if type_ in ("CHANX", "CHANY"):
                 self.xml.element_leaf("segment", {"segment_id": self.sgmt2id[segment.name]})
 
+        self.num_nodes += 1
+        if self.num_nodes % 1000 == 0:
+            _logger.info("   .. {:0>6d}K nodes generated".format(self.num_nodes // 1000))
+
     def _edge(self, src_id, sink_id, head_pin_bit = None, tail_pin_bit = None,
             delay = 0.0, fasm_features = tuple(), switch_id = None):
         if switch_id is None:
@@ -263,6 +267,10 @@ class VPR_RRG_Generation(AbstractPass):
                 self.xml.element_leaf("meta", {"name": "fasm_features"}, " ".join(fasm_features))
         else:
             self.xml.element_leaf("edge", attrs)
+
+        self.num_edges += 1
+        if self.num_edges % 1000 == 0:
+            _logger.info("   .. {:0>6d}K edges generated".format(self.num_edges // 1000))
 
     def _edge_box_output(self, head_pin_bit, tail_pin_bit, tail_pkg, fasm_features = tuple(), delay = 0.0):
         sink, index, hierarchy = ModuleUtils._analyze_sink(head_pin_bit)
@@ -336,7 +344,7 @@ class VPR_RRG_Generation(AbstractPass):
             else:                                                   # block pin -> block pin
                 self._edge(id_ + head_idx, tail_id, head_pin_bit, tail_pin_bit, delay, fasm_features)
                 return
-        _logger.info("Physical connection {} -> {} ignored due to reachability".format(head_pin_bit, tail_pin_bit))
+        _logger.debug("Physical connection {} -> {} ignored due to reachability".format(head_pin_bit, tail_pin_bit))
 
     def run(self, context, renderer = None):
         # runtime-generated data
@@ -378,6 +386,8 @@ class VPR_RRG_Generation(AbstractPass):
         # routing resource graph generation
         with XMLGenerator(self.output_file, True) as xml, xml.element("rr_graph"):
             self.xml = xml
+            _logger.info(" .. Start RRG meta-data generation")
+            t = time.time()
             # channels:
             with xml.element("channels"):
                 xml.element_leaf("channel", {
@@ -425,12 +435,18 @@ class VPR_RRG_Generation(AbstractPass):
                 for tile_key in context.summary.active_tiles:
                     self.tile2id[tile_key] = len(self.tile2id) + 1
                     self._tile(context.database[ModuleView.user, tile_key])
+            _logger.info(" .. Completed RRG meta-data generation")
+            t = time.time() - t
+            _logger.info("   .. RRG meta-data generation took %f seconds", t)
             # flatten grid and create coalesced connection graph
             with xml.element("grid"):
                 self._grid(context.top)
                 self._construct_conn_graph(context.top)
             # nodes
             with xml.element("rr_nodes"):
+                _logger.info(" .. Start RRG node generation")
+                t = time.time()
+                self.num_nodes = 0
                 for node, data in self.conn_graph.nodes(data = True):
                     if "id" not in data:
                         continue
@@ -484,8 +500,15 @@ class VPR_RRG_Generation(AbstractPass):
                                     pos.x + pin.model.position.x,
                                     pos.y + pin.model.position.y,
                                     port_ori = ori)
+                _logger.info(" .. Completed RRG node generation")
+                t = time.time() - t
+                _logger.info("   .. RRG node generation took %f seconds", t)
+                _logger.info("   .. {:0>8.1f}K nodes generated".format(self.num_nodes / 1000))
             # edges
             with xml.element("rr_edges"):
+                _logger.info(" .. Start RRG edge generation")
+                t = time.time()
+                self.num_edges = 0
                 for sink_node, sink_data in self.conn_graph.nodes(data = True):
                     if (type_ := sink_data.get("type")) is None:
                         continue
@@ -524,4 +547,8 @@ class VPR_RRG_Generation(AbstractPass):
                         equivalent = sink_data.get("equivalent", False)
                         for i in range(len(sink_pin)):
                             self._edge(srcsink_id + (0 if equivalent else i), iopin_id + i, switch_id = 0)
+                _logger.info(" .. Completed RRG edge generation")
+                t = time.time() - t
+                _logger.info("   .. RRG edge generation took %f seconds", t)
+                _logger.info("   .. {:0>8.1f}K edges generated".format(self.num_edges / 1000))
             del self.xml

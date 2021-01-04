@@ -10,6 +10,9 @@ from ...passes.vpr.delegate import FASMDelegate
 from ...util import Object, uno, Enum
 from ...exception import PRGAInternalError
 
+import logging
+_logger = logging.getLogger(__name__)
+
 __all__ = ['Magic']
 
 # ----------------------------------------------------------------------------
@@ -150,6 +153,8 @@ class Magic(AbstractProgCircuitryEntry):
                 for i in lmod.instances.values():
                     if (pin := i.pins.get("prog_data")) is not None:
                         NetUtils.connect(Const(0, len(pin)), pin)
+
+            _logger.info(" .. Inserted: {}".format(lmod))
 
         def run(self, context, renderer = None):
             self.__process_module(context)

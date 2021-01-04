@@ -3,7 +3,7 @@
 module prga_fifo #(
     parameter DEPTH_LOG2 = 1,
     parameter DATA_WIDTH = 32,
-    parameter LOOKAHEAD = 0,
+    parameter LOOKAHEAD = 0
 ) (
     input wire [0:0] clk,
     input wire [0:0] rst,

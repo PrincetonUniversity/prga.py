@@ -221,7 +221,7 @@ class IOPlanner(Object):
         """
         if isinstance(ostream, str):
             if d := os.path.dirname(ostream):
-                os.makedirs(d)
+                os.makedirs(d, exist_ok = True)
             ostream = open(ostream, "w")
         for port in design.ports.values():
             for i, io in port.iter_io_constraints():

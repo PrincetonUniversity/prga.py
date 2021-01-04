@@ -147,6 +147,7 @@ class Flow(Object):
             raise PRGAAPIError("Cannot determine a feasible order of the passes")
         # 3. run passes
         for pass_ in passes:
+            _logger.info("********************")
             _logger.info("running pass '%s'", pass_.key)
             t = time.time()
             pass_.run(context, renderer)
@@ -154,7 +155,4 @@ class Flow(Object):
             context._applied_passes.add(pass_.key)
         # 4. render all files
         if renderer is not None:
-            _logger.info("Rendering files...")
-            t = time.time()
             renderer.render()
-            _logger.info("File rendering took %f seconds", time.time() - t)

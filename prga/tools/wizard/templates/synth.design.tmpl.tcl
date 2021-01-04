@@ -3,7 +3,7 @@ yosys -import
 
 # read verilog sources
 {%- for dir_ in design.includes|default([]) %}
-verilog_defaults -I{{ abspath(dir_) }}
+verilog_defaults -add -I{{ abspath(dir_) }}
 {%- endfor %}
 {%- for k, v in (design.defines|default({})).items() %}
 {%- if none(v) %}

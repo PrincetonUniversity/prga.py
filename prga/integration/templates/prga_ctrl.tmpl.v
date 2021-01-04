@@ -7,7 +7,9 @@
 
 `include "prga_system.vh"
 
-module prga_ctrl (
+module prga_ctrl #(
+    parameter   DECOUPLED = 1
+) (
     input wire                                  clk,
     input wire                                  rst_n,
 
@@ -30,20 +32,20 @@ module prga_ctrl (
     output reg                                  app_en_aclk,
     output wire [`PRGA_CREG_DATA_WIDTH-1:0]     app_features,
 
-    // == CTRL <-> CFG ========================================================
-    output reg                                  cfg_rst_n,
-    input wire [`PRGA_CFG_STATUS_WIDTH-1:0]     cfg_status,
+    // == CTRL <-> PROG =======================================================
+    output reg                                  prog_rst_n,
+    input wire [`PRGA_PROG_STATUS_WIDTH-1:0]    prog_status,
 
-    input wire                                  cfg_req_rdy,
-    output reg                                  cfg_req_val,
-    output reg [`PRGA_CREG_ADDR_WIDTH-1:0]      cfg_req_addr,
-    output reg [`PRGA_CREG_DATA_BYTES-1:0]      cfg_req_strb,
-    output reg [`PRGA_CREG_DATA_WIDTH-1:0]      cfg_req_data,
+    input wire                                  prog_req_rdy,
+    output wire                                 prog_req_val,
+    output wire [`PRGA_CREG_ADDR_WIDTH-1:0]     prog_req_addr,
+    output wire [`PRGA_CREG_DATA_BYTES-1:0]     prog_req_strb,
+    output wire [`PRGA_CREG_DATA_WIDTH-1:0]     prog_req_data,
 
-    input wire                                  cfg_resp_val,
-    output reg                                  cfg_resp_rdy,
-    input wire                                  cfg_resp_err,
-    input wire [`PRGA_CREG_DATA_WIDTH-1:0]      cfg_resp_data,
+    input wire                                  prog_resp_val,
+    output wire                                 prog_resp_rdy,
+    input wire                                  prog_resp_err,
+    input wire [`PRGA_CREG_DATA_WIDTH-1:0]      prog_resp_data,
 
     // == CTRL <-> SAX ========================================================
     input wire                                  sax_rdy,
@@ -54,6 +56,78 @@ module prga_ctrl (
     input wire                                  asx_val,
     input wire [`PRGA_ASX_DATA_WIDTH-1:0]       asx_data
     );
+
+    // ========================================================================
+    // -- Val/Rdy Buffer ------------------------------------------------------
+    // ========================================================================
+    reg [`PRGA_PROG_STATUS_WIDTH-1:0]           prog_status_f;
+
+    always @(posedge clk) begin
+        if (~rst_n) begin
+            prog_status_f <= `PRGA_PROG_STATUS_STANDBY;
+        end else begin
+            prog_status_f <= prog_status;
+        end
+    end
+
+    wire prog_req_rdy_f;
+    reg  prog_req_val_p;
+    reg  [`PRGA_CREG_ADDR_WIDTH-1:0]         prog_req_addr_p;
+    reg  [`PRGA_CREG_DATA_BYTES-1:0]         prog_req_strb_p;
+    reg  [`PRGA_CREG_DATA_WIDTH-1:0]         prog_req_data_p;
+
+    prga_valrdy_buf #(
+        .REGISTERED         (DECOUPLED)
+        ,.DECOUPLED         (DECOUPLED)
+        ,.DATA_WIDTH        (
+            `PRGA_CREG_ADDR_WIDTH
+            + `PRGA_CREG_DATA_BYTES
+            + `PRGA_CREG_DATA_WIDTH
+        )
+    ) prog_req_valrdy_buf (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.rdy_o             (prog_req_rdy_f)
+        ,.val_i             (prog_req_val_p)
+        ,.data_i            ({
+            prog_req_addr_p
+            , prog_req_strb_p
+            , prog_req_data_p
+        })
+        ,.rdy_i             (prog_req_rdy)
+        ,.val_o             (prog_req_val)
+        ,.data_o            ({
+            prog_req_addr
+            , prog_req_strb
+            , prog_req_data
+        })
+        );
+
+    wire prog_resp_val_f;
+    reg  prog_resp_rdy_p;
+    wire                                      prog_resp_err_f;
+    wire [`PRGA_CREG_DATA_WIDTH-1:0]          prog_resp_data_f;
+
+    prga_valrdy_buf #(
+        .REGISTERED         (DECOUPLED)
+        ,.DECOUPLED         (DECOUPLED)
+        ,.DATA_WIDTH        (1 + `PRGA_CREG_DATA_WIDTH)
+    ) prog_resp_valrdy_buf (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.rdy_o             (prog_resp_rdy)
+        ,.val_i             (prog_resp_val)
+        ,.data_i            ({
+            prog_resp_err
+            , prog_resp_data
+        })
+        ,.rdy_i             (prog_resp_rdy_p)
+        ,.val_o             (prog_resp_val_f)
+        ,.data_o            ({
+            prog_resp_err_f
+            , prog_resp_data_f
+        })
+        );
 
     // ========================================================================
     // -- Application Clock & Reset -------------------------------------------
@@ -85,13 +159,13 @@ module prga_ctrl (
     // -- Configuration Reset -------------------------------------------------
     // ========================================================================
 
-    reg                                 cfg_rst_n_set;
+    reg                                 prog_rst_n_set;
 
     always @(posedge clk) begin
-        if (~rst_n || cfg_rst_n_set) begin
-            cfg_rst_n <= 1'b0;
-        end else if (cfg_status == `PRGA_CFG_STATUS_STANDBY) begin
-            cfg_rst_n <= 1'b1;
+        if (~rst_n || prog_rst_n_set) begin
+            prog_rst_n <= 1'b0;
+        end else if (prog_status_f == `PRGA_PROG_STATUS_STANDBY) begin
+            prog_rst_n <= 1'b1;
         end
     end
 
@@ -155,7 +229,7 @@ module prga_ctrl (
     reg app_en_set;
 
     always @(posedge clk) begin
-        if (~rst_n || (|eflags || cfg_status != `PRGA_CFG_STATUS_DONE)) begin
+        if (~rst_n || (|eflags || prog_status_f != `PRGA_PROG_STATUS_DONE)) begin
             app_en <= 1'b0;
         end else if (app_en_set) begin
             app_en <= 1'b1;
@@ -179,10 +253,10 @@ module prga_ctrl (
     localparam  CREG_TOKEN_WIDTH        = 3;
     localparam  CREG_TOKEN_INVAL        = 3'h0,
                 CREG_TOKEN_CTRL_READ    = 3'h1,
-                CREG_TOKEN_CFG_READ     = 3'h2,
+                CREG_TOKEN_PROG_READ    = 3'h2,
                 CREG_TOKEN_SAX_READ     = 3'h3,
                 CREG_TOKEN_CTRL_WRITE   = 3'h5,
-                CREG_TOKEN_CFG_WRITE    = 3'h6,
+                CREG_TOKEN_PROG_WRITE   = 3'h6,
                 CREG_TOKEN_SAX_WRITE    = 3'h7;
 
     wire i_tokenq_full, i_tokenq_empty;
@@ -232,7 +306,7 @@ module prga_ctrl (
     // 2 Stages:
     //
     //  T (Token acquisition):  Acquire a token in token Q
-    //  X (Execute):            Send CFG/SAX request, or execute CTRL read/write
+    //  X (Execute):            Send PROG/SAX request, or execute CTRL read/write
 
     reg stall_req_t, stall_req_x;
 
@@ -286,12 +360,12 @@ module prga_ctrl (
             val_req_x_next = ~i_tokenq_full;
 
             if (addr_req_t[`PRGA_CREG_ADDR_WIDTH-1]) begin
-                // CTRL/CFG
+                // CTRL/PROG
                 case (addr_req_t)
                     `PRGA_CREG_ADDR_BITSTREAM_ID,
                     `PRGA_CREG_ADDR_EFLAGS,
                     `PRGA_CREG_ADDR_ACLK_DIV,
-                    `PRGA_CREG_ADDR_CFG_STATUS: begin
+                    `PRGA_CREG_ADDR_PROG_STATUS: begin
                         if (|strb_req_t) begin
                             i_tokenq_din = CREG_TOKEN_CTRL_WRITE;
                         end else begin
@@ -315,9 +389,9 @@ module prga_ctrl (
                     end
                     default: begin
                         if (|strb_req_t) begin
-                            i_tokenq_din = CREG_TOKEN_CFG_WRITE;
+                            i_tokenq_din = CREG_TOKEN_PROG_WRITE;
                         end else begin
-                            i_tokenq_din = CREG_TOKEN_CFG_READ;
+                            i_tokenq_din = CREG_TOKEN_PROG_READ;
                         end
                     end
                 endcase
@@ -358,15 +432,15 @@ module prga_ctrl (
         i_ctrldataq_din = {`PRGA_CREG_DATA_WIDTH {1'b0} };
         stall_req_x = 1'b1;
 
-        cfg_req_val = 1'b0;
-        cfg_req_addr = {`PRGA_CREG_ADDR_WIDTH {1'b0} };
-        cfg_req_data = {`PRGA_CREG_DATA_WIDTH {1'b0} };
-        cfg_req_strb = {`PRGA_CREG_DATA_BYTES {1'b0} };
+        prog_req_val_p = 1'b0;
+        prog_req_addr_p = {`PRGA_CREG_ADDR_WIDTH {1'b0} };
+        prog_req_data_p = {`PRGA_CREG_DATA_WIDTH {1'b0} };
+        prog_req_strb_p = {`PRGA_CREG_DATA_BYTES {1'b0} };
         sax_val = 1'b0;
         sax_data = {`PRGA_SAX_DATA_WIDTH {1'b0} };
 
         aclk_div_next = aclk_div;
-        cfg_rst_n_set = 1'b0;
+        prog_rst_n_set = 1'b0;
         creg_update_data = {`PRGA_CREG_DATA_WIDTH {1'b0} };
         creg_update_strb = {`PRGA_CREG_DATA_BYTES {1'b0} };
         bitstream_id_update = 1'b0;
@@ -394,8 +468,8 @@ module prga_ctrl (
                             aclk_div_next = data_req_x[0+:`PRGA_CLKDIV_WIDTH];
                             stall_req_x = 1'b0;
                         end
-                        `PRGA_CREG_ADDR_CFG_STATUS: begin
-                            cfg_rst_n_set = 1'b1;
+                        `PRGA_CREG_ADDR_PROG_STATUS: begin
+                            prog_rst_n_set = 1'b1;
                             stall_req_x = 1'b0;
                         end
                         `PRGA_CREG_ADDR_APP_FEATURES: begin
@@ -411,7 +485,7 @@ module prga_ctrl (
                             stall_req_x = ~sax_rdy;
                         end
                         `PRGA_CREG_ADDR_APP_RST: begin
-                            app_en_set = cfg_status == `PRGA_CFG_STATUS_DONE && ~|eflags;
+                            app_en_set = prog_status_f == `PRGA_PROG_STATUS_DONE && ~|eflags;
 
                             sax_val = 1'b1;
                             sax_data[`PRGA_SAX_MSGTYPE_INDEX] = `PRGA_SAX_MSGTYPE_CREG_WRITE;
@@ -429,11 +503,11 @@ module prga_ctrl (
                             stall_req_x = ~sax_rdy;
                         end
                         default: begin
-                            cfg_req_val = 1'b1;
-                            cfg_req_addr = addr_req_x;
-                            cfg_req_data = data_req_x;
-                            cfg_req_strb = strb_req_x;
-                            stall_req_x = ~cfg_req_rdy;
+                            prog_req_val_p = 1'b1;
+                            prog_req_addr_p = addr_req_x;
+                            prog_req_data_p = data_req_x;
+                            prog_req_strb_p = strb_req_x;
+                            stall_req_x = ~prog_req_rdy_f;
                         end
                     endcase
                 end else begin
@@ -453,9 +527,9 @@ module prga_ctrl (
                             i_ctrldataq_din[0+:`PRGA_CLKDIV_WIDTH] = aclk_div;
                             stall_req_x = i_ctrldataq_full;
                         end
-                        `PRGA_CREG_ADDR_CFG_STATUS: begin
+                        `PRGA_CREG_ADDR_PROG_STATUS: begin
                             i_ctrldataq_wr = 1'b1;
-                            i_ctrldataq_din[0+:`PRGA_CFG_STATUS_WIDTH] = cfg_status;
+                            i_ctrldataq_din[0+:`PRGA_PROG_STATUS_WIDTH] = prog_status_f;
                             stall_req_x = i_ctrldataq_full;
                         end
                         `PRGA_CREG_ADDR_APP_FEATURES: begin
@@ -471,9 +545,9 @@ module prga_ctrl (
                             stall_req_x = ~sax_rdy;
                         end
                         default: begin
-                            cfg_req_val = 1'b1;
-                            cfg_req_addr = addr_req_x;
-                            stall_req_x = ~cfg_req_rdy;
+                            prog_req_val_p = 1'b1;
+                            prog_req_addr_p = addr_req_x;
+                            stall_req_x = ~prog_req_rdy_f;
                         end
                     endcase
                 end
@@ -506,7 +580,7 @@ module prga_ctrl (
     always @* begin
         creg_resp_val = 1'b0;
         creg_resp_data = {`PRGA_CREG_DATA_WIDTH {1'b0} };
-        cfg_resp_rdy = 1'b0;
+        prog_resp_rdy_p = 1'b0;
         asx_rdy = 1'b0;
 
         eflags_set = 1'b0;
@@ -525,11 +599,11 @@ module prga_ctrl (
             endcase
         end
 
-        // Priority 2: CFG Error Messages
-        if (cfg_resp_val && cfg_resp_err) begin
+        // Priority 2: PROG Error Messages
+        if (prog_resp_val_f && prog_resp_err_f) begin
             eflags_set = 1'b1;
-            eflags_set_mask = eflags_set_mask | cfg_resp_data;
-            cfg_resp_rdy = 1'b1;
+            eflags_set_mask = eflags_set_mask | prog_resp_data_f;
+            prog_resp_rdy_p = 1'b1;
         end
 
         // Priority 3: Response
@@ -548,12 +622,12 @@ module prga_ctrl (
                     creg_resp_val = 1'b1;
                     i_tokenq_rd = creg_resp_rdy;
                 end
-                CREG_TOKEN_CFG_READ,
-                CREG_TOKEN_CFG_WRITE: if (cfg_resp_val && ~cfg_resp_err) begin
+                CREG_TOKEN_PROG_READ,
+                CREG_TOKEN_PROG_WRITE: if (prog_resp_val_f && ~prog_resp_err_f) begin
                     creg_resp_val = 1'b1;
-                    creg_resp_data = cfg_resp_data;
+                    creg_resp_data = prog_resp_data_f;
                     i_tokenq_rd = creg_resp_rdy;
-                    cfg_resp_rdy = creg_resp_rdy;
+                    prog_resp_rdy_p = creg_resp_rdy;
                 end
                 CREG_TOKEN_SAX_READ: if (asx_val && asx_data[`PRGA_ASX_MSGTYPE_INDEX] == `PRGA_ASX_MSGTYPE_CREG_READ_ACK) begin
                     creg_resp_val = 1'b1;

@@ -5,6 +5,9 @@ from ..util import uno
 from ..core.common import ModuleView, ModuleClass, NetClass
 from ..netlist import NetUtils, ModuleUtils
 
+import logging
+_logger = logging.getLogger(__name__)
+
 __all__ = ['LogicalPathAnnotationPass']
 
 # ----------------------------------------------------------------------------
@@ -75,6 +78,8 @@ class LogicalPathAnnotationPass(AbstractPass):
             conn = NetUtils.get_connection(NetUtils._dereference(umod, startpoint),
                     NetUtils._dereference(umod, endpoint), skip_validations = True)
             conn.logical_path = tuple(logical_path)
+
+        _logger.info(" .. Annotated: {}".format(umod))
 
     def run(self, context, renderer = None):
         self.__process_module(context)
