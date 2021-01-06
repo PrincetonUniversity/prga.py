@@ -26,6 +26,7 @@
 `define PRGA_EFLAGS_CCM_ILLEGAL_NC_REQ      5
 `define PRGA_EFLAGS_CCM_ILLEGAL_AMO_REQ     6
 `define PRGA_EFLAGS_CCM_ILLEGAL_MT_REQ      7   // illegal multi-thread request
+`define PRGA_EFLAGS_CCM_INVAL_AXI4_TRX      8   // illegal AXI4 transaction
 `define PRGA_EFLAGS_UREG_ECC                16
 `define PRGA_EFLAGS_UREG_TIMEOUT            17
 `define PRGA_EFLAGS_PROG_REG_UNDEF          24

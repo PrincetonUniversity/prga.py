@@ -17,14 +17,18 @@ class InterfaceClass(Enum):
 
     ccm_axi4 = 3        #: AXI4 interface for coherent memory access
                         #:  - Do not support:
-                        #:      * AWPROT, AWQOS, AWREGION: all tied to constant zero
-                        #:      * ARPROT, ARQOS, ARREGION: all tied to constant zero
+                        #:      * AWPROT, AWQOS, AWREGION, AWLOCK:  all tied to constant zero
+                        #:      * ARPROT, ARQOS, ARREGION:          all tied to constant zero
                         #:  - Support AWID, ARID, BID, RID (PITON threads)
-                        #:  - Non-standard use of AWLOCK and ARLOCK (refer to ACE5):
-                        #:      * ARLOCK is treated as a "load-reserved" (LR) access
-                        #:      * AWLOCK is treated as a "store-conditional" (SC) access
+                        #:  - Non-standard use of ARLOCK:
+                        #:      * ARLOCK marks the load as an atomic operation. AMO type and data in ARUSER
                         #:  - Non-standard use of AWCACHE and ARCACHE:
-                        #:      * 0b1111:       coherent (cacheable) read/write
-                        #:      * other value:  non-coherent (non-cacheable) read/write
-                        #:  - Additional use of AWUSER, ARUSER:
+                        #:      * |AxCache[3:2]:    coherent (cacheable) read/write
+                        #:      * other value:      non-coherent (non-cacheable) read/write
+                        #:      * Device, bufferability, write-through/write-back, and allocatioin strategy are not respected
+                        #:  - Additional use of AWUSER:
                         #:      * ECC bit(s)
+                        #:  - Additional use of ARUSER:
+                        #:      * ECC bit(s)
+                        #:      * AMO opcode
+                        #:      * AMO data

@@ -80,8 +80,8 @@ class VerilogCollection(AbstractPass):
             context.summary.rtl = {}
         context.summary.rtl["includes"] = set([self.header_output_dir]) & context.summary.rtl.get("includes", set())
 
-        if self.incremental:
-            for k, v in self.visited.items():
+        for k, v in self.visited.items():
+            if self.incremental:
                 context.summary.rtl.setdefault("sources", {}).setdefault(k, v)
-        else:
-            context.summary.rtl.setdefault("sources", {}).update(**self.visited)
+            else:
+                context.summary.rtl.setdefault("sources", {})[k] = v

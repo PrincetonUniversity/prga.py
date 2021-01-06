@@ -143,10 +143,10 @@ module prga_mprot #(
 
     wire ccm_resp_rdy_f;
     reg  ccm_resp_val_p;
-    wire [`PRGA_CCM_RESPTYPE_WIDTH-1:0]       ccm_resp_type_p;
-    wire [`PRGA_CCM_THREADID_WIDTH-1:0]       ccm_resp_threadid_p;
-    wire [`PRGA_CCM_CACHETAG_INDEX]           ccm_resp_addr_p;
-    wire [`PRGA_CCM_CACHELINE_WIDTH-1:0]      ccm_resp_data_p;
+    reg  [`PRGA_CCM_RESPTYPE_WIDTH-1:0]       ccm_resp_type_p;
+    reg  [`PRGA_CCM_THREADID_WIDTH-1:0]       ccm_resp_threadid_p;
+    reg  [`PRGA_CCM_CACHETAG_INDEX]           ccm_resp_addr_p;
+    reg  [`PRGA_CCM_CACHELINE_WIDTH-1:0]      ccm_resp_data_p;
 
     prga_valrdy_buf #(
         .REGISTERED         (DECOUPLED)

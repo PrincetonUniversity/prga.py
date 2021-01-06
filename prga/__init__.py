@@ -45,3 +45,7 @@ __all__.extend([
     "Flow", "TranslationPass", "LogicalPathAnnotationPass", "VerilogCollection", "VPRArchGeneration",
     "VPRScalableDelegate", "VPRScalableArchGeneration", "VPR_RRG_Generation", "YosysScriptsCollection",
     ])
+
+# Integration
+from .integration import InterfaceClass
+__all__.extend(["InterfaceClass"])

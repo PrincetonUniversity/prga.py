@@ -9,7 +9,7 @@ from ...netlist import PortDirection, Const, Module, NetUtils, ModuleUtils
 from ...passes.base import AbstractPass
 from ...passes.translation import SwitchDelegate
 from ...renderer import FileRenderer
-from ...integration import Integration
+from ...integration import Integration, InterfaceClass
 from ...exception import PRGAInternalError
 from ...tools.ioplan import IOPlanner
 from ...util import uno
@@ -702,10 +702,11 @@ class Pktchain(Scanchain):
     class BuildSystem(AbstractPass):
         """Create a system for SoC integration."""
 
-        __slots__ = ["io_constraints_f", "name", "core", "prog_be_in_core"]
+        __slots__ = ["io_constraints_f", "name", "core", "prog_be_in_core", "interfaces"]
 
-        def __init__(self, io_constraints_f = "io.pads",
-                name = "prga_system", core = None, prog_be_in_core = False):
+        def __init__(self, io_constraints_f = "io.pads", *,
+                name = "prga_system", core = None, prog_be_in_core = False,
+                interfaces = None):
 
             if prog_be_in_core and core is None:
                 raise PRGAAPIError("`core` must be set when `cfg_in_core` is set")
@@ -714,10 +715,12 @@ class Pktchain(Scanchain):
             self.name = name
             self.core = core
             self.prog_be_in_core = prog_be_in_core
+            self.interfaces = uno(interfaces, {InterfaceClass.ccm_simple, InterfaceClass.reg_simple})
             
         def run(self, context, renderer = None):
             # build system
-            Integration.build_system(context, name = self.name, core = self.core)
+            Integration.build_system(context, name = self.name, core = self.core,
+                    interfaces = self.interfaces)
 
             # get system module
             system = context.system_top

@@ -7,6 +7,9 @@ from ..tools.util import DesignIntf
 from ..tools.ioplan import IOPlanner
 from ..exception import PRGAAPIError, PRGAInternalError
 
+import logging
+_logger = logging.getLogger(__name__)
+
 __all__ = ["Integration"]
 
 # ----------------------------------------------------------------------------
@@ -115,6 +118,78 @@ class Integration(object):
         return d
 
     @classmethod
+    def _create_intf_ccm_axi4(cls, module, slave = False, prefix = "", unused = False):
+        """Create cache-coherent memory interface in AXI4 protocol. By default this creates the master interface that
+        sends AW/AR/W requests and receive B/R responses.
+
+        Args:
+            module (`Module`):
+            slave (:obj:`bool`): If set, slave interface is added to ``module``
+            prefix (:obj:`str`): Prefix of the port names
+            unused (:obj:`bool`): If set, unused but required AXI4 ports are also added, including `AWPROT`, `AWQOS`,
+                `AWLOCK`, `AWREGION`, `ARPROT`, `ARQOS`, `ARREGION`.
+        """
+        i, o = ((PortDirection.output, PortDirection.input_) if slave else
+                (PortDirection.input_, PortDirection.output))
+        d = {}
+
+        # AW channel
+        d[prefix + "awready"]       = ModuleUtils.create_port(module, prefix + "awready", 1, i)
+        d[prefix + "awvalid"]       = ModuleUtils.create_port(module, prefix + "awvalid", 1, o)
+        d[prefix + "awid"]          = ModuleUtils.create_port(module, prefix + "awid", 1, o)
+        d[prefix + "awaddr"]        = ModuleUtils.create_port(module, prefix + "awaddr", 40, o)
+        d[prefix + "awlen"]         = ModuleUtils.create_port(module, prefix + "awlen", 8, o)
+        d[prefix + "awsize"]        = ModuleUtils.create_port(module, prefix + "awsize", 3, o)
+        d[prefix + "awburst"]       = ModuleUtils.create_port(module, prefix + "awburst", 2, o)
+        d[prefix + "awcache"]       = ModuleUtils.create_port(module, prefix + "awcache", 4, o)
+        d[prefix + "awuser"]        = ModuleUtils.create_port(module, prefix + "awuser", 1, o)
+        if unused:
+            d[prefix + "awlock"]    = ModuleUtils.create_port(module, prefix + "awlock", 1, o)
+            d[prefix + "awprot"]    = ModuleUtils.create_port(module, prefix + "awprot", 3, o)
+            d[prefix + "awqos"]     = ModuleUtils.create_port(module, prefix + "awqos", 4, o)
+            d[prefix + "awregion"]  = ModuleUtils.create_port(module, prefix + "awregion", 4, o)
+
+        # W channel
+        d[prefix + "wready"]        = ModuleUtils.create_port(module, prefix + "wready", 1, i)
+        d[prefix + "wvalid"]        = ModuleUtils.create_port(module, prefix + "wvalid", 1, o)
+        d[prefix + "wdata"]         = ModuleUtils.create_port(module, prefix + "wdata", 64, o)
+        d[prefix + "wstrb"]         = ModuleUtils.create_port(module, prefix + "wstrb", 8, o)
+        d[prefix + "wlast"]         = ModuleUtils.create_port(module, prefix + "wlast", 1, o)
+        d[prefix + "wuser"]         = ModuleUtils.create_port(module, prefix + "wuser", 1, o)
+
+        # B channel
+        d[prefix + "bready"]        = ModuleUtils.create_port(module, prefix + "bready", 1, o)
+        d[prefix + "bvalid"]        = ModuleUtils.create_port(module, prefix + "bvalid", 1, i)
+        d[prefix + "bresp"]         = ModuleUtils.create_port(module, prefix + "bresp", 2, i)
+        d[prefix + "bid"]           = ModuleUtils.create_port(module, prefix + "bid", 1, i)
+
+        # AR channel
+        d[prefix + "arready"]       = ModuleUtils.create_port(module, prefix + "arready", 1, i)
+        d[prefix + "arvalid"]       = ModuleUtils.create_port(module, prefix + "arvalid", 1, o)
+        d[prefix + "arid"]          = ModuleUtils.create_port(module, prefix + "arid", 1, o)
+        d[prefix + "araddr"]        = ModuleUtils.create_port(module, prefix + "araddr", 40, o)
+        d[prefix + "arlen"]         = ModuleUtils.create_port(module, prefix + "arlen", 8, o)
+        d[prefix + "arsize"]        = ModuleUtils.create_port(module, prefix + "arsize", 3, o)
+        d[prefix + "arburst"]       = ModuleUtils.create_port(module, prefix + "arburst", 2, o)
+        d[prefix + "arlock"]        = ModuleUtils.create_port(module, prefix + "arlock", 1, o)
+        d[prefix + "arcache"]       = ModuleUtils.create_port(module, prefix + "arcache", 4, o)
+        d[prefix + "aruser"]        = ModuleUtils.create_port(module, prefix + "aruser", 64 + 4 + 1, o)
+        if unused:
+            d[prefix + "arprot"]    = ModuleUtils.create_port(module, prefix + "arprot", 3, o)
+            d[prefix + "arqos"]     = ModuleUtils.create_port(module, prefix + "arqos", 4, o)
+            d[prefix + "arregion"]  = ModuleUtils.create_port(module, prefix + "arregion", 4, o)
+
+        # R channel
+        d[prefix + "rready"]        = ModuleUtils.create_port(module, prefix + "rready", 1, o)
+        d[prefix + "rvalid"]        = ModuleUtils.create_port(module, prefix + "rvalid", 1, i)
+        d[prefix + "rresp"]         = ModuleUtils.create_port(module, prefix + "rresp", 2, i)
+        d[prefix + "rid"]           = ModuleUtils.create_port(module, prefix + "rid", 1, i)
+        d[prefix + "rdata"]         = ModuleUtils.create_port(module, prefix + "rdata", 64, i)
+        d[prefix + "rlast"]         = ModuleUtils.create_port(module, prefix + "rlast", 1, i)
+
+        return d
+
+    @classmethod
     def _register_cells(cls, context):
         """Register integration-related modules in to the module database.
 
@@ -123,10 +198,12 @@ class Integration(object):
         """
         # 1. add prga_system header
         context._add_verilog_header("prga_system.vh", "include/prga_system.tmpl.vh")
+        context._add_verilog_header("prga_axi4.vh", "include/prga_axi4.tmpl.vh")
 
         # 2. register modules
         # 2.1 modules that we don't need to know about their ports
-        for d in ("prga_ctrl", "prga_ecc_parity", "prga_mprot", "prga_sax", "prga_uprot", "prga_ccm_transducer"):
+        for d in ("prga_ctrl", "prga_ecc_parity", "prga_mprot",
+                "prga_sax", "prga_uprot", "prga_ccm_transducer"):
             context._database[ModuleView.logical, d] = Module(d,
                     view = ModuleView.logical,
                     module_class = ModuleClass.aux,
@@ -203,6 +280,33 @@ class Integration(object):
         ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_uprot"], "i_uprot")
         ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_mprot"], "i_mprot")
 
+        # 3. AXI4 interface
+        mprot = context._database[ModuleView.logical, "prga_mprot.axi4"] = Module("prga_mprot",
+                view = ModuleView.logical,
+                module_class = ModuleClass.aux,
+                verilog_template = "ccm_axi4/prga_mprot.tmpl.v",
+                key = "prga_mprot.axi4")
+        ModuleUtils.instantiate(mprot, context.database[ModuleView.logical, "prga_ecc_parity"], "i_ecc_checker")
+        ModuleUtils.instantiate(mprot, context.database[ModuleView.logical, "prga_valrdy_buf"], "i_buf")
+
+        sysintf = context._database[ModuleView.logical, "prga_sysintf.axi4"] = Module("prga_sysintf",
+                view = ModuleView.logical,
+                module_class = ModuleClass.aux,
+                verilog_template = "ccm_axi4/prga_sysintf.tmpl.v",
+                key = "prga_sysintf.axi4")
+        cls._create_intf_syscon     (sysintf, True)          # programming clock and reset
+        cls._create_intf_syscon     (sysintf, False, "a")    # application clock and reset
+        cls._create_intf_reg        (sysintf, True, "reg_")
+        cls._create_intf_ccm        (sysintf, False, "ccm_")
+        cls._create_intf_simpleprog (sysintf, False, "prog_")
+        cls._create_intf_reg        (sysintf, False, "ureg_", True)
+        cls._create_intf_ccm_axi4   (sysintf, True)
+        ModuleUtils.create_port(sysintf, "urst_n", 1, PortDirection.output)
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_ctrl"], "i_ctrl")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_ccm_transducer"], "i_transducer")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_sax"], "i_sax")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_uprot"], "i_uprot")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_mprot.axi4"], "i_mprot")
 
     @classmethod
     def _create_design_intf(cls, context, interfaces):
@@ -259,6 +363,59 @@ class Integration(object):
                 d.add_port("uccm_resp_threadid",    PortDirection.input_,   1)
                 d.add_port("uccm_resp_addr",        PortDirection.input_,   slice(10, 3, -1))
                 d.add_port("uccm_resp_data",        PortDirection.input_,   128)
+            elif interface.is_ccm_axi4:
+                # AW channel
+                d.add_port("awready",	            PortDirection.input_,	1)
+                d.add_port("awvalid",	            PortDirection.output,	1)
+                d.add_port("awid",	                PortDirection.output,	1)
+                d.add_port("awaddr",	            PortDirection.output,	40)
+                d.add_port("awlen",	                PortDirection.output,	8)
+                d.add_port("awsize",	            PortDirection.output,	3)
+                d.add_port("awburst",	            PortDirection.output,	2)
+                d.add_port("awcache",	            PortDirection.output,	4)
+                d.add_port("awuser",	            PortDirection.output,	1)
+                d.add_port("awlock",	            PortDirection.output,	1)
+                d.add_port("awprot",	            PortDirection.output,	3)
+                d.add_port("awqos",	                PortDirection.output,	4)
+                d.add_port("awregion",	            PortDirection.output,	4)
+
+                # W channel
+                d.add_port("wready",	            PortDirection.input_,	1)
+                d.add_port("wvalid",	            PortDirection.output,	1)
+                d.add_port("wdata",	                PortDirection.output,	64)
+                d.add_port("wstrb",	                PortDirection.output,	8)
+                d.add_port("wlast",	                PortDirection.output,	1)
+                d.add_port("wuser",	                PortDirection.output,	1)
+
+                # B channel
+                d.add_port("bready",	            PortDirection.output,	1)
+                d.add_port("bvalid",	            PortDirection.input_,	1)
+                d.add_port("bresp",	                PortDirection.input_,	2)
+                d.add_port("bid",	                PortDirection.input_,	1)
+
+                # AR channel
+                d.add_port("arready",	            PortDirection.input_,	1)
+                d.add_port("arvalid",	            PortDirection.output,	1)
+                d.add_port("arid",	                PortDirection.output,	1)
+                d.add_port("araddr",	            PortDirection.output,	40)
+                d.add_port("arlen",	                PortDirection.output,	8)
+                d.add_port("arsize",	            PortDirection.output,	3)
+                d.add_port("arburst",	            PortDirection.output,	2)
+                d.add_port("arlock",	            PortDirection.output,	1)
+                d.add_port("arcache",	            PortDirection.output,	4)
+                d.add_port("aruser",	            PortDirection.output,	64 + 4 + 1)
+                d.add_port("arprot",	            PortDirection.output,	3)
+                d.add_port("arqos",	                PortDirection.output,	4)
+                d.add_port("arregion",	            PortDirection.output,	4)
+
+                # R channel
+                d.add_port("rready",	            PortDirection.output,	1)
+                d.add_port("rvalid",	            PortDirection.input_,	1)
+                d.add_port("rresp",	                PortDirection.input_,	2)
+                d.add_port("rid",	                PortDirection.input_,	1)
+                d.add_port("rdata",	                PortDirection.input_,	64)
+                d.add_port("rlast",	                PortDirection.input_,	1)
+
             else:
                 raise PRGAAPIError("Unsupported interface class: {:r}".format(interface))
 
@@ -280,8 +437,12 @@ class Integration(object):
                 converted to ``{name}_core``\), an extra layer of wrapper is created around the fabric and
                 instantiated in the top-level module
         """
-        if set(iter(interfaces)) != {InterfaceClass.ccm_simple, InterfaceClass.reg_simple}:
-            raise NotImplementedError("The only implemented interface is (ccm_simple, reg_simple) at the moment")
+        interfaces = set(iter(interfaces))
+        if interfaces not in (
+                {InterfaceClass.ccm_simple, InterfaceClass.reg_simple},
+                {InterfaceClass.ccm_axi4, InterfaceClass.reg_simple},
+                ):
+            raise NotImplementedError("Unsupported interface combinations: {:r}".format(interfaces))
 
         if core is True:
             core = name + "_core"
@@ -300,7 +461,15 @@ class Integration(object):
         cls._create_intf_ccm(system, False, "ccm_")
 
         # instantiate sysintf in system
-        sysintf = ModuleUtils.instantiate(system, context.database[ModuleView.logical, "prga_sysintf"], "i_sysintf")
+        sysintf = None
+        if InterfaceClass.ccm_simple in interfaces:
+            sysintf = ModuleUtils.instantiate(system,
+                    context.database[ModuleView.logical, "prga_sysintf"],
+                    "i_sysintf")
+        else:
+            sysintf = ModuleUtils.instantiate(system,
+                    context.database[ModuleView.logical, "prga_sysintf.axi4"],
+                    "i_sysintf")
 
         # connect system ports to sysintf
         for port_name, port in system.ports.items():
@@ -318,8 +487,12 @@ class Integration(object):
 
             # create ports in core
             cls._create_intf_syscon(core, True, "u")
-            cls._create_intf_reg(core, True, "ureg_", ecc = True)
-            cls._create_intf_ccm(core, False, "uccm_", ecc = True)
+            if InterfaceClass.reg_simple in interfaces:
+                cls._create_intf_reg(core, True, "ureg_", ecc = True)
+            if InterfaceClass.ccm_simple in interfaces:
+                cls._create_intf_ccm(core, False, "uccm_", ecc = True)
+            if InterfaceClass.ccm_axi4 in interfaces:
+                cls._create_intf_ccm_axi4(core, unused = True)
 
             # instantiate fabric within core
             fabric = ModuleUtils.instantiate(core,
@@ -335,10 +508,13 @@ class Integration(object):
                     NetUtils.connect(sysintf.pins["aclk"], pin)
                 elif pin_name == "urst_n":
                     NetUtils.connect(sysintf.pins["urst_n"], pin)
-                elif pin.model.direction.is_input:
-                    NetUtils.connect(sysintf.pins[pin_name], pin)
+                elif sysintf_pin := sysintf.pins.get(pin_name):
+                    if pin.model.direction.is_input:
+                        NetUtils.connect(sysintf_pin, pin)
+                    else:
+                        NetUtils.connect(pin, sysintf_pin)
                 else:
-                    NetUtils.connect(pin, sysintf.pins[pin_name])
+                    _logger.warning("Unconnected design port: {}".format(pin_name)) 
 
         else:
             # instantiate fabric within system
