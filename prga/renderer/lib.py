@@ -841,7 +841,7 @@ class BuiltinCellLibrary(object):
         lbdr.create_prog_port("prog_data", prog_data_width, PortDirection.input_)
         lbdr.instantiate(context.database[ModuleView.logical, "prga_ram_1r1w_byp"],
                 "i_ram",
-                parameters = {"DATA_WIDTH": "DATA_WIDTH", "ADDR_WIDTH": "ADDR_WIDTH"})
+                parameters = {"DATA_WIDTH": "DATA_WIDTH", "ADDR_WIDTH": "CORE_ADDR_WIDTH"})
         lbdr.commit()
 
         return multimode.module
