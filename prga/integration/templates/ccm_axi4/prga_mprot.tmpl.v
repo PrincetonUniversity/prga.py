@@ -13,6 +13,7 @@
 
 module prga_mprot #(
     parameter   DECOUPLED = 1
+    , parameter SWAP_ENDIANNESS = 0
 ) (
     input wire                                  clk,
     input wire                                  rst_n,
@@ -623,13 +624,25 @@ module prga_mprot #(
         ,.data_o        (sax_data_f)
         );
 
-    wire [`PRGA_SAX_MSGTYPE_WIDTH-1:0]  sax_msgtype_f;
-    wire [`PRGA_CCM_THREADID_WIDTH-1:0] sax_id_f;
-    wire [`PRGA_CCM_DATA_WIDTH-1:0]     sax_payload_f;
+    wire [`PRGA_SAX_MSGTYPE_WIDTH-1:0]      sax_msgtype_f;
+    wire [`PRGA_CCM_THREADID_WIDTH-1:0]     sax_id_f;
+    reg  [`PRGA_CCM_CACHELINE_WIDTH-1:0]    sax_payload_f;
 
     assign sax_msgtype_f = sax_data_f[`PRGA_SAX_MSGTYPE_INDEX];
     assign sax_id_f = sax_data_f[`PRGA_SAX_THREADID_INDEX];
-    assign sax_payload_f = sax_data_f[0+:`PRGA_CCM_DATA_WIDTH];
+
+    always @* begin
+        if (SWAP_ENDIANNESS) begin
+            sax_payload_f = {
+                sax_data_f[ 64+:8], sax_data_f[ 72+:8], sax_data_f[ 80+:8], sax_data_f[ 88+:8],
+                sax_data_f[ 96+:8], sax_data_f[104+:8], sax_data_f[112+:8], sax_data_f[120+:8],
+                sax_data_f[  0+:8], sax_data_f[  8+:8], sax_data_f[ 16+:8], sax_data_f[ 24+:8],
+                sax_data_f[ 32+:8], sax_data_f[ 40+:8], sax_data_f[ 48+:8], sax_data_f[ 56+:8]
+            };
+        end else begin
+            sax_payload_f = sax_data_f[0+:`PRGA_CCM_CACHELINE_WIDTH];
+        end
+    end
 
     reg     sax_rdy_candidates  [ID_R:ID_B];
     reg     sax_val_candidates  [ID_R:ID_B];
@@ -981,7 +994,15 @@ module prga_mprot #(
                     asx_data_candidates[ID_AW][`PRGA_ASX_THREADID_INDEX] = awid_f;
                     asx_data_candidates[ID_AW][`PRGA_ASX_SIZE_INDEX] = aw_trx_size;
                     asx_data_candidates[ID_AW][`PRGA_CCM_DATA_WIDTH+:`PRGA_CCM_ADDR_WIDTH] = aw_trx_addr;
-                    asx_data_candidates[ID_AW][0+:`PRGA_CCM_DATA_WIDTH] = aw_trx_data;
+                    
+                    if (SWAP_ENDIANNESS) begin
+                        asx_data_candidates[ID_AW][0+:`PRGA_CCM_DATA_WIDTH] = {
+                            aw_trx_data[ 0+:8], aw_trx_data[ 8+:8], aw_trx_data[16+:8], aw_trx_data[24+:8],
+                            aw_trx_data[32+:8], aw_trx_data[40+:8], aw_trx_data[48+:8], aw_trx_data[56+:8]
+                        };
+                    end else begin
+                        asx_data_candidates[ID_AW][0+:`PRGA_CCM_DATA_WIDTH] = aw_trx_data;
+                    end
 
                     if (asx_rdy_candidates[ID_AW]) begin
                         wready_p = 1'b1;
@@ -1032,10 +1053,11 @@ module prga_mprot #(
     wire                                sax2r_valid     [`PRGA_AXI4_ID_COUNT-1:0];
     reg                                 sax2r_pending   [`PRGA_AXI4_ID_COUNT-1:0];
     reg [`PRGA_AXI4_AXLEN_WIDTH-1:0]    sax2r_left      [`PRGA_AXI4_ID_COUNT-1:0];
+    reg [`PRGA_AXI4_AXSIZE_WIDTH-1:0]   sax2r_size      [`PRGA_AXI4_ID_COUNT-1:0];
+    reg [`PRGA_AXI4_AXBURST_WIDTH-1:0]  sax2r_burst     [`PRGA_AXI4_ID_COUNT-1:0];
+    reg [3:0]                           sax2r_offset    [`PRGA_AXI4_ID_COUNT-1:0];
 
     reg                                 ar2r_valid, ar2r_ack;
-    reg [`PRGA_AXI4_ID_WIDTH-1:0]       ar2r_id;
-    reg [`PRGA_AXI4_AXLEN_WIDTH-1:0]    ar2r_len;
 
     genvar ir;
     generate for (ir = 0; ir < `PRGA_AXI4_ID_COUNT; ir = ir + 1) begin: gr
@@ -1047,14 +1069,29 @@ module prga_mprot #(
             if (~(rst_n && app_en)) begin
                 sax2r_pending[ir]   <= 1'b0;
                 sax2r_left[ir]      <= {`PRGA_AXI4_AXLEN_WIDTH {1'b0} };
-            end else if (ar2r_valid && ar2r_ack && ar2r_id == ir) begin
+                sax2r_size[ir]      <= `PRGA_AXI4_AXSIZE_8B;
+                sax2r_burst[ir]     <= `PRGA_AXI4_AXBURST_INCR;
+                sax2r_offset[ir]    <= 4'h0;
+            end else if (ar2r_valid && ar2r_ack && arid_f == ir) begin
                 sax2r_pending[ir]   <= 1'b1;
-                sax2r_left[ir]      <= ar2r_len;
+                sax2r_left[ir]      <= arlen_f;
+                sax2r_size[ir]      <= arsize_f;
+                sax2r_burst[ir]     <= arburst_f;
+                sax2r_offset[ir]    <= araddr_f[3:0];
             end else if (sax2r_valid[ir] && sax_rdy_candidates[ID_R]) begin
                 if (sax2r_left[ir] == 0) begin
                     sax2r_pending[ir]   <= 1'b0;
                 end else begin
                     sax2r_left[ir]      <= sax2r_left[ir] - 1;
+
+                    if (sax2r_burst[ir] == `PRGA_AXI4_AXBURST_INCR) begin
+                        case (sax2r_size[ir])
+                            `PRGA_AXI4_AXSIZE_1B: sax2r_offset[ir] <= sax2r_offset[ir] + 1;
+                            `PRGA_AXI4_AXSIZE_2B: sax2r_offset[ir] <= sax2r_offset[ir] + 2;
+                            `PRGA_AXI4_AXSIZE_4B: sax2r_offset[ir] <= sax2r_offset[ir] + 4;
+                            `PRGA_AXI4_AXSIZE_8B: sax2r_offset[ir] <= sax2r_offset[ir] + 8;
+                        endcase
+                    end
                 end
             end
         end
@@ -1076,16 +1113,60 @@ module prga_mprot #(
     end
 
     always @* begin
+        rdata_p = sax_payload_f[0 +: `PRGA_AXI4_DATA_WIDTH];
+
+        case (sax2r_size[sax_id_f])
+            `PRGA_AXI4_AXSIZE_1B: case (sax2r_offset[sax_id_f][3:0])
+                4'd0:   rdata_p = {8 {sax_payload_f[  0+: 8]} };
+                4'd1:   rdata_p = {8 {sax_payload_f[  8+: 8]} };
+                4'd2:   rdata_p = {8 {sax_payload_f[ 16+: 8]} };
+                4'd3:   rdata_p = {8 {sax_payload_f[ 24+: 8]} };
+                4'd4:   rdata_p = {8 {sax_payload_f[ 32+: 8]} };
+                4'd5:   rdata_p = {8 {sax_payload_f[ 40+: 8]} };
+                4'd6:   rdata_p = {8 {sax_payload_f[ 48+: 8]} };
+                4'd7:   rdata_p = {8 {sax_payload_f[ 56+: 8]} };
+                4'd8:   rdata_p = {8 {sax_payload_f[ 64+: 8]} };
+                4'd9:   rdata_p = {8 {sax_payload_f[ 72+: 8]} };
+                4'd10:  rdata_p = {8 {sax_payload_f[ 80+: 8]} };
+                4'd11:  rdata_p = {8 {sax_payload_f[ 88+: 8]} };
+                4'd12:  rdata_p = {8 {sax_payload_f[ 96+: 8]} };
+                4'd13:  rdata_p = {8 {sax_payload_f[104+: 8]} };
+                4'd14:  rdata_p = {8 {sax_payload_f[112+: 8]} };
+                4'd15:  rdata_p = {8 {sax_payload_f[120+: 8]} };
+            endcase
+            `PRGA_AXI4_AXSIZE_2B: case (sax2r_offset[sax_id_f][3:1])
+                3'd0:   rdata_p = {4 {sax_payload_f[  0+:16]} };
+                3'd1:   rdata_p = {4 {sax_payload_f[ 16+:16]} };
+                3'd2:   rdata_p = {4 {sax_payload_f[ 32+:16]} };
+                3'd3:   rdata_p = {4 {sax_payload_f[ 48+:16]} };
+                3'd4:   rdata_p = {4 {sax_payload_f[ 64+:16]} };
+                3'd5:   rdata_p = {4 {sax_payload_f[ 80+:16]} };
+                3'd6:   rdata_p = {4 {sax_payload_f[ 96+:16]} };
+                3'd7:   rdata_p = {4 {sax_payload_f[112+:16]} };
+            endcase
+            `PRGA_AXI4_AXSIZE_4B: case (sax2r_offset[sax_id_f][3:2])
+                2'd0:   rdata_p = {2 {sax_payload_f[  0+:32]} };
+                2'd1:   rdata_p = {2 {sax_payload_f[ 32+:32]} };
+                2'd2:   rdata_p = {2 {sax_payload_f[ 64+:32]} };
+                2'd3:   rdata_p = {2 {sax_payload_f[ 96+:32]} };
+            endcase
+            `PRGA_AXI4_AXSIZE_8B: case (sax2r_offset[sax_id_f][3:3])
+                1'd0:   rdata_p = sax_payload_f[ 0+:64];
+                1'd1:   rdata_p = sax_payload_f[64+:64];
+            endcase
+        endcase
+    end
+
+    always @* begin
         report_error[ID_R] = 1'b0;
         rvalid_p = 1'b0;
         rresp_p = `PRGA_AXI4_XRESP_OKAY;
         rid_p = sax_id_f;
-        rdata_p = sax_payload_f;
         rlast_p = sax2r_left[sax_id_f] == 0;
         asx_val_candidates[ID_R] = 1'b0;
         asx_data_candidates[ID_R] = {`PRGA_ASX_DATA_WIDTH {1'b0} };
         sax_rdy_candidates[ID_R] = 1'b0;
-        ar2r_ack = ~sax2r_pending[ar2r_id];
+        ar2r_ack = ~sax2r_pending[arid_f];
         r_trx_timer_en = 1'b0;
         r_trx_timer_rst = 1'b1;
 
@@ -1219,8 +1300,6 @@ module prga_mprot #(
         asx_val_candidates[ID_AR] = 1'b0;
         asx_data_candidates[ID_AR] = {`PRGA_ASX_DATA_WIDTH {1'b0} };
         ar2r_valid = 1'b0;
-        ar2r_id = arid_f;
-        ar2r_len = arlen_f;
         ar_state_next = ar_state;
         ar_trx_cnt_next = ar_trx_cnt;
         ar_trx_addr_next = ar_trx_addr;
@@ -1299,7 +1378,15 @@ module prga_mprot #(
                 asx_data_candidates[ID_AR][`PRGA_ASX_AMO_OPCODE_INDEX] =
                     arlock_f    ? aramo_f : `PRGA_CCM_AMO_OPCODE_NONE;
                 asx_data_candidates[ID_AR][`PRGA_CCM_DATA_WIDTH+:`PRGA_CCM_ADDR_WIDTH] = ar_trx_addr;
-                asx_data_candidates[ID_AR][0+:`PRGA_CCM_DATA_WIDTH] = ar_trx_amodata;
+
+                if (SWAP_ENDIANNESS) begin
+                    asx_data_candidates[ID_AR][0+:`PRGA_CCM_DATA_WIDTH] = {
+                        ar_trx_amodata[ 0+:8], ar_trx_amodata[ 8+:8], ar_trx_amodata[16+:8], ar_trx_amodata[24+:8],
+                        ar_trx_amodata[32+:8], ar_trx_amodata[40+:8], ar_trx_amodata[48+:8], ar_trx_amodata[56+:8]
+                    };
+                end else begin
+                    asx_data_candidates[ID_AR][0+:`PRGA_CCM_DATA_WIDTH] = ar_trx_amodata;
+                end
 
                 if (asx_rdy_candidates[ID_AR]) begin
                     // last one?

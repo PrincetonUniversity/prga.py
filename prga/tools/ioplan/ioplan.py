@@ -5,7 +5,8 @@ from ...core.common import Position, OrientationTuple, IOType
 from ...exception import PRGAAPIError, PRGAInternalError
 from ...util import Object, uno
 
-import re, os, sys
+import re, os, sys, logging
+_logger = logging.getLogger(__name__)
 
 __all__ = ["IOPlanner"]
 
@@ -205,11 +206,12 @@ class IOPlanner(Object):
                 index = int(index)
 
             if (port := design.ports.get(name)) is None:
-                raise PRGAAPIError("Design '{}' does not have port '{}'".format(design.name, name))
+                _logger.warning("Design '{}' does not have port '{}'".format(design.name, name))
             elif port.direction.case(bool(out), not out):
                 raise PRGAAPIError("Port '{}' of design '{}' is an {}"
                         .format(name, design.name, port.direction.case("input", "output")))
-            port.set_io_constraint((x, y), subtile, index)
+            else:
+                port.set_io_constraint((x, y), subtile, index)
 
     @classmethod
     def print_io_constraints(cls, design, ostream = sys.stdout):
