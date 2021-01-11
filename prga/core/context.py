@@ -132,7 +132,7 @@ class Context(Object):
     @system_top.setter
     def system_top(self, v):
         self._system_top = v
-        self.summary.top = v.name
+        self.summary.system_top = v.name
 
     @property
     def database(self):
@@ -566,6 +566,7 @@ class Context(Object):
     @top.setter
     def top(self, v):
         self._top = v
+        self.summary.top = v.name
 
     def build_array(self, name, width = 1, height = 1, *,
             set_as_top = None, edge = None, **kwargs):

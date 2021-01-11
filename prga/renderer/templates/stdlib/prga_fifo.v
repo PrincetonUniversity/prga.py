@@ -27,7 +27,7 @@ module prga_fifo #(
     ) ram (
         .clk                (clk)
         ,.rst               (rst)
-        ,.re                (rd_internal)
+        ,.re                (!empty_internal && rd_internal)
         ,.raddr             (rd_ptr[0 +: DEPTH_LOG2])
         ,.dout              (ram_dout)
         ,.waddr             (wr_ptr[0 +: DEPTH_LOG2])

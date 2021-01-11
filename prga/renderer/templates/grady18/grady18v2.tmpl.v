@@ -63,8 +63,8 @@ module grady18v2 (
     // decode programming data
     wire [BLE5_MODE_WIDTH-1:0]  ble5a_mode;
     wire [BLE5_MODE_WIDTH-1:0]  ble5b_mode;
-    wire                        ffa_disable;
-    wire                        ffb_disable;
+    wire                        ffa_disable, ffa_ce;
+    wire                        ffb_disable, ffb_ce;
 
     assign ble5a_mode = prog_data[BLE5A_DATA + BLE5_MODE +: BLE5_MODE_WIDTH];
     assign ble5b_mode = prog_data[BLE5B_DATA + BLE5_MODE +: BLE5_MODE_WIDTH];

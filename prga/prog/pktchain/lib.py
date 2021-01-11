@@ -206,7 +206,10 @@ class Pktchain(Scanchain):
                             iter_instances = iter_instances, insert_delimiter = insert_delimiter, _not_top = True)
 
                 if not sub_branches:
+                    cls._connect_pktchain_leaf(context, lmod, linst, leaf_prog_nets)
+                    
                     linst.scanchain_offset = scanchain_offset
+                    linst.pktchain_branchmap = (len(branches), len(leaves)),
 
                     if (uinst := umod.instances.get(linst.key)) is not None:
                         uinst.prog_bitmap = ProgDataBitmap( (scanchain_offset, linst.model.scanchain_bitcount) )
@@ -546,6 +549,33 @@ class Pktchain(Scanchain):
         return dispatcher, gatherer
 
     @classmethod
+    def _connect_pktchain_leaf(cls, context, module, instance, leaf_prog_nets):
+
+        chain_width = context.summary.scanchain["chain_width"]
+
+        # connect programming nets
+        # standard protocol
+        if "prog_clk" not in leaf_prog_nets:
+            leaf_prog_nets.update(cls._get_or_create_scanchain_prog_nets(module, chain_width,
+                ["prog_we", "prog_din", "prog_dout"]))
+        for key in ("prog_clk", "prog_rst", "prog_done"):
+            if (src := NetUtils.get_source(instance.pins[key])) is None:
+                NetUtils.connect(leaf_prog_nets[key], instance.pins[key])
+        # chain enable
+        if (prog_we_o := leaf_prog_nets.get("prog_we_o")) is None:
+            leaf_prog_nets.setdefault("prog_we", []).append(instance.pins["prog_we"])
+        else:
+            NetUtils.connect(prog_we_o, instance.pins["prog_we"])
+        if (prog_we_o := instance.pins.get("prog_we_o")) is not None:
+            leaf_prog_nets["prog_we_o"] = prog_we_o
+        # chain data
+        if (prog_dout := leaf_prog_nets.get("prog_dout")) is None:
+            leaf_prog_nets["prog_din"] = instance.pins["prog_din"]
+        else:
+            NetUtils.connect(prog_dout, instance.pins["prog_din"])
+        leaf_prog_nets["prog_dout"] = instance.pins["prog_dout"]
+
+    @classmethod
     def _insert_pktchain_leaf(cls, context, module, instance, iter_instances, insert_delimiter,
             leaf_prog_nets, scanchain_offset, branch_id, leaf_id):
 
@@ -568,26 +598,7 @@ class Pktchain(Scanchain):
             bitcount = len(prog_data)
 
         # connect programming nets
-        # standard protocol
-        if "prog_clk" not in leaf_prog_nets:
-            leaf_prog_nets.update(cls._get_or_create_scanchain_prog_nets(module, chain_width,
-                ["prog_we", "prog_din", "prog_dout"]))
-        for key in ("prog_clk", "prog_rst", "prog_done"):
-            if (src := NetUtils.get_source(ichain.pins[key])) is None:
-                NetUtils.connect(leaf_prog_nets[key], ichain.pins[key])
-        # chain enable
-        if (prog_we_o := leaf_prog_nets.get("prog_we_o")) is None:
-            leaf_prog_nets.setdefault("prog_we", []).append(ichain.pins["prog_we"])
-        else:
-            NetUtils.connect(prog_we_o, ichain.pins["prog_we"])
-        if (prog_we_o := ichain.pins.get("prog_we_o")) is not None:
-            leaf_prog_nets["prog_we_o"] = prog_we_o
-        # chain data
-        if (prog_dout := leaf_prog_nets.get("prog_dout")) is None:
-            leaf_prog_nets["prog_din"] = ichain.pins["prog_din"]
-        else:
-            NetUtils.connect(prog_dout, ichain.pins["prog_din"])
-        leaf_prog_nets["prog_dout"] = ichain.pins["prog_dout"]
+        cls._connect_pktchain_leaf(context, module, ichain, leaf_prog_nets)
 
         # update
         instance.scanchain_offset = scanchain_offset

@@ -54,7 +54,7 @@ def generate_v2b_project(context, renderer, config, output = None):
 
     # prepare parameters for script generation
     param = {
-            "abspath": os.path.abspath,
+            "abspath": lambda p: os.path.abspath(os.path.expandvars(p)),
             "summary": "summary.pkl",
             }
 
@@ -93,7 +93,7 @@ if __name__ == '__main__':
 
     # unpickle context
     _logger.info("Unpickling architecture context: {}".format(config["context"]))
-    context = Context.unpickle(config["context"])
+    context = Context.unpickle(os.path.expandvars(config["context"]))
 
     # generate project
     _logger.info("Generating Verilog-to-Bitstream project ...")

@@ -88,7 +88,8 @@ def generate_verif_makefile(summary, renderer, v2b_dir, config_f, config = None,
             test = config["tests"][test],
             libs = libs,
             fpga = fpga,
-            abspath = os.path.abspath)
+            abspath = lambda p: os.path.abspath(os.path.expandvars(p)),
+            )
 
 def generate_verif_testbench(renderer, v2b_dir, config, test = None, output = None):
     """Generate verification testbench."""
