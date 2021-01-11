@@ -8,31 +8,31 @@ from ..netlist import NetUtils, ModuleUtils
 import logging
 _logger = logging.getLogger(__name__)
 
-__all__ = ['LogicalPathAnnotationPass']
+__all__ = ['SwitchPathAnnotation']
 
 # ----------------------------------------------------------------------------
-# -- Logical Path Annotation Pass --------------------------------------------
+# -- Switch Path Annotation Pass ---------------------------------------------
 # ----------------------------------------------------------------------------
-class LogicalPathAnnotationPass(AbstractPass):
-    """Annotate logical implementation of programmable connections on user views."""
+class SwitchPathAnnotation(AbstractPass):
+    """Annotate design-view implementation of programmable connections on abstract views."""
 
     @property
     def key(self):
-        return "annotation.logical_path"
+        return "annotation.switch_path"
 
     @property
     def dependences(self):
         return ("translation", )
 
-    def __process_module(self, context, user_module = None, _cache = None):
+    def __process_module(self, context, abstract = None, _cache = None):
         # short alias
-        umod = uno(user_module, context.top)
+        umod = uno(abstract, context.top)
 
-        # check if we should process ``user_module``
+        # check if we should process ``abstract``
         if umod.module_class.is_primitive:
             return
 
-        # check if we've processed ``user_module`` already
+        # check if we've processed ``abstract`` already
         _cache = uno(_cache, set())
         if umod.key in _cache:
             return
@@ -46,8 +46,8 @@ class LogicalPathAnnotationPass(AbstractPass):
         if umod.module_class in (ModuleClass.array, ModuleClass.tile):
             return
 
-        # get logical implementation
-        lmod = context.database[ModuleView.logical, umod.key]
+        # get design-view implementation
+        lmod = context.database[ModuleView.design, umod.key]
 
         # traverse connection graph and update programmable connections
         # use timing graph instead of conn graph to get the timing arcs passing through switches
@@ -66,18 +66,18 @@ class LogicalPathAnnotationPass(AbstractPass):
 
         # iterate paths
         for startpoint, endpoint, path in g.edges(data="path"):
-            logical_path = []
+            switch_path = []
             for net in path:
                 idx, bus = (net.index, net.bus) if net.net_type.is_bit else (0, net)
                 if (bus.net_type.is_pin
                         and bus.model.direction.is_input
                         and bus.instance.model.module_class.is_switch):
-                    logical_path.append(net)
+                    switch_path.append(net)
 
             # annotate
             conn = NetUtils.get_connection(NetUtils._dereference(umod, startpoint),
                     NetUtils._dereference(umod, endpoint), skip_validations = True)
-            conn.logical_path = tuple(logical_path)
+            conn.switch_path = tuple(switch_path)
 
         _logger.info(" .. Annotated: {}".format(umod))
 

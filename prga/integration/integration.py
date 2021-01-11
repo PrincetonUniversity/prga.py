@@ -204,66 +204,66 @@ class Integration(object):
         # 2.1 modules that we don't need to know about their ports
         for d in ("prga_ctrl", "prga_ecc_parity", "prga_mprot",
                 "prga_sax", "prga_uprot", "prga_ccm_transducer"):
-            context._database[ModuleView.logical, d] = Module(d,
-                    view = ModuleView.logical,
+            context._database[ModuleView.design, d] = Module(d,
+                    view = ModuleView.design,
                     module_class = ModuleClass.aux,
                     verilog_template = "{}.tmpl.v".format(d))
         for d in ("prga_l15_transducer", ):
-            context._database[ModuleView.logical, d] = Module(d,
-                    view = ModuleView.logical,
+            context._database[ModuleView.design, d] = Module(d,
+                    view = ModuleView.design,
                     module_class = ModuleClass.aux,
                     verilog_template = "piton/{}.v".format(d))
         for d in ("prga_fe_axi4lite", ):
-            context._database[ModuleView.logical, d] = Module(d,
-                    view = ModuleView.logical,
+            context._database[ModuleView.design, d] = Module(d,
+                    view = ModuleView.design,
                     module_class = ModuleClass.aux,
                     verilog_template = "axi4lite/{}.tmpl.v".format(d))
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
-                context.database[ModuleView.logical, "prga_clkdiv"], "i_clkdiv")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
-                context.database[ModuleView.logical, "prga_byteaddressable_reg"], "i_bitstream_id")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
-                context.database[ModuleView.logical, "prga_byteaddressable_reg"], "i_eflags")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
-                context.database[ModuleView.logical, "prga_byteaddressable_reg"], "i_app_features")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
-                context.database[ModuleView.logical, "prga_fifo"], "i_tokenq")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_ctrl"],
-                context.database[ModuleView.logical, "prga_fifo"], "i_ctrldataq")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_ctrl"],
+                context.database[ModuleView.design, "prga_clkdiv"], "i_clkdiv")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_ctrl"],
+                context.database[ModuleView.design, "prga_byteaddressable_reg"], "i_bitstream_id")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_ctrl"],
+                context.database[ModuleView.design, "prga_byteaddressable_reg"], "i_eflags")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_ctrl"],
+                context.database[ModuleView.design, "prga_byteaddressable_reg"], "i_app_features")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_ctrl"],
+                context.database[ModuleView.design, "prga_fifo"], "i_tokenq")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_ctrl"],
+                context.database[ModuleView.design, "prga_fifo"], "i_ctrldataq")
 
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_mprot"],
-                context.database[ModuleView.logical, "prga_ecc_parity"], "i_ecc_checker")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_mprot"],
-                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_buf")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_mprot"],
+                context.database[ModuleView.design, "prga_ecc_parity"], "i_ecc_checker")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_mprot"],
+                context.database[ModuleView.design, "prga_valrdy_buf"], "i_buf")
 
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_sax"],
-                context.database[ModuleView.logical, "prga_async_fifo"], "i_sax_fifo")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_sax"],
-                context.database[ModuleView.logical, "prga_async_fifo"], "i_asx_fifo")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_sax"],
+                context.database[ModuleView.design, "prga_async_fifo"], "i_sax_fifo")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_sax"],
+                context.database[ModuleView.design, "prga_async_fifo"], "i_asx_fifo")
 
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_uprot"],
-                context.database[ModuleView.logical, "prga_ecc_parity"], "i_ecc_checker")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_uprot"],
-                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_buf")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_uprot"],
+                context.database[ModuleView.design, "prga_ecc_parity"], "i_ecc_checker")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_uprot"],
+                context.database[ModuleView.design, "prga_valrdy_buf"], "i_buf")
 
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_awaddr")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_wdata")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_araddr")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_bresp")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_rresp")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_creq")
-        ModuleUtils.instantiate(context.database[ModuleView.logical, "prga_fe_axi4lite"],
-                context.database[ModuleView.logical, "prga_valrdy_buf"], "i_cresp")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fe_axi4lite"],
+                context.database[ModuleView.design, "prga_valrdy_buf"], "i_awaddr")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fe_axi4lite"],
+                context.database[ModuleView.design, "prga_valrdy_buf"], "i_wdata")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fe_axi4lite"],
+                context.database[ModuleView.design, "prga_valrdy_buf"], "i_araddr")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fe_axi4lite"],
+                context.database[ModuleView.design, "prga_valrdy_buf"], "i_bresp")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fe_axi4lite"],
+                context.database[ModuleView.design, "prga_valrdy_buf"], "i_rresp")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fe_axi4lite"],
+                context.database[ModuleView.design, "prga_valrdy_buf"], "i_creq")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fe_axi4lite"],
+                context.database[ModuleView.design, "prga_valrdy_buf"], "i_cresp")
 
         # 2.2 modules that we do need to know about their ports
-        sysintf = context._database[ModuleView.logical, "prga_sysintf"] = Module("prga_sysintf",
-                view = ModuleView.logical,
+        sysintf = context._database[ModuleView.design, "prga_sysintf"] = Module("prga_sysintf",
+                view = ModuleView.design,
                 module_class = ModuleClass.aux,
                 verilog_template = "prga_sysintf.tmpl.v")
         cls._create_intf_syscon     (sysintf, True)          # programming clock and reset
@@ -274,23 +274,23 @@ class Integration(object):
         cls._create_intf_reg        (sysintf, False, "ureg_", True)
         cls._create_intf_ccm        (sysintf, True, "uccm_", True)
         ModuleUtils.create_port(sysintf, "urst_n", 1, PortDirection.output)
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_ctrl"], "i_ctrl")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_ccm_transducer"], "i_transducer")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_sax"], "i_sax")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_uprot"], "i_uprot")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_mprot"], "i_mprot")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_ctrl"], "i_ctrl")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_ccm_transducer"], "i_transducer")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_sax"], "i_sax")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_uprot"], "i_uprot")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_mprot"], "i_mprot")
 
         # 3. AXI4 interface
-        mprot = context._database[ModuleView.logical, "prga_mprot.axi4"] = Module("prga_mprot",
-                view = ModuleView.logical,
+        mprot = context._database[ModuleView.design, "prga_mprot.axi4"] = Module("prga_mprot",
+                view = ModuleView.design,
                 module_class = ModuleClass.aux,
                 verilog_template = "ccm_axi4/prga_mprot.tmpl.v",
                 key = "prga_mprot.axi4")
-        ModuleUtils.instantiate(mprot, context.database[ModuleView.logical, "prga_ecc_parity"], "i_ecc_checker")
-        ModuleUtils.instantiate(mprot, context.database[ModuleView.logical, "prga_valrdy_buf"], "i_buf")
+        ModuleUtils.instantiate(mprot, context.database[ModuleView.design, "prga_ecc_parity"], "i_ecc_checker")
+        ModuleUtils.instantiate(mprot, context.database[ModuleView.design, "prga_valrdy_buf"], "i_buf")
 
-        sysintf = context._database[ModuleView.logical, "prga_sysintf.axi4"] = Module("prga_sysintf",
-                view = ModuleView.logical,
+        sysintf = context._database[ModuleView.design, "prga_sysintf.axi4"] = Module("prga_sysintf",
+                view = ModuleView.design,
                 module_class = ModuleClass.aux,
                 verilog_template = "ccm_axi4/prga_sysintf.tmpl.v",
                 key = "prga_sysintf.axi4")
@@ -302,11 +302,11 @@ class Integration(object):
         cls._create_intf_reg        (sysintf, False, "ureg_", True)
         cls._create_intf_ccm_axi4   (sysintf, True)
         ModuleUtils.create_port(sysintf, "urst_n", 1, PortDirection.output)
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_ctrl"], "i_ctrl")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_ccm_transducer"], "i_transducer")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_sax"], "i_sax")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_uprot"], "i_uprot")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.logical, "prga_mprot.axi4"], "i_mprot")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_ctrl"], "i_ctrl")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_ccm_transducer"], "i_transducer")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_sax"], "i_sax")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_uprot"], "i_uprot")
+        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_mprot.axi4"], "i_mprot")
 
     @classmethod
     def _create_design_intf(cls, context, interfaces):
@@ -453,7 +453,7 @@ class Integration(object):
         IOPlanner.autoplan(context, intf)
 
         # create system
-        system = context.system_top = Module(name, view = ModuleView.logical, module_class = ModuleClass.aux)
+        system = context.system_top = Module(name, view = ModuleView.design, module_class = ModuleClass.aux)
 
         # create ports
         cls._create_intf_syscon(system, True)
@@ -464,11 +464,11 @@ class Integration(object):
         sysintf = None
         if InterfaceClass.ccm_simple in interfaces:
             sysintf = ModuleUtils.instantiate(system,
-                    context.database[ModuleView.logical, "prga_sysintf"],
+                    context.database[ModuleView.design, "prga_sysintf"],
                     "i_sysintf")
         else:
             sysintf = ModuleUtils.instantiate(system,
-                    context.database[ModuleView.logical, "prga_sysintf.axi4"],
+                    context.database[ModuleView.design, "prga_sysintf.axi4"],
                     "i_sysintf")
 
         # connect system ports to sysintf
@@ -482,8 +482,8 @@ class Integration(object):
         nets = None
         if core:
             # build system core (fabric wrapper)
-            core = context._database[ModuleView.logical, core] = Module(core,
-                    view = ModuleView.logical, module_class = ModuleClass.aux)
+            core = context._database[ModuleView.design, core] = Module(core,
+                    view = ModuleView.design, module_class = ModuleClass.aux)
 
             # create ports in core
             cls._create_intf_syscon(core, True, "u")
@@ -496,7 +496,7 @@ class Integration(object):
 
             # instantiate fabric within core
             fabric = ModuleUtils.instantiate(core,
-                    context.database[ModuleView.logical, context.top.key], "i_fabric")
+                    context.database[ModuleView.design, context.top.key], "i_fabric")
             nets = core.ports
 
             # instantiate core in system
@@ -519,7 +519,7 @@ class Integration(object):
         else:
             # instantiate fabric within system
             fabric = ModuleUtils.instantiate(system,
-                    context.database[ModuleView.logical, context.top.key], "i_fabric")
+                    context.database[ModuleView.design, context.top.key], "i_fabric")
             nets = sysintf.pins
 
         # connect fabric

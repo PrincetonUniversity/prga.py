@@ -14,13 +14,13 @@ from networkx.exception import NetworkXError
 import logging
 _logger = logging.getLogger(__name__)
 
-__all__ = ['SwitchDelegate', 'TranslationPass']
+__all__ = ['SwitchDelegate', 'Translation']
 
 # ----------------------------------------------------------------------------
 # -- Switch Delegate ---------------------------------------------------------
 # ----------------------------------------------------------------------------
 class SwitchDelegate(Object):
-    """Switch delegate choosing logical switch modules for instantiation.
+    """Switch delegate choosing design-view switch modules for instantiation.
     
     Args:
         context (`Context`):
@@ -50,15 +50,15 @@ class SwitchDelegate(Object):
 
         # check if the switch is already added
         try:
-            return self.context.database[ModuleView.logical, key]
+            return self.context.database[ModuleView.design, key]
         except KeyError:
             pass
 
         # create and add new switch module
-        switch = self.context._database[ModuleView.logical, key] = Module(
+        switch = self.context._database[ModuleView.design, key] = Module(
                 "sw" + str(width),
                 is_cell = True,
-                view = ModuleView.logical,
+                view = ModuleView.design,
                 key = key,
                 module_class = ModuleClass.switch,
                 verilog_template = "builtin/switch.tmpl.v")
@@ -81,16 +81,16 @@ class SwitchDelegate(Object):
 # ----------------------------------------------------------------------------
 # -- Translation Pass --------------------------------------------------------
 # ----------------------------------------------------------------------------
-class TranslationPass(AbstractPass):
-    """Translate modules in user view to logical view.
+class Translation(AbstractPass):
+    """Translate modules in abstract view to design view.
 
     Args:
-        top (`Module`): Top-level array in user view. The top array from the context is selected by default
+        top (`Module`): Top-level array in abstract view. The top array from the context is selected by default
 
     Keyword Args:
-        create_blackbox_for_undefined_primitives (:obj:`bool`): `TranslationPass` does not know how to translate
-            primitives. By default, if the logical view is not defined for a primitive, an error is raised.
-            If ``create_blackbox_for_undefined_primitives`` is set to ``True``, an empty logical view is created in
+        create_blackbox_for_undefined_primitives (:obj:`bool`): `Translation` does not know how to translate
+            primitives. By default, if the design view is not defined for a primitive, an error is raised.
+            If ``create_blackbox_for_undefined_primitives`` is set to ``True``, an empty design view is created in
             this case.
     """
 
@@ -126,10 +126,10 @@ class TranslationPass(AbstractPass):
 
     def _process_module(self, module, context, *, disable_coalesce = False, is_top = False):
         # shortcut if the module is already processed
-        if (logical := context._database.get((ModuleView.logical, module.key))) is not None:
-            return logical
+        if (design := context._database.get((ModuleView.design, module.key))) is not None:
+            return design
 
-        # make sure the user module is tranlatible
+        # make sure the abstract module is tranlatible
         if not (module.module_class.is_slice or
                 module.module_class.is_block or
                 module.module_class.is_routing_box or
@@ -143,7 +143,7 @@ class TranslationPass(AbstractPass):
 
         # prepare the arguments for creating a new module
         kwargs = {
-                'view': ModuleView.logical,
+                'view': ModuleView.design,
                 'module_class': module.module_class,
                 'key': module.key,
                 }
@@ -161,8 +161,8 @@ class TranslationPass(AbstractPass):
             kwargs["width"] = module.width
             kwargs["height"] = module.height
 
-        # create logical module
-        logical = Module(module.name, **kwargs)
+        # create design module
+        design = Module(module.name, **kwargs)
 
         # translate ports
         for port in module.ports.values():
@@ -188,29 +188,29 @@ class TranslationPass(AbstractPass):
                 attrs["net_class"] = NetClass.bridge
             if "net_class" not in attrs:
                 raise NotImplementedError("Could not deduct net class of {}".format(port))
-            ModuleUtils.create_port(logical, port.name, len(port), port.direction, **attrs)
+            ModuleUtils.create_port(design, port.name, len(port), port.direction, **attrs)
 
         # translate instances
         for instance in module.instances.values():
-            logical_model = self._process_module(instance.model, context,
-                    disable_coalesce = disable_coalesce or not logical.coalesce_connections)
-            logical_instance = ModuleUtils.instantiate(logical, logical_model, instance.name, key = instance.key)
+            design_model = self._process_module(instance.model, context,
+                    disable_coalesce = disable_coalesce or not design.coalesce_connections)
+            design_instance = ModuleUtils.instantiate(design, design_model, instance.name, key = instance.key)
 
         # translate connections
         if module.module_class.is_primitive:
             pass
         else:
-            # user connections
+            # abstract connections
             for usink in ModuleUtils._iter_nets(module):
                 if not usink.is_sink:
                     continue
-                lsink = NetUtils._dereference(logical, NetUtils._reference(usink))
+                lsink = NetUtils._dereference(design, NetUtils._reference(usink))
                 if module.coalesce_connections:
                     usrc = NetUtils.get_source(usink, return_const_if_unconnected = True)
-                    NetUtils.connect(NetUtils._dereference(logical, NetUtils._reference(usrc)), lsink)
+                    NetUtils.connect(NetUtils._dereference(design, NetUtils._reference(usrc)), lsink)
                 elif not module.allow_multisource:
                     usrc = NetUtils.get_source(usink, return_const_if_unconnected = True)
-                    NetUtils.connect([NetUtils._dereference(logical, NetUtils._reference(i)) for i in usrc], lsink)
+                    NetUtils.connect([NetUtils._dereference(design, NetUtils._reference(i)) for i in usrc], lsink)
                 else:
                     for i, bit in enumerate(usink):
                         if len(usrcs := NetUtils.get_multisource(bit)) == 0:
@@ -225,10 +225,10 @@ class TranslationPass(AbstractPass):
                                     and not usink.model.is_clock)):
 
                             # direct connect (no programmability)
-                            NetUtils.connect(NetUtils._dereference(logical, NetUtils._reference(usrcs)), lsink[i])
+                            NetUtils.connect(NetUtils._dereference(design, NetUtils._reference(usrcs)), lsink[i])
                             continue
 
-                        switch_model = context.switch_delegate.get_switch(len(usrcs), logical)
+                        switch_model = context.switch_delegate.get_switch(len(usrcs), design)
                         switch_name = ["i_sw"]
                         if usink.net_type.is_pin:
                             switch_name.append( usink.instance.name )
@@ -237,20 +237,20 @@ class TranslationPass(AbstractPass):
                             switch_name.append( usink.name )
                         if bit.net_type.is_bit:
                             switch_name.append( str(i) )
-                        switch = ModuleUtils.instantiate(logical, switch_model, "_".join(switch_name),
+                        switch = ModuleUtils.instantiate(design, switch_model, "_".join(switch_name),
                                 key = (ModuleClass.switch, bitref))
                         NetUtils.connect(
-                                [NetUtils._dereference(logical, NetUtils._reference(usrc)) for usrc in usrcs], 
+                                [NetUtils._dereference(design, NetUtils._reference(usrc)) for usrc in usrcs], 
                                 switch.pins["i"])
                         NetUtils.connect(switch.pins["o"], lsink[i])
 
-            # logical connections
-            for net in ModuleUtils._iter_nets(logical):
+            # design connections
+            for net in ModuleUtils._iter_nets(design):
                 # global wire?
                 if net.net_type.is_pin and (global_ := getattr(net.model, "global_", None)) is not None:
                     if not is_top:
-                        if (port := logical.ports.get(global_.name)) is None:
-                            port = ModuleUtils.create_port(logical, global_.name, global_.width,
+                        if (port := design.ports.get(global_.name)) is None:
+                            port = ModuleUtils.create_port(design, global_.name, global_.width,
                                     PortDirection.input_, net_class = NetClass.global_, global_ = global_)
                         NetUtils.connect(port, net)
                     elif ((tile := ArrayBuilder.get_hierarchical_root(module, global_.bound_to_position)) is None or
@@ -259,27 +259,27 @@ class TranslationPass(AbstractPass):
                         raise PRGAInternalError("Global wire '{}' bound to subtile {} at {} but no IO input found"
                                 .format(global_.name, global_.bound_to_subtile, global_.bound_to_position))
                     else:
-                        NetUtils.connect(self._get_or_create_io(logical, IOType.ipin,
+                        NetUtils.connect(self._get_or_create_io(design, IOType.ipin,
                             global_.bound_to_position, global_.bound_to_subtile), net)
                 # IO?
                 elif net.net_type.is_pin and net.model.net_class.is_io:
                     port = None
                     if net.instance.model.module_class.is_primitive:
-                        port = self._get_or_create_io(logical, net.model.key)
+                        port = self._get_or_create_io(design, net.model.key)
                     elif net.instance.model.module_class.is_io_block:
-                        port = self._get_or_create_io(logical, net.model.key, subtile = net.instance.key)
+                        port = self._get_or_create_io(design, net.model.key, subtile = net.instance.key)
                     else:
                         iotype, pos, subtile = net.model.key
-                        port = self._get_or_create_io(logical, iotype, pos + net.instance.key, subtile)
+                        port = self._get_or_create_io(design, iotype, pos + net.instance.key, subtile)
                     if port.direction.is_input:
                         NetUtils.connect(port, net)
                     else:
                         NetUtils.connect(net, port)
 
         # add to the database
-        context._database[ModuleView.logical, module.key] = logical
+        context._database[ModuleView.design, module.key] = design
         _logger.info(" .. Translated: {}".format(module))
-        return logical
+        return design
 
     def run(self, context, renderer = None):
         top = uno(self.top, context.top)

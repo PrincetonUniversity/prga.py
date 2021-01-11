@@ -64,7 +64,7 @@ class _BaseSliceLikeBuilder(BaseBuilder):
         """Instantiate ``model`` in the module.
 
         Args:
-            model (`Module`): User view of the module to be instantiated
+            model (`Module`): Abstract view of the module to be instantiated
             name (:obj:`str`): Name of the instance. If ``reps`` is specified, each instance is named
                 ``"{name}_i{index}"``
             reps (:obj:`int`): If set to a positive int, the specified number of instances are created, added to
@@ -155,7 +155,7 @@ class SliceBuilder(_BaseSliceLikeBuilder):
             `Module`: The created module
         """
         return Module(name,
-                view = ModuleView.user,
+                view = ModuleView.abstract,
                 allow_multisource = True,
                 module_class = ModuleClass.slice_,
                 clock = None,
@@ -242,7 +242,7 @@ class IOBlockBuilder(_BaseSliceLikeBuilder):
         """
         return Module(name,
                 allow_multisource = True,
-                view = ModuleView.user,
+                view = ModuleView.abstract,
                 module_class = ModuleClass.io_block,
                 clock = None,
                 width = 1,
@@ -379,7 +379,7 @@ class LogicBlockBuilder(_BaseSliceLikeBuilder):
         """
         return Module(name,
                 allow_multisource = True,
-                view = ModuleView.user,
+                view = ModuleView.abstract,
                 module_class = ModuleClass.logic_block,
                 clock = None,
                 width = width,

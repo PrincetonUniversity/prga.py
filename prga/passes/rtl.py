@@ -28,7 +28,7 @@ class VerilogCollection(AbstractPass):
     """
 
     __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'view', 'visited', 'incremental']
-    def __init__(self, src_output_dir = ".", header_output_dir = None, view = ModuleView.logical,
+    def __init__(self, src_output_dir = ".", header_output_dir = None, view = ModuleView.design,
             incremental = False):
         self.src_output_dir = src_output_dir
         self.header_output_dir = uno(header_output_dir, os.path.join(src_output_dir, "include"))
@@ -57,7 +57,7 @@ class VerilogCollection(AbstractPass):
 
     @property
     def dependences(self):
-        if self.view.is_logical:
+        if self.view.is_design:
             return ("translation", )
         else:
             return ("translation", "materialization")

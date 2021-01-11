@@ -565,11 +565,11 @@ class _VPRArchGeneration(AbstractPass):
             # physical tiles
             with xml.element("tiles"):
                 for tile_key in self.active_tiles:
-                    self._tile(context, context.database[ModuleView.user, tile_key])
+                    self._tile(context, context.database[ModuleView.abstract, tile_key])
             # complex blocks
             with xml.element("complexblocklist"):
                 for block_key in self.active_blocks:
-                    self._pb_type(context.database[ModuleView.user, block_key])
+                    self._pb_type(context.database[ModuleView.abstract, block_key])
             # directs:
             if (active_tunnels := tuple(tunnel for tunnel in context.tunnels.values()
                 if tunnel.source.parent.key in self.active_blocks and tunnel.sink.parent.key in self.active_blocks)):
@@ -580,7 +580,7 @@ class _VPRArchGeneration(AbstractPass):
             with xml.element("models"):
                 generated = set()
                 for model_key in self.active_primitives:
-                    model = context.database[ModuleView.user, model_key]
+                    model = context.database[ModuleView.abstract, model_key]
                     if model.vpr_model not in generated:
                         generated.add(model.vpr_model)
                         self._model(model)

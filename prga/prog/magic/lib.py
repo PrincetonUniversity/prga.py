@@ -46,7 +46,7 @@ class MagicFASMDelegate(FASMDelegate):
             else:
                 return self._value(prog_enable, True)
         fasm_features = []
-        for net in getattr(conn, "logical_path", tuple()):
+        for net in getattr(conn, "switch_path", tuple()):
             bus, idx = (net.bus, net.index) if net.net_type.is_bit else (net, 0)
             fasm_features.extend('{}.{}'.format(bus.instance.name, v)
                     for v in self._value(bus.instance.model.prog_enable[idx], True))
@@ -127,16 +127,16 @@ class Magic(AbstractProgCircuitryEntry):
         """Insert [fake] programming circuitry."""
 
         @classmethod
-        def __process_module(cls, context, logical_module = None, _cache = None):
+        def __process_module(cls, context, design_view = None, _cache = None):
             """Set ``prog_data`` of leaf modules to default 0."""
             # short alias
-            lmod = uno(logical_module, context.database[ModuleView.logical, context.top.key])
+            lmod = uno(design_view, context.database[ModuleView.design, context.top.key])
 
-            # check if we should process ``logical_module``
+            # check if we should process ``design_view``
             if lmod.module_class in (ModuleClass.primitive, ModuleClass.switch, ModuleClass.prog, ModuleClass.aux):
                 return
 
-            # check if we've processed ``logical_module``
+            # check if we've processed ``design_view``
             _cache = uno(_cache, set())
             if lmod.key in _cache:
                 return
@@ -166,7 +166,7 @@ class Magic(AbstractProgCircuitryEntry):
 
         @property
         def dependences(self):
-            return ("annotation.logical_path", )
+            return ("annotation.switch_path", )
 
         @property
         def passes_after_self(self):

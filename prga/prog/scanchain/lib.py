@@ -48,7 +48,7 @@ class ScanchainFASMDelegate(FASMDelegate):
             else:
                 return self._value(prog_enable, True)
         fasm_features = []
-        for net in getattr(conn, "logical_path", tuple()):
+        for net in getattr(conn, "switch_path", tuple()):
             bus, idx = (net.bus, net.index) if net.net_type.is_bit else (net, 0)
             fasm_features.extend("+{}#{}.{}".format(
                 bus.instance.scanchain_offset, len(bus.instance.pins["prog_data"]), v)
@@ -134,28 +134,28 @@ class Scanchain(AbstractProgCircuitryEntry):
         return FileRenderer(*additional_template_search_paths, ADDITIONAL_TEMPLATE_SEARCH_PATH)
 
     @classmethod
-    def insert_scanchain(cls, context, logical_module = None, *,
+    def insert_scanchain(cls, context, design_view = None, *,
             iter_instances = None, insert_delimiter = None):
         """Insert the scanchain.
         
         Args:
             context (`Context`):
-            logical_module (`Module`): The module (logical view) in which scanchain is inserted. If not specified, the
+            design_view (`Module`): The module (design view) in which scanchain is inserted. If not specified, the
                 top-level array in ``context`` is selected
 
         Keyword Args:
             iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
                 the instances in a module
             insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if `we` buffers are inserted at
-                the beginning and end of the scanchain inside ``logical_module``. By default, buffers are inserted in
+                the beginning and end of the scanchain inside ``design_view``. By default, buffers are inserted in
                 all logic/IO blocks and routing boxes.
 
         This method calls itself recursively to process all the instances (sub-modules).
         """
 
         chain_width = context.summary.scanchain["chain_width"]
-        lmod = uno(logical_module, context.database[ModuleView.logical, context.top.key])
-        umod = context.database[ModuleView.user, lmod.key]
+        lmod = uno(design_view, context.database[ModuleView.design, context.top.key])
+        umod = context.database[ModuleView.abstract, lmod.key]
         iter_instances = uno(iter_instances, lambda m: m.instances.values())
         insert_delimiter = uno(insert_delimiter, lambda m: m.module_class.is_block or m.module_class.is_routing_box)
 
@@ -194,7 +194,7 @@ class Scanchain(AbstractProgCircuitryEntry):
                 if insert_delimiter(lmod):
                     if (delim := lmod.instances.get("i_scanchain_head")) is None:
                         delim = ModuleUtils.instantiate(lmod,
-                                context.database[ModuleView.logical, "scanchain_delim"], "i_scanchain_head")
+                                context.database[ModuleView.design, "scanchain_delim"], "i_scanchain_head")
                         for key in ("prog_clk", "prog_rst", "prog_done", "prog_we", "prog_din"):
                             NetUtils.connect(prog_nets[key], delim.pins[key])
 
@@ -253,7 +253,7 @@ class Scanchain(AbstractProgCircuitryEntry):
                 # insert trailing delimeter
                 if (delim := lmod.instances.get("i_scanchain_tail")) is None:
                     delim = ModuleUtils.instantiate(lmod,
-                            context.database[ModuleView.logical, "scanchain_delim"], "i_scanchain_tail")
+                            context.database[ModuleView.design, "scanchain_delim"], "i_scanchain_tail")
                     for key in ("prog_clk", "prog_rst", "prog_done", "prog_we", "prog_din"):
                         NetUtils.connect(prog_nets[key], delim.pins[key])
                     prog_nets["prog_din"] = delim.pins["prog_dout"]
@@ -279,13 +279,13 @@ class Scanchain(AbstractProgCircuitryEntry):
         # register scanchain delimeter
         delim = Module("scanchain_delim",
                 is_cell = True,
-                view = ModuleView.logical,
+                view = ModuleView.design,
                 module_class = ModuleClass.prog,
                 verilog_template = "scanchain_delim.tmpl.v")
         cls._get_or_create_scanchain_prog_nets(delim, context.summary.scanchain["chain_width"])
         ModuleUtils.create_port(delim, "prog_we_o", 1, PortDirection.output, net_class = NetClass.prog)
 
-        context._database[ModuleView.logical, "scanchain_delim"] = delim
+        context._database[ModuleView.design, "scanchain_delim"] = delim
 
     @classmethod
     def _get_or_create_scanchain_data_cell(cls, context, data_width):
@@ -300,10 +300,10 @@ class Scanchain(AbstractProgCircuitryEntry):
         """
         key = ("scanchain_data", data_width)
 
-        if (module := context.database.get( (ModuleView.logical, key) )) is None:
+        if (module := context.database.get( (ModuleView.design, key) )) is None:
             module = Module("scanchain_data_d{}".format(data_width),
                     is_cell = True,
-                    view = ModuleView.logical,
+                    view = ModuleView.design,
                     module_class = ModuleClass.prog,
                     verilog_template = "scanchain_data.tmpl.v",
                     key = key)
@@ -311,7 +311,7 @@ class Scanchain(AbstractProgCircuitryEntry):
             cls._get_or_create_scanchain_prog_nets(module, context.summary.scanchain["chain_width"])
             ModuleUtils.create_port(module, "prog_data", data_width, PortDirection.output, net_class = NetClass.prog)
 
-            context._database[ModuleView.logical, key] = module
+            context._database[ModuleView.design, key] = module
 
         return module
 
@@ -374,7 +374,7 @@ class Scanchain(AbstractProgCircuitryEntry):
             iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
                 the instances in a module
             insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if `we` buffers are inserted at
-                the beginning and end of the scanchain inside ``logical_module``. By default, buffers are inserted in
+                the beginning and end of the scanchain inside ``design_view``. By default, buffers are inserted in
                 all logic/IO blocks and routing boxes.
         
         """
@@ -396,7 +396,7 @@ class Scanchain(AbstractProgCircuitryEntry):
 
         @property
         def dependences(self):
-            return ("annotation.logical_path", )
+            return ("annotation.switch_path", )
 
         @property
         def passes_after_self(self):

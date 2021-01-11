@@ -8,17 +8,17 @@ from ...util import uno
 
 from abc import abstractproperty
 
-__all__ = ["LogicalPrimitiveBuilder", "PrimitiveBuilder", 'MultimodeBuilder']
+__all__ = ["DesignViewPrimitiveBuilder", "PrimitiveBuilder", 'MultimodeBuilder']
 
 # ----------------------------------------------------------------------------
 # -- Base Builder for Primitives ---------------------------------------------
 # ----------------------------------------------------------------------------
 class _BasePrimitiveBuilder(BaseBuilder):
-    """Base class for user-/logical- [multi-mode] primitive builder."""
+    """Base class for abstract-/design- [multi-mode] primitive builder."""
 
     @abstractproperty
     def counterpart(self):
-        """`Module`: The user view of the primitive if we're building logical view."""
+        """`Module`: The abstract view of the primitive if we're building design view."""
         raise NotImplementedError
 
     def create_clock(self, name, **kwargs):
@@ -33,9 +33,9 @@ class _BasePrimitiveBuilder(BaseBuilder):
         Returns:
             `Port`:
         """
-        if self._module.view.is_logical:
+        if self._module.view.is_design:
             if self.counterpart is not None:
-                raise PRGAInternalError("Cannot create user-available ports in the logical view of {}"
+                raise PRGAInternalError("Cannot create user-available ports in the design view of {}"
                     .format(self._module))
             else:
                 kwargs["net_class"] = NetClass.user
@@ -57,9 +57,9 @@ class _BasePrimitiveBuilder(BaseBuilder):
         Returns:
             `Port`:
         """
-        if self._module.view.is_logical:
+        if self._module.view.is_design:
             if self.counterpart is not None:
-                raise PRGAInternalError("Cannot create user-available ports in the logical view of {}"
+                raise PRGAInternalError("Cannot create user-available ports in the design view of {}"
                         .format(self._module))
             else:
                 kwargs["net_class"] = NetClass.user
@@ -81,9 +81,9 @@ class _BasePrimitiveBuilder(BaseBuilder):
         Returns:
             `Port`:
         """
-        if self._module.view.is_logical:
+        if self._module.view.is_design:
             if self.counterpart is not None:
-                raise PRGAInternalError("Cannot create user-available ports in the logical view of {}"
+                raise PRGAInternalError("Cannot create user-available ports in the design view of {}"
                         .format(self._module))
             else:
                 kwargs["net_class"] = NetClass.user
@@ -109,20 +109,20 @@ class _BasePrimitiveBuilder(BaseBuilder):
         return NetUtils.create_timing_arc(type_, source, sink, max_ = max_, min_ = min_)
 
 # ----------------------------------------------------------------------------
-# -- Builder for Logical Views of Single-Mode Primitives ---------------------
+# -- Builder for Design Views of Single-Mode Primitives ----------------------
 # ----------------------------------------------------------------------------
-class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
-    """Logical-view primitive module builder.
+class DesignViewPrimitiveBuilder(_BasePrimitiveBuilder):
+    """Design-view primitive module builder.
 
     Args:
         context (`Context`): The context of the builder
         module (`Module`): The module to be built
-        counterpart (`Module`): The user-view of the same primitive
+        counterpart (`Module`): The abstract view of the same primitive
     """
 
     __slots__ = ["_counterpart"]
     def __init__(self, context, module, counterpart = None):
-        super(LogicalPrimitiveBuilder, self).__init__(context, module)
+        super(DesignViewPrimitiveBuilder, self).__init__(context, module)
         self._counterpart = counterpart
 
     @property
@@ -137,7 +137,7 @@ class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
             name (:obj:`str`): Name of the primitive
 
         Keyword Args:
-            not_cell (:obj:`bool`): If set, the logical primitive is not a cell module
+            not_cell (:obj:`bool`): If set, the design-view primitive is not a cell module
             **kwargs: Additional attibutes assigned to the primitive
 
         Returns:
@@ -145,32 +145,32 @@ class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
         """
         return Module(name,
                 is_cell = not not_cell,
-                view = ModuleView.logical,
+                view = ModuleView.design,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.custom,
                 **kwargs)
 
     @classmethod
-    def new_from_user_view(cls, user_view, *, not_cell = False, **kwargs):
-        """Create a new logical view from the user view of a primitive.
+    def new_from_abstract_view(cls, abstract, *, not_cell = False, **kwargs):
+        """Create a new design view from the abstract view of a primitive.
         
         Args:
-            user_view (`Module`): User view of the primitive
+            abstract (`Module`): Abstract view of the primitive
 
         Keyword Args:
-            not_cell (:obj:`bool`): If set, the logical primitive is not a cell module
+            not_cell (:obj:`bool`): If set, the design-view primitive is not a cell module
             **kwargs: Additional attibutes assigned to the primitive
 
         Returns:
             `Module`:
         """
-        m = Module(user_view.name,
+        m = Module(abstract.name,
                 is_cell = not not_cell,
-                view = ModuleView.logical,
+                view = ModuleView.design,
                 module_class = ModuleClass.primitive,
-                primitive_class = user_view.primitive_class,
+                primitive_class = abstract.primitive_class,
                 **kwargs)
-        for key, port in user_view.ports.items():
+        for key, port in abstract.ports.items():
             assert key == port.name
             if (port_class := getattr(port, "port_class", None)) is None:
                 ModuleUtils.create_port(m, key, len(port), port.direction,
@@ -199,10 +199,10 @@ class LogicalPrimitiveBuilder(_BasePrimitiveBuilder):
         return ModuleUtils.create_port(self._module, name, width, direction, is_clock = is_clock, **kwargs)
 
 # ----------------------------------------------------------------------------
-# -- Builder for User Views of Single-Mode Primitives ------------------------
+# -- Builder for Abstract Views of Single-Mode Primitives --------------------
 # ----------------------------------------------------------------------------
 class PrimitiveBuilder(_BasePrimitiveBuilder):
-    """User-view primitive module builder.
+    """Abstract view primitive module builder.
 
     Args:
         context (`Context`): The context of the builder
@@ -215,7 +215,7 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
 
     @classmethod
     def new(cls, name, *, vpr_model = None, **kwargs):
-        """Create a new primitive in user view for building.
+        """Create a new primitive in abstract view for building.
         
         Args:
             name (:obj:`str`): Name of the primitive
@@ -229,7 +229,7 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
         """
         return Module(name,
                 is_cell = True,
-                view = ModuleView.user,
+                view = ModuleView.abstract,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.custom,
                 vpr_model = uno(vpr_model, "m_{}".format(name)),
@@ -238,7 +238,7 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
     @classmethod
     def new_memory(cls, name, addr_width, data_width, *,
             vpr_model = None, memory_type = "1r1w", **kwargs):
-        """Create a new memory primitive in user view.
+        """Create a new memory primitive in abstract view.
         
         Args:
             name (:obj:`str`): Name of the primitive
@@ -267,7 +267,7 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
 
         m = Module(name,
                 is_cell = True,
-                view = ModuleView.user,
+                view = ModuleView.abstract,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.memory,
                 vpr_model = uno(vpr_model, "m_ram_{}".format(memory_type)),
@@ -322,41 +322,41 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
             NetUtils.create_timing_arc(TimingArcType.seq_start, clk, o)
         return m
 
-    def commit(self, *, dont_create_logical_counterpart = False):
+    def commit(self, *, dont_create_design_view_counterpart = False):
         """Commit the module.
 
         Keyword Args:
-            dont_create_logical_counterpart (:obj:`bool`): If set to ``True``, the logical view of this module won't
-                be created automatically
+            dont_create_design_view_counterpart (:obj:`bool`): If set to ``True``, the design view of this module
+                won't be created automatically
 
         Returns:
             `Module`:
         """
         m = super(PrimitiveBuilder, self).commit()
-        if self._module.primitive_class.is_memory and not dont_create_logical_counterpart:
+        if self._module.primitive_class.is_memory and not dont_create_design_view_counterpart:
             if m.memory_type == "1r1w":
-                lmod = self._context.build_logical_primitive(self._module.name,
+                lmod = self._context.build_design_view_primitive(self._module.name,
                         verilog_template = "bram/1r1w.sim.tmpl.v").commit()
                 ModuleUtils.instantiate(lmod,
-                        self._context.database[ModuleView.logical, "prga_ram_1r1w_byp"],
+                        self._context.database[ModuleView.design, "prga_ram_1r1w_byp"],
                         "i_ram")
             else:
-                self._context.build_logical_primitive(self._module.name,
+                self._context.build_design_view_primitive(self._module.name,
                         verilog_template = "bram/sim.tmpl.v").commit()
         return m
 
-    def build_logical_counterpart(self, *, not_cell = False, **kwargs):
-        """Build the logical view of this module.
+    def build_design_view_counterpart(self, *, not_cell = False, **kwargs):
+        """Build the design view of this module.
 
         Keyword Args:
-            not_cell (:obj:`bool`): If set, the logical primitive is not a cell module
-            **kwargs: Additional attributes assigned to the logical view
+            not_cell (:obj:`bool`): If set, the design-view primitive is not a cell module
+            **kwargs: Additional attributes assigned to the design view
 
         Returns:
-            `LogicalPrimitiveBuilder`:
+            `DesignViewPrimitiveBuilder`:
         """
         self.commit()
-        return self._context.build_logical_primitive(self._module.name, not_cell = not_cell, **kwargs)
+        return self._context.build_design_view_primitive(self._module.name, not_cell = not_cell, **kwargs)
 
 # ----------------------------------------------------------------------------
 # -- Builder for One Mode in a Multi-mode Primitive --------------------------
@@ -398,7 +398,7 @@ class _ModeBuilder(BaseBuilder):
         """Instantiate ``model`` in the mode.
 
         Args:
-            model (`Module`): User view of the module to be instantiated
+            model (`Module`): Abstract view of the module to be instantiated
             name (:obj:`str`): Name of the instance. If ``reps`` is specified, each instance is named
                 ``"{name}_i{index}"``
             reps (:obj:`int`): If set to a positive int, the specified number of instances are created, added to
@@ -442,7 +442,7 @@ class _ModeBuilder(BaseBuilder):
             NetUtils.connect(sources, sinks, fully = fully, vpr_pack_patterns = vpr_pack_patterns, **kwargs)
 
 # ----------------------------------------------------------------------------
-# -- Builder for User Views of Multi-Mode Primitives -------------------------
+# -- Builder for Abstract Views of Multi-Mode Primitives ---------------------
 # ----------------------------------------------------------------------------
 class MultimodeBuilder(_BasePrimitiveBuilder):
     """Multi-mode module builder.
@@ -471,7 +471,7 @@ class MultimodeBuilder(_BasePrimitiveBuilder):
         """
         return Module(name,
                 is_cell = True,
-                view = ModuleView.user,
+                view = ModuleView.abstract,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.multimode,
                 modes = {},
@@ -494,15 +494,15 @@ class MultimodeBuilder(_BasePrimitiveBuilder):
         mode = self._module.modes[name] = _ModeBuilder.new(self._module, name, **kwargs)
         return _ModeBuilder(self._context, mode)
 
-    def build_logical_counterpart(self, *, not_cell = False, **kwargs):
-        """Build the logical view of this primitive.
+    def build_design_view_counterpart(self, *, not_cell = False, **kwargs):
+        """Build the design view of this primitive.
 
         Keyword Args:
-            not_cell (:obj:`bool`): If set, sub-modules can be added into this logical view
+            not_cell (:obj:`bool`): If set, sub-modules can be added into this design view
             **kwargs: Additional attibutes assigned to the primitive
 
         Returns:
-            `LogicalPrimitiveBuilder`:
+            `DesignViewPrimitiveBuilder`:
         """
         self.commit()
-        return self._context.build_logical_primitive(self._module.name, not_cell = not_cell, **kwargs)
+        return self._context.build_design_view_primitive(self._module.name, not_cell = not_cell, **kwargs)

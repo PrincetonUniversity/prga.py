@@ -65,14 +65,14 @@ class BuiltinCellLibrary(object):
         ubdr.commit()
 
     @classmethod
-    def _register_luts(cls, context, dont_add_logical_primitives):
+    def _register_luts(cls, context, dont_add_design_view_primitives):
         for i in range(2, 9):
             name = "lut" + str(i)
 
-            # user
-            umod = context._database[ModuleView.user, name] = Module(name,
+            # abstract
+            umod = context._database[ModuleView.abstract, name] = Module(name,
                     is_cell = True,
-                    view = ModuleView.user,
+                    view = ModuleView.abstract,
                     module_class = ModuleClass.primitive,
                     primitive_class = PrimitiveClass.lut)
             in_ = ModuleUtils.create_port(umod, 'in', i, PortDirection.input_,
@@ -81,11 +81,11 @@ class BuiltinCellLibrary(object):
                     port_class = PrimitivePortClass.lut_out)
             NetUtils.create_timing_arc(TimingArcType.comb_matrix, in_, out)
 
-            # logical
-            if name not in dont_add_logical_primitives:
-                lmod = context._database[ModuleView.logical, name] = Module(name,
+            # design
+            if name not in dont_add_design_view_primitives:
+                lmod = context._database[ModuleView.design, name] = Module(name,
                         is_cell = True,
-                        view = ModuleView.logical,
+                        view = ModuleView.design,
                         module_class = ModuleClass.primitive, 
                         primitive_class = PrimitiveClass.lut,
                         verilog_template = "builtin/lut.tmpl.v")
@@ -102,13 +102,13 @@ class BuiltinCellLibrary(object):
                 umod.prog_parameters = { "lut": ProgDataBitmap( (0, 2 ** i) ) }
 
     @classmethod
-    def _register_flipflop(cls, context, dont_add_logical_primitives):
+    def _register_flipflop(cls, context, dont_add_design_view_primitives):
         name = "flipflop"
 
-        # user
-        umod = context._database[ModuleView.user, name] = Module(name,
+        # abstract
+        umod = context._database[ModuleView.abstract, name] = Module(name,
                 is_cell = True,
-                view = ModuleView.user,
+                view = ModuleView.abstract,
                 module_class = ModuleClass.primitive,
                 primitive_class = PrimitiveClass.flipflop)
         clk = ModuleUtils.create_port(umod, "clk", 1, PortDirection.input_, is_clock = True,
@@ -120,11 +120,11 @@ class BuiltinCellLibrary(object):
         NetUtils.create_timing_arc(TimingArcType.seq_end, clk, D)
         NetUtils.create_timing_arc(TimingArcType.seq_start, clk, Q)
 
-        # logical
-        if name not in dont_add_logical_primitives:
-            lmod = context._database[ModuleView.logical, name] = Module(name,
+        # design
+        if name not in dont_add_design_view_primitives:
+            lmod = context._database[ModuleView.design, name] = Module(name,
                     is_cell = True,
-                    view = ModuleView.logical,
+                    view = ModuleView.design,
                     module_class = ModuleClass.primitive,
                     primitive_class = PrimitiveClass.flipflop,
                     verilog_template = "builtin/flipflop.tmpl.v")
@@ -143,13 +143,13 @@ class BuiltinCellLibrary(object):
             umod.prog_enable = ProgDataValue(1, (0, 1))
 
     @classmethod
-    def _register_io(cls, context, dont_add_logical_primitives):
+    def _register_io(cls, context, dont_add_design_view_primitives):
         # register single-mode I/O
         for name in ("inpad", "outpad"):
-            # user
-            umod = context._database[ModuleView.user, name] = Module(name,
+            # abstract
+            umod = context._database[ModuleView.abstract, name] = Module(name,
                     is_cell = True,
-                    view = ModuleView.user,
+                    view = ModuleView.abstract,
                     module_class = ModuleClass.primitive,
                     primitive_class = PrimitiveClass[name])
             if name == "inpad":
@@ -157,11 +157,11 @@ class BuiltinCellLibrary(object):
             else:
                 ModuleUtils.create_port(umod, "outpad", 1, PortDirection.input_)
 
-            # logical
-            if name not in dont_add_logical_primitives:
-                lmod = context._database[ModuleView.logical, name] = Module(name,
+            # design
+            if name not in dont_add_design_view_primitives:
+                lmod = context._database[ModuleView.design, name] = Module(name,
                         is_cell = True,
-                        view = ModuleView.logical,
+                        view = ModuleView.design,
                         module_class = ModuleClass.primitive,
                         primitive_class = PrimitiveClass[name],
                         verilog_template = "builtin/{}.tmpl.v".format(name))
@@ -183,29 +183,29 @@ class BuiltinCellLibrary(object):
 
         # register dual-mode I/O
         if True:
-            # user
+            # abstract
             ubdr = context.build_multimode("iopad")
             ubdr.create_input("outpad", 1)
             ubdr.create_output("inpad", 1)
 
-            # user modes
+            # abstract modes
             mode_input = ubdr.build_mode("mode_input")
             inst = mode_input.instantiate(
-                    context.database[ModuleView.user, "inpad"],
+                    context.database[ModuleView.abstract, "inpad"],
                     "i_pad")
             mode_input.connect(inst.pins["inpad"], mode_input.ports["inpad"])
             mode_input.commit()
 
             mode_output = ubdr.build_mode("mode_output")
             inst = mode_output.instantiate(
-                    context.database[ModuleView.user, "outpad"],
+                    context.database[ModuleView.abstract, "outpad"],
                     "o_pad")
             mode_output.connect(mode_output.ports["outpad"], inst.pins["outpad"])
             mode_output.commit()
 
-            # logical
-            if name not in dont_add_logical_primitives:
-                lbdr = ubdr.build_logical_counterpart(verilog_template = "builtin/iopad.tmpl.v")
+            # design
+            if name not in dont_add_design_view_primitives:
+                lbdr = ubdr.build_design_view_counterpart(verilog_template = "builtin/iopad.tmpl.v")
                 ipin = ModuleUtils.create_port(lbdr.module, "ipin", 1, PortDirection.input_,
                         net_class = NetClass.io, key = IOType.ipin)
                 opin = ModuleUtils.create_port(lbdr.module, "opin", 1, PortDirection.output,
@@ -232,7 +232,7 @@ class BuiltinCellLibrary(object):
                 ubdr.commit()
 
     @classmethod
-    def _register_fle6(cls, context, dont_add_logical_primitives):
+    def _register_fle6(cls, context, dont_add_design_view_primitives):
         ubdr = context.build_multimode("fle6")
         ubdr.create_clock("clk")
         ubdr.create_input("in", 6)
@@ -240,7 +240,7 @@ class BuiltinCellLibrary(object):
         ubdr.create_output("out", 2)
         ubdr.create_output("cout", 1)
 
-        # user modes
+        # abstract modes
         # mode (1): arith
         if True:
             mode = ubdr.build_mode("arith")
@@ -288,9 +288,9 @@ class BuiltinCellLibrary(object):
                 mode.connect(ff.pins["Q"], mode.ports["out"][i])
             mode.commit()
 
-        # logical view
-        if "fle6" not in dont_add_logical_primitives:
-            lbdr = ubdr.build_logical_counterpart(verilog_template = "fle6/fle6.tmpl.v")
+        # design view
+        if "fle6" not in dont_add_design_view_primitives:
+            lbdr = ubdr.build_design_view_counterpart(verilog_template = "fle6/fle6.tmpl.v")
             NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["out"])
             NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["out"])
             NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["cout"])
@@ -368,8 +368,8 @@ class BuiltinCellLibrary(object):
             ubdr.commit()
 
     @classmethod
-    def _register_grady18(cls, context, dont_add_logical_primitives):
-        # register a user-only mux2
+    def _register_grady18(cls, context, dont_add_design_view_primitives):
+        # register a abstract-only mux2
         ubdr = context.build_primitive("grady18.mux2",
                 verilog_template = "builtin/mux.lib.tmpl.v",
                 techmap_template = "grady18/postlut.techmap.tmpl.v",
@@ -384,7 +384,7 @@ class BuiltinCellLibrary(object):
             ubdr.create_timing_arc(TimingArcType.comb_matrix, i, output)
         mux2 = ubdr.commit()
 
-        # register a user-only multi-mode primitive: "grady18.ble5"
+        # register a abstract-only multi-mode primitive: "grady18.ble5"
         ubdr = context.build_multimode("grady18.ble5")
         ubdr.create_clock("clk")
         ubdr.create_input("in", 5)
@@ -393,7 +393,7 @@ class BuiltinCellLibrary(object):
         ubdr.create_output("cout", 1)
         ubdr.create_output("cout_fabric", 1)
 
-        # user modes
+        # abstract modes
         # mode (1): arith
         if True:
             mode = ubdr.build_mode("arith")
@@ -438,7 +438,7 @@ class BuiltinCellLibrary(object):
         ubdr.create_output("cout", 1)
         ubdr.create_output("cout_fabric", 2)
 
-        # user modes
+        # abstract modes
         # mode (1): ble5x2
         if True:
             mode = ubdr.build_mode("ble5x2")
@@ -473,9 +473,9 @@ class BuiltinCellLibrary(object):
             mode.connect(ff.pins["Q"],  mode.ports["out"][0])
             mode.commit()
 
-        # logical view
-        if "grady18" not in dont_add_logical_primitives:
-            lbdr = ubdr.build_logical_counterpart(verilog_template = "grady18/grady18.tmpl.v")
+        # design view
+        if "grady18" not in dont_add_design_view_primitives:
+            lbdr = ubdr.build_design_view_counterpart(verilog_template = "grady18/grady18.tmpl.v")
             NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["out"])
             NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["out"])
             NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["cout"])
@@ -565,8 +565,8 @@ class BuiltinCellLibrary(object):
             ubdr.commit()
 
     @classmethod
-    def _register_grady18v2(cls, context, dont_add_logical_primitives):
-        # register a user-only multi-mode primitive: "grady18v2.ble5"
+    def _register_grady18v2(cls, context, dont_add_design_view_primitives):
+        # register a abstract-only multi-mode primitive: "grady18v2.ble5"
         ubdr = context.build_multimode("grady18v2.ble5")
         ubdr.create_clock("clk")
         ubdr.create_input("in", 5)
@@ -575,7 +575,7 @@ class BuiltinCellLibrary(object):
         ubdr.create_output("out", 1)
         ubdr.create_output("cout", 1)
 
-        # user modes
+        # abstract modes
         # mode (1): arith
         if True:
             mode = ubdr.build_mode("arith")
@@ -621,7 +621,7 @@ class BuiltinCellLibrary(object):
         ubdr.create_output("out", 2)
         ubdr.create_output("cout", 1)
 
-        # user modes
+        # abstract modes
         # mode (1): ble5x2
         if True:
             mode = ubdr.build_mode("ble5x2")
@@ -657,9 +657,9 @@ class BuiltinCellLibrary(object):
             mode.connect(ff.pins["Q"],  mode.ports["out"][0])
             mode.commit()
 
-        # logical view
-        if "grady18v2" not in dont_add_logical_primitives:
-            lbdr = ubdr.build_logical_counterpart(verilog_template = "grady18/grady18v2.tmpl.v")
+        # design view
+        if "grady18v2" not in dont_add_design_view_primitives:
+            lbdr = ubdr.build_design_view_counterpart(verilog_template = "grady18/grady18v2.tmpl.v")
             NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["out"])
             NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["out"])
             NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["cout"])
@@ -790,7 +790,7 @@ class BuiltinCellLibrary(object):
         multimode.create_input("raddr", addr_width)
         multimode.create_output("dout", data_width)
 
-        logical_modes = {}
+        design_modes = {}
         for mode_addr_width in range(core_addr_width, addr_width + 1):
             mode_name = None
 
@@ -813,7 +813,7 @@ class BuiltinCellLibrary(object):
             core = mode.instantiate(
                     context.create_memory("ram_1r1w_a{}d{}".format(mode_addr_width, mode_data_width),
                         mode_addr_width, mode_data_width,
-                        dont_create_logical_counterpart = True,
+                        dont_create_design_view_counterpart = True,
                         techmap_order = 1. + 1 / float(mode_addr_width)),
                     "i_ram_a{}".format(mode_addr_width),
                     )
@@ -825,21 +825,21 @@ class BuiltinCellLibrary(object):
             NetUtils.connect(core.pins["dout"], mode.ports["dout"][0:mode_data_width])
 
             mode.commit()
-            logical_modes[mode_name] = mode_addr_width - core_addr_width
+            design_modes[mode_name] = mode_addr_width - core_addr_width
 
-        prog_data_width = len(logical_modes).bit_length()
-        for value, mode_name in enumerate(list(logical_modes), 1):
+        prog_data_width = len(design_modes).bit_length()
+        for value, mode_name in enumerate(list(design_modes), 1):
             prog_enable = ProgDataValue(value, (0, prog_data_width) )
             multimode.module.modes[mode_name].prog_enable = prog_enable
-            logical_modes[mode_name] = prog_enable, logical_modes[mode_name]
+            design_modes[mode_name] = prog_enable, design_modes[mode_name]
 
-        lbdr = multimode.build_logical_counterpart(
+        lbdr = multimode.build_design_view_counterpart(
                 core_addr_width = core_addr_width,
                 verilog_template = "bram/fracbram.tmpl.v",
-                modes = logical_modes)
+                modes = design_modes)
         lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
         lbdr.create_prog_port("prog_data", prog_data_width, PortDirection.input_)
-        lbdr.instantiate(context.database[ModuleView.logical, "prga_ram_1r1w_byp"],
+        lbdr.instantiate(context.database[ModuleView.design, "prga_ram_1r1w_byp"],
                 "i_ram",
                 parameters = {"DATA_WIDTH": "DATA_WIDTH", "ADDR_WIDTH": "CORE_ADDR_WIDTH"})
         lbdr.commit()
@@ -880,7 +880,7 @@ class BuiltinCellLibrary(object):
         for i in inputs:
             ubdr.create_timing_arc(TimingArcType.comb_matrix, i, output)
 
-        lbdr = ubdr.build_logical_counterpart( verilog_template = "mul/mul.tmpl.v" )
+        lbdr = ubdr.build_design_view_counterpart( verilog_template = "mul/mul.tmpl.v" )
         lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
         lbdr.create_prog_port("prog_data", 2, PortDirection.input_)
         lbdr.commit()
@@ -888,46 +888,46 @@ class BuiltinCellLibrary(object):
         return ubdr.module
 
     @classmethod
-    def register(cls, context, dont_add_logical_primitives = tuple()):
+    def register(cls, context, dont_add_design_view_primitives = tuple()):
         """Register designs shipped with PRGA into ``context`` database.
 
         Args:
             context (`Context`):
         """
-        if not isinstance(dont_add_logical_primitives, set):
-            dont_add_logical_primitives = set(iter(dont_add_logical_primitives))
+        if not isinstance(dont_add_design_view_primitives, set):
+            dont_add_design_view_primitives = set(iter(dont_add_design_view_primitives))
 
         # register built-in primitives: LUTs
-        cls._register_luts(context, dont_add_logical_primitives)
+        cls._register_luts(context, dont_add_design_view_primitives)
 
         # register flipflops
-        cls._register_flipflop(context, dont_add_logical_primitives)
+        cls._register_flipflop(context, dont_add_design_view_primitives)
 
         # register IOs
-        cls._register_io(context, dont_add_logical_primitives)
+        cls._register_io(context, dont_add_design_view_primitives)
 
-        # register adder (user-only)
+        # register adder (abstract-only)
         cls._register_u_adder(context)
 
         # register configurable DFFE
         cls._register_u_dffe(context)
 
         # register FLE6
-        cls._register_fle6(context, dont_add_logical_primitives)
+        cls._register_fle6(context, dont_add_design_view_primitives)
 
         # register grady18 (FLE8 from Brett Grady, FPL'18)
-        cls._register_grady18(context, dont_add_logical_primitives)
+        cls._register_grady18(context, dont_add_design_view_primitives)
 
         # register grady18 variation #2
-        cls._register_grady18v2(context, dont_add_logical_primitives)
+        cls._register_grady18v2(context, dont_add_design_view_primitives)
 
         # register simple buffers
         for name in ("prga_simple_buf", "prga_simple_bufr", "prga_simple_bufe", "prga_simple_bufre"):
-            if name in dont_add_logical_primitives:
+            if name in dont_add_design_view_primitives:
                 continue
-            buf = context._database[ModuleView.logical, name] = Module(name,
+            buf = context._database[ModuleView.design, name] = Module(name,
                     is_cell = True,
-                    view = ModuleView.logical,
+                    view = ModuleView.design,
                     module_class = ModuleClass.aux,
                     verilog_template = "stdlib/{}.v".format(name))
             ModuleUtils.create_port(buf, "C", 1, PortDirection.input_, is_clock = True)
@@ -941,33 +941,33 @@ class BuiltinCellLibrary(object):
         # register auxiliary designs
         for d in ("prga_ram_1r1w", "prga_ram_1r1w_byp", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer",
                 "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo", "prga_valrdy_buf"):
-            context._database[ModuleView.logical, d] = Module(d,
+            context._database[ModuleView.design, d] = Module(d,
                     is_cell = True,
-                    view = ModuleView.logical,
+                    view = ModuleView.design,
                     module_class = ModuleClass.aux,
                     verilog_template = "stdlib/{}.v".format(d))
         for d in ("prga_ram_1r1w_dc", "prga_async_fifo", "prga_async_tokenfifo", "prga_clkdiv"):
-            context._database[ModuleView.logical, d] = Module(d,
+            context._database[ModuleView.design, d] = Module(d,
                     is_cell = True,
-                    view = ModuleView.logical,
+                    view = ModuleView.design,
                     module_class = ModuleClass.aux,
                     verilog_template = "cdclib/{}.v".format(d))
 
         # module dependencies
-        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_ram_1r1w_byp"],
-                context._database[ModuleView.logical, "prga_ram_1r1w"], "i_ram")
-        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo"],
-                context._database[ModuleView.logical, "prga_ram_1r1w"], "ram")
-        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo"],
-                context._database[ModuleView.logical, "prga_fifo_lookahead_buffer"], "buffer")
-        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo_resizer"],
-                context._database[ModuleView.logical, "prga_fifo_lookahead_buffer"], "buffer")
-        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_fifo_adapter"],
-                context._database[ModuleView.logical, "prga_fifo_lookahead_buffer"], "buffer")
-        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_async_fifo"],
-                context._database[ModuleView.logical, "prga_ram_1r1w_dc"], "ram")
-        ModuleUtils.instantiate(context._database[ModuleView.logical, "prga_async_fifo"],
-                context._database[ModuleView.logical, "prga_fifo_lookahead_buffer"], "buffer")
+        ModuleUtils.instantiate(context._database[ModuleView.design, "prga_ram_1r1w_byp"],
+                context._database[ModuleView.design, "prga_ram_1r1w"], "i_ram")
+        ModuleUtils.instantiate(context._database[ModuleView.design, "prga_fifo"],
+                context._database[ModuleView.design, "prga_ram_1r1w"], "ram")
+        ModuleUtils.instantiate(context._database[ModuleView.design, "prga_fifo"],
+                context._database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
+        ModuleUtils.instantiate(context._database[ModuleView.design, "prga_fifo_resizer"],
+                context._database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
+        ModuleUtils.instantiate(context._database[ModuleView.design, "prga_fifo_adapter"],
+                context._database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
+        ModuleUtils.instantiate(context._database[ModuleView.design, "prga_async_fifo"],
+                context._database[ModuleView.design, "prga_ram_1r1w_dc"], "ram")
+        ModuleUtils.instantiate(context._database[ModuleView.design, "prga_async_fifo"],
+                context._database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
 
         # add headers
         context._add_verilog_header("prga_utils.vh", "stdlib/include/prga_utils.tmpl.vh")

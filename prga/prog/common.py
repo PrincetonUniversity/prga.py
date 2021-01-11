@@ -108,13 +108,13 @@ class AbstractProgCircuitryEntry(Object):
         return FileRenderer(*additional_template_search_paths)
 
     @classmethod
-    def buffer_prog_ctrl(cls, context, logical_module = None, _cache = None):
+    def buffer_prog_ctrl(cls, context, design_view = None, _cache = None):
         """Buffer and balance basic programming ctrl signals: ``prog_clk``, ``prog_rst`` and ``prog_done``.
 
         Args:
             context (`Context`):
-            logical_module (`Module`): This method inserts the programming ctrl signals recursively into sub-modules
-                of ``logical_module``. It starts with ``context.top`` by default.
+            design_view (`Module`): This method inserts the programming ctrl signals recursively into sub-modules
+                of ``design_view``. It starts with ``context.top`` by default.
             _cache (:obj:`MutableMapping` [:obj:`Hashable`, :obj:`int`]): Mapping from module keys to levels of
                 buffering inside the corresponding modules
 
@@ -124,7 +124,7 @@ class AbstractProgCircuitryEntry(Object):
         _cache = uno(_cache, {})
 
         # short alias
-        m = uno(logical_module, context.database[ModuleView.logical, context.top.key])
+        m = uno(design_view, context.database[ModuleView.design, context.top.key])
 
         # check if we need to process this module
         if m.module_class in (ModuleClass.primitive, ModuleClass.switch, ModuleClass.prog, ModuleClass.aux):
@@ -143,7 +143,7 @@ class AbstractProgCircuitryEntry(Object):
                     net_class = NetClass.prog),
                 }
         
-        # depending on logical module class, [recursively] buffer signals
+        # depending on design-view module class, [recursively] buffer signals
         if m.module_class.is_slice:
             # no more buffering inside slices, but we need to connect nets
             for i in m.instances.values():
@@ -172,10 +172,10 @@ class AbstractProgCircuitryEntry(Object):
             buf_rst_prev, buf_done_prev = None, None
             for l, instances in enumerate(levels):
                 # insert buffers
-                buf_rst = ModuleUtils.instantiate(m, context.database[ModuleView.logical, "prga_simple_buf"],
+                buf_rst = ModuleUtils.instantiate(m, context.database[ModuleView.design, "prga_simple_buf"],
                         "i_buf_prog_rst_l{}".format(l))
                 signals.setdefault("prog_rst_l0", buf_rst.pins["Q"]) 
-                buf_done = ModuleUtils.instantiate(m, context.database[ModuleView.logical, "prga_simple_bufr"],
+                buf_done = ModuleUtils.instantiate(m, context.database[ModuleView.design, "prga_simple_bufr"],
                         "i_buf_prog_done_l{}".format(l))
                 NetUtils.connect(signals["prog_clk"],    buf_rst.pins["C"])
                 NetUtils.connect(signals["prog_clk"],    buf_done.pins["C"])

@@ -434,7 +434,7 @@ class VPR_RRG_Generation(AbstractPass):
                 xml.element_leaf("block_type", {"id": 0, "name": "EMPTY", "width": 1, "height": 1})
                 for tile_key in context.summary.active_tiles:
                     self.tile2id[tile_key] = len(self.tile2id) + 1
-                    self._tile(context.database[ModuleView.user, tile_key])
+                    self._tile(context.database[ModuleView.abstract, tile_key])
             _logger.info(" .. Completed RRG meta-data generation")
             t = time.time() - t
             _logger.info("   .. RRG meta-data generation took %f seconds", t)

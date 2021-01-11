@@ -122,13 +122,13 @@ class Pktchain(Scanchain):
                 (ADDITIONAL_TEMPLATE_SEARCH_PATH,))
 
     @classmethod
-    def insert_pktchain(cls, context, logical_module = None, *,
+    def insert_pktchain(cls, context, design_view = None, *,
             iter_instances = None, insert_delimiter = None, _not_top = False):
         """Inject pktchain network and routers in ``module``. This method should be called only on arrays.
 
         Args:
             context (`Context`):
-            logical_module (`Module`): The module (logical view) in which pktchain network and routers are injected. If
+            design_view (`Module`): The module (design view) in which pktchain network and routers are injected. If
                 not specified, the top-level array in ``context`` is selected
 
         Keyword Args:
@@ -139,15 +139,15 @@ class Pktchain(Scanchain):
                 yielded consecutively, the current pktchain branch is terminated and attached to the primary pktchain
                 chunk.
             insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if `we` buffers are inserted at
-                the beginning and end of the scanchain inside ``logical_module``. By default, buffers are inserted in
+                the beginning and end of the scanchain inside ``design_view``. By default, buffers are inserted in
                 all logic/IO blocks and routing boxes.
             _not_top (:obj:`bool`): If set, the array is treated as a non-top level array. This is primarily used when
                 this method calls itself recursively
         """
         phit_width = context.summary.pktchain["fabric"]["phit_width"]
         chain_width = context.summary.scanchain["chain_width"]
-        lmod = uno(logical_module, context.database[ModuleView.logical, context.top.key])
-        umod = context.database[ModuleView.user, lmod.key]
+        lmod = uno(design_view, context.database[ModuleView.design, context.top.key])
+        umod = context.database[ModuleView.abstract, lmod.key]
         iter_instances = uno(iter_instances, lambda m: m.instances.values())
 
         # quick check
@@ -314,7 +314,7 @@ class Pktchain(Scanchain):
         super()._register_cells(context)
 
         # alias
-        mvl = ModuleView.logical
+        mvl = ModuleView.design
         mcp = ModuleUtils.create_port
         mis = ModuleUtils.instantiate
         db = context._database
@@ -496,12 +496,12 @@ class Pktchain(Scanchain):
 
             # create a new dispatcher
             new_dispatcher = ModuleUtils.instantiate(module,
-                    context.database[ModuleView.logical, "pktchain_dispatcher"],
+                    context.database[ModuleView.design, "pktchain_dispatcher"],
                     "i_prog_dispatcher_b{}".format(len(branches)))
 
             # create a new gatherer
             new_gatherer = ModuleUtils.instantiate(module,
-                    context.database[ModuleView.logical, "pktchain_gatherer"],
+                    context.database[ModuleView.design, "pktchain_gatherer"],
                     "i_prog_gatherer_b{}".format(len(branches)))
 
             # connect standard programming ports
@@ -604,7 +604,7 @@ class Pktchain(Scanchain):
         instance.scanchain_offset = scanchain_offset
         instance.pktchain_branchmap = (branch_id, leaf_id),     # trailing comma converts this to a tuple
 
-        if (uinst := context.database[ModuleView.user, module.key].instances.get(instance.key)) is not None:
+        if (uinst := context.database[ModuleView.abstract, module.key].instances.get(instance.key)) is not None:
             uinst.prog_bitmap = ProgDataBitmap( (scanchain_offset, bitcount) )
             uinst.prog_pktchain_branchmap = (branch_id, leaf_id),
 
@@ -621,7 +621,7 @@ class Pktchain(Scanchain):
 
         # instantiate router
         router = ModuleUtils.instantiate(module,
-                context.database[ModuleView.logical, "pktchain_router"],
+                context.database[ModuleView.design, "pktchain_router"],
                 "i_prog_router_b{}l{}".format(branch_id, len(leaves)))
 
         # connect standard programming ports
@@ -665,7 +665,7 @@ class Pktchain(Scanchain):
                 yielded consecutively, the current secondary pktchain is terminated and attached to the primary
                 pktchain.
             insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if `we` buffers are inserted at
-                the beginning and end of the scanchain inside ``logical_module``. By default, buffers are inserted in
+                the beginning and end of the scanchain inside ``design_view``. By default, buffers are inserted in
                 all logic/IO blocks and routing boxes.
         """
 
@@ -704,7 +704,7 @@ class Pktchain(Scanchain):
 
         @property
         def dependences(self):
-            return ("annotation.logical_path", )
+            return ("annotation.switch_path", )
 
         @property
         def passes_after_self(self):
@@ -754,7 +754,7 @@ class Pktchain(Scanchain):
 
                 # instantiate
                 prog_inst = ModuleUtils.instantiate(core.model,
-                        context.database[ModuleView.logical, "prga_be_prog_pktchain"],
+                        context.database[ModuleView.design, "prga_be_prog_pktchain"],
                         "i_prog_be")
 
                 # connect prog backend with core ports
@@ -793,7 +793,7 @@ class Pktchain(Scanchain):
 
                 # instantiate
                 sysintf_slave = prog_inst = ModuleUtils.instantiate(system,
-                        context.database[ModuleView.logical, "prga_be_prog_pktchain"],
+                        context.database[ModuleView.design, "prga_be_prog_pktchain"],
                         "i_prog_be")
 
             # connect programming backend with its slave

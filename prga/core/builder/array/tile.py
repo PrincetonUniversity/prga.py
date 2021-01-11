@@ -58,7 +58,7 @@ class TileBuilder(BaseArrayBuilder):
         """
         return Module(name,
                 coalesce_connections = True,
-                view = ModuleView.user,
+                view = ModuleView.abstract,
                 module_class = ModuleClass.tile,
                 width = width,
                 height = height,
@@ -70,7 +70,7 @@ class TileBuilder(BaseArrayBuilder):
         """Instantiate ``model`` in the tile.
 
         Args:
-            model (`Module`): User view of a logic/IO block to be instantiated
+            model (`Module`): Abstract view of a logic/IO block to be instantiated
             reps (:obj:`int`): If set to a positive int, the specified number of instances are created, added to
                 the tile, and returned. This affects the `capacity`_ attribute in the output VPR specs
 
@@ -130,11 +130,11 @@ class TileBuilder(BaseArrayBuilder):
                 raise PRGAAPIError("No connection box allowed at ({}, {}) in tile {}"
                         .format(ori, offset, self._module))
             try:
-                box = self._context.database[ModuleView.user, key]
+                box = self._context.database[ModuleView.abstract, key]
                 for k, v in kwargs.items():
                     setattr(box, k, v)
             except KeyError:
-                box = self._context._database[ModuleView.user, key] = ConnectionBoxBuilder.new(
+                box = self._context._database[ModuleView.abstract, key] = ConnectionBoxBuilder.new(
                         self._module, ori, offset, **kwargs)
             inst = ModuleUtils.instantiate(self._module, box, "i_cbox_{}{}".format(ori.name[0], offset),
                     key = (ori, offset))

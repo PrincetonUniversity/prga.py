@@ -248,7 +248,7 @@ class NetClass(Enum):
     segment = 2             #: segment driver
     bridge = 3              #: bridges between blocks, boxes and arrays
 
-    # logical-only nets
+    # design-view-only nets
     io = 4                  #: chip-level inputs/outputs
     global_ = 5             #: global nets
     switch = 6              #: switch input/outputs
@@ -326,7 +326,7 @@ class ModuleClass(Enum):
     tile = 7                #: tile (containing blocks and connection boxes)
     array = 8               #: array (containing tiles, arrays and switch boxes)
 
-    # logical-only modules
+    # design-view-only modules
     switch = 9              #: switch
     prog = 10               #: programming modules
     aux = 11                #: auxiliary modules
@@ -398,11 +398,11 @@ class PrimitivePortClass(Enum):
 class ModuleView(Enum):
     """A specific view of a module.
     
-    Currently PRGA only uses the ``user`` view and the ``logical`` view.
+    Currently PRGA only uses the ``abstract`` view and the ``design`` view.
     """
 
-    user = 0        #: user view of a module
-    logical = 1     #: logical view of a module
+    abstract = 0    #: abstract view of a module
+    design = 1      #: design view of a module
     physical = 2    #: physical view of a module
 
 # ----------------------------------------------------------------------------

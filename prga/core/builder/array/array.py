@@ -501,7 +501,7 @@ class ArrayBuilder(BaseArrayBuilder):
         """
         return Module(name,
                 coalesce_connections = True,
-                view = ModuleView.user,
+                view = ModuleView.abstract,
                 instances = _ArrayInstancesMapping(width, height),
                 module_class = ModuleClass.array,
                 width = width,

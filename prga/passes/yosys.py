@@ -46,7 +46,7 @@ class YosysScriptsCollection(AbstractPass):
         renderer.add_yosys_synth_script(f, context.summary.lut_sizes)
 
         for primitive_key in context.summary.active_primitives:
-            primitive = context.database[ModuleView.user, primitive_key]
+            primitive = context.database[ModuleView.abstract, primitive_key]
             if primitive.primitive_class.is_memory:
                 rule = os.path.join(self.output_dir, "bram.rule")
                 renderer.add_yosys_bram_rule(primitive,

@@ -2,7 +2,7 @@
 
 from .common import (Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView, OrientationTuple,
         DirectTunnel)
-from .builder import (LogicalPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder,
+from .builder import (DesignViewPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder,
         SliceBuilder, IOBlockBuilder, LogicBlockBuilder,
         SwitchBoxBuilder, TileBuilder, ArrayBuilder)
 from ..integration import Integration
@@ -73,8 +73,8 @@ class Context(Object):
             '_tunnels',             # direct inter-block tunnels
             '_segments',            # wire segments
             '_database',            # module database
-            '_top',                 # fpga top in user view
-            '_system_top',          # system top in logical view
+            '_top',                 # fpga top in abstract view
+            '_system_top',          # system top in design view
             '_switch_delegate',     # switch delegate
             '_fasm_delegate',       # FASM delegate
             '_verilog_headers',     # Verilog header rendering tasks
@@ -117,16 +117,16 @@ class Context(Object):
         """
         self._verilog_headers[f] = template, parameters
 
-    def _new_database(self, dont_add_logical_primitives = tuple()):
+    def _new_database(self, dont_add_design_view_primitives = tuple()):
         database = self._database = {}
 
-        BuiltinCellLibrary.register(self, dont_add_logical_primitives)
+        BuiltinCellLibrary.register(self, dont_add_design_view_primitives)
         Integration._register_cells(self)
 
     # == low-level API =======================================================
     @property
     def system_top(self):
-        """`Module`: System top module in logical view."""
+        """`Module`: System top module in design view."""
         return self._system_top
 
     @system_top.setter
@@ -164,7 +164,7 @@ class Context(Object):
                     "Possible cause: the context is not created by a programming circuitry entry point.")
 
     def build_multimode(self, name, **kwargs):
-        """Create a multi-mode primitive in user view.
+        """Create a multi-mode primitive in abstract view.
 
         Args:
             name (:obj:`str`): Name of the multi-mode primitive
@@ -175,35 +175,34 @@ class Context(Object):
         Returns:
             `MultimodeBuilder`:
         """
-        if (ModuleView.user, name) in self._database:
+        if (ModuleView.abstract, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        primitive = self._database[ModuleView.user, name] = MultimodeBuilder.new(name, **kwargs)
+        primitive = self._database[ModuleView.abstract, name] = MultimodeBuilder.new(name, **kwargs)
         return MultimodeBuilder(self, primitive)
 
-    def build_logical_primitive(self, name, *, not_cell = False, **kwargs):
-        """Create a primitive in logical view.
+    def build_design_view_primitive(self, name, *, not_cell = False, **kwargs):
+        """Create a primitive in design view.
 
         Args:
-            name (:obj:`str`): Name of the logical primitive
+            name (:obj:`str`): Name of the design-view primitive
 
         Keyword Args:
-            not_cell (:obj:`bool`): If set, the logical primitive is not a cell module
+            not_cell (:obj:`bool`): If set, the design-view primitive is not a cell module
             **kwargs: Additional attributes to be associated with the primitive
 
         Returns:
-            `LogicalPrimitiveBuilder`:
+            `DesignViewPrimitiveBuilder`:
         """
-        if (ModuleView.logical, name) in self._database:
+        if (ModuleView.design, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        user_view = self._database.get( (ModuleView.user, name) )
-        if user_view:
-            primitive = self._database[ModuleView.logical, name] = LogicalPrimitiveBuilder.new_from_user_view(
-                    user_view, not_cell = not_cell, **kwargs)
-            return LogicalPrimitiveBuilder(self, primitive, user_view)
+        if abstract_view := self._database.get( (ModuleView.abstract, name) ):
+            primitive = self._database[ModuleView.design, name] = DesignViewPrimitiveBuilder.new_from_abstract_view(
+                    abstract_view, not_cell = not_cell, **kwargs)
+            return DesignViewPrimitiveBuilder(self, primitive, abstract_view)
         else:
-            primitive = self._database[ModuleView.logical, name] = LogicalPrimitiveBuilder.new(
+            primitive = self._database[ModuleView.design, name] = DesignViewPrimitiveBuilder.new(
                     name, not_cell = not_cell, **kwargs)
-            return LogicalPrimitiveBuilder(self, primitive)
+            return DesignViewPrimitiveBuilder(self, primitive)
 
     # == high-level API ======================================================
     # -- Global Wires --------------------------------------------------------
@@ -293,10 +292,10 @@ class Context(Object):
     def primitives(self):
         """:obj:`Mapping` [:obj:`str`, `Module` ]: A mapping from names to primitives."""
         return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_primitive,
-                lambda k: (ModuleView.user, k), lambda k: k[1])
+                lambda k: (ModuleView.abstract, k), lambda k: k[1])
 
     def build_primitive(self, name, *, vpr_model = None, **kwargs):
-        """Create a primitive in user view.
+        """Create a primitive in abstract view.
 
         Args:
             name (:obj:`str`): Name of the primitive
@@ -308,14 +307,14 @@ class Context(Object):
         Returns:
             `PrimitiveBuilder`:
         """
-        if (ModuleView.user, name) in self._database:
+        if (ModuleView.abstract, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        primitive = self._database[ModuleView.user, name] = PrimitiveBuilder.new(name, vpr_model = vpr_model, **kwargs)
+        primitive = self._database[ModuleView.abstract, name] = PrimitiveBuilder.new(name, vpr_model = vpr_model, **kwargs)
         return PrimitiveBuilder(self, primitive)
 
     def create_memory(self, name, addr_width, data_width, *, vpr_model = None, memory_type = "1r1w",
-            dont_create_logical_counterpart = False, **kwargs):
-        """Create a memory in user view.
+            dont_create_design_view_counterpart = False, **kwargs):
+        """Create a memory in abstract view.
 
         Args:
             name (:obj:`str`): Name of the memory
@@ -325,19 +324,19 @@ class Context(Object):
         Keyword Args:
             vpr_model (:obj:`str`): Name of the VPR model. Default: "m_ram_{memory_type}"
             memory_type (:obj:`str`): ``"1r1w"``, ``"1rw"`` or ``"2rw"``. Default is ``"1r1w"``
-            dont_create_logical_counterpart (:obj:`bool`): If set to ``True``, the logical view of this module won't
+            dont_create_design_view_counterpart (:obj:`bool`): If set to ``True``, the design view of this module won't
                 be created automatically
             **kwargs: Additional attributes to be associated with the primitive
 
         Returns:
             `Module`:
         """
-        if (ModuleView.user, name) in self._database:
+        if (ModuleView.abstract, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        primitive = self._database[ModuleView.user, name] = PrimitiveBuilder.new_memory(name,
+        primitive = self._database[ModuleView.abstract, name] = PrimitiveBuilder.new_memory(name,
                 addr_width, data_width, vpr_model = vpr_model, memory_type = memory_type, **kwargs)
         return PrimitiveBuilder(self, primitive).commit(
-                dont_create_logical_counterpart = dont_create_logical_counterpart)
+                dont_create_design_view_counterpart = dont_create_design_view_counterpart)
 
     def create_multimode_memory(self, core_addr_width, data_width, *,
             addr_width = None, name = None):
@@ -392,24 +391,24 @@ class Context(Object):
     def slices(self):
         """:obj:`Mapping` [:obj:`str`, `Module` ]: A mapping from names to slices."""
         return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_slice,
-                lambda k: (ModuleView.user, k), lambda k: k[1])
+                lambda k: (ModuleView.abstract, k), lambda k: k[1])
 
     def build_slice(self, name, **kwargs):
-        """Create a slice in user view.
+        """Create a slice in abstract view.
 
         Args:
             name (:obj:`str`): Name of the slice
 
         Keyword Args:
             **kwargs: Additional attributes to be associated with the slice. Beware that these attributes are
-                **NOT** carried over to the logical view automatically generated by `TranslationPass`
+                **NOT** carried over to the design view automatically generated by `TranslationPass`
         
         Returns:
             `SliceBuilder`:
         """
-        if (ModuleView.user, name) in self._database:
+        if (ModuleView.abstract, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        slice_ = self._database[ModuleView.user, name] = SliceBuilder.new(name, **kwargs)
+        slice_ = self._database[ModuleView.abstract, name] = SliceBuilder.new(name, **kwargs)
         return SliceBuilder(self, slice_)
 
     # -- IO/Logic Blocks -----------------------------------------------------
@@ -417,10 +416,10 @@ class Context(Object):
     def blocks(self):
         """:obj:`Mapping` [:obj:`str`, `Module` ]: A mapping from names to blocks."""
         return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_block,
-                lambda k: (ModuleView.user, k), lambda k: k[1])
+                lambda k: (ModuleView.abstract, k), lambda k: k[1])
 
     def build_io_block(self, name, *, input_only = False, output_only = False, **kwargs):
-        """Create an IO block in user view.
+        """Create an IO block in abstract view.
 
         Args:
             name (:obj:`str`): Name of the IO block
@@ -429,12 +428,12 @@ class Context(Object):
             input_only (:obj:`bool`): If set to ``True``, the IO block is output-only
             output_only (:obj:`bool`): If set to ``True``, the IO block is input-only
             **kwargs: Additional attributes to be associated with the block. Beware that these attributes are
-                **NOT** carried over to the logical view automatically generated by `TranslationPass`
+                **NOT** carried over to the design view automatically generated by `TranslationPass`
         
         Returns:
             `IOBlockBuilder`:
         """
-        if (ModuleView.user, name) in self._database:
+        if (ModuleView.abstract, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
         io_primitive = None
         if input_only and output_only:
@@ -445,13 +444,13 @@ class Context(Object):
             io_primitive = self.primitives['inpad']
         else:
             io_primitive = self.primitives['iopad']
-        iob = self._database[ModuleView.user, name] = IOBlockBuilder.new(name, **kwargs)
+        iob = self._database[ModuleView.abstract, name] = IOBlockBuilder.new(name, **kwargs)
         builder = IOBlockBuilder(self, iob)
         builder.instantiate(io_primitive, 'io')
         return builder
 
     def build_logic_block(self, name, width = 1, height = 1, **kwargs):
-        """Create a logic block in user view.
+        """Create a logic block in abstract view.
 
         Args:
             name (:obj:`str`): Name of the logic block
@@ -460,14 +459,14 @@ class Context(Object):
 
         Keyword Args:
             **kwargs: Additional attributes to be associated with the block. Beware that these attributes are
-                **NOT** carried over to the logical view automatically generated by `TranslationPass`
+                **NOT** carried over to the design view automatically generated by `TranslationPass`
         
         Returns:
             `LogicBlockBuilder`:
         """
-        if (ModuleView.user, name) in self._database:
+        if (ModuleView.abstract, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
-        clb = self._database[ModuleView.user, name] = LogicBlockBuilder.new(name, width, height, **kwargs)
+        clb = self._database[ModuleView.abstract, name] = LogicBlockBuilder.new(name, width, height, **kwargs)
         return LogicBlockBuilder(self, clb)
 
     # -- Tiles ---------------------------------------------------------------
@@ -475,12 +474,12 @@ class Context(Object):
     def tiles(self):
         """:obj:`Mapping` [:obj:`str`, `Module` ]: A mapping from names to tiles."""
         return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_tile,
-                lambda k: (ModuleView.user, k), lambda k: k[1])
+                lambda k: (ModuleView.abstract, k), lambda k: k[1])
 
     def build_tile(self, block = None, capacity = None, *,
             width = 1, height = 1, name = None,
             edge = OrientationTuple(False), disallow_segments_passthru = False, **kwargs):
-        """Create a tile in user view.
+        """Create a tile in abstract view.
 
         Args:
             block (`Module`): A logic/IO block. If specified, the tile is created based on it.
@@ -509,14 +508,14 @@ class Context(Object):
             name = uno(name, "tile_{}".format(block.name))
         elif name is None:
             raise PRGAAPIError("'name' is required if 'block' is not specified")
-        if (ModuleView.user, name) in self._database:
+        if (ModuleView.abstract, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
         if block is None:
-            tile = self._database[ModuleView.user, name] = TileBuilder.new(name, width, height,
+            tile = self._database[ModuleView.abstract, name] = TileBuilder.new(name, width, height,
                     disallow_segments_passthru = disallow_segments_passthru, edge = edge, **kwargs)
             return TileBuilder(self, tile)
         else:
-            tile = self._database[ModuleView.user, name] = TileBuilder.new(name, block.width, block.height,
+            tile = self._database[ModuleView.abstract, name] = TileBuilder.new(name, block.width, block.height,
                     disallow_segments_passthru = disallow_segments_passthru, edge = edge, **kwargs)
             builder = TileBuilder(self, tile)
             builder.instantiate(block, capacity)
@@ -525,7 +524,7 @@ class Context(Object):
     # -- Switch Boxes --------------------------------------------------------
     def build_switch_box(self, corner, *,
             identifier = None, dont_create = False, **kwargs):
-        """Get or create a switch box in user view at a specific corner.
+        """Get or create a switch box in abstract view at a specific corner.
 
         Args:
             corner (`Corner`): On which corner of a tile is the switch box
@@ -536,19 +535,19 @@ class Context(Object):
             dont_create (:obj:`bool`): If set to ``True``, return ``None`` when the requested switch box is not
                 already created
             **kwargs: Additional attributes to be associated with the box if created. Beware that these
-                attributes are **NOT** carried over to the logical view automatically generated by `TranslationPass`
+                attributes are **NOT** carried over to the design view automatically generated by `TranslationPass`
 
         Return:
             `SwitchBoxBuilder`:
         """
         key = SwitchBoxBuilder._sbox_key(corner, identifier)
         try:
-            return SwitchBoxBuilder(self, self._database[ModuleView.user, key])
+            return SwitchBoxBuilder(self, self._database[ModuleView.abstract, key])
         except KeyError:
             if dont_create:
                 return None
             else:
-                return SwitchBoxBuilder(self, self._database.setdefault((ModuleView.user, key),
+                return SwitchBoxBuilder(self, self._database.setdefault((ModuleView.abstract, key),
                     SwitchBoxBuilder.new(corner, identifier = identifier, **kwargs)))
 
     # -- Arrays --------------------------------------------------------------
@@ -556,11 +555,11 @@ class Context(Object):
     def arrays(self):
         """:obj:`Mapping` [:obj:`str`, `Module` ]: A mapping from names to arrays."""
         return ReadonlyMappingProxy(self._database, lambda kv: kv[1].module_class.is_array,
-                lambda k: (ModuleView.user, k), lambda k: k[1])
+                lambda k: (ModuleView.abstract, k), lambda k: k[1])
 
     @property
     def top(self):
-        """`Module`: Top-level array in user view."""
+        """`Module`: Top-level array in abstract view."""
         return self._top
 
     @top.setter
@@ -570,7 +569,7 @@ class Context(Object):
 
     def build_array(self, name, width = 1, height = 1, *,
             set_as_top = None, edge = None, **kwargs):
-        """Create an array in user view.
+        """Create an array in abstract view.
 
         Args:
             name (:obj:`str`): Name of the array
@@ -583,18 +582,18 @@ class Context(Object):
             edge (`OrientationTuple` [:obj:`bool` ]): Specify on which edges of the top-level is the array. This
                 affects where IO blocks can be instantiated, and how some switch boxes are created
             **kwargs: Additional attributes to be associated with the array. Beware that these
-                attributes are **NOT** carried over to the logical view automatically generated by `TranslationPass`
+                attributes are **NOT** carried over to the design view automatically generated by `TranslationPass`
 
         Returns:
             `ArrayBuilder`:
         """
-        if (ModuleView.user, name) in self._database:
+        if (ModuleView.abstract, name) in self._database:
             raise PRGAAPIError("Module with name '{}' already created".format(name))
         set_as_top = uno(set_as_top, self._top is None)
         edge = uno(edge, OrientationTuple(True) if set_as_top else OrientationTuple(False))
         if set_as_top and not all(edge):
             raise PRGAAPIError("Top array must have an all-True 'edge' settings")
-        array = self._database[ModuleView.user, name] = ArrayBuilder.new(name, width, height,
+        array = self._database[ModuleView.abstract, name] = ArrayBuilder.new(name, width, height,
                 edge = edge, **kwargs)
         if set_as_top:
             self.top = array
