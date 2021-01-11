@@ -597,7 +597,7 @@ class Context(Object):
         array = self._database[ModuleView.user, name] = ArrayBuilder.new(name, width, height,
                 edge = edge, **kwargs)
         if set_as_top:
-            self._top = array
+            self.top = array
         return ArrayBuilder(self, array)
 
     # -- Serialization -------------------------------------------------------
