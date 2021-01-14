@@ -46,13 +46,16 @@ class BuiltinCellLibrary(object):
         ubdr.commit()
 
     @classmethod
-    def _register_u_dffe(cls, context):
-        ubdr = context.build_primitive("dffe",
+    def _register_dffe(cls, context, dont_add_design_view_primitives):
+        name = "dffe"
+
+        ubdr = context.build_primitive(name,
                 techmap_template = "builtin/dffe.techmap.tmpl.v",
                 premap_commands = "dffsr2dff; dff2dffe",
                 verilog_template = "builtin/dffe.lib.tmpl.v",
                 vpr_model = "m_dffe",
-                prog_parameters = { "ENABLE_CE": ProgDataBitmap( (0, 1) ), },
+                prog_enable = ProgDataValue(1, (0, 1)),
+                prog_parameters = { "ENABLE_CE": ProgDataBitmap( (1, 1) ), },
                 )
         clock = ubdr.create_clock("C")
         for input_ in (
@@ -62,7 +65,19 @@ class BuiltinCellLibrary(object):
             ubdr.create_timing_arc(TimingArcType.seq_end, clock, input_)
         ubdr.create_timing_arc(TimingArcType.seq_start, clock, ubdr.create_output("Q", 1))
 
-        ubdr.commit()
+        if name not in dont_add_design_view_primitives:
+            lbdr = ubdr.build_design_view_counterpart(verilog_template = "builtin/dffe.tmpl.v")
+
+            NetUtils.create_timing_arc(TimingArcType.seq_start, lbdr.ports["C"], lbdr.ports["Q"])
+            NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["C"], lbdr.ports["D"])
+            NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["C"], lbdr.ports["E"])
+
+            lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
+            lbdr.create_prog_port("prog_data", 2, PortDirection.input_)
+
+            lbdr.commit()
+        else:
+            ubdr.commit()
 
     @classmethod
     def _register_luts(cls, context, dont_add_design_view_primitives):
@@ -687,6 +702,8 @@ class BuiltinCellLibrary(object):
 
             ff = mode.instances["i_flipflop"]
             ff.prog_bitmap = ProgDataBitmap( (37, 1) )
+            ff.prog_enable = None
+            ff.prog_parameters = { "ENABLE_CE": ProgDataBitmap( (0, 1) ), }
 
             conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
             conn.prog_enable = ProgDataValue(0, (36, 1))
@@ -709,6 +726,8 @@ class BuiltinCellLibrary(object):
 
             ff = mode.instances["i_flipflop"]
             ff.prog_bitmap = ProgDataBitmap( (37, 1) )
+            ff.prog_enable = None
+            ff.prog_parameters = { "ENABLE_CE": ProgDataBitmap( (0, 1) ), }
 
             conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
             conn.prog_enable = ProgDataValue(0, (36, 1))
@@ -736,6 +755,8 @@ class BuiltinCellLibrary(object):
 
             ff = mode.instances["i_flipflop"]
             ff.prog_bitmap = ProgDataBitmap( (37, 1) )
+            ff.prog_enable = None
+            ff.prog_parameters = { "ENABLE_CE": ProgDataBitmap( (0, 1) ), }
 
             conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"][0])
             conn.prog_enable = ProgDataValue(0, (36, 1))
@@ -910,7 +931,7 @@ class BuiltinCellLibrary(object):
         cls._register_u_adder(context)
 
         # register configurable DFFE
-        cls._register_u_dffe(context)
+        cls._register_dffe(context, dont_add_design_view_primitives)
 
         # register FLE6
         cls._register_fle6(context, dont_add_design_view_primitives)

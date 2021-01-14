@@ -220,9 +220,16 @@ class Translation(AbstractPass):
                         if (len(usrcs) == 1
                                 # always instantiate switch for switch boxes
                                 and not module.module_class.is_switch_box 
-                                # always instantiate switch for non-clock primitive inputs 
-                                and not (usink.net_type.is_pin and usink.instance.model.module_class.is_primitive
-                                    and not usink.model.is_clock)):
+
+                                # always instantiate switch for block inputs in connection boxes
+                                and not (module.module_class.is_connection_box 
+                                    and usink.net_type.is_port 
+                                    and usink.key.node_type.is_block)
+
+                                # # always instantiate switch for non-clock primitive inputs 
+                                # and not (usink.net_type.is_pin and usink.instance.model.module_class.is_primitive
+                                #     and not usink.model.is_clock)
+                                ):
 
                             # direct connect (no programmability)
                             NetUtils.connect(NetUtils._dereference(design, NetUtils._reference(usrcs)), lsink[i])

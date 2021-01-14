@@ -119,8 +119,13 @@ module {{ module.name }} #(
                     {{ sr }}'d{{ i }}: begin
                         int_din = din[0 +: DATA_WIDTH_SR{{ sr }}] << DATA_OFFSET_SR{{ sr }}_{{ i }};
                         int_bw = {DATA_WIDTH_SR{{ sr }} {1'b1} } << DATA_OFFSET_SR{{ sr }}_{{ i }};
-                        dout = dout_sr{{ sr }}[{{ i }}];
                     end
+                    {%- endfor %}
+                endcase
+
+                case (rd_offset_f[ADDR_WIDTH - CORE_ADDR_WIDTH - 1 -: {{ sr }}])
+                    {%- for i in range(2 ** sr) %}
+                    {{ sr }}'d{{ i }}: dout = dout_sr{{ sr }}[{{ i }}];
                     {%- endfor %}
                 endcase
                 {%- endif %}
