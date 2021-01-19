@@ -12,6 +12,9 @@ from ....exception import PRGAInternalError, PRGAAPIError
 from itertools import product, cycle, islice
 from collections.abc import MutableMapping
 
+import logging
+_logger = logging.getLogger(__name__)
+
 __all__ = ['ArrayBuilder']
 
 # ----------------------------------------------------------------------------
@@ -592,7 +595,8 @@ class ArrayBuilder(BaseArrayBuilder):
                     .format(model, model.module_class.name, self._module))
 
     def fill(self, sbox_pattern = SwitchBoxPattern.wilton, *,
-            identifier = None, dont_create = False, dont_update = False):
+            identifier = None, dont_create = False, dont_update = False,
+            primaries = None, secondaries = None):
         """Automatically create switch box connections using switch box patterns.
 
         Args:
@@ -609,17 +613,52 @@ class ArrayBuilder(BaseArrayBuilder):
                 ``array = builder.fill().auto_connect().commit()``
         """
         # 1. allocate primary / secondaries output orientations
-        primaries, secondaries = {}, {}
-        corners = (Corner.northwest, Corner.southwest, Corner.southeast, Corner.northeast)
-        for i, ori in enumerate((Orientation.east, Orientation.north, Orientation.west, Orientation.south)):
-            for corner in islice(cycle(corners), i, i + 4):
-                if corner in sbox_pattern.fill_corners:
-                    primaries.setdefault(corner, []).append(ori)
-                    break
-            for corner in islice(cycle(corners), i + 2, i + 6):
-                if corner in sbox_pattern.fill_corners:
-                    secondaries.setdefault(corner, []).append(ori)
-                    break
+        # 1.1 primary
+        if primaries is None:
+            primaries = {}
+            corners = (Corner.northwest, Corner.southwest, Corner.southeast, Corner.northeast)
+            for i, ori in enumerate((Orientation.east, Orientation.north, Orientation.west, Orientation.south)):
+                for corner in islice(cycle(corners), i, i + 4):
+                    if corner in sbox_pattern.fill_corners:
+                        primaries.setdefault(corner, []).append(ori)
+                        break
+        else:
+            for ori in Orientation:
+                corners = [corner for corner, orilist in primaries.items() if ori in orilist]
+                if len(corners) == 0:
+                    raise PRGAAPIError("Primary {}bound tracks are not driven by any switch box"
+                            .format(ori.name))
+                elif len(corners) > 1:
+                    raise PRGAAPIError("Primary {}bound tracks are driven by multiple switch boxes: {}"
+                            .format(ori.name, ", ".join(corner.name for corner in corners)))
+
+        # 1.2 primary
+        if secondaries is None:
+            secondaries = {}
+            corners = (Corner.northwest, Corner.southwest, Corner.southeast, Corner.northeast)
+            for i, ori in enumerate((Orientation.east, Orientation.north, Orientation.west, Orientation.south)):
+                for corner in islice(cycle(corners), i + 2, i + 6):
+                    if corner in sbox_pattern.fill_corners:
+                        secondaries.setdefault(corner, []).append(ori)
+                        break
+        else:
+            for ori in Orientation:
+                corners = [corner for corner, orilist in primaries.items() if ori in orilist]
+                if len(corners) == 0:
+                    raise PRGAAPIError("Secondary {}bound tracks are not driven by any switch box"
+                            .format(ori.name))
+                elif len(corners) > 1:
+                    raise PRGAAPIError("Secondary {}bound tracks are driven by multiple switch boxes: {}"
+                            .format(ori.name, ", ".join(corner.name for corner in corners)))
+
+        # 1.3 logging
+        _logger.debug("Switch box filling strategy for {}:".format(self.module))
+        for corner in Corner:
+            _logger.debug(" .. [{}] {}"
+                    .format(corner.case("NE", "NW", "SE", "SW"),
+                        "".join(o.name[0].upper() for o in primaries.get(corner, [])) + 
+                        "".join(o.name[0] for o in secondaries.get(corner, []))))
+
         # 2. iterate all sbox positions
         processed_boxes = set()
         for x, y in product(range(self._module.width), range(self._module.height)):
