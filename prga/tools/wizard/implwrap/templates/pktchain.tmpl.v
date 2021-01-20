@@ -15,7 +15,7 @@ module implwrap (
     );
 
     // Bitstream stuff
-    localparam  MAX_BS_FILESIZE_DWORDS  = 65536;  // max. 256MB bitstream
+    localparam  MAX_BS_FILESIZE_DWORDS  = 131072;   // max. 1GB bitstream
 
     // Programming protocol
     localparam  INIT                    = 3'd0,
