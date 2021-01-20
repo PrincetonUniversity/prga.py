@@ -127,9 +127,9 @@ module implwrap (
             prog_we_prev <= prog_we;
             prog_we_o_prev <= prog_we_o;
 
-            if ((prog_we && ~prog_we_prev) && ~(prog_we_o && ~prog_we_o_prev)) begin
+            if ((prog_we_prev && ~prog_we) && ~(prog_we_o_prev && ~prog_we_o)) begin
                 prog_fragments <= prog_fragments + 1;
-            end else if (~(prog_we && ~prog_we_prev) && (prog_we_o && ~prog_we_o_prev)) begin
+            end else if (~(prog_we_prev && ~prog_we) && (prog_we_o_prev && ~prog_we_o)) begin
                 prog_fragments <= prog_fragments - 1;
             end
         end

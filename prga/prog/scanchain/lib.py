@@ -37,8 +37,17 @@ class ScanchainFASMDelegate(FASMDelegate):
     def __hierarchy_prefix(cls, hierarchy = None):
         if hierarchy is None:
             return ""
+        bitmap = None
+        for i in hierarchy.hierarchy:
+            if (bitmap_inc := getattr(i, "prog_bitmap", None)) is not None:
+                if bitmap is None:
+                    bitmap = bitmap_inc
+                else:
+                    bitmap = bitmap.remap(bitmap_inc)
+        if bitmap is None:
+            return ""
         else:
-            return ".".join(cls._bitmap(i.prog_bitmap) for i in reversed(hierarchy.hierarchy))
+            return cls._bitmap(bitmap)
 
     def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy = None):
         conn = NetUtils.get_connection(source, sink, skip_validations = True)

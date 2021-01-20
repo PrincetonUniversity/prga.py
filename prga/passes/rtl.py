@@ -78,7 +78,7 @@ class VerilogCollection(AbstractPass):
 
         if not hasattr(context.summary, "rtl"):
             context.summary.rtl = {}
-        context.summary.rtl["includes"] = set([self.header_output_dir]) & context.summary.rtl.get("includes", set())
+        context.summary.rtl["includes"] = set([self.header_output_dir]) | context.summary.rtl.get("includes", set())
 
         for k, v in self.visited.items():
             if self.incremental:
