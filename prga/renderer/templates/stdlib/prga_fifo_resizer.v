@@ -71,7 +71,7 @@ module prga_fifo_resizer #(
         end
 
         // build shift pipeline
-        localparam COUNTER_WIDTH = `CLOG2(INPUT_MULTIPLIER + OUTPUT_MULTIPLIER);
+        localparam COUNTER_WIDTH = `PRGA_CLOG2(INPUT_MULTIPLIER + OUTPUT_MULTIPLIER);
         localparam BUF_WIDTH = DATA_WIDTH * (INPUT_MULTIPLIER + OUTPUT_MULTIPLIER - 1);
 
         reg [BUF_WIDTH - 1:0] pipebuf;

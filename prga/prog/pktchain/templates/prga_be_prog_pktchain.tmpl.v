@@ -329,8 +329,8 @@ module prga_be_prog_pktchain #(
                 TILE_STATUS_OP_CLEAR    = 2'h1,
                 TILE_STATUS_OP_UPDATE   = 2'h2;
 
-    localparam  LOG2_PKTCHAIN_NUM_BRANCHES  = `CLOG2(`PRGA_PKTCHAIN_NUM_BRANCHES),
-                LOG2_PKTCHAIN_NUM_LEAVES    = `CLOG2(`PRGA_PKTCHAIN_NUM_LEAVES);
+    localparam  LOG2_PKTCHAIN_NUM_BRANCHES  = `PRGA_CLOG2(`PRGA_PKTCHAIN_NUM_BRANCHES),
+                LOG2_PKTCHAIN_NUM_LEAVES    = `PRGA_CLOG2(`PRGA_PKTCHAIN_NUM_LEAVES);
 
     reg [TILE_STATUS_OP_WIDTH-1:0]      tile_status_op;
     reg [LOG2_PKTCHAIN_NUM_BRANCHES - 1:0]   tile_status_rd_xpos,
