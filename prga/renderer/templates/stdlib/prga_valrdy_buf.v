@@ -24,17 +24,21 @@ module prga_valrdy_buf #(
             data_o      = data_i;
         end
     end else if (DECOUPLED) begin
+        reg                     rst_f;
         reg [1:0]               rd_ptr, wr_ptr;
         reg [DATA_WIDTH-1:0]    data    [0:1];
 
         always @(posedge clk) begin
             if (rst) begin
+                rst_f   <= 1'b1;
                 rd_ptr  <= 2'b0;
                 wr_ptr  <= 2'b0;
 
                 data[0] <= {DATA_WIDTH {1'b0} };
                 data[1] <= {DATA_WIDTH {1'b0} };
             end else begin
+                rst_f   <= 1'b0;
+
                 if (rdy_o && val_i) begin
                     data[wr_ptr[0]]     <= data_i;
                     wr_ptr              <= wr_ptr + 1;
@@ -45,9 +49,10 @@ module prga_valrdy_buf #(
                 end
             end
         end
+
         always @* begin
-            rdy_o = ~rst && wr_ptr != {~rd_ptr[1], rd_ptr[0]}; 
-            val_o = ~rst && rd_ptr != wr_ptr;
+            rdy_o = ~rst_f && wr_ptr != {~rd_ptr[1], rd_ptr[0]}; 
+            val_o = ~rst_f && rd_ptr != wr_ptr;
             data_o = data[rd_ptr[0]];
         end
     end else begin
