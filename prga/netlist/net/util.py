@@ -343,10 +343,120 @@ class NetUtils(Object):
                             .format(sink, next(iter(sink._connections.values())), module))
                 conn = sink._connections[srcref] = NetConnection(src, sink, **kwargs)
                 if not src.net_type.is_const:
-                    src._connections[srcref] = conn
+                    src._connections[sinkref] = conn
             else:
                 for k, v in kwargs.items():
                     setattr(conn, k, v)
+
+    @classmethod
+    def disconnect(cls, sources = None, sinks = None, *, fully = False):
+        """Disconnect ``sources`` and ``sinks``.
+
+        Args:
+            sources: a bus, a slice of a bus, a bit of a bus, or an iterable of the items listed above
+            sink: a bus, a slice of a bus, a bit of a bus, or an iterable of the items listed above
+
+        Keyword Args:
+            fully (:obj:`bool`): If set, every bit in ``sources`` is disconnected from all bits in ``sinks``.
+                Otherwise disconnect in a pair-wise manner.
+
+        Notes:
+            If either ``sources`` or ``sinks`` is not given, all connections are removed from/to the given parameter.
+        """
+        # 1. concat the sources & sinks
+        if sources is not None:
+            sources = cls.concat(sources)
+        if sinks is not None:
+            sinks = cls.concat(sinks)
+
+        # 2. get the parent module
+        module = None
+
+        for t, anchor in enumerate( (sources, sinks) ):
+            if anchor is None:
+                continue
+
+            if anchor.net_type.is_concat:
+                anchor = anchor.items[0]
+            if anchor.net_type in (NetType.slice_, NetType.bit):
+                anchor = anchor.bus
+            if anchor.net_type.is_hierarchical:
+                raise PRGAInternalError("Cannot disconnect from/to {}".format(anchor))
+            elif anchor.net_type.is_const and t == 1:
+                raise PRGAInternalError("Cannot disconnect to {}".format(anchor))
+            elif anchor.net_type not in (NetType.port, NetType.pin):
+                raise PRGAInternalError("Unsupported net type: {}".format(anchor.net_type))
+
+            module = anchor.parent
+            break
+
+        if module is None:
+            raise PRGAInternalError("At least one of 'sources' and 'sinks' must be specified")
+
+        # 3. check if module supports bitwise connection
+        if module.coalesce_connections:
+            if fully:
+                raise PRGAInternalError("{} does not support bitwise connections (invalid 'fully' flag)"
+                        .format(module))
+            for concat, list_ in ( (sources, (source_list := [])), (sinks, (sink_list := [])) ):
+                if concat is None:
+                    continue
+                for item in (concat.items if concat.net_type.is_concat else [concat]):
+                    if item.net_type not in (NetType.port, NetType.pin, NetType.const):
+                        raise PRGAInternalError("{} does not support bitwise connections ({} is not a bus)"
+                            .format(item))
+                    list_.append(item)
+            sources, sinks = map(lambda x: x if len(x) else None, (source_list, sink_list))
+
+        # 4. prepare each pair of disconnection
+        if sources is not None and sinks is not None and not fully and len(sources) != len(sinks):
+            _logger.warning("Width mismatch: len({}) = {} != len({}) = {}"
+                    .format(sources, len(sources), sinks, len(sinks)))
+
+        pairs = None
+        if sources is None:
+            pairs = [ (None, sink) for sink in sinks ]
+        elif sinks is None:
+            pairs = [ (src, None) for src in sources ]
+        elif fully:
+            pairs = product(sources, sinks)
+        else:
+            pairs = zip(sources, sinks)
+
+        # 5. disconnect!
+        for src, sink in pairs:
+            if src is None:     # disconnect all connections to ``sink``
+                sinkref = cls._reference(sink)
+
+                for srcref in sink._connections.keys():
+                    src = cls._dereference(module, srcref)
+                    if not src.net_type.is_const:
+                        del src._connections[sinkref]
+
+                sink._connections.clear()
+
+            elif sink is None:  # disconnect all connections from ``src``
+                srcref = cls._reference(src)
+
+                for sinkref in src._connections.keys():
+                    del cls._dereference(module, sinkref)._connections[srcref]
+
+                src._connections.clear()
+
+            else:               # disconnect specified connection
+                try:
+                    del sink._connections[ cls._reference(src) ]
+                except KeyError:
+                    _logger.warning("Unable to disconnect {} and {}. They are not connected"
+                            .format(src, sink))
+
+                if src.net_type.is_const:
+                    continue
+                try:
+                    del src._connections[ cls._reference(sink) ]
+                except KeyError:
+                    _logger.warning("Unable to disconnect {} and {}. They are not connected"
+                            .format(src, sink))
 
     @classmethod
     def get_source(cls, sink, *, return_const_if_unconnected = False):
