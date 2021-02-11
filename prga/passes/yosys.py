@@ -64,10 +64,14 @@ class YosysScriptsCollection(AbstractPass):
 
             if primitive.vpr_model in libs:
                 continue
-            lib = libs[primitive.vpr_model] = os.path.join(self.output_dir, primitive.vpr_model + ".lib.v")
-            renderer.add_yosys_library(lib, primitive,
+
+            f = libs[primitive.vpr_model] = os.path.join(self.output_dir,
+                    getattr(primitive, "verilog_src", primitive.vpr_model + ".lib.v"))
+            renderer.add_yosys_library(f, primitive,
                     template = getattr(primitive, "verilog_template", None),
-                    order = getattr(primitive, "techmap_order", 1.))
+                    order = getattr(primitive, "techmap_order", 1.), 
+                    dont_generate_verilog = not getattr(primitive, "do_generate_verilog", not os.path.isabs(f)),
+                    )
 
             if primitive.primitive_class.is_custom:
                 if (techmap_template := getattr(primitive, "techmap_template", None)) is not None:

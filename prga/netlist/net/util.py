@@ -547,7 +547,7 @@ class NetUtils(Object):
         """Create a ``type_``-typed timing arc from ``source`` to ``sink``.
 
         Args:
-            types (`TimingArcType`): Type of the timing arc
+            type_ (`TimingArcType`): Type of the timing arc
             source (`Port`): An input port or a clock in a cell module
             sink (`Port`): A port in the same cell module
 

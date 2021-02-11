@@ -108,7 +108,7 @@ class FileRenderer(object):
                 **kwargs)) )
         self._yosys_synth_script_task = file_
 
-    def add_yosys_library(self, file_, module, template = None, order = 1., **kwargs):
+    def add_yosys_library(self, file_, module, template = None, order = 1., dont_generate_verilog = False, **kwargs):
         """Add a yosys library rendering task and link it in the currently active synthesis script.
 
         Args:
@@ -119,11 +119,13 @@ class FileRenderer(object):
             template (:obj:`str`): The template to be used
             order (:obj:`float`): Rendering ordering when multiple ``template`` s are used to render ``file_``. The
                 higher this value is, the earlier it is rendered.
+            dont_generate_verilog (:obj:`bool`): If set, ``file_`` is assumed to already exist and will not be
+                overwritten
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        self.tasks.setdefault(file_, []).append( (order, uno(template, "generic/blackbox.lib.tmpl.v"),
-            dict(module = module,
-                **kwargs)) )
+        if not dont_generate_verilog:
+            self.tasks.setdefault(file_, []).append( (order, uno(template, "generic/blackbox.lib.tmpl.v"),
+                dict(module = module, **kwargs)) )
 
         script_file, script_task = self._get_yosys_script_task()
         if not os.path.isabs(file_) and not os.path.isabs(script_file):

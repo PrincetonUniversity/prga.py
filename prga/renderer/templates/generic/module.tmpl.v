@@ -25,7 +25,12 @@ module {{ module.name }} (
             {%- endfor %}
         {%- endfor %}
         {% for instance in module.instances.values() %}
-    {{ instance.model.name }} {{ instance.name }} (
+    {{ instance.model.name }} {% if instance.verilog_parameters is defined %}#(
+        {%- set iparamcomma = joiner(", ") %}
+        {%- for k, v in instance.verilog_parameters.items() %}
+        {{ iparamcomma() }}.{{ k }}({{ v }})
+        {%- endfor %}
+    ) {% endif %}{{ instance.name }} (
             {%- set pincomma = joiner(",") %}
             {%- for pin in instance.pins.values() %}
                 {%- if pin.model.direction.is_input %}
