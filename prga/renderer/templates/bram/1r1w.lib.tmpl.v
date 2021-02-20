@@ -17,6 +17,7 @@ module {{ module.vpr_model }} #(
 
     reg data [0:NUM_ROWS - 1];
 
+`ifndef PRGA_POSTSYN_NO_MEMINIT
     integer i;
     initial begin
         dout = $unsigned($random) % 2;
@@ -24,6 +25,7 @@ module {{ module.vpr_model }} #(
         for (i = 0; i < NUM_ROWS; i = i + 1)
             data[i] = $unsigned($random) % 2;
     end
+`endif
 
     always @(posedge clk) begin
         if (we) begin

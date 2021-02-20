@@ -12,7 +12,7 @@
 
 {{ prefix }}_COMP_FLAGS := $(addprefix $(INCPREFIX),$({{ prefix }}_INCDIRS))
 {%- for k, v in (config.defines|default({})).items() %}
-	{%- if none(v) %}
+	{%- if v is none %}
 {{ prefix }}_COMP_FLAGS += $(DEFPREFIX){{ k }}
 	{%- else %}
 {{ prefix }}_COMP_FLAGS += $(DEFPREFIX){{ k }}={{ v }}

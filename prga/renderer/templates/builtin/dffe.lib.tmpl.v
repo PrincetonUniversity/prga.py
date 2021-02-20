@@ -9,14 +9,19 @@ module {{ module.vpr_model }} #(
     , output reg Q
     );
 
+`ifndef PRGA_POSTSYN_NO_REGINIT
     initial begin
         Q = $unsigned($random) % 2;
     end
+`endif
 
-    always @(posedge C) begin
-        if (~ENABLE_CE || E) begin
+    generate if (ENABLE_CE) begin
+        always @(posedge C)
+            if (E)
+                Q <= D;
+    end else begin
+        always @(posedge C)
             Q <= D;
-        end
-    end
+    end endgenerate
 
 endmodule
