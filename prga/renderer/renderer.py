@@ -16,12 +16,15 @@ __all__ = ['FileRenderer']
 class FileRenderer(object):
     """File renderer based on Jinja2."""
 
-    __slots__ = ['template_search_paths', 'tasks', '_yosys_synth_script_task']
+    __slots__ = ['template_search_paths', 'tasks',
+            '_yosys_synth_script_task', '_yosys_lib_script_task']
     def __init__(self, *paths):
         self.template_search_paths = [os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'),
                 os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "integration", "templates")]
         self.template_search_paths = list(iter(paths)) + self.template_search_paths
         self.tasks = {}
+
+        self._yosys_lib_script_task = None
         self._yosys_synth_script_task = None
 
     @classmethod
@@ -50,8 +53,17 @@ class FileRenderer(object):
         """:obj:`str`: Render in verilog syntax the concatenation for the nets driving ``net``."""
         return cls._net2verilog(NetUtils.get_source(net, return_const_if_unconnected = True))
 
-    def _get_yosys_script_task(self, script_file = None):
-        """Get the specified or most recently added yosys script rending task."""
+    def _get_yosys_lib_task(self, script_file = None):
+        """Get the specified or most recently added yosys lib script rending task."""
+        if (script_file := uno(script_file, self._yosys_lib_script_task)) is None:
+            raise PRGAInternalError("Main Yosys library script not specified")
+        script_task = self.tasks[script_file]
+        if len(script_task) > 1:
+            raise PRGAInternalError("Main Yosys library script is produced by multiple templates")
+        return script_file, script_task
+
+    def _get_yosys_synth_task(self, script_file = None):
+        """Get the specified or most recently added yosys synthesis script rending task."""
         if (script_file := uno(script_file, self._yosys_synth_script_task)) is None:
             raise PRGAInternalError("Main synthesis script not specified")
         script_task = self.tasks[script_file]
@@ -87,6 +99,18 @@ class FileRenderer(object):
         """
         self.tasks.setdefault(file_, []).append( (order, template, kwargs) )
 
+    def add_yosys_lib_script(self, file_, template = None, **kwargs):
+        """Add a yosys library script rendering task.
+
+        Args:
+            file_ (:obj:`str`): The output file
+            template (:obj:`str`): The template to be used
+            **kwargs: Additional key-value parameters to be passed into the template when rendering
+        """
+        self.tasks.setdefault(file_, []).append( (1., uno(template, "generic/read_lib.tmpl.tcl"),
+            dict(libraries = [], **kwargs)) )
+        self._yosys_lib_script_task = file_
+
     def add_yosys_synth_script(self, file_, lut_sizes, template = None, **kwargs):
         """Add a yosys synthesis script rendering task.
 
@@ -96,8 +120,7 @@ class FileRenderer(object):
             template (:obj:`str`): The template to be used
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        self.tasks.setdefault(file_, []).append( (1., uno(template, "generic/synth.tmpl.tcl"),
-            dict(libraries = [],
+        self.tasks.setdefault(file_, []).append( (1., uno(template, "generic/synth.tmpl.tcl"), dict(
                 memory_techmap = {},    # {"premap_commands": list[{"order": float, "commands": str}],
                                         #  "techmap": str,
                                         #  "techmap_task": str,
@@ -108,8 +131,8 @@ class FileRenderer(object):
                 **kwargs)) )
         self._yosys_synth_script_task = file_
 
-    def add_yosys_library(self, file_, module, template = None, order = 1., dont_generate_verilog = False, **kwargs):
-        """Add a yosys library rendering task and link it in the currently active synthesis script.
+    def add_yosys_lib_cell(self, file_, module, template = None, order = 1., dont_generate_verilog = False, **kwargs):
+        """Add a yosys library cell rendering task and link it in the currently active library script.
 
         Args:
             file_ (:obj:`str`): The output file
@@ -127,7 +150,7 @@ class FileRenderer(object):
             self.tasks.setdefault(file_, []).append( (order, uno(template, "generic/blackbox.lib.tmpl.v"),
                 dict(module = module, **kwargs)) )
 
-        script_file, script_task = self._get_yosys_script_task()
+        script_file, script_task = self._get_yosys_lib_task()
         if not os.path.isabs(file_) and not os.path.isabs(script_file):
             file_ = os.path.relpath(file_, os.path.dirname(script_file))
         if file_ not in script_task[0][2]["libraries"]:
@@ -150,7 +173,7 @@ class FileRenderer(object):
         """
         self.tasks.setdefault(file_, []).append( (order, template, dict(**kwargs)) )
 
-        script_file, script_task = self._get_yosys_script_task()
+        script_file, script_task = self._get_yosys_synth_task()
         if not os.path.isabs(file_) and not os.path.isabs(script_file):
             file_ = os.path.relpath(file_, os.path.dirname(script_file))
         script_task[0][2]["techmaps"].append( {
@@ -174,7 +197,7 @@ class FileRenderer(object):
                 higher this value is, the earlier it is rendered.
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        script_file, script_task = self._get_yosys_script_task()
+        script_file, script_task = self._get_yosys_synth_task()
         if (rule := script_task[0][2].setdefault("memory_techmap", {}).setdefault("rule_task", file_)) is None:
             raise PRGAInternalError("`file_` is required because `add_yosys_bram_rule` is called the first time")
         elif file_ is not None and rule != file_:
@@ -205,7 +228,7 @@ class FileRenderer(object):
                 higher this value is, the earlier it is rendered.
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
-        script_file, script_task = self._get_yosys_script_task()
+        script_file, script_task = self._get_yosys_synth_task()
         if (techmap := script_task[0][2].setdefault("memory_techmap", {}).setdefault("techmap_task", file_)) is None:
             raise PRGAInternalError("`file_` is required because `add_yosys_memory_techmap` is called the first time")
         elif file_ is not None and techmap != file_:

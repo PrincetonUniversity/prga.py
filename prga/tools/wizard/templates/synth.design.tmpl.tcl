@@ -1,6 +1,9 @@
 # bring yosys command into our script!
 yosys -import
 
+# read library cells
+tcl {{ syn.generic.lib }}
+
 # read verilog sources
 {%- for dir_ in design.includes|default([]) %}
 verilog_defaults -add -I{{ abspath(dir_) }}
@@ -23,7 +26,7 @@ chparam -set {{ k }} {{ v }} {{ design.name }}
 hierarchy -check -top {{ design.name }}
 
 # synthesis
-tcl {{ syn.generic }}
+tcl {{ syn.generic.syn }}
 
 # output
 write_blif -conn -param syn.eblif

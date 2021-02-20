@@ -159,6 +159,7 @@ $(BEHAV_SIM): $(TB_SRCS) $(TEST_SRCS) $(TEST_INCS) $(BEHAV_SRCS) $(BEHAV_INCS)
 	$(COMP) $(COMP_FLAGS) $(TB_COMP_FLAGS) $(TB_SRCS) \
 		$(TEST_COMP_FLAGS) $(addprefix -v ,$(TEST_SRCS)) \
 		$(BEHAV_COMP_FLAGS) $(addprefix -v ,$(BEHAV_SRCS)) \
+		$(LIB_COMP_FLAGS) $(addprefix -v ,$(LIB_SRCS)) $(addprefix -v ,$(POSTSYN_SRCS)) \
 		-o $@
 
 $(POSTSYN_SIM_LOG): $(POSTSYN_SIM)

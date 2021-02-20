@@ -41,9 +41,12 @@ class YosysScriptsCollection(AbstractPass):
         if not hasattr(context.summary, "yosys"):
             context.summary.yosys = {}
 
-        f = context.summary.yosys["script"] = os.path.join(self.output_dir, "synth.tcl") 
-        libs = context.summary.yosys["libs"] = {}
-        renderer.add_yosys_synth_script(f, context.summary.lut_sizes)
+        scrlib = context.summary.yosys.setdefault("scripts", {})["lib"] = os.path.join(self.output_dir, "read_lib.tcl")
+        scrsyn = context.summary.yosys.setdefault("scripts", {})["syn"] = os.path.join(self.output_dir, "synth.tcl")
+        libs   = context.summary.yosys["libs"] = {}
+
+        renderer.add_yosys_lib_script  (scrlib)
+        renderer.add_yosys_synth_script(scrsyn, context.summary.lut_sizes)
 
         for primitive_key in context.summary.active_primitives:
             primitive = context.database[ModuleView.abstract, primitive_key]
@@ -67,7 +70,7 @@ class YosysScriptsCollection(AbstractPass):
 
             f = libs[primitive.vpr_model] = os.path.join(self.output_dir,
                     getattr(primitive, "verilog_src", primitive.vpr_model + ".lib.v"))
-            renderer.add_yosys_library(f, primitive,
+            renderer.add_yosys_lib_cell(f, primitive,
                     template = getattr(primitive, "verilog_template", None),
                     order = getattr(primitive, "techmap_order", 1.), 
                     dont_generate_verilog = not getattr(primitive, "do_generate_verilog", not os.path.isabs(f)),

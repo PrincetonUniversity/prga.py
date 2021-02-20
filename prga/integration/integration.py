@@ -482,8 +482,9 @@ class Integration(object):
         nets = None
         if core:
             # build system core (fabric wrapper)
-            core = context._database[ModuleView.design, core] = Module(core,
+            core_mod = context._database[ModuleView.design, core] = Module(core,
                     view = ModuleView.design, module_class = ModuleClass.aux)
+            core = core_mod
 
             # create ports in core
             cls._create_intf_syscon(core, True, "u")

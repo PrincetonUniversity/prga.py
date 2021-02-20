@@ -60,7 +60,8 @@ def generate_v2b_project(context, renderer, config, output = None):
 
     # Synthesis settings
     syn = param["syn"] = {}
-    syn["generic"] = os.path.join(summary.cwd, summary.yosys["script"])
+    syn["generic"] = { k: os.path.join(summary.cwd, v)
+            for k, v in summary.yosys["scripts"].items() }
     syn["design"] = os.path.join("syn.tcl")
     
     # VPR settings

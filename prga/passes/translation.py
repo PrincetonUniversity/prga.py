@@ -161,12 +161,17 @@ class Translation(AbstractPass):
             kwargs["width"] = module.width
             kwargs["height"] = module.height
 
+        # user-specified attributes
+        kwargs.update(getattr(module, "translate_attrs", {}))
+
         # create design module
         design = Module(module.name, **kwargs)
 
         # translate ports
         for port in module.ports.values():
             attrs = {"key": port.key, "is_clock": port.is_clock}
+
+            # deduct `net_class`
             if module.module_class.is_primitive:
                 attrs["net_class"] = NetClass.user
                 if (port_class := getattr(port, "port_class", None)) is not None:
@@ -186,15 +191,21 @@ class Translation(AbstractPass):
                     attrs["net_class"] = NetClass.bridge
             elif module.module_class.is_array or module.module_class.is_tile:
                 attrs["net_class"] = NetClass.bridge
+
             if "net_class" not in attrs:
                 raise NotImplementedError("Could not deduct net class of {}".format(port))
+
+            # propagate user-specified attributes
+            attrs.update(getattr(port, "translate_attrs", {}))
+
             ModuleUtils.create_port(design, port.name, len(port), port.direction, **attrs)
 
         # translate instances
         for instance in module.instances.values():
             design_model = self._process_module(instance.model, context,
                     disable_coalesce = disable_coalesce or not design.coalesce_connections)
-            design_instance = ModuleUtils.instantiate(design, design_model, instance.name, key = instance.key)
+            design_instance = ModuleUtils.instantiate(design, design_model, instance.name, key = instance.key,
+                    **getattr(instance, "translate_attrs", {}))
 
         # translate connections
         if module.module_class.is_primitive:

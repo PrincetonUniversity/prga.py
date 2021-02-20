@@ -144,6 +144,7 @@ module prga_tb_top;
 
         f_tb_clk = 1'b0;
         f_tb_rst = 1'b0;
+        f_tb_cycle_cnt = 0;
 
         #(CLK_PERIOD * 1.25) f_tb_rst = 1'b1;
         #(CLK_PERIOD * 10) f_tb_rst = 1'b0;
