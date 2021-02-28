@@ -126,8 +126,8 @@ class Integration(object):
             module (`Module`):
             slave (:obj:`bool`): If set, slave interface is added to ``module``
             prefix (:obj:`str`): Prefix of the port names
-            unused (:obj:`bool`): If set, unused but required AXI4 ports are also added, including `AWPROT`, `AWQOS`,
-                `AWLOCK`, `AWREGION`, `ARPROT`, `ARQOS`, `ARREGION`.
+            unused (:obj:`bool`): If set, unused but required AXI4 ports are also added, including ``AWPROT``,
+                ``AWQOS``, ``AWLOCK``, ``AWREGION``, ``ARPROT``, ``ARQOS``, ``ARREGION``.
         """
         i, o = ((PortDirection.output, PortDirection.input_) if slave else
                 (PortDirection.input_, PortDirection.output))

@@ -49,7 +49,7 @@ class DesignIntf(Object):
         name (:obj:`str`): Name of the design
     """
 
-    class Port(Object):
+    class DesignPort(Object):
         """Port of the targe design to be mapped onto the FPGA.
 
         Args:
@@ -193,28 +193,28 @@ class DesignIntf(Object):
                 to Verilog ``{input|output} {name}``.
 
         Returns:
-            `DesignIntf.Port`: The created port
+            `DesignIntf.DesignPort`: The created port
         """
         if name in self.ports:
             raise PRGAAPIError("Duplicate port name: {}".format(name))
 
         if range_ is None:
-            port = self.ports[name] = self.Port(name, direction, range_)
+            port = self.ports[name] = self.DesignPort(name, direction, range_)
             return port
 
         elif isinstance(range_, int):
             if range_ > 0:
-                port = self.ports[name] = self.Port(name, direction, slice(0, range_, 1))
+                port = self.ports[name] = self.DesignPort(name, direction, slice(0, range_, 1))
                 return port
 
         elif isinstance(range_, slice):
             if range_.stop > range_.start and range_.step in (None, 1):
-                port = self.ports[name] = self.Port(name, direction,
+                port = self.ports[name] = self.DesignPort(name, direction,
                         slice(range_.start, range_.stop, 1))
                 return port
 
             elif range_.stop < range_.start and range_.step in (None, -1):
-                port = self.ports[name] = self.Port(name, direction,
+                port = self.ports[name] = self.DesignPort(name, direction,
                         slice(range_.start, range_.stop, -1))
                 return port
 
@@ -267,13 +267,13 @@ class DesignIntf(Object):
                     if bus is not None:
                         if range_ is not None:
                             if range_.step in (None, 1):
-                                design.ports[bus] = cls.Port(bus, direction,
+                                design.ports[bus] = cls.DesignPort(bus, direction,
                                         slice(range_.start, range_.stop + 1, 1))
                             else:
-                                design.ports[bus] = cls.Port(bus, direction,
+                                design.ports[bus] = cls.DesignPort(bus, direction,
                                         slice(range_.start, range_.stop - 1, -1))
                         else:
-                            design.ports[bus] = cls.Port(bus, direction, range_)
+                            design.ports[bus] = cls.DesignPort(bus, direction, range_)
 
                     if cur_bus in design.ports:
                         raise PRGAAPIError("Duplicate port name: {}".format(cur_bus))
@@ -285,12 +285,12 @@ class DesignIntf(Object):
                 if bus is not None:
                     if range_ is not None:
                         if range_.step in (None, 1):
-                            design.ports[bus] = cls.Port(bus, direction,
+                            design.ports[bus] = cls.DesignPort(bus, direction,
                                     slice(range_.start, range_.stop + 1, 1))
                         else:
-                            design.ports[bus] = cls.Port(bus, direction,
+                            design.ports[bus] = cls.DesignPort(bus, direction,
                                     slice(range_.start, range_.stop - 1, -1))
                     else:
-                        design.ports[bus] = cls.Port(bus, direction, range_)
+                        design.ports[bus] = cls.DesignPort(bus, direction, range_)
 
         return design

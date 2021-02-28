@@ -155,7 +155,7 @@ class Scanchain(AbstractProgCircuitryEntry):
         Keyword Args:
             iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
                 the instances in a module
-            insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if `we` buffers are inserted at
+            insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if ``we`` buffers are inserted at
                 the beginning and end of the scanchain inside ``design_view``. By default, buffers are inserted in
                 all logic/IO blocks and routing boxes.
 
@@ -382,7 +382,7 @@ class Scanchain(AbstractProgCircuitryEntry):
         Keyword Args:
             iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
                 the instances in a module
-            insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if `we` buffers are inserted at
+            insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if ``we`` buffers are inserted at
                 the beginning and end of the scanchain inside ``design_view``. By default, buffers are inserted in
                 all logic/IO blocks and routing boxes.
         

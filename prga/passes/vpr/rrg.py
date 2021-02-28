@@ -28,18 +28,20 @@ class VPR_RRG_Generation(AbstractPass):
 
     Keyword Args:
         fasm (`FASMDelegate`): Overwrite the deafult fasm delegate provided by the context
-        timing (`TimingDelegate`): Overwrite the default iming delegate provided by the context
     """
 
-    __slots__ = ['output_file', 'fasm', 'timing',                       # customizable variables
+    # timing (`TimingDelegate`): Overwrite the default iming delegate provided by the context
+
+    __slots__ = ['output_file', 'fasm', # 'timing',                       # customizable variables
             # temporary variables:
             'xml', 'tile2id', 'tilepin2ptc', 'switch2id', 'sgmt2id', 'sgmt2ptc',
             'chanx', 'chany', 'conn_graph', 'num_nodes', 'num_edges',
             ]
-    def __init__(self, output_file, *, fasm = None, timing = None):
+    def __init__(self, output_file, *, fasm = None):
+        # , timing = None):
         self.output_file = output_file
         self.fasm = fasm
-        self.timing = timing
+        # self.timing = timing
 
     @property
     def key(self):

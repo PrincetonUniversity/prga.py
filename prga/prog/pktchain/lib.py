@@ -138,7 +138,7 @@ class Pktchain(Scanchain):
                 tiles/switch boxes that are not already controlled by another pktchain router. When two ``None`` are
                 yielded consecutively, the current pktchain branch is terminated and attached to the primary pktchain
                 chunk.
-            insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if `we` buffers are inserted at
+            insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if ``we`` buffers are inserted at
                 the beginning and end of the scanchain inside ``design_view``. By default, buffers are inserted in
                 all logic/IO blocks and routing boxes.
             _not_top (:obj:`bool`): If set, the array is treated as a non-top level array. This is primarily used when
@@ -664,7 +664,7 @@ class Pktchain(Scanchain):
                 tiles/switch boxes that are not already controlled by another pktchain router. When two ``None`` are
                 yielded consecutively, the current secondary pktchain is terminated and attached to the primary
                 pktchain.
-            insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if `we` buffers are inserted at
+            insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if ``we`` buffers are inserted at
                 the beginning and end of the scanchain inside ``design_view``. By default, buffers are inserted in
                 all logic/IO blocks and routing boxes.
         """
