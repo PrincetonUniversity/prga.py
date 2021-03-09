@@ -24,7 +24,7 @@ _logger = logging.getLogger(__name__)
 
 __all__ = ['ContextSummary', 'Context']
 
-_VERSION = open(os.path.join(os.path.dirname(__file__), "..", "VERSION"), "r").read().strip()
+VERSION = open(os.path.join(os.path.dirname(__file__), "..", "VERSION"), "r").read().strip()
 
 # ----------------------------------------------------------------------------
 # -- FPGA Summary ------------------------------------------------------------
@@ -98,7 +98,7 @@ class Context(Object):
             self._new_database()
         else:
             self._database = database
-        self.version = _VERSION
+        self.version = VERSION
         self.summary = ContextSummary()
         self.summary.cwd = self.cwd = os.getcwd()
         self.summary.prog_type = prog_type
@@ -640,15 +640,15 @@ class Context(Object):
         name = file_ if isinstance(file_, str) else file_.name
         obj = pickle.load(open(file_, "rb") if isinstance(file_, str) else file_)
         if isinstance(obj, cls):
-            if (version := getattr(obj, "version", None)) != _VERSION:
+            if (version := getattr(obj, "version", None)) != VERSION:
                 if version is None:
                     raise PRGAAPIError(
                             "The context is pickled by an old PRGA release, not supported by current version {}"
-                            .format(_VERSION))
+                            .format(VERSION))
                 else:
                     raise PRGAAPIError(
                             "The context is pickled by PRGA version {}, not supported by current version {}"
-                            .format(version, _VERSION))
+                            .format(version, VERSION))
             obj.summary.cwd = obj.cwd = os.path.dirname(os.path.abspath(name))
         _logger.info("Context {}unpickled from {}".format(
             "summary " if isinstance(obj, ContextSummary) else "", name))

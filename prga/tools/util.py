@@ -39,8 +39,12 @@ def docstring_from_argparser(parser):
     Recommended usage: ``__doc__ = docstring_from_argparser(parser)``
     """
     usage = StringIO()
-    parser.print_usage(usage)
-    return "This is an executable module:\n\n" + usage.getvalue()
+    parser.print_help(usage)
+    s = usage.getvalue()
+    eofl = s.find("\n")     # end of first line
+    if eofl > 0:
+        s = "**" + s[:eofl] + "**" + s[eofl:]
+    return "This is an executable module: \n \n" + s
 
 class DesignIntf(Object):
     """Interface of the target design to be mapped onto the FPGA.
@@ -96,8 +100,7 @@ class DesignIntf(Object):
 
             Yields:
                 :obj:`int` or ``None`: Index
-                :obj:`tuple` [`Position`, :obj:`int`] or ``None``: Position and subtile ID of the IOB assigned for
-                    the bit in the port
+                :obj:`tuple` [`Position`, :obj:`int`] or ``None``: Position and subtile ID of the IOB assigned for the bit in the port
             """
             if self.range_ is None:
                 yield None, self.ioconstraints

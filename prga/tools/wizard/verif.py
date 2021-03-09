@@ -13,22 +13,20 @@ __all__ = ['generate_verif_makefile', 'generate_verif_testbench']
 import argparse
 _help = """PRGA verification project generator.
 
-    Auto-generate Makefile, testbench, etc. This tool depends on the Verilog-to-Bitstream project generator tool. This
-    tool also takes a configuration file in YAML or JSON format. The configuration file requires the following keys:
+Auto-generate Makefile, testbench, etc. This tool depends on the Verilog-to-Bitstream project generator tool. This
+tool also takes a configuration file in YAML or JSON format. The configuration file requires the following keys::
 
-        compiler \(string\): Verilog compiler. Supported values are: "vcs", "iverilog"
-        tests \(map of maps\): Tests for the target design. The Verilog writing instruction can be found at <TODO>
-            [key] \(string\): Name of the test
-            sources \(list of strings\): Verilog source files of the test
-            includes \(list of strings\): [optional] Include directories of the test
-            defines \(map of strings to strings, numbers or null\): [optional] Define macros for Verilog
-                preprocessing
-            parameters \(map of strings to strings or numbers\): [optional] Parameterization of the top-level test
-            comp_flags \(list of strings\): Additional flags for compilation
-            run_flags \(list of strings\): Additional flags for simulation
+    compiler (string): Verilog compiler. Supported values are: "vcs", "iverilog"
+    tests (map of maps): Tests for the target design, indexed by the name of the test
+        sources (list of strings): Verilog source files of the test
+        includes (list of strings): [optional] Include directories of the test
+        defines (map of strings to strings, numbers or null): [optional] Define macros for Verilog preprocessing
+        parameters (map of strings to strings or numbers): [optional] Parameterization of the top-level test
+        comp_flags (list of strings): Additional flags for compilation
+        run_flags (list of strings): Additional flags for simulation
 """
 
-_parser = create_argparser(__name__, description=_help, formatter_class=argparse.RawDescriptionHelpFormatter)
+_parser = create_argparser(__name__, description=_help, formatter_class=argparse.RawTextHelpFormatter)
 
 _subparsers = _parser.add_subparsers(dest="subcommand",
         description="Subcommands. Run with '{{subcommand}} -h' for more help")

@@ -25,8 +25,8 @@ __all__.extend([
     ])
 
 # Context
-from .core.context import Context
-__all__.extend(["Context"])
+from .core.context import Context, VERSION
+__all__.extend(["Context", "VERSION"])
 
 # Programming Circuitry Entry Points
 from .prog.magic.lib import Magic

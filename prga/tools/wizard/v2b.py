@@ -13,25 +13,25 @@ __all__ = ['generate_v2b_project']
 
 import argparse
 _help = """PRGA Verilog-to-Bitstream project generator.
+    
+Auto-generate Makefile, synthesis script, etc. This tool takes a configuration file in YAML or JSON format. The
+configuration file requires the following keys::
 
-    Auto-generate Makefile, synthesis script, etc. This tool takes a configuration file in YAML or JSON format. The
-    configuration file requires the following keys:
-    
-        context \(string\): File name of the pickled PRGA context
-        design \(map\): Data needed to describe the target design to be mapped onto the FPGA
-            name \(string\): Name of the top-level module
-            sources \(list of strings\): Verilog source files
-            includes \(list of strings\): [optional] Include directories
-            defines \(map of strings to strings, numbers or null\): [optional] Define macros for Verilog preprocessing
-            parameters \(map of strings to strings or numbers\): [optional] Parameterization of the top-level module
-    
-    The configuration file takes these optional keys:
-    
-        constraints \(map\): Various constraints
-            io \(string\): File name of the [partial] IO constraint
+    context (string): File name of the pickled PRGA context
+    design (map): Data needed to describe the target design to be mapped onto the FPGA
+        name (string): Name of the top-level module
+        sources (list of strings): Verilog source files
+        includes (list of strings): [optional] Include directories
+        defines (map of strings to strings, numbers or null): [optional] Define macros for Verilog preprocessing
+        parameters (map of strings to strings or numbers): [optional] Parameterization of the top-level module
+
+The configuration file takes these optional keys::
+
+    constraints (map): Various constraints
+        io (string): File name of the [partial] IO constraint
 """
 
-_parser = create_argparser(__name__, description=_help, formatter_class=argparse.RawDescriptionHelpFormatter)
+_parser = create_argparser(__name__, description=_help, formatter_class=argparse.RawTextHelpFormatter)
 
 _parser.add_argument("configuration", type=argparse.FileType('r'), metavar="CONFIG.YAML",
         help="Configuration file in YAML or JSON format")
