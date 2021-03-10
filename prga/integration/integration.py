@@ -3,7 +3,7 @@
 from .common import InterfaceClass
 from ..core.common import ModuleView, ModuleClass, IOType
 from ..netlist import Module, PortDirection, ModuleUtils, NetUtils
-from ..tools.util import DesignIntf
+from ..tools.util import AppIntf
 from ..tools.ioplan import IOPlanner
 from ..exception import PRGAAPIError, PRGAInternalError
 
@@ -310,16 +310,16 @@ class Integration(object):
 
     @classmethod
     def _create_design_intf(cls, context, interfaces):
-        """Create a `DesignIntf` object with the specified ``interfaces``.
+        """Create a `AppIntf` object with the specified ``interfaces``.
 
         Args:
             context (`Context`):
             interfaces (:obj:`Container` [`InterfaceClass` ]): `InterfaceClass.syscon` is always added
 
         Returns:
-            `DesignIntf`:
+            `AppIntf`:
         """
-        d = DesignIntf("design")
+        d = AppIntf("design")
 
         # 1. add InterfaceClass.syscon first
         if True:

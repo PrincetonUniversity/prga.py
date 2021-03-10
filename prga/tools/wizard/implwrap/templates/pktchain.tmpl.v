@@ -8,7 +8,7 @@ module implwrap (
     , output reg tb_prog_done
     , input wire [31:0] tb_verbosity
     , input wire [31:0] tb_cycle_cnt
-    {%- for name, port in design.ports.items() %}
+    {%- for name, port in app.ports.items() %}
     , {{ port.direction.case("input", "output") }} wire
         {%- if port.range_ is not none %} [{{ port.range_.stop - port.range_.step }}:{{ port.range_.start }}]{% endif %} {{ name }}
     {%- endfor %}
@@ -87,7 +87,7 @@ module implwrap (
         ,.phit_o(phit_o)
         ,.phit_o_wr(phit_o_wr)
         ,.phit_o_full(phit_o_full)
-        {%- for port in design.ports.values() %}
+        {%- for port in app.ports.values() %}
             {%- for idx, ((x, y), subtile) in port.iter_io_constraints() %}
         ,.{{- port.direction.case("ipin", "opin") }}_x{{ x }}y{{ y }}_{{ subtile }}({{ port.name }}{%- if idx is not none %}[{{ idx }}]{%- endif %})
             {%- endfor %}

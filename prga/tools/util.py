@@ -9,7 +9,7 @@ from io import StringIO
 import re, argparse
 
 __all__ = ['create_argparser', 'docstring_from_argparser',
-        'DesignIntf']
+        'AppIntf']
 
 def create_argparser(module, *args, **kwargs):
     """Create an argument parser.
@@ -46,15 +46,15 @@ def docstring_from_argparser(parser):
         s = "**" + s[:eofl] + "**" + s[eofl:]
     return "This is an executable module: \n \n" + s
 
-class DesignIntf(Object):
-    """Interface of the target design to be mapped onto the FPGA.
+class AppIntf(Object):
+    """Interface of the application to be mapped onto the FPGA.
 
     Args:
-        name (:obj:`str`): Name of the design
+        name (:obj:`str`): Name of the application
     """
 
-    class DesignPort(Object):
-        """Port of the targe design to be mapped onto the FPGA.
+    class AppPort(Object):
+        """Port of the application to be mapped onto the FPGA.
 
         Args:
             name (:obj:`str`): Name of the port
@@ -126,7 +126,7 @@ class DesignIntf(Object):
                 if index in (None, 0):
                     return self.ioconstraints
                 else:
-                    raise PRGAAPIError("Design port {} is single-bit".format(self.name))
+                    raise PRGAAPIError("Application port {} is single-bit".format(self.name))
             elif self.range_.step == 1:
                 if self.range_.start <= index < self.range_.stop:
                     return self.ioconstraints[index - self.range_.start]
@@ -157,7 +157,7 @@ class DesignIntf(Object):
                 if index in (None, 0):
                     self.ioconstraints = Position(*position), subtile
                 else:
-                    raise PRGAAPIError("Design port {} is single-bit".format(self.name))
+                    raise PRGAAPIError("Application port {} is single-bit".format(self.name))
             elif self.range_.step == 1:
                 if self.range_.start <= index < self.range_.stop:
                     self.ioconstraints[index - self.range_.start] = Position(*position), subtile
@@ -196,28 +196,28 @@ class DesignIntf(Object):
                 to Verilog ``{input|output} {name}``.
 
         Returns:
-            `DesignIntf.DesignPort`: The created port
+            `AppIntf.AppPort`: The created port
         """
         if name in self.ports:
             raise PRGAAPIError("Duplicate port name: {}".format(name))
 
         if range_ is None:
-            port = self.ports[name] = self.DesignPort(name, direction, range_)
+            port = self.ports[name] = self.AppPort(name, direction, range_)
             return port
 
         elif isinstance(range_, int):
             if range_ > 0:
-                port = self.ports[name] = self.DesignPort(name, direction, slice(0, range_, 1))
+                port = self.ports[name] = self.AppPort(name, direction, slice(0, range_, 1))
                 return port
 
         elif isinstance(range_, slice):
             if range_.stop > range_.start and range_.step in (None, 1):
-                port = self.ports[name] = self.DesignPort(name, direction,
+                port = self.ports[name] = self.AppPort(name, direction,
                         slice(range_.start, range_.stop, 1))
                 return port
 
             elif range_.stop < range_.start and range_.step in (None, -1):
-                port = self.ports[name] = self.DesignPort(name, direction,
+                port = self.ports[name] = self.AppPort(name, direction,
                         slice(range_.start, range_.stop, -1))
                 return port
 
@@ -225,14 +225,14 @@ class DesignIntf(Object):
 
     @classmethod
     def parse_eblif(cls, f):
-        """Parse a synthesized eblif file for the target design interface.
+        """Parse a synthesized eblif file for the application interface.
 
         Args:
             f (:obj:`str` or a file-like object): File name, or a file-like object
         """
         if isinstance(f, str):
             f = open(f, "r")
-        design = cls(None)
+        app = cls(None)
 
         for line in f:
             tokens = line.split()
@@ -240,8 +240,8 @@ class DesignIntf(Object):
                 continue
 
             elif tokens[0] == ".model":
-                if design.name is None:
-                    design.name = tokens[1]
+                if app.name is None:
+                    app.name = tokens[1]
                 else:
                     raise PRGAAPIError("Multiple models found in EBLIF.\n"
                             "\tPossible reason: synthesis ran without `flatten`")
@@ -270,15 +270,15 @@ class DesignIntf(Object):
                     if bus is not None:
                         if range_ is not None:
                             if range_.step in (None, 1):
-                                design.ports[bus] = cls.DesignPort(bus, direction,
+                                app.ports[bus] = cls.AppPort(bus, direction,
                                         slice(range_.start, range_.stop + 1, 1))
                             else:
-                                design.ports[bus] = cls.DesignPort(bus, direction,
+                                app.ports[bus] = cls.AppPort(bus, direction,
                                         slice(range_.start, range_.stop - 1, -1))
                         else:
-                            design.ports[bus] = cls.DesignPort(bus, direction, range_)
+                            app.ports[bus] = cls.AppPort(bus, direction, range_)
 
-                    if cur_bus in design.ports:
+                    if cur_bus in app.ports:
                         raise PRGAAPIError("Duplicate port name: {}".format(cur_bus))
                     elif idx is None:
                         bus, range_ = cur_bus, None
@@ -288,12 +288,12 @@ class DesignIntf(Object):
                 if bus is not None:
                     if range_ is not None:
                         if range_.step in (None, 1):
-                            design.ports[bus] = cls.DesignPort(bus, direction,
+                            app.ports[bus] = cls.AppPort(bus, direction,
                                     slice(range_.start, range_.stop + 1, 1))
                         else:
-                            design.ports[bus] = cls.DesignPort(bus, direction,
+                            app.ports[bus] = cls.AppPort(bus, direction,
                                     slice(range_.start, range_.stop - 1, -1))
                     else:
-                        design.ports[bus] = cls.DesignPort(bus, direction, range_)
+                        app.ports[bus] = cls.AppPort(bus, direction, range_)
 
-        return design
+        return app

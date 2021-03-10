@@ -159,31 +159,31 @@ class IOPlanner(Object):
         self.counterclockwise = uno(counterclockwise, self.counterclockwise)
 
     @classmethod
-    def autoplan(cls, summary, design):
-        """Automatically generate IO constraints and write into ``design``.
+    def autoplan(cls, summary, app):
+        """Automatically generate IO constraints and write into ``app``.
 
         Args:
             summary (`Context` or `ContextSummary`):
-            design (`DesignIntf`): Interface of the target design. May contain partial IO constraints.
+            app (`AppIntf`): Interface of the application. May contain partial IO constraints.
         """
         planner = cls(summary)
         # process existing partial constraints
-        for port in design.ports.values():
+        for port in app.ports.values():
             for _, io in port.iter_io_constraints():
                 if io is not None:
                     planner.use(port.direction, *io)
         # complete the constraints
-        for port in design.ports.values():
+        for port in app.ports.values():
             for i, io in port.iter_io_constraints():
                 if io is None:
                     port.set_io_constraint(*planner.pop(port.direction), i)
 
     @classmethod
-    def parse_io_constraints(cls, design, f):
+    def parse_io_constraints(cls, app, f):
         """Parse a partial or complete IO constraint file.
 
         Args:
-            design (`DesignIntf`): Interface of the target design.
+            app (`AppIntf`): Interface of the application.
             f (:obj:`str` of file-like object):
         """
         if isinstance(f, str):
@@ -205,27 +205,28 @@ class IOPlanner(Object):
             if index is not None:
                 index = int(index)
 
-            if (port := design.ports.get(name)) is None:
-                _logger.warning("Design '{}' does not have port '{}'".format(design.name, name))
+            if (port := app.ports.get(name)) is None:
+                _logger.warning("Application '{}' does not have port '{}'".format(app.name, name))
+
             elif port.direction.case(bool(out), not out):
-                raise PRGAAPIError("Port '{}' of design '{}' is an {}"
-                        .format(name, design.name, port.direction.case("input", "output")))
+                raise PRGAAPIError("Port '{}' of app '{}' is an {}"
+                        .format(name, app.name, port.direction.case("input", "output")))
             else:
                 port.set_io_constraint((x, y), subtile, index)
 
     @classmethod
-    def print_io_constraints(cls, design, ostream = sys.stdout):
+    def print_io_constraints(cls, app, ostream = sys.stdout):
         """Print IO constraints.
 
         Args:
-            design (`DesignIntf`): Interface of the target design.
+            app (`AppIntf`): Interface of the application.
             ostream (:obj:`str` or file-like object):
         """
         if isinstance(ostream, str):
             if d := os.path.dirname(ostream):
                 os.makedirs(d, exist_ok = True)
             ostream = open(ostream, "w")
-        for port in design.ports.values():
+        for port in app.ports.values():
             for i, io in port.iter_io_constraints():
                 if io is not None:
                     if i is None:

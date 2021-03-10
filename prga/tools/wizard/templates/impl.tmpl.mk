@@ -20,21 +20,21 @@ SHELL = /bin/bash
 # ** PRGA Database **
 SUMMARY := {{ summary }}
 
-# ** Target Design **
-DESIGN := {{ design.name }}
+# ** Application **
+APP := {{ app.name }}
 
-DESIGN_SRCS :=
-{%- for src in design.sources %}
-DESIGN_SRCS += {{ abspath(src) }}
+APP_SRCS :=
+{%- for src in app.sources %}
+APP_SRCS += {{ abspath(src) }}
 {%- endfor %}
 
-DESIGN_INCS :=
-{%- for dir_ in design.includes|default([]) %}
-DESIGN_INCS += $(shell find {{ abspath(dir_) }} -type f)
+APP_INCS :=
+{%- for dir_ in app.includes|default([]) %}
+APP_INCS += $(shell find {{ abspath(dir_) }} -type f)
 {%- endfor %}
 
 # ** SYN **
-SYN_SCRIPT := {{ syn.design }}
+SYN_SCRIPT := {{ syn.app }}
 
 # ** PAR **
 VPR_CHAN_WIDTH := {{ vpr.channel_width }}
@@ -132,7 +132,7 @@ display: disp
 # ----------------------------------------------------------------------------
 # -- Regular Rules -----------------------------------------------------------
 # ----------------------------------------------------------------------------
-$(SYN_RESULT): $(DESIGN_SRCS) $(DESIGN_INCS) $(SYN_SCRIPT)
+$(SYN_RESULT): $(APP_SRCS) $(APP_INCS) $(SYN_SCRIPT)
 	$(YOSYS) -c $(SYN_SCRIPT) \
 		| tee $(SYN_LOG)
 
@@ -142,10 +142,10 @@ $(PACK_RESULT): $(VPR_ARCHDEF) $(SYN_EBLIF)
 
 $(IOPLAN_RESULT): $(SUMMARY) $(SYN_EBLIF) $(VPR_IOCONSTRAINTS)
 ifeq ($(VPR_IOCONSTRAINTS),)
-	$(PYTHON) -O -m prga.tools.ioplan -c $(SUMMARY) -d $(SYN_EBLIF) -o $@ \
+	$(PYTHON) -O -m prga.tools.ioplan -c $(SUMMARY) -i $(SYN_EBLIF) -o $@ \
 		| tee $(IOPLAN_LOG)
 else
-	$(PYTHON) -O -m prga.tools.ioplan -c $(SUMMARY) -d $(SYN_EBLIF) -o $@ -f $(VPR_IOCONSTRAINTS) \
+	$(PYTHON) -O -m prga.tools.ioplan -c $(SUMMARY) -i $(SYN_EBLIF) -o $@ -f $(VPR_IOCONSTRAINTS) \
 		| tee $(IOPLAN_LOG)
 endif
 
@@ -163,15 +163,15 @@ $(ROUTE_RESULT): $(VPR_ARCHDEF) $(VPR_RRGRAPH) $(SYN_EBLIF) $(PACK_RESULT) $(PLA
 		| tee $(ROUTE_LOG)
 
 $(FASM_RESULT): $(VPR_ARCHDEF) $(VPR_RRGRAPH) $(SYN_EBLIF) $(PACK_RESULT) $(PLACE_RESULT) $(ROUTE_RESULT)
-	$(GENFASM) $(VPR_ARCHDEF) $(DESIGN) \
+	$(GENFASM) $(VPR_ARCHDEF) $(APP) \
 		--circuit_file $(SYN_EBLIF) --circuit_format eblif \
 		--net_file $(PACK_RESULT) --place_file $(PLACE_RESULT) --route_file $(ROUTE_RESULT) \
 		--analysis --route_chan_width $(VPR_CHAN_WIDTH) --read_rr_graph $(VPR_RRGRAPH) \
 		| tee $(FASM_LOG)
-	mv $(DESIGN).fasm $@
+	mv $(APP).fasm $@
 
 $(BITGEN_RESULT): $(SUMMARY) $(FASM_RESULT)
 	$(PYTHON) -O -m prga.tools.bitgen -c $(SUMMARY) -f $(FASM_RESULT) -o $@ --verif
 
 $(IMPLWRAP_V): $(SUMMARY) $(SYN_EBLIF) $(IOPLAN_RESULT)
-	$(PYTHON) -O -m prga.tools.wizard.implwrap -c $(SUMMARY) -d $(SYN_EBLIF) -f $(IOPLAN_RESULT) -o $@
+	$(PYTHON) -O -m prga.tools.wizard.implwrap -c $(SUMMARY) -i $(SYN_EBLIF) -f $(IOPLAN_RESULT) -o $@

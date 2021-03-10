@@ -2,7 +2,7 @@
 
 from . import def_argparser
 from .ioplan import IOPlanner
-from ..util import DesignIntf
+from ..util import AppIntf
 from ...core.context import Context
 from ...util import enable_stdout_logging
 
@@ -16,8 +16,8 @@ args = def_argparser(__name__).parse_args()
 if args.summary is None:
     _logger.error("Missing required argument: -c summary")
     exit()
-elif args.design is None:
-    _logger.error("Missing required argument: -d design")
+elif args.application is None:
+    _logger.error("Missing required argument: -i application")
     exit()
 elif args.output is None:
     _logger.error("Missing required argument: -o output")
@@ -27,9 +27,8 @@ elif args.output is None:
 _logger.info("Parsing architecture context (or summary): {}".format(args.summary))
 summary = Context.unpickle(args.summary)
 
-
-_logger.info("Extracting target design interface: {}".format(args.design))
-d = DesignIntf.parse_eblif(args.design)
+_logger.info("Extracting application interface: {}".format(args.application))
+d = AppIntf.parse_eblif(args.application)
 
 if args.fixed is not None:
     _logger.info("Parsing partial IO constraints: {}".format(args.fixed))

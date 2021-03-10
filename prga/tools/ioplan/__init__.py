@@ -9,8 +9,8 @@ def def_argparser(name):
 
     parser.add_argument("-c", '--summary', type=str, metavar="summary.pkl",
             help="Pickled context or summary object")
-    parser.add_argument('-d', '--design', type=str, metavar="syn.eblif",
-            help="Input file for the synthesized design")
+    parser.add_argument('-i', '--application', type=str, metavar="syn.eblif",
+            help="Input file for the synthesized application")
     parser.add_argument('-o', '--output', type=str, dest="output",
             help="Output file for the IO constraints")
     parser.add_argument('-f', '--fix', type=str, dest="fixed",

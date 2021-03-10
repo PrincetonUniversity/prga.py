@@ -12,10 +12,10 @@ Auto-generate Makefile, synthesis script, testbench, etc. This tool takes a conf
 format. The configuration file requires the following keys::
 
     context (string): File name of the pickled PRGA context
-    design (map): Data needed to describe the target design to be mapped onto the FPGA
+    app (map): Data needed to describe the application to be mapped onto the FPGA
         name (string): Name of the top-level module
-        sources (list of strings): Verilog source files of the design
-        includes (list of strings): [optional] Include directories of the design
+        sources (list of strings): Verilog source files of the application
+        includes (list of strings): [optional] Include directories of the application
         defines (map of strings to strings, numbers or null): [optional] Define macros for Verilog preprocessing
         parameters (map of strings to strings or numbers): [optional] Parameterization of the top-level module
 
@@ -24,7 +24,7 @@ The configuration file takes these optional keys::
     compiler (string): Verilog compiler. Supported values are: "vcs", "verilog"
     constraints (map): Various constraints
         io (string): File name of the [partial] IO constraint
-    tests (map of maps): Tests for the target design, indexed by the name of the test
+    tests (map of maps): Tests for the application, indexed by the name of the test
         sources (list of strings): Verilog source files of the test
         includes (list of strings): [optional] Include directories of the test
         defines (map of strings to strings, numbers or null): [optional] Define macros for Verilog preprocessing

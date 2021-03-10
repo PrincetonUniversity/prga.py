@@ -18,7 +18,7 @@ Auto-generate Makefile, synthesis script, etc. This tool takes a configuration f
 configuration file requires the following keys::
 
     context (string): File name of the pickled PRGA context
-    design (map): Data needed to describe the target design to be mapped onto the FPGA
+    app (map): Data needed to describe the application to be mapped onto the FPGA
         name (string): Name of the top-level module
         sources (list of strings): Verilog source files
         includes (list of strings): [optional] Include directories
@@ -62,7 +62,7 @@ def generate_v2b_project(context, renderer, config, output = None):
     syn = param["syn"] = {}
     syn["generic"] = { k: os.path.join(summary.cwd, v)
             for k, v in summary.yosys["scripts"].items() }
-    syn["design"] = os.path.join("syn.tcl")
+    syn["app"] = os.path.join("syn.tcl")
     
     # VPR settings
     vpr = param["vpr"] = {}
@@ -71,7 +71,7 @@ def generate_v2b_project(context, renderer, config, output = None):
     vpr["rrgraph"] = os.path.join(summary.cwd, summary.vpr["rrg"])
 
     # add script generation tasks
-    renderer.add_generic(os.path.join(output, "syn.tcl"), "synth.design.tmpl.tcl", **param, **config)
+    renderer.add_generic(os.path.join(output, "syn.tcl"), "synth.app.tmpl.tcl", **param, **config)
     renderer.add_generic(os.path.join(output, "Makefile"), "impl.tmpl.mk", **param, **config)
 
 if __name__ == '__main__':

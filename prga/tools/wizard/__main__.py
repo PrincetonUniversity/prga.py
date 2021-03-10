@@ -37,7 +37,7 @@ r = FileRenderer(os.path.join(os.path.dirname(__file__), "templates"))
 # generate Verilog-to-Bitstream project
 _logger.info("Generating Verilog-to-Bitstream project")
 generate_v2b_project(context, r, config,
-        (v2b_dir := os.path.join(output, "design")))
+        (v2b_dir := os.path.join(output, "app")))
 
 # if there are tests, generate test projects
 for test_name, test in config.get("tests", {}).items():

@@ -28,7 +28,7 @@ module prga_tb_top;
 
     // -- Test ---------------------------------------------------------------
     // Signals
-    {%- for port in design.ports.values() %}
+    {%- for port in app.ports.values() %}
     wire{% if port.range_ is not none %} [{{ port.range_.stop - port.range_.step }}:{{ port.range_.start }}]{% endif %} w_test_{{ port.name }};
     {%- endfor %}
 
@@ -46,28 +46,28 @@ module prga_tb_top;
         ,.tb_prog_done(w_tb_prog_done)
         ,.tb_verbosity(f_tb_verbosity)
         ,.tb_cycle_cnt(f_tb_cycle_cnt)
-        {%- for name in design.ports %}
+        {%- for name in app.ports %}
         ,.{{ name }}(w_test_{{ name }})
         {%- endfor %}
         );
 
     // -- Behavioral Model ---------------------------------------------------
     // Signals
-    {%- for port in design.ports.values() %}
+    {%- for port in app.ports.values() %}
         {%- if port.direction.is_output %}
     wire{% if port.range_ is not none %} [{{ port.range_.stop - port.range_.step }}:{{ port.range_.start }}]{% endif %} w_behav_{{ port.name }};
         {%- endif %}
     {%- endfor %}
 
     // DUT
-    {{ design.name }} {% if design.parameters %}#(
+    {{ app.name }} {% if app.parameters %}#(
         {%- set comma1 = joiner(",") -%}
-        {%- for k, v in design.parameters.items() %}
+        {%- for k, v in app.parameters.items() %}
         {{ comma1() }}.{{ k }}({{ v }})
         {%- endfor %}
     ) {% endif %}i_behav (
         {%- set comma2 = joiner(",") -%}
-        {%- for name, port in design.ports.items() %}
+        {%- for name, port in app.ports.items() %}
             {%- if port.direction.is_output %}
         {{ comma2() }}.{{ name }}(w_behav_{{ name }})
             {%- else %}
@@ -79,7 +79,7 @@ module prga_tb_top;
     // -- Post-Synthesis Model -----------------------------------------------
 `ifdef PRGA_TEST_POSTSYN
     // Signals
-    {%- for port in design.ports.values() %}
+    {%- for port in app.ports.values() %}
         {%- if port.direction.is_output %}
     wire{% if port.range_ is not none %} [{{ port.range_.stop - port.range_.step }}:{{ port.range_.start }}]{% endif %} w_postsyn_{{ port.name }};
         {%- endif %}
@@ -88,7 +88,7 @@ module prga_tb_top;
     // DUT
     postsyn i_postsyn (
         {%- set comma3 = joiner(",") -%}
-        {%- for name, port in design.ports.items() %}
+        {%- for name, port in app.ports.items() %}
             {%- if port.direction.is_output %}
         {{ comma3() }}.{{ name }}(w_postsyn_{{ name }})
             {%- else %}
@@ -101,7 +101,7 @@ module prga_tb_top;
     // -- Post-Implementation Model ------------------------------------------
 `ifdef PRGA_TEST_POSTIMPL
     // Signals
-    {%- for port in design.ports.values() %}
+    {%- for port in app.ports.values() %}
         {%- if port.direction.is_output %}
     wire{% if port.range_ is not none %} [{{ port.range_.stop - port.range_.step }}:{{ port.range_.start }}]{% endif %} w_impl_{{ port.name }};
         {%- endif %}
@@ -114,7 +114,7 @@ module prga_tb_top;
         ,.tb_prog_done(w_tb_prog_done)
         ,.tb_verbosity(f_tb_verbosity)
         ,.tb_cycle_cnt(f_tb_cycle_cnt)
-        {%- for name, port in design.ports.items() %}
+        {%- for name, port in app.ports.items() %}
             {%- if port.direction.is_output %}
         ,.{{ name }}(w_impl_{{ name }})
             {%- else %}
@@ -189,20 +189,20 @@ module prga_tb_top;
     // -- Wiring -------------------------------------------------------------
     // -----------------------------------------------------------------------
 `ifdef PRGA_TEST_POSTIMPL
-    {%- for port in design.ports.values() %}
+    {%- for port in app.ports.values() %}
         {%- if port.direction.is_output %}
     assign w_test_{{ port.name }} = w_impl_{{ port.name }};
         {%- endif %}
     {%- endfor %}
 `else   // `ifdef PRGA_TEST_POSTIMPL
 `ifdef PRGA_TEST_POSTSYN
-    {%- for port in design.ports.values() %}
+    {%- for port in app.ports.values() %}
         {%- if port.direction.is_output %}
     assign w_test_{{ port.name }} = w_postsyn_{{ port.name }};
         {%- endif %}
     {%- endfor %}
 `else   // `ifdef PRGA_TEST_POSTSYN
-    {%- for port in design.ports.values() %}
+    {%- for port in app.ports.values() %}
         {%- if port.direction.is_output %}
     assign w_test_{{ port.name }} = w_behav_{{ port.name }};
         {%- endif %}

@@ -1,6 +1,6 @@
 # -*- encoding: ascii -*-
 
-from ..util import DesignIntf, create_argparser, docstring_from_argparser
+from ..util import AppIntf, create_argparser, docstring_from_argparser
 from ...core.context import Context
 from ...renderer import FileRenderer
 from ...util import enable_stdout_logging, uno
@@ -17,7 +17,7 @@ Auto-generate Makefile, testbench, etc. This tool depends on the Verilog-to-Bits
 tool also takes a configuration file in YAML or JSON format. The configuration file requires the following keys::
 
     compiler (string): Verilog compiler. Supported values are: "vcs", "iverilog"
-    tests (map of maps): Tests for the target design, indexed by the name of the test
+    tests (map of maps): Tests for the application, indexed by the name of the test
         sources (list of strings): Verilog source files of the test
         includes (list of strings): [optional] Include directories of the test
         defines (map of strings to strings, numbers or null): [optional] Define macros for Verilog preprocessing
@@ -81,7 +81,7 @@ def generate_verif_makefile(summary, renderer, v2b_dir, config_f, config = None,
             config = config_f,
             compiler = config["compiler"],
             v2b_dir = v2b_dir,
-            design = config["design"],
+            app = config["app"],
             test_name = test,
             test = config["tests"][test],
             libs = libs,
@@ -96,14 +96,14 @@ def generate_verif_testbench(renderer, v2b_dir, config, test = None, output = No
     os.makedirs(output, exist_ok = True)
 
     # read synthesized netlist
-    design = DesignIntf.parse_eblif(os.path.join(v2b_dir, "syn.eblif"))
-    design.parameters = config["design"].get("parameters")
+    app = AppIntf.parse_eblif(os.path.join(v2b_dir, "syn.eblif"))
+    app.parameters = config["app"].get("parameters")
 
     # add testbench generation tasks
     renderer.add_generic(os.path.join(output, "tb.v"), "tb.tmpl.v",
             test_name = test,
             test = config["tests"][test],
-            design = design,
+            app = app,
             postsyn = {"name": "postsyn"},
             impl = {"name": "postimpl"},
             )

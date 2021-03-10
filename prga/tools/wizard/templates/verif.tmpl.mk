@@ -77,15 +77,15 @@ CONFIG := {{ config }}
 # ** Verilog-to-Bitstream Project Directory **
 V2B_DIR := {{ abspath(v2b_dir) }}
 
-# ** Target Design **
-DESIGN := {{ design.name }}
+# ** Application **
+APP := {{ app.name }}
 
 # ** Test **
 TEST := {{ test_name }}
 {{- input_vars("TEST", test) }}
 
 # ** Behavioral Model **
-{{- input_vars("BEHAV", design) }}
+{{- input_vars("BEHAV", app) }}
 
 # ** Post-Synthesis Model **
 {{- input_vars("LIB", libs) }}

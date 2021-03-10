@@ -5,12 +5,12 @@ import argparse
 
 def def_argparser(name):
     parser = create_argparser(name,
-            description="Generate FPGA-implemented design wrapper")
+            description="Generate FPGA-implemented application wrapper")
 
     parser.add_argument("-c", "--summary", type=str, metavar="summary.pkl",
             help="Pickled PRGA architecture context summary")
-    parser.add_argument("-d", "--design", type=str, metavar="syn.eblif",
-            help="Synthesized target design")
+    parser.add_argument("-i", "--application", type=str, metavar="syn.eblif",
+            help="Synthesized application")
     parser.add_argument('-o', '--output', type=str, dest="output",
             help="Output file for the IO constraints")
     parser.add_argument('-f', '--fix', type=str, dest="fixed",
