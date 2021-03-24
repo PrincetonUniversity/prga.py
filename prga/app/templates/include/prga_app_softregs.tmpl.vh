@@ -8,10 +8,9 @@
 // {{ r.type_.name }} soft register: {{ name }}
 `define PRGA_APP_SOFTREG_VAR_{{ name | upper }}_ADDR        `PRGA_APP_SOFTREG_ADDR_WIDTH'h{{ "%x" % r.addr }}
 `define PRGA_APP_SOFTREG_VAR_{{ name | upper }}_DATA_WIDTH  {{ r.width }}
-`define PRGA_APP_SOFTREG_VAR_{{ name | upper }}_DATA_BYTES  {{ r.bytewidth }}
 {%- if r.type_.is_const %}
 `define PRGA_APP_SOFTREG_VAR_{{ name | upper }}_CONSTVAL    `PRGA_APP_SOFTREG_VAR_{{ name | upper }}_DATA_WIDTH'h{{ "%x" % r.rstval }}
-{%- elif not r.type_.is_readonly %}
+{%- elif r.type_.name in ("basic", "pulse", "pulse_ack", "decoupled") %}
 `define PRGA_APP_SOFTREG_VAR_{{ name | upper }}_RSTVAL      `PRGA_APP_SOFTREG_VAR_{{ name | upper }}_DATA_WIDTH'h{{ "%x" % r.rstval }}
 {%- endif %}
 {% endfor %}
