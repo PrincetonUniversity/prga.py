@@ -23,6 +23,7 @@ class SoftRegType(Enum):
     pulse       = 101   #: read-write registers that auto-reset after one cycle (read always return rstval)
     pulse_ack   = 102   #: read-write registers that block until kernel acks and auto-reset (read always return rstval)
     decoupled   = 103   #: write to kernel and read from kernel
+    busywait    = 104   #: read-write registers. write is blocked until busy is deasserted. read returns busy value
 
     wrfull      = 200   #: write-only registers inside the kernel with FIFO-like hand-shake
 
@@ -79,6 +80,17 @@ class SoftReg(Object):
     def rstval(self):
         """:obj:`int`: Reset value."""
         return self._rstval
+
+    @property
+    def has_port_i(self):
+        """:obj:`bool`: Tests if the soft register has input port `var_{name}_i`."""
+        return self.type_ in (SoftRegType.kernel, SoftRegType.rdempty, SoftRegType.rdempty_la, SoftRegType.decoupled)
+
+    @property
+    def has_port_o(self):
+        """:obj:`bool`: Tests if the soft register has input port `var_{name}_o`."""
+        return self.type_ in (SoftRegType.const, SoftRegType.basic, SoftRegType.pulse, SoftRegType.pulse_ack,
+                SoftRegType.decoupled, SoftRegType.busywait, SoftRegType.wrfull)
 
 # ----------------------------------------------------------------------------
 # -- Soft Register Interface -------------------------------------------------
@@ -195,16 +207,20 @@ class SoftRegIntf(Object):
 
         # create register variable ports
         for name, r in self.regs.items():
-            if r.type_ in (SoftRegType.kernel, SoftRegType.rdempty, SoftRegType.rdempty_la, SoftRegType.decoupled):
+            if r.has_port_i:
                 ModuleUtils.create_port(m, "var_{}_i".format(name), r.width, PortDirection.input_)
-            if r.type_ not in (SoftRegType.kernel, SoftRegType.rdempty, SoftRegType.rdempty_la):
+            if r.has_port_o:
                 ModuleUtils.create_port(m, "var_{}_o".format(name), r.width, PortDirection.output)
+
+            # special ports
             if r.type_.is_pulse_ack:
                 ModuleUtils.create_port(m, "var_{}_ack".format(name), 1, PortDirection.input_)
-            if r.type_ in (SoftRegType.rdempty, SoftRegType.rdempty_la):
+            elif r.type_.is_busywait:
+                ModuleUtils.create_port(m, "var_{}_busy".format(name), 1, PortDirection.input_)
+            elif r.type_ in (SoftRegType.rdempty, SoftRegType.rdempty_la):
                 ModuleUtils.create_port(m, "var_{}_rd".format(name), 1, PortDirection.output)
                 ModuleUtils.create_port(m, "var_{}_empty".format(name), 1, PortDirection.input_)
-            if r.type_.is_wrfull:
+            elif r.type_.is_wrfull:
                 ModuleUtils.create_port(m, "var_{}_wr".format(name), 1, PortDirection.output)
                 ModuleUtils.create_port(m, "var_{}_full".format(name), 1, PortDirection.input_)
 

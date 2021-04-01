@@ -10,7 +10,7 @@
 `define PRGA_APP_SOFTREG_VAR_{{ name | upper }}_DATA_WIDTH  {{ r.width }}
 {%- if r.type_.is_const %}
 `define PRGA_APP_SOFTREG_VAR_{{ name | upper }}_CONSTVAL    `PRGA_APP_SOFTREG_VAR_{{ name | upper }}_DATA_WIDTH'h{{ "%x" % r.rstval }}
-{%- elif r.type_.name in ("basic", "pulse", "pulse_ack", "decoupled") %}
+{%- elif r.type_.name in ("basic", "pulse", "pulse_ack", "decoupled", "busywait") %}
 `define PRGA_APP_SOFTREG_VAR_{{ name | upper }}_RSTVAL      `PRGA_APP_SOFTREG_VAR_{{ name | upper }}_DATA_WIDTH'h{{ "%x" % r.rstval }}
 {%- endif %}
 {% endfor %}
