@@ -21,7 +21,7 @@ class SoftRegType(Enum):
 
     basic       = 100   #: read-write registers that hold the value once written
     pulse       = 101   #: read-write registers that auto-reset after one cycle (read always return rstval)
-    pulse_ack   = 102   #: read-write registers that block until kernel acks and auto-reset (read always return rstval)
+    pulse_ack   = 102   #: read-write registers that block until kernel acks and auto-reset (read returns current value)
     decoupled   = 103   #: write to kernel and read from kernel
     busywait    = 104   #: read-write registers. write is blocked until busy is deasserted. read returns busy value
 

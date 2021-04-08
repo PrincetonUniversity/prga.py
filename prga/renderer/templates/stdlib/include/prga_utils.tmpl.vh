@@ -3,7 +3,7 @@
 
 `define PRGA_CLOG2(x) \
     {%- for i in range(1, 31) %}
-    (x <= {{ 2 ** i }}) ? {{ i }} : \
+    ((x) <= {{ 2 ** i }}) ? {{ i }} : \
     {%- endfor %}
     -1
 

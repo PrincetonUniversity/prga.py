@@ -5,10 +5,7 @@
 {%- macro rstval(name) -%} `PRGA_APP_SOFTREG_VAR_{{ name | upper }}_RSTVAL {%- endmacro %}
 {%- macro addr(name) -%} `PRGA_APP_SOFTREG_VAR_{{ name | upper }}_ADDR {%- endmacro %}
 
-module prga_app_softregs #(
-    parameter   DECOUPLED_INPUT = 1
-    , parameter DECOUPLED_OUTPUT = 1
-) (
+module prga_app_softregs (
     input wire                                      clk
     , input wire                                    rst_n
 
@@ -49,60 +46,6 @@ module prga_app_softregs #(
     {% endfor %}
     );
 
-    // == Input Request Buffering ==
-    reg                                     softreg_req_rdy_p;
-    wire                                    softreg_req_val_f;
-    wire [`PRGA_APP_SOFTREG_ADDR_WIDTH-1:0] softreg_req_addr_f;
-    wire                                    softreg_req_wr_f;
-    wire [`PRGA_APP_SOFTREG_DATA_WIDTH-1:0] softreg_req_data_f;
-
-    prga_valrdy_buf #(
-        .REGISTERED     (1)
-        ,.DECOUPLED     (DECOUPLED_INPUT)
-        ,.DATA_WIDTH    (
-            `PRGA_APP_SOFTREG_ADDR_WIDTH
-            + 1
-            + `PRGA_APP_SOFTREG_DATA_WIDTH
-        )
-    ) req_valrdy_buf (
-        .clk            (clk)
-        ,.rst           (~rst_n)
-        ,.rdy_o         (softreg_req_rdy)
-        ,.val_i         (softreg_req_val)
-        ,.data_i        ({
-            softreg_req_addr
-            , softreg_req_wr
-            , softreg_req_data
-        })
-        ,.rdy_i         (softreg_req_rdy_p)
-        ,.val_o         (softreg_req_val_f)
-        ,.data_o        ({
-            softreg_req_addr_f
-            , softreg_req_wr_f
-            , softreg_req_data_f
-        })
-        );
-
-    // == Output Response Buffering ==
-    wire                                    softreg_resp_rdy_f;
-    reg                                     softreg_resp_val_p;
-    reg [`PRGA_APP_SOFTREG_DATA_WIDTH-1:0]  softreg_resp_data_p;
-
-    prga_valrdy_buf #(
-        .REGISTERED     (1)
-        ,.DECOUPLED     (DECOUPLED_OUTPUT)
-        ,.DATA_WIDTH    (`PRGA_APP_SOFTREG_DATA_WIDTH)
-    ) resp_valrdy_buf (
-        .clk            (clk)
-        ,.rst           (~rst_n)
-        ,.rdy_o         (softreg_resp_rdy_f)
-        ,.val_i         (softreg_resp_val_p)
-        ,.data_i        (softreg_resp_data_p)
-        ,.rdy_i         (softreg_resp_rdy)
-        ,.val_o         (softreg_resp_val)
-        ,.data_o        (softreg_resp_data)
-        );
-
     // == 2-stage pipeline ===================================================
     //  Q (request):    request processing stage
     //  R (response):   response sending stage
@@ -125,7 +68,7 @@ module prga_app_softregs #(
         if (~rst_n) begin
             var_{{ name }}_o <= {{ rstval(name) }};
         end else if (var_{{ name }}_trx) begin
-            var_{{ name }}_o <= softreg_req_data_f[0+:{{ dwidth(name) }}];
+            var_{{ name }}_o <= softreg_req_data[0+:{{ dwidth(name) }}];
             {%- if r.type_.is_pulse %}
         end else begin
             var_{{ name }}_o <= {{ rstval(name) }};
@@ -140,7 +83,7 @@ module prga_app_softregs #(
         if (~rst_n) begin
             var_{{ name }}_o <= {{ rstval(name) }};
         end else if (var_{{ name }}_trx) begin
-            var_{{ name }}_o <= softreg_req_data_f[0+:{{ dwidth(name) }}];
+            var_{{ name }}_o <= softreg_req_data[0+:{{ dwidth(name) }}];
         end else if ({% if r.type_.is_busywait -%} !var_{{ name }}_busy {%- else -%} var_{{ name }}_ack {%- endif %}) begin
             var_{{ name }}_o <= {{ rstval(name) }};
         end
@@ -165,7 +108,7 @@ module prga_app_softregs #(
 
     always @(posedge clk) begin
         if (var_{{ name }}_trx) begin
-            var_{{ name }}_o <= softreg_req_data_f[0+:{{ dwidth(name) }}];
+            var_{{ name }}_o <= softreg_req_data[0+:{{ dwidth(name) }}];
         end
     end
 
@@ -197,20 +140,20 @@ module prga_app_softregs #(
         {%- endfor %}
 
         if (val_r && stall_r) begin
-            softreg_req_rdy_p = 1'b0;
+            softreg_req_rdy = 1'b0;
         end else begin
-            softreg_req_rdy_p = 1'b1;
+            softreg_req_rdy = 1'b1;
 
-            case (softreg_req_addr_f)
+            case (softreg_req_addr)
         {%- for name, r in module.softregs.regs.items() %}
             {%- if r.type_.is_rdempty or r.type_.is_rdempty_la %}
                 {{ addr(name) }}: begin
-                    var_{{ name }}_rd = softreg_req_val_f && !softreg_req_wr_f;
-                    softreg_req_rdy_p = softreg_req_wr_f || !var_{{ name }}_empty;
+                    var_{{ name }}_rd = softreg_req_val && !softreg_req_wr;
+                    softreg_req_rdy = softreg_req_wr || !var_{{ name }}_empty;
                 end
             {%- elif r.type_.name in ("basic", "pulse", "pulse_ack", "decoupled", "busywait", "wrfull") %}
                 {{ addr(name) }}: begin
-                    var_{{ name }}_trx = softreg_req_val_f && softreg_req_wr_f;
+                    var_{{ name }}_trx = softreg_req_val && softreg_req_wr;
                 end
             {%- endif %}
         {%- endfor %}
@@ -222,12 +165,12 @@ module prga_app_softregs #(
     always @* begin
         data_r_next = {`PRGA_APP_SOFTREG_DATA_WIDTH {1'b0} };
 
-        case (softreg_req_addr_f)
+        case (softreg_req_addr)
         {%- for name, r in module.softregs.regs.items() %}
             {%- if r.type_.is_const %}
             {{ addr(name) }}:
                 data_r_next[0+:{{ dwidth(name) }}] = `PRGA_APP_SOFTREG_VAR_{{ name | upper }}_CONSTVAL;
-            {%- elif r.type_.name in ("pulse", "pulse_ack") %}
+            {%- elif r.type_.is_pulse %}
             {{ addr(name) }}:
                 data_r_next[0+:{{ dwidth(name) }}] = {{ rstval(name) }};
             {%- elif r.type_.is_busywait %}
@@ -236,7 +179,7 @@ module prga_app_softregs #(
             {%- elif r.type_.name in ("kernel", "rdempty_la", "decoupled") %}
             {{ addr(name) }}:
                 data_r_next[0+:{{ dwidth(name) }}] = var_{{ name }}_i;
-            {%- elif r.type_.is_basic %}
+            {%- elif r.type_.name in ("basic", "pulse_ack") %}
             {{ addr(name) }}:
                 data_r_next[0+:{{ dwidth(name) }}] = var_{{ name }}_o;
             {%- endif %}
@@ -254,17 +197,17 @@ module prga_app_softregs #(
             val_r <= 1'b0;
             wr_r <= 1'b0;
             addr_r <= {`PRGA_APP_SOFTREG_ADDR_WIDTH {1'b0} };
-        end else if (softreg_req_val_f && softreg_req_rdy_p) begin
+        end else if (softreg_req_val && softreg_req_rdy) begin
             val_r <= 1'b1;
-            wr_r <= softreg_req_wr_f;
-            addr_r <= softreg_req_addr_f;
-        end else if (softreg_resp_val_p && softreg_resp_rdy_f) begin
+            wr_r <= softreg_req_wr;
+            addr_r <= softreg_req_addr;
+        end else if (softreg_resp_val && softreg_resp_rdy) begin
             val_r <= 1'b0;
         end
     end
 
     always @(posedge clk) begin
-        if (softreg_req_val_f && softreg_req_rdy_p) begin
+        if (softreg_req_val && softreg_req_rdy) begin
             data_r <= data_r_next;
             {%- for name, r in module.softregs.regs.items() %}
                 {%- if r.type_.is_rdempty %}
@@ -276,17 +219,17 @@ module prga_app_softregs #(
     end
 
     always @* begin
-        stall_r = ~softreg_resp_rdy_f;
-        softreg_resp_val_p = val_r;
+        stall_r = ~softreg_resp_rdy;
+        softreg_resp_val = val_r;
 
-        if (val_r && softreg_resp_rdy_f) begin
+        if (val_r && softreg_resp_rdy) begin
             case (addr_r)
             {%- for name, r in module.softregs.regs.items() %}
                 {%- if r.type_.name in ("busywait", "pulse_ack", "wrfull") %}
                 {{ addr(name) }}:
                 if (var_{{ name }}_trx_blocked) begin
                     stall_r = 1'b1;
-                    softreg_resp_val_p = 1'b0;
+                    softreg_resp_val = 1'b0;
                 end
                 {%- endif %}
             {%- endfor %}
@@ -295,14 +238,14 @@ module prga_app_softregs #(
     end
 
     always @* begin
-        softreg_resp_data_p = data_r;
+        softreg_resp_data = data_r;
 
         case (addr_r)
         {%- for name, r in module.softregs.regs.items() %}
             {%- if r.type_.is_rdempty %}
             {{ addr(name) }}:
             if (var_{{ name }}_dval_r) begin
-                softreg_resp_data_p = var_{{ name }}_i;
+                softreg_resp_data = var_{{ name }}_i;
             end
             {%- endif %}
         {%- endfor %}
