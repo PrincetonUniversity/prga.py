@@ -2,12 +2,12 @@
 `timescale 1ns/1ps
 
 /*
-* System integration interface.
+* System integration complex.
 */
 
 `include "prga_axi4.vh"
 
-module prga_sysintf #(
+module prga_syscomplex #(
     parameter   DECOUPLED = 1
 ) (
     // == System Control Signals =============================================

@@ -825,7 +825,7 @@ class SwitchBoxPattern(Object):
             return not self.__eq__(other)
 
         def __getattr__(self, attr):
-            if attr.startswith("is"):
+            if attr.startswith("is_"):
                 return attr[2:] == type(self).__name__
             raise AttributeError(attr)
 

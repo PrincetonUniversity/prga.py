@@ -262,23 +262,23 @@ class Integration(object):
                 context.database[ModuleView.design, "prga_valrdy_buf"], "i_cresp")
 
         # 2.2 modules that we do need to know about their ports
-        sysintf = context._database[ModuleView.design, "prga_sysintf"] = Module("prga_sysintf",
+        syscomplex = context._database[ModuleView.design, "prga_syscomplex"] = Module("prga_syscomplex",
                 view = ModuleView.design,
                 module_class = ModuleClass.aux,
-                verilog_template = "prga_sysintf.tmpl.v")
-        cls._create_intf_syscon     (sysintf, True)          # programming clock and reset
-        cls._create_intf_syscon     (sysintf, False, "a")    # application clock and reset
-        cls._create_intf_reg        (sysintf, True, "reg_")
-        cls._create_intf_ccm        (sysintf, False, "ccm_")
-        cls._create_intf_simpleprog (sysintf, False, "prog_")
-        cls._create_intf_reg        (sysintf, False, "ureg_", True)
-        cls._create_intf_ccm        (sysintf, True, "uccm_", True)
-        ModuleUtils.create_port(sysintf, "urst_n", 1, PortDirection.output)
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_ctrl"], "i_ctrl")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_ccm_transducer"], "i_transducer")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_sax"], "i_sax")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_uprot"], "i_uprot")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_mprot"], "i_mprot")
+                verilog_template = "prga_syscomplex.tmpl.v")
+        cls._create_intf_syscon     (syscomplex, True)          # programming clock and reset
+        cls._create_intf_syscon     (syscomplex, False, "a")    # application clock and reset
+        cls._create_intf_reg        (syscomplex, True, "reg_")
+        cls._create_intf_ccm        (syscomplex, False, "ccm_")
+        cls._create_intf_simpleprog (syscomplex, False, "prog_")
+        cls._create_intf_reg        (syscomplex, False, "ureg_", True)
+        cls._create_intf_ccm        (syscomplex, True, "uccm_", True)
+        ModuleUtils.create_port(syscomplex, "urst_n", 1, PortDirection.output)
+        ModuleUtils.instantiate(syscomplex, context.database[ModuleView.design, "prga_ctrl"], "i_ctrl")
+        ModuleUtils.instantiate(syscomplex, context.database[ModuleView.design, "prga_ccm_transducer"], "i_transducer")
+        ModuleUtils.instantiate(syscomplex, context.database[ModuleView.design, "prga_sax"], "i_sax")
+        ModuleUtils.instantiate(syscomplex, context.database[ModuleView.design, "prga_uprot"], "i_uprot")
+        ModuleUtils.instantiate(syscomplex, context.database[ModuleView.design, "prga_mprot"], "i_mprot")
 
         # 3. AXI4 interface
         mprot = context._database[ModuleView.design, "prga_mprot.axi4"] = Module("prga_mprot",
@@ -289,24 +289,24 @@ class Integration(object):
         ModuleUtils.instantiate(mprot, context.database[ModuleView.design, "prga_ecc_parity"], "i_ecc_checker")
         ModuleUtils.instantiate(mprot, context.database[ModuleView.design, "prga_valrdy_buf"], "i_buf")
 
-        sysintf = context._database[ModuleView.design, "prga_sysintf.axi4"] = Module("prga_sysintf",
+        syscomplex = context._database[ModuleView.design, "prga_syscomplex.axi4"] = Module("prga_syscomplex",
                 view = ModuleView.design,
                 module_class = ModuleClass.aux,
-                verilog_template = "ccm_axi4/prga_sysintf.tmpl.v",
-                key = "prga_sysintf.axi4")
-        cls._create_intf_syscon     (sysintf, True)          # programming clock and reset
-        cls._create_intf_syscon     (sysintf, False, "a")    # application clock and reset
-        cls._create_intf_reg        (sysintf, True, "reg_")
-        cls._create_intf_ccm        (sysintf, False, "ccm_")
-        cls._create_intf_simpleprog (sysintf, False, "prog_")
-        cls._create_intf_reg        (sysintf, False, "ureg_", True)
-        cls._create_intf_ccm_axi4   (sysintf, True)
-        ModuleUtils.create_port(sysintf, "urst_n", 1, PortDirection.output)
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_ctrl"], "i_ctrl")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_ccm_transducer"], "i_transducer")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_sax"], "i_sax")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_uprot"], "i_uprot")
-        ModuleUtils.instantiate(sysintf, context.database[ModuleView.design, "prga_mprot.axi4"], "i_mprot")
+                verilog_template = "ccm_axi4/prga_syscomplex.tmpl.v",
+                key = "prga_syscomplex.axi4")
+        cls._create_intf_syscon     (syscomplex, True)          # programming clock and reset
+        cls._create_intf_syscon     (syscomplex, False, "a")    # application clock and reset
+        cls._create_intf_reg        (syscomplex, True, "reg_")
+        cls._create_intf_ccm        (syscomplex, False, "ccm_")
+        cls._create_intf_simpleprog (syscomplex, False, "prog_")
+        cls._create_intf_reg        (syscomplex, False, "ureg_", True)
+        cls._create_intf_ccm_axi4   (syscomplex, True)
+        ModuleUtils.create_port(syscomplex, "urst_n", 1, PortDirection.output)
+        ModuleUtils.instantiate(syscomplex, context.database[ModuleView.design, "prga_ctrl"], "i_ctrl")
+        ModuleUtils.instantiate(syscomplex, context.database[ModuleView.design, "prga_ccm_transducer"], "i_transducer")
+        ModuleUtils.instantiate(syscomplex, context.database[ModuleView.design, "prga_sax"], "i_sax")
+        ModuleUtils.instantiate(syscomplex, context.database[ModuleView.design, "prga_uprot"], "i_uprot")
+        ModuleUtils.instantiate(syscomplex, context.database[ModuleView.design, "prga_mprot.axi4"], "i_mprot")
 
     @classmethod
     def _create_design_intf(cls, context, interfaces):
@@ -424,7 +424,7 @@ class Integration(object):
 
     @classmethod
     def build_system(cls, context, interfaces = (InterfaceClass.ccm_simple, InterfaceClass.reg_simple), *,
-            name = "prga_system", core = None):
+            name = "prga_system", fabric_wrapper = None):
         """Create the system top wrapping the reconfigurable fabric.
 
         Args:
@@ -433,9 +433,9 @@ class Integration(object):
 
         Keyword Args:
             name (:obj:`str`): Name of the system top module
-            core (:obj:`str` or :obj:`bool`): If set to a :obj:`str`, or set to ``True`` \(in which case it is
-                converted to ``{name}_core``\), an extra layer of wrapper is created around the fabric and
-                instantiated in the top-level module
+            fabric_wrapper (:obj:`str` or :obj:`bool`): If set to a :obj:`str`, or set to ``True`` \(in which
+                case it is converted to ``{name}_core``\), an extra layer of wrapper is created around the fabric
+                and instantiated in the top-level module
         """
         interfaces = set(iter(interfaces))
         if interfaces not in (
@@ -444,8 +444,8 @@ class Integration(object):
                 ):
             raise NotImplementedError("Unsupported interface combinations: {:r}".format(interfaces))
 
-        if core is True:
-            core = name + "_core"
+        if fabric_wrapper is True:
+            fabric_wrapper = name + "_core"
 
         # get or create design interface
         if (intf := getattr(context.summary, "intf", None)) is None:
@@ -460,60 +460,62 @@ class Integration(object):
         cls._create_intf_reg(system, True, "reg_")
         cls._create_intf_ccm(system, False, "ccm_")
 
-        # instantiate sysintf in system
-        sysintf = None
+        # instantiate syscomplex in system
+        syscomplex = None
         if InterfaceClass.ccm_simple in interfaces:
-            sysintf = ModuleUtils.instantiate(system,
-                    context.database[ModuleView.design, "prga_sysintf"],
-                    "i_sysintf")
+            syscomplex = ModuleUtils.instantiate(system,
+                    context.database[ModuleView.design, "prga_syscomplex"],
+                    "i_syscomplex")
+        elif InterfaceClass.ccm_axi4 in interfaces:
+            syscomplex = ModuleUtils.instantiate(system,
+                    context.database[ModuleView.design, "prga_syscomplex.axi4"],
+                    "i_syscomplex")
         else:
-            sysintf = ModuleUtils.instantiate(system,
-                    context.database[ModuleView.design, "prga_sysintf.axi4"],
-                    "i_sysintf")
+            assert False
 
-        # connect system ports to sysintf
+        # connect system ports to syscomplex
         for port_name, port in system.ports.items():
             if port.direction.is_input:
-                NetUtils.connect(port, sysintf.pins[port_name])
+                NetUtils.connect(port, syscomplex.pins[port_name])
             else:
-                NetUtils.connect(sysintf.pins[port_name], port)
+                NetUtils.connect(syscomplex.pins[port_name], port)
 
         # instantiate fabric
         nets = None
-        if core:
-            # build system core (fabric wrapper)
-            core_mod = context._database[ModuleView.design, core] = Module(core,
+        if fabric_wrapper:
+            # build fabric wrapper
+            core = context._database[ModuleView.design, fabric_wrapper] = Module(fabric_wrapper,
                     view = ModuleView.design, module_class = ModuleClass.aux)
-            core = core_mod
 
-            # create ports in core
+            # create ports in fabric wrapper
             cls._create_intf_syscon(core, True, "u")
-            if InterfaceClass.reg_simple in interfaces:
-                cls._create_intf_reg(core, True, "ureg_", ecc = True)
-            if InterfaceClass.ccm_simple in interfaces:
-                cls._create_intf_ccm(core, False, "uccm_", ecc = True)
-            if InterfaceClass.ccm_axi4 in interfaces:
-                cls._create_intf_ccm_axi4(core, unused = True)
+            for i in interfaces:
+                if i.is_reg_simple:
+                    cls._create_intf_reg(core, True, "ureg_", ecc = True)
+                elif i.is_ccm_simple:
+                    cls._create_intf_ccm(core, False, "uccm_", ecc = True)
+                elif i.is_ccm_axi4:
+                    cls._create_intf_ccm_axi4(core, unused = True)
 
-            # instantiate fabric within core
+            # instantiate fabric within fabric wrapper
             fabric = ModuleUtils.instantiate(core,
                     context.database[ModuleView.design, context.top.key], "i_fabric")
             nets = core.ports
 
-            # instantiate core in system
+            # instantiate fabric wrapper in system
             core = ModuleUtils.instantiate(system, core, "i_core")
 
-            # connect sysintf with core
+            # connect syscomplex with fabric wrapper
             for pin_name, pin in core.pins.items():
                 if pin_name == "uclk":
-                    NetUtils.connect(sysintf.pins["aclk"], pin)
+                    NetUtils.connect(syscomplex.pins["aclk"], pin)
                 elif pin_name == "urst_n":
-                    NetUtils.connect(sysintf.pins["urst_n"], pin)
-                elif sysintf_pin := sysintf.pins.get(pin_name):
+                    NetUtils.connect(syscomplex.pins["urst_n"], pin)
+                elif syscomplex_pin := syscomplex.pins.get(pin_name):
                     if pin.model.direction.is_input:
-                        NetUtils.connect(sysintf_pin, pin)
+                        NetUtils.connect(syscomplex_pin, pin)
                     else:
-                        NetUtils.connect(pin, sysintf_pin)
+                        NetUtils.connect(pin, syscomplex_pin)
                 else:
                     _logger.warning("Unconnected design port: {}".format(pin_name)) 
 
@@ -521,7 +523,7 @@ class Integration(object):
             # instantiate fabric within system
             fabric = ModuleUtils.instantiate(system,
                     context.database[ModuleView.design, context.top.key], "i_fabric")
-            nets = sysintf.pins
+            nets = syscomplex.pins
 
         # connect fabric
         for name, port in intf.ports.items():

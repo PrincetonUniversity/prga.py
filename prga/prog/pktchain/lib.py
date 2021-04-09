@@ -713,42 +713,42 @@ class Pktchain(Scanchain):
     class BuildSystem(AbstractPass):
         """Create a system for SoC integration."""
 
-        __slots__ = ["io_constraints_f", "name", "core", "prog_be_in_core", "interfaces"]
+        __slots__ = ["io_constraints_f", "name", "fabric_wrapper", "prog_be_in_wrapper", "interfaces"]
 
         def __init__(self, io_constraints_f = "io.pads", *,
-                name = "prga_system", core = None, prog_be_in_core = False,
+                name = "prga_system", fabric_wrapper = None, prog_be_in_wrapper = False,
                 interfaces = None):
 
-            if prog_be_in_core and core is None:
-                raise PRGAAPIError("`core` must be set when `cfg_in_core` is set")
+            if prog_be_in_wrapper and fabric_wrapper is None:
+                raise PRGAAPIError("`fabric_wrapper` must be set when `prog_be_in_wrapper` is set")
 
             self.io_constraints_f = io_constraints_f
             self.name = name
-            self.core = core
-            self.prog_be_in_core = prog_be_in_core
+            self.fabric_wrapper = fabric_wrapper
+            self.prog_be_in_wrapper = prog_be_in_wrapper
             self.interfaces = uno(interfaces, {InterfaceClass.ccm_simple, InterfaceClass.reg_simple})
             
         def run(self, context, renderer = None):
             # build system
-            Integration.build_system(context, name = self.name, core = self.core,
+            Integration.build_system(context, name = self.name, fabric_wrapper = self.fabric_wrapper,
                     interfaces = self.interfaces)
 
             # get system module
             system = context.system_top
 
             # which backend should we connect?
-            sysintf_slave, sysintf_prefix = None, ""
+            syscomplex_slave, syscomplex_prefix = None, ""
             prog_inst, prog_slave = None, None
 
-            # check core
-            if self.core and self.prog_be_in_core:
+            # check fabric wrapper
+            if self.fabric_wrapper and self.prog_be_in_wrapper:
                 core = system.instances["i_core"]
                 fabric = core.model.instances["i_fabric"]
 
-                sysintf_slave, sysintf_prefix, prog_slave = core, "prog_", fabric
+                syscomplex_slave, syscomplex_prefix, prog_slave = core, "prog_", fabric
 
                 # create prog ports
-                core_ports = Integration._create_intf_simpleprog(core.model, True, sysintf_prefix)
+                core_ports = Integration._create_intf_simpleprog(core.model, True, syscomplex_prefix)
                 core_ports["prog_clk"] = ModuleUtils.create_port(core.model, "prog_clk", 1, PortDirection.input_,
                         is_clock = True)
 
@@ -768,7 +768,7 @@ class Pktchain(Scanchain):
                 NetUtils.connect(core_ports["prog_clk"], fabric.pins["prog_clk"])
 
             else:
-                if self.core:
+                if self.fabric_wrapper:
                     prog_slave = core = system.instances["i_core"]
                     fabric = core.model.instances["i_fabric"]
 
@@ -792,7 +792,7 @@ class Pktchain(Scanchain):
                     NetUtils.connect(system.ports["clk"], prog_slave.pins["prog_clk"])
 
                 # instantiate
-                sysintf_slave = prog_inst = ModuleUtils.instantiate(system,
+                syscomplex_slave = prog_inst = ModuleUtils.instantiate(system,
                         context.database[ModuleView.design, "prga_be_prog_pktchain"],
                         "i_prog_be")
 
@@ -806,13 +806,13 @@ class Pktchain(Scanchain):
             NetUtils.connect(prog_inst.pins ["phit_o_wr"],      prog_slave.pins["phit_i_wr"])
             NetUtils.connect(prog_inst.pins ["phit_o"],         prog_slave.pins["phit_i"])
 
-            # connect sysintf with its slave
-            intf = system.instances["i_sysintf"]
-            NetUtils.connect(system.ports["clk"], sysintf_slave.pins[sysintf_prefix + "clk"])
+            # connect syscomplex with its slave
+            intf = system.instances["i_syscomplex"]
+            NetUtils.connect(system.ports["clk"], syscomplex_slave.pins[syscomplex_prefix + "clk"])
             for pin_name in ["rst_n", "req_val", "req_addr", "req_strb", "req_data", "resp_rdy"]:
-                NetUtils.connect(intf.pins["prog_" + pin_name], sysintf_slave.pins[sysintf_prefix + pin_name])
+                NetUtils.connect(intf.pins["prog_" + pin_name], syscomplex_slave.pins[syscomplex_prefix + pin_name])
             for pin_name in ["status", "req_rdy", "resp_val", "resp_err", "resp_data"]:
-                NetUtils.connect(sysintf_slave.pins[sysintf_prefix + pin_name], intf.pins["prog_" + pin_name])
+                NetUtils.connect(syscomplex_slave.pins[syscomplex_prefix + pin_name], intf.pins["prog_" + pin_name])
 
             # print IO constraints
             IOPlanner.print_io_constraints(context.summary.intf, self.io_constraints_f)
