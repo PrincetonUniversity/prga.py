@@ -9,7 +9,7 @@ from ...netlist import PortDirection, Const, Module, NetUtils, ModuleUtils
 from ...passes.base import AbstractPass
 from ...passes.translation import SwitchDelegate
 from ...renderer import FileRenderer
-from ...integration import Integration, InterfaceClass
+from ...integration import Integration
 from ...exception import PRGAInternalError
 from ...tools.ioplan import IOPlanner
 from ...util import uno
@@ -417,8 +417,8 @@ class Pktchain(Scanchain):
                     module_class = ModuleClass.aux,
                     verilog_template = "prga_be_prog_pktchain.tmpl.v")
             # create ports
-            ModuleUtils.create_port(mod, "clk", 1, PortDirection.input_, is_clock = True)
-            Integration._create_intf_simpleprog(mod, True)
+            Integration._create_intf_ports_syscon(mod, True)
+            Integration._create_intf_ports_prog_openpiton(mod, True)
             ModuleUtils.create_port(mod, "prog_rst", 1, PortDirection.output)
             ModuleUtils.create_port(mod, "prog_done", 1, PortDirection.output)
             cls._get_or_create_pktchain_fifo_nets(mod, phit_width)
@@ -713,11 +713,10 @@ class Pktchain(Scanchain):
     class BuildSystem(AbstractPass):
         """Create a system for SoC integration."""
 
-        __slots__ = ["io_constraints_f", "name", "fabric_wrapper", "prog_be_in_wrapper", "interfaces"]
+        __slots__ = ["io_constraints_f", "name", "fabric_wrapper", "prog_be_in_wrapper"]
 
         def __init__(self, io_constraints_f = "io.pads", *,
-                name = "prga_system", fabric_wrapper = None, prog_be_in_wrapper = False,
-                interfaces = None):
+                name = "prga_system", fabric_wrapper = None, prog_be_in_wrapper = False):
 
             if prog_be_in_wrapper and fabric_wrapper is None:
                 raise PRGAAPIError("`fabric_wrapper` must be set when `prog_be_in_wrapper` is set")
@@ -726,12 +725,10 @@ class Pktchain(Scanchain):
             self.name = name
             self.fabric_wrapper = fabric_wrapper
             self.prog_be_in_wrapper = prog_be_in_wrapper
-            self.interfaces = uno(interfaces, {InterfaceClass.ccm_simple, InterfaceClass.reg_simple})
             
         def run(self, context, renderer = None):
             # build system
-            Integration.build_system(context, name = self.name, fabric_wrapper = self.fabric_wrapper,
-                    interfaces = self.interfaces)
+            Integration.build_system(context, name = self.name, fabric_wrapper = self.fabric_wrapper)
 
             # get system module
             system = context.system_top
@@ -748,9 +745,8 @@ class Pktchain(Scanchain):
                 syscomplex_slave, syscomplex_prefix, prog_slave = core, "prog_", fabric
 
                 # create prog ports
-                core_ports = Integration._create_intf_simpleprog(core.model, True, syscomplex_prefix)
-                core_ports["prog_clk"] = ModuleUtils.create_port(core.model, "prog_clk", 1, PortDirection.input_,
-                        is_clock = True)
+                core_ports = Integration._create_intf_ports_syscon(core.model, True, "prog_")
+                core_ports.update(Integration._create_intf_ports_prog_openpiton(core.model, True, syscomplex_prefix))
 
                 # instantiate
                 prog_inst = ModuleUtils.instantiate(core.model,

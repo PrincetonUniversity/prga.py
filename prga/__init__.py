@@ -47,5 +47,5 @@ __all__.extend([
     ])
 
 # Integration
-from .integration import InterfaceClass
-__all__.extend(["InterfaceClass"])
+from .integration import SystemIntf, ProgIntf, FabricIntf
+__all__.extend(["SystemIntf", "ProgIntf", "FabricIntf"])
