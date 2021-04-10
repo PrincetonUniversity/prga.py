@@ -1,7 +1,7 @@
 # -*- encoding: ascii -*-
 
 from ...netlist import PortDirection
-from ...core.common import Position, OrientationTuple, IOType
+from ...core.common import Position, OrientationTuple, IOType, PortDirection
 from ...exception import PRGAAPIError, PRGAInternalError
 from ...util import Object, uno
 
@@ -97,7 +97,7 @@ class IOPlanner(Object):
         """Mark the IO at the specified location as used.
 
         Args:
-            direction (`PortDirection`):
+            direction (`PortDirection` or :obj:`str`):
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]):
             subtile (:obj:`int`):
         """
@@ -107,6 +107,7 @@ class IOPlanner(Object):
                     raise PRGAAPIError("No IO found at {}, {}".format(Position(*position), subtile))
                 else:
                     raise PRGAAPIError("IO at {}, {} is already used".format(Position(*position), subtile))
+        direction = PortDirection.construct(direction)
         if direction not in io.directions:
             raise PRGAAPIError("IO at {}, {} cannot be used as {:r}".format(Position(*position), subtile, direction))
         self.used[position, subtile] = io
@@ -115,7 +116,7 @@ class IOPlanner(Object):
         """Pop the next available IO of for ``direction``.
 
         Args:
-            direction (`PortDirection`):
+            direction (`PortDirection` or :obj:`str`):
 
         Keyword Args:
             force_change_tile (:obj:`bool`): If set, the scanning will start from a new tile. This is useful when
@@ -130,6 +131,7 @@ class IOPlanner(Object):
         if force_change_tile and self.subtile > 0:
             self.__next_position()
         io = None
+        direction = PortDirection.construct(direction)
         while True:
             key = self.position, self.subtile
             if (io := self.avail_nonglobals.get( key, None )) is None:

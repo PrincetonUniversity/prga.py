@@ -117,6 +117,7 @@ class _ArrayInstancesMapping(Object, MutableMapping):
             except IndexError:
                 return None
         else:
+            corner = Corner.construct(corner)
             try:
                 if isinstance((i := self.sboxes[x][y][corner]), Instance):
                     return i
@@ -453,11 +454,14 @@ class ArrayBuilder(BaseArrayBuilder):
 
         Args:
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of the tile
-            corner (`Corner`): If specified, get the switch box instance
+            corner (`Corner` or :obj:`str`): If specified, get the switch box instance
 
         Returns:
             `AbstractInstance`: If ``corner`` is not specified, return a hierarhical instance of a tile; otherwise a switch box
         """
+        if corner is not None:
+            corner = Corner.construct(corner)
+
         if array.module_class.is_array:
             if (i := array._instances.get_root(position, corner)) is None:
                 return None

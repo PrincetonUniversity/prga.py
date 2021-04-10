@@ -58,7 +58,7 @@ class AppIntf(Object):
 
         Args:
             name (:obj:`str`): Name of the port
-            direction (`PortDirection`): Direction of the port
+            direction (`PortDirection` or :obj:`str`): Direction of the port
             range_ (:obj:`slice`): Range specifier of the port
         """
 
@@ -66,7 +66,7 @@ class AppIntf(Object):
 
         def __init__(self, name, direction, range_ = None):
             self.name = name
-            self.direction = direction
+            self.direction = PortDirection.construct(direction)
             self.range_ = range_
             if range_ is None:
                 self.ioconstraints = None
@@ -184,7 +184,7 @@ class AppIntf(Object):
 
         Args:
             name (:obj:`str`): Name of the port
-            direction (`PortDirection`): Direction of the port
+            direction (`PortDirection` or :obj:`str`): Direction of the port
             range_ (:obj:`int`): [Overloaded] Width of the port. When using a single :obj:`int`, the port is assumed
                 to be equivalent to Verilog ``{input|output} [{range_ - 1}:0] {name}``.
             range_ (:obj:`slice`): [Overloaded] Range specifier of the port. ``step`` must be ``None``, ``1`` or
@@ -200,6 +200,8 @@ class AppIntf(Object):
         """
         if name in self.ports:
             raise PRGAAPIError("Duplicate port name: {}".format(name))
+
+        direction = PortDirection.construct(direction)
 
         if range_ is None:
             port = self.ports[name] = self.AppPort(name, direction, range_)

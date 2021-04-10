@@ -93,7 +93,7 @@ class Port(AbstractNonReferenceNet):
         parent (`Module`): Parent module of this port
         name (:obj:`str`): Name of this port
         width (:obj:`int`): Width of this port
-        direction (`PortDirection`): Direction of the port
+        direction (`PortDirection` or :obj:`str`): Direction of the port
 
     Keyword Args:
         is_clock (:obj:`bool`): Set if this port is a clock
@@ -109,7 +109,7 @@ class Port(AbstractNonReferenceNet):
         self._parent = parent
         self._name = name
         self._width = width
-        self._direction = direction
+        self._direction = PortDirection.construct(direction)
         self._is_clock = is_clock
         self._key = uno(key, name)
 

@@ -172,6 +172,31 @@ class Enum(enum.IntEnum):
             except KeyError:
                 raise PRGAInternalError("Value unspecified for case {:r}".format(self))
 
+    @classmethod
+    def construct(cls, v):
+        """A more adapative constructor, allowing enum construction by name, integer value, or explicit
+        instantiation. Also, any enum value with a single trailing underscore to avoid conflicting with reserved
+        keywords can be specified without it, e.g. ``MyEnum.construct("in")`` may return ``MyEnum.in_``.
+
+        Args:
+            v (:obj:`str`, :obj:`int`, or enum):
+        """
+        if isinstance(v, str):
+            try:
+                return cls[v]
+            except KeyError as e:
+                if not v.endswith("_"):
+                    return cls[v + "_"]
+                else:
+                    raise e
+        elif isinstance(v, int):
+            return cls(v)
+        elif isinstance(v, cls):
+            return v
+        else:
+            raise PRGAInternalError("Cannot construct a '{}' object with '{}'"
+                    .format(cls.__name__, v))
+
 def enable_stdout_logging(name, level=logging.INFO, verbose=False):
     hdl = logging.StreamHandler(sys.stdout)
     if verbose:

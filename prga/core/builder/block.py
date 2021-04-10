@@ -177,7 +177,7 @@ class IOBlockBuilder(_BaseSliceLikeBuilder):
 
         Args:
             global_ (`Global`): The global wire this port is connected to
-            orientation (`Orientation`): Orientation of this port
+            orientation (`Orientation` or :obj:`str`): Orientation of this port
 
         Keyword Args:
             name (:obj:`str`): Name of this port. If not given, the name of the global wire is used
@@ -199,7 +199,7 @@ class IOBlockBuilder(_BaseSliceLikeBuilder):
         Args:
             name (:obj:`str`): name of the created port
             width (:obj:`int`): width of the created port
-            orientation (`Orientation`): orientation of this port
+            orientation (`Orientation` or :obj:`str`): orientation of this port
 
         Keyword Args:
             **kwargs: Additional attributes assigned to the port
@@ -216,7 +216,7 @@ class IOBlockBuilder(_BaseSliceLikeBuilder):
         Args:
             name (:obj:`str`): name of the created port
             width (:obj:`int`): width of the created port
-            orientation (`Orientation`): orientation of this port
+            orientation (`Orientation` or :obj:`str`): orientation of this port
 
         Keyword Args:
             **kwargs: Additional attributes assigned to the port
@@ -298,7 +298,7 @@ class LogicBlockBuilder(_BaseSliceLikeBuilder):
 
         Args:
             global_ (`Global`): The global wire this port is connected to
-            orientation (`Orientation`): Orientation of this port
+            orientation (`Orientation` or :obj:`str`): Orientation of this port
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this port
 
         Keyword Args:
@@ -308,7 +308,8 @@ class LogicBlockBuilder(_BaseSliceLikeBuilder):
         Returns:
             `Port`: The created port
         """
-        orientation, position = self._resolve_orientation_and_position(self._module, orientation, position)
+        orientation, position = self._resolve_orientation_and_position(self._module,
+                Orientation.construct(orientation), position)
         port = ModuleUtils.create_port(self._module, name or global_.name, global_.width, PortDirection.input_,
                 is_clock = global_.is_clock, orientation = orientation, position = position, global_ = global_,
                 **kwargs)
@@ -322,7 +323,7 @@ class LogicBlockBuilder(_BaseSliceLikeBuilder):
         Args:
             name (:obj:`str`): name of the created port
             width (:obj:`int`): width of the created port
-            orientation (`Orientation`): orientation of this port
+            orientation (`Orientation` or :obj:`str`): orientation of this port
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this port
 
         Keyword Args:
@@ -335,7 +336,8 @@ class LogicBlockBuilder(_BaseSliceLikeBuilder):
         .. _equivalent:
             https://docs.verilogtorouting.org/en/latest/arch/reference/#tag-%3Cinputname=
         """
-        orientation, position = self._resolve_orientation_and_position(self._module, orientation, position)
+        orientation, position = self._resolve_orientation_and_position(self._module,
+                Orientation.construct(orientation), position)
         if vpr_equivalent_pins:
             return ModuleUtils.create_port(self._module, name, width, PortDirection.input_,
                     orientation = orientation, position = position, vpr_equivalent_pins = True, **kwargs)
@@ -349,7 +351,7 @@ class LogicBlockBuilder(_BaseSliceLikeBuilder):
         Args:
             name (:obj:`str`): name of the created port
             width (:obj:`int`): width of the created port
-            orientation (`Orientation`): orientation of this port
+            orientation (`Orientation` or :obj:`str`): orientation of this port
             position (:obj:`tuple` [:obj:`int`, :obj:`int` ]): Position of this port
 
         Keyword Args:
@@ -358,7 +360,8 @@ class LogicBlockBuilder(_BaseSliceLikeBuilder):
         Returns:
             `Port`: The created output port
         """
-        orientation, position = self._resolve_orientation_and_position(self._module, orientation, position)
+        orientation, position = self._resolve_orientation_and_position(self._module,
+                Orientation.construct(orientation), position)
         return ModuleUtils.create_port(self._module, name, width, PortDirection.output,
                 orientation = orientation, position = position, **kwargs)
 

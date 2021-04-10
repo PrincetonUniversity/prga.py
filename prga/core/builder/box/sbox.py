@@ -2,7 +2,7 @@
 
 from .base import BaseRoutingBoxBuilder
 from ...common import (Dimension, Position, BridgeType, Orientation, BridgeID, SegmentID, ModuleView, ModuleClass,
-        SwitchBoxPattern)
+        SwitchBoxPattern, Corner)
 from ....netlist import PortDirection, Module, ModuleUtils, NetUtils
 from ....exception import PRGAAPIError, PRGAInternalError
 from ....util import uno
@@ -339,7 +339,7 @@ class SwitchBoxBuilder(BaseRoutingBoxBuilder):
 
         Args:
             segment (`prga.core.common.Segment`): Prototype of the segment
-            orientation (`Orientation`): Orientation of the segment
+            orientation (`Orientation` or :obj:`str`): Orientation of the segment
             section (:obj:`int`): Section of the segment
 
         Keyword Args:
@@ -349,6 +349,7 @@ class SwitchBoxBuilder(BaseRoutingBoxBuilder):
             `Port`:
         """
         section = uno(section, segment.length)
+        orientation = Orientation.construct(orientation)
         node = BridgeID(self._segment_relative_position(self._module.key.corner, segment, orientation, section),
                 segment, orientation, BridgeType.regular_input)
         try:
@@ -365,7 +366,7 @@ class SwitchBoxBuilder(BaseRoutingBoxBuilder):
 
         Args:
             segment (`prga.core.common.Segment`): Prototype of the segment
-            orientation (`Orientation`): Orientation of the segment
+            orientation (`Orientation` or :obj:`str`): Orientation of the segment
             section (:obj:`int`): Section of the segment
 
         Keyword Args:
@@ -374,6 +375,7 @@ class SwitchBoxBuilder(BaseRoutingBoxBuilder):
         Returns:
             `Port`:
         """
+        orientation = Orientation.construct(orientation)
         node = SegmentID(self._segment_relative_position(self._module.key.corner, segment, orientation, section),
                 segment, orientation)
         try:
@@ -392,16 +394,20 @@ class SwitchBoxBuilder(BaseRoutingBoxBuilder):
         """Automatically generate connections implementing the specified pattern.
 
         Args:
-            output_orientation (`Orientation`):
+            output_orientation (`Orientation` or :obj:`str`):
 
         Keyword Arguments:
             drive_at_crosspoints (:obj:`bool`): If set, outputs are generated driving non-zero sections of long
                 segments
             crosspoints_only (:obj:`bool`): If set, outputs driving the first section of segments are not generated
-            exclude_input_orientations (:obj:`Container` [`Orientation` ]): Exclude segments in the given orientations
+            exclude_input_orientations (:obj:`Container` [`Orientation` or :obj:`str`]): Exclude segments in the
+                given orientations
             dont_create (:obj:`bool`): If set, connections are made only between already created nodes
             pattern (`SwitchBoxPattern`): Switch box pattern
         """
+        output_orientation = Orientation.construct(output_orientation)
+        exclude_input_orientations = tuple(Orientation.construct(o) for o in exclude_input_orientations)
+
         # implement switch box pattern
         if pattern.is_subset:
             self._fill_subset(output_orientation, drive_at_crosspoints, crosspoints_only,
@@ -445,7 +451,7 @@ class SwitchBoxBuilder(BaseRoutingBoxBuilder):
         """Create a new switch box.
 
         Args:
-            corner (`Corner`): On which corner of a tile is the switch box
+            corner (`Corner` or :obj:`str`): On which corner of a tile is the switch box
 
         Keyword Args:
             identifier (:obj:`str`): If different switches boxes are needed for the same corner of a tile,
@@ -458,6 +464,7 @@ class SwitchBoxBuilder(BaseRoutingBoxBuilder):
         Returns:
             `Module`:
         """
+        corner = Corner.construct(corner)
         key = cls._sbox_key(corner, identifier)
         name = name or 'sbox_{}{}'.format(corner.case("ne", "nw", "se", "sw"),
                 ('_' + identifier) if identifier is not None else '')

@@ -104,7 +104,7 @@ class TileBuilder(BaseArrayBuilder):
         added to this tile if it's not already added into the tile.
 
         Args:
-            ori (`Orientation`): Orientation of the connection box
+            ori (`Orientation` or :obj:`str`): Orientation of the connection box
             offset (:obj:`int`): Offset of the connection box in the specified orientation
 
         Keyword Args:
@@ -124,6 +124,8 @@ class TileBuilder(BaseArrayBuilder):
                   +---------------+
                     0   1   2   3
         """
+        ori = Orientation.construct(ori)
+
         if (inst := self._module.instances.get( (ori, offset) )) is None:
             key = ConnectionBoxBuilder._cbox_key(self._module, ori, offset)
             if self._no_channel(self._module, *key.channel):

@@ -813,7 +813,7 @@ class SwitchBoxPattern(Object):
             return type(self)(*args, **kwargs)
 
         def __eq__(self, other):
-            if not isinstance(other, type(self)) or other.fill_corners != self.fill_corners:
+            if type(other) is not type(self) or other.fill_corners != self.fill_corners:
                 return False
             else:
                 for slot in self.__slots__:

@@ -96,7 +96,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
         """Create a ``type_``-typed timing arc from ``source`` to ``sink``.
 
         Args:
-            types (`TimingArcType`): Type of the timing arc
+            types (`TimingArcType` or :obj:`str`): Type of the timing arc
             source (`Port`): An input port or a clock in the current module
             sink (`Port`): A port in the current module
 
@@ -106,7 +106,7 @@ class _BasePrimitiveBuilder(BaseBuilder):
         Returns:
             `TimingArc`: The created timing arc
         """
-        return NetUtils.create_timing_arc(type_, source, sink, max_ = max_, min_ = min_)
+        return NetUtils.create_timing_arc(TimingArcType.construct(type_), source, sink, max_ = max_, min_ = min_)
 
 # ----------------------------------------------------------------------------
 # -- Builder for Design Views of Single-Mode Primitives ----------------------
@@ -186,7 +186,7 @@ class DesignViewPrimitiveBuilder(_BasePrimitiveBuilder):
         Args:
             name (:obj:`str`): Name of the programming port
             width (:obj:`int`): Number of bits in this port
-            direction (`PortDirection`): Direction of this port
+            direction (`PortDirection` or :obj:`str`): Direction of this port
 
         Keyword Args:
             is_clock (:obj:`bool`): Mark this port as a programming clock
@@ -196,7 +196,8 @@ class DesignViewPrimitiveBuilder(_BasePrimitiveBuilder):
             `Port`:
         """
         kwargs["net_class"] = NetClass.prog
-        return ModuleUtils.create_port(self._module, name, width, direction, is_clock = is_clock, **kwargs)
+        return ModuleUtils.create_port(self._module, name, width,
+                PortDirection.construct(direction), is_clock = is_clock, **kwargs)
 
 # ----------------------------------------------------------------------------
 # -- Builder for Abstract Views of Single-Mode Primitives --------------------

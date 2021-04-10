@@ -93,7 +93,7 @@ class ConnectionBoxBuilder(BaseRoutingBoxBuilder):
 
         Args:
             segment (`prga.core.common.Segment`): Prototype of the segment
-            orientation (`Orientation`): Orientation of the segment
+            orientation (`Orientation` or :obj:`str`): Orientation of the segment
             section (:obj:`int`): Section of the segment
 
         Keyword Args:
@@ -102,6 +102,7 @@ class ConnectionBoxBuilder(BaseRoutingBoxBuilder):
         Returns:
             `Port`:
         """
+        orientation = Orientation.construct(orientation)
         node = BridgeID(self._segment_relative_position(self._module.key.orientation, segment, orientation, section),
                 segment, orientation, BridgeType.regular_input)
         try:
@@ -118,7 +119,7 @@ class ConnectionBoxBuilder(BaseRoutingBoxBuilder):
 
         Args:
             segment (`prga.core.common.Segment`): Prototype of the segment
-            orientation (`Orientation`): Orientation of the segment
+            orientation (`Orientation` or :obj:`str`): Orientation of the segment
 
         Keyword Args:
             dont_create (:obj:`bool`): If set, return ``None`` when the requested segment output is not already created
@@ -126,6 +127,7 @@ class ConnectionBoxBuilder(BaseRoutingBoxBuilder):
         Returns:
             `Port`:
         """
+        orientation = Orientation.construct(orientation)
         node = BridgeID(self._segment_relative_position(self._module.key.orientation, segment, orientation, 0),
                 segment, orientation, BridgeType.cboxout)
         try:
@@ -241,7 +243,7 @@ class ConnectionBoxBuilder(BaseRoutingBoxBuilder):
         
         Args:
             tile (`Module`): The tile that this connection box is in
-            orientation (`Orientation`): On which side of the tile is the connection box
+            orientation (`Orientation` or :obj:`str`): On which side of the tile is the connection box
             offset (:obj:`int`): Offset of the connection box in the specified orientation
 
         Keyword Args:
@@ -253,7 +255,7 @@ class ConnectionBoxBuilder(BaseRoutingBoxBuilder):
         Return:
             `Module`:
         """
-        key = cls._cbox_key(tile, orientation, offset)
+        key = cls._cbox_key(tile, Orientation.construct(orientation), offset)
         _, orientation, offset = key
         name = name or 'cbox_{}_{}{}'.format(tile.name, orientation.name[0], offset)
         return Module(name,

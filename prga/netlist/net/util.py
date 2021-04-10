@@ -19,7 +19,7 @@ class TimingArc(Object):
     """Timing arcs.
 
     Args:
-        type_ (`TimingArcType`): Type of this timing arc
+        type_ (`TimingArcType` or :obj:`str`): Type of this timing arc
         source (`AbstractNonReferenceNet`): The combinational source or clock of this timing arc
         sink (`AbstractNonReferenceNet`): The conbinational sink or sequential startpoint/endpoint of this timing
             arc
@@ -38,7 +38,7 @@ class TimingArc(Object):
     __slots__ = ['_type', '_source', '_sink', '_max', '_min']
 
     def __init__(self, type_, source, sink, *, max_ = None, min_ = None):
-        self._type = type_
+        self._type = TimingArcType.construct(type_)
         self._source = source
         self._sink = sink
 
@@ -657,7 +657,7 @@ class NetUtils(Object):
         """Create a ``type_``-typed timing arc from ``source`` to ``sink``.
 
         Args:
-            type_ (`TimingArcType`): Type of the timing arc
+            type_ (`TimingArcType` or :obj:`str`): Type of the timing arc
             source (`Port`): An input port or a clock in a cell module
             sink (`Port`): A port in the same cell module
 
@@ -674,6 +674,7 @@ class NetUtils(Object):
             raise PRGAInternalError("{} is not a port in a cell module".format(sink))
         elif source.parent is not sink.parent:
             raise PRGAInternalError("{} and {} are not in the same module".format(source, sink))
+        type_ = TimingArcType.construct(type_)
         # 2. further validate arguments
         if type_.is_comb_bitwise or type_.is_comb_matrix:
             if not source.is_source:
@@ -715,10 +716,10 @@ class NetUtils(Object):
         """
 
         # quick check
-        if isinstance(types, TimingArcType):
-            types = (types, )
-        elif len(types) == 0:
-            return tuple()
+        try:
+            types = tuple(TimingArcType.construct(t) for t in types)
+        except TypeError:
+            types = (TimingArcType.construct(types), )
 
         # get parent module
         module = None

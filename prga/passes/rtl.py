@@ -22,7 +22,7 @@ class VerilogCollection(AbstractPass):
     Keyword Args:
         header_output_dir (:obj:`str`): Verilog header files are generated in the specified directory. Default value
             is "{src_output_dir}/include"
-        view (`ModuleView`): Generate Verilog source files with the specified view
+        view (`ModuleView` or :obj:`str`): Generate Verilog source files with the specified view
         incremental (:obj:`bool`): If set to ``True``, the RTL sources already listed in
             ``context.summary.rtl["sources"]`` will not be overwritten
     """
@@ -32,7 +32,7 @@ class VerilogCollection(AbstractPass):
             incremental = False):
         self.src_output_dir = src_output_dir
         self.header_output_dir = uno(header_output_dir, os.path.join(src_output_dir, "include"))
-        self.view = view
+        self.view = ModuleView.construct(view)
         self.visited = {}
         self.incremental = incremental
 

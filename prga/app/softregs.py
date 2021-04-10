@@ -35,7 +35,7 @@ class SoftReg(Object):
 
     Args:
         name (:obj:`str`): Name of the register
-        type_ (`SoftRegType`): Type of the register
+        type_ (`SoftRegType` or :obj:`str`): Type of the register
         addr (:obj:`int`): Base address of the register in bytes
         width (:obj:`int`): Number of bits of this register
         bytewidth (:obj:`int`): Number of bytes that this register takes in the address space. Always a power of 2
@@ -45,7 +45,7 @@ class SoftReg(Object):
     __slots__ = ["_name", "_type", "_addr", "_width", "_bytewidth", "_rstval"]
     def __init__(self, name, type_, addr, width, bytewidth, rstval):
         self._name = name
-        self._type = type_
+        self._type = SoftRegType.construct(type_)
         self._addr = addr
         self._width = width
         self._bytewidth = bytewidth
@@ -131,13 +131,6 @@ class SoftRegIntf(Object):
         Returns:
             `SoftReg`: The created soft register
         """
-
-        # check type
-        if not isinstance(type_, SoftRegType):
-            try:
-                type_ = SoftRegType[type_]
-            except KeyError:
-                raise PRGATypeError('type_', '`SoftregType` or :obj:`str`')
 
         # check soft register name
         if name in self.regs:

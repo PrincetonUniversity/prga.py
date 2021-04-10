@@ -3,7 +3,7 @@
 
 from .module import Module
 from .instance import Instance
-from ..net.common import AbstractNet, NetType, TimingArcType
+from ..net.common import AbstractNet, NetType, TimingArcType, PortDirection
 from ..net.util import NetUtils
 from ..net.bus import Port, Pin, HierarchicalPin
 from ...exception import PRGAInternalError
@@ -108,7 +108,7 @@ class ModuleUtils(Object):
             module (`Module`):
             name (:obj:`str`): Name of the port
             width (:obj:`int`): Number of bits in the port
-            direction (`PortDirection`): Direction of the port
+            direction (`PortDirection` or :obj:`str`): Direction of the port
 
         Keyword Args:
             is_clock (:obj:`bool`): Mark this port as a clock
@@ -122,7 +122,8 @@ class ModuleUtils(Object):
         """
         if is_clock and width != 1:
             raise PRGAInternalError("Clock port must be 1-bit wide")
-        return module._add_child(Port(module, name, width, direction, is_clock = is_clock, key = key, **kwargs))
+        return module._add_child(Port(module, name, width,
+            PortDirection.construct(direction), is_clock = is_clock, key = key, **kwargs))
 
     @classmethod
     def instantiate(cls, module, model, name, *, key = None, **kwargs):
