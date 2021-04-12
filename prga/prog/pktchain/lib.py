@@ -418,7 +418,7 @@ class Pktchain(Scanchain):
                     verilog_template = "prga_be_prog_pktchain.tmpl.v")
             # create ports
             Integration._create_intf_ports_syscon(mod, True)
-            Integration._create_intf_ports_prog_openpiton(mod, True)
+            Integration._create_intf_ports_prog_piton(mod, True)
             ModuleUtils.create_port(mod, "prog_rst", 1, PortDirection.output)
             ModuleUtils.create_port(mod, "prog_done", 1, PortDirection.output)
             cls._get_or_create_pktchain_fifo_nets(mod, phit_width)
@@ -710,8 +710,8 @@ class Pktchain(Scanchain):
         def passes_after_self(self):
             return ("rtl", )
 
-    class BuildSystem(AbstractPass):
-        """Create a system for SoC integration."""
+    class BuildSystemPitonVanilla(AbstractPass):
+        """Create a system for SoC integration, specifically for OpenPiton vanilla."""
 
         __slots__ = ["io_constraints_f", "name", "fabric_wrapper", "prog_be_in_wrapper"]
 
@@ -728,7 +728,8 @@ class Pktchain(Scanchain):
             
         def run(self, context, renderer = None):
             # build system
-            Integration.build_system(context, name = self.name, fabric_wrapper = self.fabric_wrapper)
+            Integration.build_system_piton_vanilla(context,
+                    name = self.name, fabric_wrapper = self.fabric_wrapper)
 
             # get system module
             system = context.system_top
@@ -746,7 +747,7 @@ class Pktchain(Scanchain):
 
                 # create prog ports
                 core_ports = Integration._create_intf_ports_syscon(core.model, True, "prog_")
-                core_ports.update(Integration._create_intf_ports_prog_openpiton(core.model, True, syscomplex_prefix))
+                core_ports.update(Integration._create_intf_ports_prog_piton(core.model, True, syscomplex_prefix))
 
                 # instantiate
                 prog_inst = ModuleUtils.instantiate(core.model,
@@ -803,19 +804,21 @@ class Pktchain(Scanchain):
             NetUtils.connect(prog_inst.pins ["phit_o"],         prog_slave.pins["phit_i"])
 
             # connect syscomplex with its slave
-            intf = system.instances["i_syscomplex"]
+            syscomplex = system.instances["i_syscomplex"]
             NetUtils.connect(system.ports["clk"], syscomplex_slave.pins[syscomplex_prefix + "clk"])
             for pin_name in ["rst_n", "req_val", "req_addr", "req_strb", "req_data", "resp_rdy"]:
-                NetUtils.connect(intf.pins["prog_" + pin_name], syscomplex_slave.pins[syscomplex_prefix + pin_name])
+                NetUtils.connect(syscomplex.pins["prog_" + pin_name],
+                        syscomplex_slave.pins[syscomplex_prefix + pin_name])
             for pin_name in ["status", "req_rdy", "resp_val", "resp_err", "resp_data"]:
-                NetUtils.connect(syscomplex_slave.pins[syscomplex_prefix + pin_name], intf.pins["prog_" + pin_name])
+                NetUtils.connect(syscomplex_slave.pins[syscomplex_prefix + pin_name],
+                        syscomplex.pins["prog_" + pin_name])
 
             # print IO constraints
-            IOPlanner.print_io_constraints(context.summary.intf, self.io_constraints_f)
+            IOPlanner.print_io_constraints(context.summary.integration["app_intf"], self.io_constraints_f)
 
         @property
         def key(self):
-            return "system.pktchain"
+            return "system.pktchain.piton_vanilla"
 
         @property
         def dependences(self):
