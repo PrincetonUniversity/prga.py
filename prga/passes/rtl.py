@@ -27,30 +27,43 @@ class VerilogCollection(AbstractPass):
             ``context.summary.rtl["sources"]`` will not be overwritten
     """
 
-    __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'view', 'visited', 'incremental']
+    __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'view',
+            'visited_modules', 'added_headers', 'incremental']
     def __init__(self, src_output_dir = ".", header_output_dir = None, view = ModuleView.design,
             incremental = False):
         self.src_output_dir = src_output_dir
         self.header_output_dir = uno(header_output_dir, os.path.join(src_output_dir, "include"))
         self.view = ModuleView.construct(view)
-        self.visited = {}
+        self.visited_modules = {}
+        self.added_headers = set()
         self.incremental = incremental
 
-    def _process_module(self, module):
-        if module.key in self.visited:
+    def _process_header(self, context, h, requirer):
+        if h not in self.added_headers:
+            try:
+                template, deps, parameters = context._verilog_headers[h]
+            except KeyError:
+                raise PRGAInternalError("Verilog header '{}' required by '{}' not found"
+                        .format(h, requirer))
+            for hh in deps:
+                self._process_header(context, hh, h)
+            self.renderer.add_generic(os.path.join(self.header_output_dir, h), template,
+                    context = context, **parameters)
+            self.added_headers.add(h)
+
+    def _process_module(self, context, module):
+        if module.key in self.visited_modules:
             return
         f = os.path.join(self.src_output_dir, getattr(module, "verilog_src", module.name + ".v"))
-        self.visited[module.key] = f
+        self.visited_modules[module.key] = f
 
         if getattr(module, "do_generate_verilog", not os.path.isabs(f)):
             self.renderer.add_verilog(f, module, getattr(module, "verilog_template", "generic/module.tmpl.v"))
         for instance in module.instances.values():
-            self._process_module(instance.model)
+            self._process_module(context, instance.model)
 
-    def _collect_headers(self, context):
-        for f, (template, parameters) in context._verilog_headers.items():
-            self.renderer.add_generic(os.path.join(self.header_output_dir, f), template, context = context,
-                    **parameters)
+        for h in getattr(module, "verilog_dep_headers", tuple()):
+            self._process_header(context, h, module)
 
     @property
     def key(self):
@@ -74,14 +87,13 @@ class VerilogCollection(AbstractPass):
         if (top := context.system_top) is None:
             raise PRGAAPIError("System top module is not set")
 
-        self._collect_headers(context)
-        self._process_module(top)
+        self._process_module(context, top)
 
         if not hasattr(context.summary, "rtl"):
             context.summary.rtl = {}
         context.summary.rtl["includes"] = set([self.header_output_dir]) | context.summary.rtl.get("includes", set())
 
-        for k, v in self.visited.items():
+        for k, v in self.visited_modules.items():
             if self.incremental:
                 context.summary.rtl.setdefault("sources", {}).setdefault(k, v)
             else:

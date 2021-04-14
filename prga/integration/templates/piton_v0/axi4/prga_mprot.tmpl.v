@@ -5,7 +5,7 @@
 * Memory Protection Layer in AXI4 interface.
 */
 
-`include "prga_axi4.vh"
+`include "prga_system_axi4.vh"
 
 `ifdef DEFAULT_NETTYPE_NONE
 `default_nettype none

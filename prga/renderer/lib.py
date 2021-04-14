@@ -992,3 +992,7 @@ class BuiltinCellLibrary(object):
 
         # add headers
         context._add_verilog_header("prga_utils.vh", "stdlib/include/prga_utils.tmpl.vh")
+        context._add_verilog_header("prga_axi4.vh", "stdlib/include/prga_axi4.tmpl.vh")
+
+        # header dependencies
+        context.database[ModuleView.design, "prga_fifo_resizer"].verilog_dep_headers = ("prga_utils.vh", )

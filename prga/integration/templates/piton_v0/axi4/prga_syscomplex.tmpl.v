@@ -5,7 +5,7 @@
 * System integration complex.
 */
 
-`include "prga_axi4.vh"
+`include "prga_system_axi4.vh"
 
 module prga_syscomplex #(
     parameter   DECOUPLED = 1

@@ -112,7 +112,8 @@ class Pktchain(Scanchain):
         context._switch_delegate = SwitchDelegate(context)
         context._fasm_delegate = PktchainFASMDelegate(context)
         context._add_verilog_header("pktchain.vh", "include/pktchain.tmpl.vh")
-        context._add_verilog_header("pktchain_system.vh", "include/pktchain_system.tmpl.vh")
+        context._add_verilog_header("pktchain_system.vh", "piton_v0/include/pktchain_system.tmpl.vh",
+                "pktchain.vh", "prga_system.vh")
         cls._register_cells(context, phit_width, chain_width)
         return context
 
@@ -326,7 +327,8 @@ class Pktchain(Scanchain):
                     view = mvl,
                     module_class = ModuleClass.prog,
                     chain_width = chain_width,
-                    verilog_template = "pktchain_clasp.tmpl.v")
+                    verilog_template = "pktchain_clasp.tmpl.v",
+                    verilog_dep_headers = ("pktchain.vh", ))
             # we don't need to create ports for this module.
             db[mvl, "pktchain_clasp"] = mod
 
@@ -336,7 +338,8 @@ class Pktchain(Scanchain):
                     is_cell = True,
                     view = mvl,
                     module_class = ModuleClass.prog,
-                    verilog_template = "pktchain_frame_assemble.tmpl.v")
+                    verilog_template = "pktchain_frame_assemble.tmpl.v",
+                    verilog_dep_headers = ("pktchain.vh", ))
             # we don't need to create ports for this module.
             # sub-instances (hierarchy-only)
             mis(mod, db[mvl, "prga_fifo"], "fifo")
@@ -349,7 +352,8 @@ class Pktchain(Scanchain):
                     is_cell = True,
                     view = mvl,
                     module_class = ModuleClass.prog,
-                    verilog_template = "pktchain_frame_disassemble.tmpl.v")
+                    verilog_template = "pktchain_frame_disassemble.tmpl.v",
+                    verilog_dep_headers = ("pktchain.vh", ))
             # we don't need to create ports for this module.
             # sub-instances (hierarchy-only)
             mis(mod, db[mvl, "prga_fifo_resizer"], "resizer")
@@ -363,7 +367,8 @@ class Pktchain(Scanchain):
                     is_cell = True,
                     view = mvl,
                     module_class = ModuleClass.prog,
-                    verilog_template = "pktchain_router.tmpl.v")
+                    verilog_template = "pktchain_router.tmpl.v",
+                    verilog_dep_headers = ("pktchain.vh", ))
             # create ports
             super()._get_or_create_scanchain_prog_nets(mod, chain_width, ["prog_done"])
             mcp(mod, "prog_we_o", 1, PortDirection.output, net_class = NetClass.prog)
@@ -381,7 +386,8 @@ class Pktchain(Scanchain):
                     is_cell = True,
                     view = mvl,
                     module_class = ModuleClass.prog,
-                    verilog_template = "pktchain_dispatcher.tmpl.v")
+                    verilog_template = "pktchain_dispatcher.tmpl.v",
+                    verilog_dep_headers = ("pktchain.vh", ))
             # create ports
             super()._get_or_create_scanchain_prog_nets(mod, chain_width, ["prog_done", "prog_we", "prog_din", "prog_dout"])
             cls._get_or_create_pktchain_fifo_nets(mod, phit_width, oxy = True)
@@ -398,7 +404,8 @@ class Pktchain(Scanchain):
                     is_cell = True,
                     view = mvl,
                     module_class = ModuleClass.prog,
-                    verilog_template = "pktchain_gatherer.tmpl.v")
+                    verilog_template = "pktchain_gatherer.tmpl.v",
+                    verilog_dep_headers = ("pktchain.vh", ))
             # create ports
             super()._get_or_create_scanchain_prog_nets(mod, chain_width, ["prog_done", "prog_we", "prog_din", "prog_dout"])
             cls._get_or_create_pktchain_fifo_nets(mod, phit_width, ixy = True)
@@ -415,7 +422,8 @@ class Pktchain(Scanchain):
                     is_cell = True,
                     view = mvl,
                     module_class = ModuleClass.aux,
-                    verilog_template = "prga_be_prog_pktchain.tmpl.v")
+                    verilog_template = "piton_v0/prga_be_prog_pktchain.tmpl.v",
+                    verilog_dep_headers = ("pktchain_system.vh", ))
             # create ports
             Integration._create_intf_ports_syscon(mod, True)
             Integration._create_intf_ports_prog_piton(mod, True)

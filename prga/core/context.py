@@ -105,17 +105,18 @@ class Context(Object):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-    def _add_verilog_header(self, f, template, **parameters):
+    def _add_verilog_header(self, f, template, *deps, **parameters):
         """Add a Verilog header. This rendering task will be collected via the `VerilogCollection` pass.
         
         Args:
             f (:obj:`str`): Name of the output file
             template (:obj:`str`): Name of the template or source file
+            *deps (:obj:`str`): Other header files that this one depends on
 
         Keyword Args:
             **parameters: Extra parameters for the template
         """
-        self._verilog_headers[f] = template, parameters
+        self._verilog_headers[f] = template, set(deps), parameters
 
     def _new_database(self, dont_add_design_view_primitives = tuple()):
         database = self._database = {}

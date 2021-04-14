@@ -218,8 +218,9 @@ class Integration(object):
             context (`Context`):
         """
         # 1. add prga_system header
-        context._add_verilog_header("prga_system.vh", "include/prga_system.tmpl.vh")
-        context._add_verilog_header("prga_axi4.vh", "include/prga_axi4.tmpl.vh")
+        context._add_verilog_header("prga_system.vh", "piton_v0/include/prga_system.tmpl.vh")
+        context._add_verilog_header("prga_system_axi4.vh", "piton_v0/include/prga_system_axi4.tmpl.vh",
+                "prga_system.vh", "prga_axi4.vh")
 
         # 2. register modules
         # 2.1 modules that we don't need to know about their ports
@@ -228,17 +229,20 @@ class Integration(object):
             context._database[ModuleView.design, d] = Module(d,
                     view = ModuleView.design,
                     module_class = ModuleClass.aux,
-                    verilog_template = "{}.tmpl.v".format(d))
+                    verilog_template = "piton_v0/{}.tmpl.v".format(d),
+                    verilog_dep_headers = ("prga_system.vh", ))
         for d in ("prga_l15_transducer", ):
             context._database[ModuleView.design, d] = Module(d,
                     view = ModuleView.design,
                     module_class = ModuleClass.aux,
-                    verilog_template = "piton/{}.v".format(d))
+                    verilog_template = "piton_v0/{}.v".format(d),
+                    verilog_dep_headers = ("prga_system.vh", ))
         for d in ("prga_fe_axi4lite", ):
             context._database[ModuleView.design, d] = Module(d,
                     view = ModuleView.design,
                     module_class = ModuleClass.aux,
-                    verilog_template = "axi4lite/{}.tmpl.v".format(d))
+                    verilog_template = "axi4lite/{}.tmpl.v".format(d),
+                    verilog_dep_headers = ("prga_system.vh", ))
         ModuleUtils.instantiate(context.database[ModuleView.design, "prga_ctrl"],
                 context.database[ModuleView.design, "prga_clkdiv"], "i_clkdiv")
         ModuleUtils.instantiate(context.database[ModuleView.design, "prga_ctrl"],
@@ -286,7 +290,8 @@ class Integration(object):
         syscomplex = context._database[ModuleView.design, "prga_syscomplex"] = Module("prga_syscomplex",
                 view = ModuleView.design,
                 module_class = ModuleClass.aux,
-                verilog_template = "prga_syscomplex.tmpl.v")
+                verilog_template = "piton_v0/prga_syscomplex.tmpl.v",
+                verilog_dep_headers = ("prga_system.vh", ))
         cls._create_intf_ports_syscon           (syscomplex, True)          # programming clock and reset
         cls._create_intf_ports_syscon           (syscomplex, False, "a")    # application clock and reset
         cls._create_intf_ports_reg              (syscomplex, True, "reg_",
@@ -308,16 +313,18 @@ class Integration(object):
         mprot = context._database[ModuleView.design, "prga_mprot.axi4"] = Module("prga_mprot",
                 view = ModuleView.design,
                 module_class = ModuleClass.aux,
-                verilog_template = "ccm_axi4/prga_mprot.tmpl.v",
-                key = "prga_mprot.axi4")
+                verilog_template = "piton_v0/axi4/prga_mprot.tmpl.v",
+                key = "prga_mprot.axi4",
+                verilog_dep_headers = ("prga_system_axi4.vh", ))
         ModuleUtils.instantiate(mprot, context.database[ModuleView.design, "prga_ecc_parity"], "i_ecc_checker")
         ModuleUtils.instantiate(mprot, context.database[ModuleView.design, "prga_valrdy_buf"], "i_buf")
 
         syscomplex = context._database[ModuleView.design, "prga_syscomplex.axi4"] = Module("prga_syscomplex",
                 view = ModuleView.design,
                 module_class = ModuleClass.aux,
-                verilog_template = "ccm_axi4/prga_syscomplex.tmpl.v",
-                key = "prga_syscomplex.axi4")
+                verilog_template = "piton_v0/axi4/prga_syscomplex.tmpl.v",
+                key = "prga_syscomplex.axi4",
+                verilog_dep_headers = ("prga_system_axi4.vh", ))
         cls._create_intf_ports_syscon               (syscomplex, True)          # programming clock and reset
         cls._create_intf_ports_syscon               (syscomplex, False, "a")    # application clock and reset
         cls._create_intf_ports_reg              (syscomplex, True, "reg_",

@@ -1,0 +1,14 @@
+`ifndef PRGA_SYSTEM_AXI4_VH
+`define PRGA_SYSTEM_AXI4_VH
+
+`include "prga_system.vh"
+`include "prga_axi4.vh"
+
+`define PRGA_AXI4_ID_WIDTH      `PRGA_CCM_THREADID_WIDTH
+`define PRGA_AXI4_ID_COUNT      (1 << `PRGA_AXI4_ID_WIDTH)
+
+`define PRGA_AXI4_ADDR_WIDTH    `PRGA_CCM_ADDR_WIDTH
+`define PRGA_AXI4_DATA_WIDTH    `PRGA_CCM_DATA_WIDTH
+`define PRGA_AXI4_DATA_BYTES    `PRGA_CCM_DATA_BYTES
+
+`endif /* `ifndef PRGA_SYSTEM_AXI4_VH */
