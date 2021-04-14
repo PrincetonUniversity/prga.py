@@ -18,6 +18,7 @@ class SoftRegType(Enum):
     kernel      = 1     #: read-only registers inside the kernel
     rdempty     = 2     #: read-only registers inside the kernel with FIFO-like hand-shake
     rdempty_la  = 3     #: read-only registers inside the kernel with lookahead FIFO-like hand-shake
+    bar         = 4     #: burnt-after-read
 
     basic       = 100   #: read-write registers that hold the value once written
     pulse       = 101   #: read-write registers that auto-reset after one cycle (read always return rstval)
@@ -84,7 +85,8 @@ class SoftReg(Object):
     @property
     def has_port_i(self):
         """:obj:`bool`: Tests if the soft register has input port `var_{name}_i`."""
-        return self.type_ in (SoftRegType.kernel, SoftRegType.rdempty, SoftRegType.rdempty_la, SoftRegType.decoupled)
+        return self.type_ in (SoftRegType.kernel, SoftRegType.rdempty, SoftRegType.rdempty_la, SoftRegType.decoupled,
+                SoftRegType.bar)
 
     @property
     def has_port_o(self):

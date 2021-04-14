@@ -126,13 +126,27 @@ module prga_app_softregs (
         end
     end
 
+        {%- elif r.type_.is_bar %}
+    // {{ r.type_.name }} soft register: {{ name }}
+    reg var_{{ name }}_rd;
+    reg [{{ dwidth(name) }} - 1:0] var_{{ name }}_latched;
+    always @(posedge clk) begin
+        if (~rst_n) begin
+            var_{{ name }}_latched <= {{ rstval(name) }};
+        end else if (var_{{ name }}_i != {{ rstval(name) }}) begin
+            var_{{ name }}_latched <= var_{{ name }}_i;
+        end else if (var_{{ name }}_rd) begin
+            var_{{ name }}_latched <= {{ rstval(name) }};
+        end
+    end
+
         {%- endif %}
     {% endfor %}
 
     // pipeline implementation
     always @* begin
         {%- for name, r in module.softregs.regs.items() %}
-            {%- if r.type_.is_rdempty or r.type_.is_rdempty_la %}
+            {%- if r.type_.is_rdempty or r.type_.is_rdempty_la or r.type_.is_bar %}
         var_{{ name }}_rd = 1'b0;
             {%- elif r.type_.name in ("basic", "pulse", "pulse_ack", "decoupled", "busywait", "wrfull") %}
         var_{{ name }}_trx = 1'b0;
@@ -150,6 +164,10 @@ module prga_app_softregs (
                 {{ addr(name) }}: begin
                     var_{{ name }}_rd = softreg_req_val && !softreg_req_wr;
                     softreg_req_rdy = softreg_req_wr || !var_{{ name }}_empty;
+                end
+            {%- elif r.type_.is_bar %}
+                {{ addr(name) }}: begin
+                    var_{{ name }}_rd = softreg_req_val && !softreg_req_wr;
                 end
             {%- elif r.type_.name in ("basic", "pulse", "pulse_ack", "decoupled", "busywait", "wrfull") %}
                 {{ addr(name) }}: begin
@@ -176,6 +194,9 @@ module prga_app_softregs (
             {%- elif r.type_.is_busywait %}
             {{ addr(name) }}:
                 data_r_next[0] = var_{{ name }}_busy;
+            {%- elif r.type_.is_bar %}
+            {{ addr(name) }}:
+                data_r_next[0+:{{ dwidth(name) }}] = var_{{ name }}_latched;
             {%- elif r.type_.name in ("kernel", "rdempty_la", "decoupled") %}
             {{ addr(name) }}:
                 data_r_next[0+:{{ dwidth(name) }}] = var_{{ name }}_i;
