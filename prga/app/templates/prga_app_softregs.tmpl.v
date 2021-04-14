@@ -34,7 +34,7 @@ module prga_app_softregs (
 
         {%- if r.type_.is_pulse_ack %}
     , input wire var_{{ name }}_ack
-        {%- elif r.type_.is_waitbusy %}
+        {%- elif r.type_.is_busywait %}
     , input wire var_{{ name }}_busy
         {%- elif r.type_.is_rdempty or r.type_.is_rdempty_la %}
     , output reg var_{{ name }}_rd

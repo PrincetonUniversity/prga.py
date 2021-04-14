@@ -101,10 +101,11 @@ class SoftRegIntf(Object):
     Args:
         addr_width (:obj:`int`): Number of bits in the address. This sets the maximum address space
         align (:obj:`int`): Byte alignment. Must be power of 2. This also sets the maximum width of all soft registers
+        strb (:obj:`bool`): If set, write strobe per write is used instead of a single read/write signal
     """
 
-    __slots__ = ['addr_width', 'align', 'addrspace', 'regs']
-    def __init__(self, addr_width = 11, align = 8):
+    __slots__ = ['addr_width', 'align', 'strb', 'addrspace', 'regs']
+    def __init__(self, addr_width = 11, align = 8, strb = False):
         if addr_width <= 0:
             raise PRGATypeError('addr_width', 'positive integer')
 
@@ -113,6 +114,7 @@ class SoftRegIntf(Object):
 
         self.addr_width = addr_width
         self.align = align
+        self.strb = strb
         self.addrspace = []
         self.regs = {}
 
@@ -183,7 +185,9 @@ class SoftRegIntf(Object):
         """
 
         # create the module
-        m = Module("prga_app_softregs", softregs = self)
+        m = Module("prga_app_softregs",
+                softregs = self,
+                verilog_template = "prga_app_softregs." + ("strb." if self.strb else "") + "tmpl.v")
 
         # create ports
         # - basic ports
@@ -192,7 +196,10 @@ class SoftRegIntf(Object):
         ModuleUtils.create_port(m, "softreg_req_rdy",   1,                  PortDirection.output)
         ModuleUtils.create_port(m, "softreg_req_val",   1,                  PortDirection.input_)
         ModuleUtils.create_port(m, "softreg_req_addr",  self.addr_width,    PortDirection.input_)
-        ModuleUtils.create_port(m, "softreg_req_wr",    1,                  PortDirection.input_)
+        if self.strb:
+            ModuleUtils.create_port(m, "softreg_req_strb",  self.align,     PortDirection.input_)
+        else:
+            ModuleUtils.create_port(m, "softreg_req_wr",    1,              PortDirection.input_)
         ModuleUtils.create_port(m, "softreg_req_data",  self.align * 8,     PortDirection.input_)
         ModuleUtils.create_port(m, "softreg_resp_rdy",  1,                  PortDirection.input_)
         ModuleUtils.create_port(m, "softreg_resp_val",  1,                  PortDirection.output)
@@ -222,3 +229,15 @@ class SoftRegIntf(Object):
 
         # return the module
         return m
+
+    @classmethod
+    def from_fabric_intf(cls, intf):
+        """Create `SoftRegIntf` from `FabricIntf._softreg`.
+
+        Args:
+            intf (`FabricIntf._softreg`):
+
+        Returns:
+            `SoftRegIntf`:
+        """
+        return cls(intf.addr_width, 2 ** intf.data_bytes_log2, intf.strb)
