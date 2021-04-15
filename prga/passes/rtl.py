@@ -41,13 +41,13 @@ class VerilogCollection(AbstractPass):
     def _process_header(self, context, h, requirer):
         if h not in self.added_headers:
             try:
-                template, deps, parameters = context._verilog_headers[h]
+                f, template, deps, parameters = context._verilog_headers[h]
             except KeyError:
                 raise PRGAInternalError("Verilog header '{}' required by '{}' not found"
                         .format(h, requirer))
             for hh in deps:
                 self._process_header(context, hh, h)
-            self.renderer.add_generic(os.path.join(self.header_output_dir, h), template,
+            self.renderer.add_generic(os.path.join(self.header_output_dir, f), template,
                     context = context, **parameters)
             self.added_headers.add(h)
 

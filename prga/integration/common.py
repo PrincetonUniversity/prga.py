@@ -4,54 +4,21 @@ from ..util import Enum, Object
 from ..exception import PRGAAPIError
 from abc import abstractproperty, abstractmethod
 
-__all__ = ["SystemIntf", "FabricIntf", "ProgIntf",
-        "FabricMemIntfTrxTypeSet", "FabricMemIntfAMOTypeSet", "FabricMemIntfTrxSizeSet", "FabricIntfECCType"]
+__all__ = ["SystemIntf", "FabricIntf", "ProgIntf", "FabricIntfECCType"]
 
 # ----------------------------------------------------------------------------
 # -- Interface Enumerations --------------------------------------------------
 # ----------------------------------------------------------------------------
-class MemIntfTrxTypeSet(Enum):
-    """The transaction type set of the memory interface."""
-
-    # Feature Flags
-    feature_nc = 1          #: Add non-cacheable variations to the basic load-store requests
-    feature_amo = 2         #: Add atomic request types to the basic load-store requests
-    feature_subword = 4     #: Add support for sub-word requests
-    feature_cacheinv = 8    #: Add private cache invalidations to the responses
-
-    # Composed types
-    basic = 0                                               #: Basic load-store requests
-    piton_v0 = feature_nc | feature_amo | feature_subword   #: Support non-cacheable, sub-word, and atomic requests
-    piton_v1 = piton_v0 | feature_cacheinv                  #: Support private cache invalidations on top of v0
-
-    def __getattr__(self, attr):
-        if attr.startswith("support_"):
-            try:
-                flag = type(self)["feature_" + attr[8:]]
-            except KeyError:
-                raise PRGAAPIError("Unknown feature: {}".format(attr[8:]))
-            return bool(self & flag)
-        return super().__getattr__(attr)
-
-class MemIntfTrxSizeSet(Enum):
-    """Memory transaction sub-word size specs."""
-
-    none = 0                #: No `size` field included in the interface
-    basic = 1               #: 0 for 1B, 1 for 2B, 2 for 4B, etc.
-    piton = 2               #: Special encoding for openpiton
-
-class MemIntfAMOTypeSet(Enum):
-    """AMO type set."""
-
-    none = 0                #: No atomic operations
-    piton = 1               #: OpenPiton x Ariane
-
 class FabricIntfECCType(Enum):
     """Error correction/check code type for the fabric interface."""
 
     none = 0                #: No ECC Check
     parity_odd = 1          #: Odd parity check (ECC = ^ payload)
     parity_even = 2         #: Even parity check (ECC = ~^payload)
+
+    @property
+    def ecc_bits(self):
+        return self.case(0, 1, 1)
 
 # ----------------------------------------------------------------------------
 # -- Base and Common Interfaces ----------------------------------------------
@@ -94,12 +61,7 @@ class _BaseIntf(Object):
         """
         return self._id
 
-    @property
-    def name(self):
-        """:obj:`str`: Name of the type of this interface."""
-        return type(self).__name__
-
-class _AbstractByteAddressedIntf(_BaseIntf):
+class _AbstractByteAddressedIntf(Object):
     """Abstract base class for byte-addressable interfaces."""
 
     @abstractproperty
@@ -112,28 +74,23 @@ class _AbstractByteAddressedIntf(_BaseIntf):
         """:obj:`int`: log2 of the number of bytes in the data bus."""
         raise NotImplementedError
 
-class _AbstractMemoryIntf(_AbstractByteAddressedIntf):
-    """Abstract base class for memory interfaces."""
+class _BaseFabricIntf(_BaseIntf):
+    """Base class for fabric interfaces.
 
-    @abstractproperty
-    def trx_type_set(self):
-        """`MemIntfTrxTypeSet`: Transaction types."""
-        raise NotImplementedError
+    Args:
+        id_ (:obj:`str`): Identifier of this interface
+        ecc_type (`FabricIntfECCType`):
+    """
 
-    @abstractproperty
-    def trx_size_set(self):
-        """`MemIntfTrxSizeSet`: Transaction sizes."""
-        raise NotImplementedError
+    __slots__ = ['ecc_type']
 
-    @abstractproperty
-    def amo_type_set(self):
-        """`MemIntfAMOTypeSet`: Atomic operation codes."""
-        raise NotImplementedError
+    def __init__(self, id_ = None, ecc_type = FabricIntfECCType.parity_even):
+        super().__init__(id_)
+        self.ecc_type = FabricIntfECCType.construct(ecc_type)
 
-    @abstractproperty
-    def mthread_width(self):
-        """:obj:`int`: Memory thread, or transaction ID, or memory space ID, etc."""
-        raise NotImplementedError
+    def __repr__(self):
+        return "FabricIntf[{}](id={}, ecc={})".format(
+                type(self).__name__.lstrip('_'), repr(self.id_), self.ecc_type.name)
 
 # ----------------------------------------------------------------------------
 # -- System Interfaces Collection --------------------------------------------
@@ -149,7 +106,7 @@ class SystemIntf(Object):
         def __repr__(self):
             return "SystemIntf[syscon](id={})".format(repr(self.id_))
 
-    class _reg_piton(_AbstractByteAddressedIntf):
+    class _reg_piton(_BaseIntf, _AbstractByteAddressedIntf):
 
         def __repr__(self):
             return "SystemIntf[reg_piton](id={})".format(repr(self.id_))
@@ -162,34 +119,10 @@ class SystemIntf(Object):
         def data_bytes_log2(self):
             return 3
 
-    class _memory_piton(_AbstractMemoryIntf):
+    class _memory_piton(_BaseIntf):
 
         def __repr__(self):
             return "SystemIntf[memory_piton](id={})".format(repr(self.id_))
-
-        @property
-        def addr_width(self):
-            return 40
-
-        @property
-        def data_bytes_log2(self):
-            return 3
-
-        @property
-        def trx_type_set(self):
-            return MemIntfTrxTypeSet.piton_v0
-
-        @property
-        def trx_size_set(self):
-            return MemIntfTrxSizeSet.piton
-
-        @property
-        def amo_type_set(self):
-            return MemIntfAMOTypeSet.piton
-
-        @property
-        def mthread_width(self):
-            return 1
 
 SystemIntf.syscon = SystemIntf._syscon()
 SystemIntf.reg_piton = SystemIntf._reg_piton()
@@ -204,7 +137,7 @@ class ProgIntf(Object):
     Currently all programming interfaces are hardcoded.
     """
 
-    class _reg_piton(_AbstractByteAddressedIntf):
+    class _reg_piton(_BaseIntf, _AbstractByteAddressedIntf):
 
         def __repr__(self):
             return "ProgIntf[reg_piton](id={})".format(repr(self.id_))
@@ -230,9 +163,9 @@ class FabricIntf(Object):
         def __repr__(self):
             return "FabricIntf[syscon](id={})".format(repr(self.id_))
 
-    class _softreg(_AbstractByteAddressedIntf):
+    class _softreg(_BaseFabricIntf, _AbstractByteAddressedIntf):
 
-        __slots__ = ['ecc_type', 'addr_width', 'data_bytes_log2', 'strb']
+        __slots__ = ['addr_width', 'data_bytes_log2', 'strb']
 
         def __init__(self, id_ = None,
                 ecc_type = FabricIntfECCType.parity_even,
@@ -240,9 +173,8 @@ class FabricIntf(Object):
                 data_bytes_log2 = 3,
                 strb = False
                 ):
-            super().__init__(id_)
+            super().__init__(id_, ecc_type)
             
-            self.ecc_type = FabricIntfECCType.construct(ecc_type)
             self.addr_width = addr_width
             self.data_bytes_log2 = data_bytes_log2
             self.strb = strb
@@ -252,63 +184,46 @@ class FabricIntf(Object):
                     repr(self.id_), self.ecc_type.name, self.addr_width, self.data_bytes_log2,
                     'y' if self.strb else 'n')
 
-    class _memory_piton(_AbstractMemoryIntf):
+    class _memory_piton(_BaseFabricIntf):
 
-        __slots__ = ['trx_type_set', 'axi4']
+        pass
 
-        # AXI4 interface for coherent memory access
+    class _memory_piton_axi4r(_BaseFabricIntf):
+
+        # AXI4 AR & R interfaces for coherent memory access
         #  - Do not support:
-        #      * AWPROT, AWQOS, AWREGION, AWLOCK:  all tied to constant zero
         #      * ARPROT, ARQOS, ARREGION:          all tied to constant zero
-        #  - Support AWID, ARID, BID, RID (PITON threads)
+        #  - Support ARID, RID (PITON threads)
         #  - Non-standard use of ARLOCK:
         #      * ARLOCK marks the load as an atomic operation. AMO type and data in ARUSER
-        #  - Non-standard use of AWCACHE and ARCACHE:
-        #      * |AxCache[3:2]:    coherent (cacheable) read/write
-        #      * other value:      non-coherent (non-cacheable) read/write
+        #  - Non-standard use of ARCACHE:
+        #      * |ARCache[3:2]:    coherent (cacheable) read
+        #      * other value:      non-coherent (non-cacheable) read
         #      * Device, bufferability, write-through/write-back, and allocatioin strategy are not respected
-        #  - Additional use of AWUSER:
-        #      * ECC bit(s)
         #  - Additional use of ARUSER:
         #      * ECC bit(s)
         #      * AMO opcode
         #      * AMO data
 
-        def __init__(self, id_ = None, trx_type_set = MemIntfTrxTypeSet.piton_v0, axi4 = False):
-            super().__init__(id_)
+        pass
 
-            self.trx_type_set = MemIntfTrxTypeSet.construct(trx_type_set)
-            self.axi4 = axi4
+    class _memory_piton_axi4w(_BaseFabricIntf):
 
-        @property
-        def addr_width(self):
-            return 12
+        # AXI4 AW, W & B interfaces for coherent memory access
+        #  - Do not support:
+        #      * AWPROT, AWQOS, AWREGION, AWLOCK:  all tied to constant zero
+        #  - Support AWID, BID (PITON threads)
+        #  - Non-standard use of AWCACHE:
+        #      * |AWCache[3:2]:    coherent (cacheable) write
+        #      * other value:      non-coherent (non-cacheable) write
+        #      * Device, bufferability, write-through/write-back, and allocatioin strategy are not respected
+        #  - Additional use of AWUSER:
+        #      * ECC bit(s)
 
-        @property
-        def data_bytes_log2(self):
-            return 3
-
-        @property
-        def ecc_type(self):
-            """`FabricIntfECCType`"""
-            return FabricIntfECCType.parity_even
-
-        @property
-        def trx_size_set(self):
-            return MemIntfTrxSizeSet.piton
-
-        @property
-        def amo_type_set(self):
-            return MemIntfAMOTypeSet.piton
-
-        @property
-        def mthread_width(self):
-            return 1
-
-        def __repr__(self):
-            return "FabricIntf[memory_piton](id={}, trx={}, axi4={})".format(
-                    repr(self.id_), self.trx_type_set.name, 'y' if self.axi4 else 'n')
+        pass
 
 FabricIntf.syscon = FabricIntf._syscon()
 FabricIntf.softreg = FabricIntf._softreg()
 FabricIntf.memory_piton = FabricIntf._memory_piton()
+FabricIntf.memory_piton_axi4r = FabricIntf._memory_piton_axi4r()
+FabricIntf.memory_piton_axi4w = FabricIntf._memory_piton_axi4w()

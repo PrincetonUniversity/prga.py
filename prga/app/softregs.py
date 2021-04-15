@@ -19,6 +19,8 @@ class SoftRegType(Enum):
     rdempty     = 2     #: read-only registers inside the kernel with FIFO-like hand-shake
     rdempty_la  = 3     #: read-only registers inside the kernel with lookahead FIFO-like hand-shake
     bar         = 4     #: burnt-after-read
+    cbl         = 5     #: call-by-load. assert output until ack'ed
+    cbl_2stage  = 6     #: call-by-load. 2-stage ack (output ack, then done signal)
 
     basic       = 100   #: read-write registers that hold the value once written
     pulse       = 101   #: read-write registers that auto-reset after one cycle (read always return rstval)
@@ -92,7 +94,8 @@ class SoftReg(Object):
     def has_port_o(self):
         """:obj:`bool`: Tests if the soft register has input port `var_{name}_o`."""
         return self.type_ in (SoftRegType.const, SoftRegType.basic, SoftRegType.pulse, SoftRegType.pulse_ack,
-                SoftRegType.decoupled, SoftRegType.busywait, SoftRegType.wrfull)
+                SoftRegType.decoupled, SoftRegType.busywait, SoftRegType.wrfull, SoftRegType.cbl,
+                SoftRegType.cbl_2stage)
 
 # ----------------------------------------------------------------------------
 # -- Soft Register Interface -------------------------------------------------
@@ -215,8 +218,11 @@ class SoftRegIntf(Object):
                 ModuleUtils.create_port(m, "var_{}_o".format(name), r.width, PortDirection.output)
 
             # special ports
-            if r.type_.is_pulse_ack:
+            if r.type_ in (SoftRegType.pulse_ack, SoftRegType.cbl):
                 ModuleUtils.create_port(m, "var_{}_ack".format(name), 1, PortDirection.input_)
+            elif r.type_.is_cbl_2stage:
+                ModuleUtils.create_port(m, "var_{}_ack".format(name), 1, PortDirection.input_)
+                ModuleUtils.create_port(m, "var_{}_done".format(name), 1, PortDirection.input_)
             elif r.type_.is_busywait:
                 ModuleUtils.create_port(m, "var_{}_busy".format(name), 1, PortDirection.input_)
             elif r.type_ in (SoftRegType.rdempty, SoftRegType.rdempty_la):

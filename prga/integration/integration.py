@@ -93,8 +93,10 @@ class Integration(object):
         d[prefix + "resp_rdy"]      = ModuleUtils.create_port(module, prefix + "resp_rdy", 1, o)
         d[prefix + "resp_val"]      = ModuleUtils.create_port(module, prefix + "resp_val", 1, i)
         d[prefix + "resp_data"]     = ModuleUtils.create_port(module, prefix + "resp_data", data_bytes * 8, i)
-        if ecc.is_parity_even or ecc.is_parity_odd:
-            d[prefix + "resp_ecc"]  = ModuleUtils.create_port(module, prefix + "resp_ecc", 1, i)
+
+        if ecc.ecc_bits > 0:
+            d[prefix + "resp_ecc"]  = ModuleUtils.create_port(module, prefix + "resp_ecc", ecc.ecc_bits, i)
+
         return d
 
     @classmethod
@@ -131,15 +133,17 @@ class Integration(object):
         d[prefix + "resp_addr"]	        = ModuleUtils.create_port(module, prefix + "resp_addr", 7, i)
         d[prefix + "resp_data"]	        = ModuleUtils.create_port(module, prefix + "resp_data", 128, i)
         d[prefix + "resp_threadid"]     = ModuleUtils.create_port(module, prefix + "resp_threadid", 1, i)
-        if ecc.is_parity_even or ecc.is_parity_odd:
-            d[prefix + "req_ecc"]	    = ModuleUtils.create_port(module, prefix + "req_ecc", 1, o)
+
+        if ecc.ecc_bits > 0:
+            d[prefix + "req_ecc"]	    = ModuleUtils.create_port(module, prefix + "req_ecc", ecc.ecc_bits, o)
+
         return d
 
     @classmethod
-    def _create_intf_ports_memory_piton_axi4(cls, module, slave = False, prefix = "", *,
-            unused = False):
-        """Create cache-coherent memory interface in AXI4 protocol. By default this creates the master interface that
-        sends AW/AR/W requests and receive B/R responses.
+    def _create_intf_ports_memory_piton_axi4r(cls, module, slave = False, prefix = "", *,
+            ecc = FabricIntfECCType.parity_even, unused = False, upper = False):
+        """Create cache-coherent memory load interface in AXI4 protocol. By default this creates the master interface
+        that sends AR channel requests and receive R channel responses.
 
         Args:
             module (`Module`):
@@ -147,66 +151,103 @@ class Integration(object):
             prefix (:obj:`str`): Prefix of the port names
 
         Keyword Args:
-            unused (:obj:`bool`): If set, unused but required AXI4 ports are also added, including ``AWPROT``,
-                ``AWQOS``, ``AWLOCK``, ``AWREGION``, ``ARPROT``, ``ARQOS``, ``ARREGION``.
+            ecc (`FabricIntfECCType`): ECC check type
+            unused (:obj:`bool`): If set, unused but required AXI4 ports are also added, including ``arprot``,
+                ``arqos``, and ``arregion``.
+            upper (:obj:`bool`): If set, AXI4 port names are upper case
         """
+        ecc = FabricIntfECCType.construct(ecc)
         i, o = ((PortDirection.output, PortDirection.input_) if slave else
                 (PortDirection.input_, PortDirection.output))
         d = {}
-
-        # AW channel
-        d[prefix + "awready"]       = ModuleUtils.create_port(module, prefix + "awready", 1, i)
-        d[prefix + "awvalid"]       = ModuleUtils.create_port(module, prefix + "awvalid", 1, o)
-        d[prefix + "awid"]          = ModuleUtils.create_port(module, prefix + "awid", 1, o)
-        d[prefix + "awaddr"]        = ModuleUtils.create_port(module, prefix + "awaddr", 40, o)
-        d[prefix + "awlen"]         = ModuleUtils.create_port(module, prefix + "awlen", 8, o)
-        d[prefix + "awsize"]        = ModuleUtils.create_port(module, prefix + "awsize", 3, o)
-        d[prefix + "awburst"]       = ModuleUtils.create_port(module, prefix + "awburst", 2, o)
-        d[prefix + "awcache"]       = ModuleUtils.create_port(module, prefix + "awcache", 4, o)
-        d[prefix + "awuser"]        = ModuleUtils.create_port(module, prefix + "awuser", 1, o)
-        if unused:
-            d[prefix + "awlock"]    = ModuleUtils.create_port(module, prefix + "awlock", 1, o)
-            d[prefix + "awprot"]    = ModuleUtils.create_port(module, prefix + "awprot", 3, o)
-            d[prefix + "awqos"]     = ModuleUtils.create_port(module, prefix + "awqos", 4, o)
-            d[prefix + "awregion"]  = ModuleUtils.create_port(module, prefix + "awregion", 4, o)
-
-        # W channel
-        d[prefix + "wready"]        = ModuleUtils.create_port(module, prefix + "wready", 1, i)
-        d[prefix + "wvalid"]        = ModuleUtils.create_port(module, prefix + "wvalid", 1, o)
-        d[prefix + "wdata"]         = ModuleUtils.create_port(module, prefix + "wdata", 64, o)
-        d[prefix + "wstrb"]         = ModuleUtils.create_port(module, prefix + "wstrb", 8, o)
-        d[prefix + "wlast"]         = ModuleUtils.create_port(module, prefix + "wlast", 1, o)
-        d[prefix + "wuser"]         = ModuleUtils.create_port(module, prefix + "wuser", 1, o)
-
-        # B channel
-        d[prefix + "bready"]        = ModuleUtils.create_port(module, prefix + "bready", 1, o)
-        d[prefix + "bvalid"]        = ModuleUtils.create_port(module, prefix + "bvalid", 1, i)
-        d[prefix + "bresp"]         = ModuleUtils.create_port(module, prefix + "bresp", 2, i)
-        d[prefix + "bid"]           = ModuleUtils.create_port(module, prefix + "bid", 1, i)
+        def u(x):
+            return x.upper() if upper else x
 
         # AR channel
-        d[prefix + "arready"]       = ModuleUtils.create_port(module, prefix + "arready", 1, i)
-        d[prefix + "arvalid"]       = ModuleUtils.create_port(module, prefix + "arvalid", 1, o)
-        d[prefix + "arid"]          = ModuleUtils.create_port(module, prefix + "arid", 1, o)
-        d[prefix + "araddr"]        = ModuleUtils.create_port(module, prefix + "araddr", 40, o)
-        d[prefix + "arlen"]         = ModuleUtils.create_port(module, prefix + "arlen", 8, o)
-        d[prefix + "arsize"]        = ModuleUtils.create_port(module, prefix + "arsize", 3, o)
-        d[prefix + "arburst"]       = ModuleUtils.create_port(module, prefix + "arburst", 2, o)
-        d[prefix + "arlock"]        = ModuleUtils.create_port(module, prefix + "arlock", 1, o)
-        d[prefix + "arcache"]       = ModuleUtils.create_port(module, prefix + "arcache", 4, o)
-        d[prefix + "aruser"]        = ModuleUtils.create_port(module, prefix + "aruser", 64 + 4 + 1, o)
+        d[prefix + u("arready")]        = ModuleUtils.create_port(module, prefix + u("arready"), 1, i)
+        d[prefix + u("arvalid")]        = ModuleUtils.create_port(module, prefix + u("arvalid"), 1, o)
+        d[prefix + u("arid")]           = ModuleUtils.create_port(module, prefix + u("arid"), 1, o)
+        d[prefix + u("araddr")]         = ModuleUtils.create_port(module, prefix + u("araddr"), 40, o)
+        d[prefix + u("arlen")]          = ModuleUtils.create_port(module, prefix + u("arlen"), 8, o)
+        d[prefix + u("arsize")]         = ModuleUtils.create_port(module, prefix + u("arsize"), 3, o)
+        d[prefix + u("arburst")]        = ModuleUtils.create_port(module, prefix + u("arburst"), 2, o)
+        d[prefix + u("arlock")]         = ModuleUtils.create_port(module, prefix + u("arlock"), 1, o)
+        d[prefix + u("arcache")]        = ModuleUtils.create_port(module, prefix + u("arcache"), 4, o)
+        d[prefix + u("aruser")]     = ModuleUtils.create_port(module, prefix + u("aruser"), 64 + 4 + ecc.ecc_bits, o)
+
         if unused:
-            d[prefix + "arprot"]    = ModuleUtils.create_port(module, prefix + "arprot", 3, o)
-            d[prefix + "arqos"]     = ModuleUtils.create_port(module, prefix + "arqos", 4, o)
-            d[prefix + "arregion"]  = ModuleUtils.create_port(module, prefix + "arregion", 4, o)
+            d[prefix + u("arprot")]     = ModuleUtils.create_port(module, prefix + u("arprot"), 3, o)
+            d[prefix + u("arqos")]      = ModuleUtils.create_port(module, prefix + u("arqos"), 4, o)
+            d[prefix + u("arregion")]   = ModuleUtils.create_port(module, prefix + u("arregion"), 4, o)
 
         # R channel
-        d[prefix + "rready"]        = ModuleUtils.create_port(module, prefix + "rready", 1, o)
-        d[prefix + "rvalid"]        = ModuleUtils.create_port(module, prefix + "rvalid", 1, i)
-        d[prefix + "rresp"]         = ModuleUtils.create_port(module, prefix + "rresp", 2, i)
-        d[prefix + "rid"]           = ModuleUtils.create_port(module, prefix + "rid", 1, i)
-        d[prefix + "rdata"]         = ModuleUtils.create_port(module, prefix + "rdata", 64, i)
-        d[prefix + "rlast"]         = ModuleUtils.create_port(module, prefix + "rlast", 1, i)
+        d[prefix + u("rready")]         = ModuleUtils.create_port(module, prefix + u("rready"), 1, o)
+        d[prefix + u("rvalid")]         = ModuleUtils.create_port(module, prefix + u("rvalid"), 1, i)
+        d[prefix + u("rresp")]          = ModuleUtils.create_port(module, prefix + u("rresp"), 2, i)
+        d[prefix + u("rid")]            = ModuleUtils.create_port(module, prefix + u("rid"), 1, i)
+        d[prefix + u("rdata")]          = ModuleUtils.create_port(module, prefix + u("rdata"), 64, i)
+        d[prefix + u("rlast")]          = ModuleUtils.create_port(module, prefix + u("rlast"), 1, i)
+
+        return d
+
+    @classmethod
+    def _create_intf_ports_memory_piton_axi4w(cls, module, slave = False, prefix = "", *,
+            ecc = FabricIntfECCType.parity_even, unused = False, upper = False):
+        """Create cache-coherent memory store interface in AXI4 protocol. By default this creates the master interface
+        that sends AW/W channel requests and receive B channel responses.
+
+        Args:
+            module (`Module`):
+            slave (:obj:`bool`): If set, slave interface is added to ``module``
+            prefix (:obj:`str`): Prefix of the port names
+
+        Keyword Args:
+            ecc (`FabricIntfECCType`): ECC check type
+            unused (:obj:`bool`): if set, unused but required AXI4 ports are also added, including ``awprot``,
+                ``awqos``, ``awlock``, and ``awregion``.
+            upper (:obj:`bool`): If set, AXI4 port names are upper case
+        """
+        ecc = FabricIntfECCType.construct(ecc)
+        i, o = ((PortDirection.output, PortDirection.input_) if slave else
+                (PortDirection.input_, PortDirection.output))
+        d = {}
+        def u(x):
+            return x.upper() if upper else x
+
+        # AW channel
+        d[prefix + u("awready")]        = ModuleUtils.create_port(module, prefix + u("awready"), 1, i)
+        d[prefix + u("awvalid")]        = ModuleUtils.create_port(module, prefix + u("awvalid"), 1, o)
+        d[prefix + u("awid")]           = ModuleUtils.create_port(module, prefix + u("awid"), 1, o)
+        d[prefix + u("awaddr")]         = ModuleUtils.create_port(module, prefix + u("awaddr"), 40, o)
+        d[prefix + u("awlen")]          = ModuleUtils.create_port(module, prefix + u("awlen"), 8, o)
+        d[prefix + u("awsize")]         = ModuleUtils.create_port(module, prefix + u("awsize"), 3, o)
+        d[prefix + u("awburst")]        = ModuleUtils.create_port(module, prefix + u("awburst"), 2, o)
+        d[prefix + u("awcache")]        = ModuleUtils.create_port(module, prefix + u("awcache"), 4, o)
+
+        if ecc.ecc_bits > 0:
+            d[prefix + u("awuser")]     = ModuleUtils.create_port(module, prefix + u("awuser"), ecc.ecc_bits, o)
+
+        if unused:
+            d[prefix + u("awlock")]     = ModuleUtils.create_port(module, prefix + u("awlock"), 1, o)
+            d[prefix + u("awprot")]     = ModuleUtils.create_port(module, prefix + u("awprot"), 3, o)
+            d[prefix + u("awqos")]      = ModuleUtils.create_port(module, prefix + u("awqos"), 4, o)
+            d[prefix + u("awregion")]   = ModuleUtils.create_port(module, prefix + u("awregion"), 4, o)
+
+        # W channel
+        d[prefix + u("wready")]         = ModuleUtils.create_port(module, prefix + u("wready"), 1, i)
+        d[prefix + u("wvalid")]         = ModuleUtils.create_port(module, prefix + u("wvalid"), 1, o)
+        d[prefix + u("wdata")]          = ModuleUtils.create_port(module, prefix + u("wdata"), 64, o)
+        d[prefix + u("wstrb")]          = ModuleUtils.create_port(module, prefix + u("wstrb"), 8, o)
+        d[prefix + u("wlast")]          = ModuleUtils.create_port(module, prefix + u("wlast"), 1, o)
+
+        if ecc.ecc_bits > 0:
+            d[prefix + u("wuser")]      = ModuleUtils.create_port(module, prefix + u("wuser"), ecc.ecc_bits, o)
+
+        # B channel
+        d[prefix + u("bready")]         = ModuleUtils.create_port(module, prefix + u("bready"), 1, o)
+        d[prefix + u("bvalid")]         = ModuleUtils.create_port(module, prefix + u("bvalid"), 1, i)
+        d[prefix + u("bresp")]          = ModuleUtils.create_port(module, prefix + u("bresp"), 2, i)
+        d[prefix + u("bid")]            = ModuleUtils.create_port(module, prefix + u("bid"), 1, i)
 
         return d
 
@@ -333,7 +374,8 @@ class Integration(object):
         cls._create_intf_ports_prog_piton           (syscomplex, False, "prog_")
         cls._create_intf_ports_reg              (syscomplex, False, "ureg_",
                 ecc = "parity_even", addr_width = 12, data_bytes = 8, strb = True)
-        cls._create_intf_ports_memory_piton_axi4    (syscomplex, True)
+        cls._create_intf_ports_memory_piton_axi4r   (syscomplex, True)
+        cls._create_intf_ports_memory_piton_axi4w   (syscomplex, True)
         ModuleUtils.create_port(syscomplex, "urst_n",     1, PortDirection.output)
         ModuleUtils.create_port(syscomplex, "prog_rst_n", 1, PortDirection.output)
         ModuleUtils.instantiate(syscomplex, context.database[ModuleView.design, "prga_ctrl"], "i_ctrl")
@@ -355,11 +397,26 @@ class Integration(object):
         """
         d = AppIntf("design")
 
+        # 0. separate syscon and other interfaces from ``interfaces``
+        syscon, others = [], []
+        for intf in interfaces:
+            if intf.is_syscon:
+                syscon.append(intf)
+            else:
+                others.append(intf)
+
+        if len(syscon) > 1:
+            raise PRGAInternalError("Currently only one clk/rst_n per fabric is supported")
+        elif len(syscon) == 1:
+            syscon = "" if syscon[0].id_ is None else (syscon[0].id_ + "_")
+        else:
+            syscon = ""
+
         # 1. add InterfaceClass.syscon first
         if True:
             # create the ports
-            clk = d.add_port("clk", PortDirection.input_)
-            rst_n = d.add_port("rst_n", PortDirection.input_)
+            clk = d.add_port(syscon + "clk", PortDirection.input_)
+            rst_n = d.add_port(syscon + "rst_n", PortDirection.input_)
 
             # needs special handling of clock
             for g in context.globals_.values():
@@ -367,16 +424,13 @@ class Integration(object):
                     clk.set_io_constraint(g.bound_to_position, g.bound_to_subtile)
                     break
             if clk.get_io_constraint() is None:
-                raise PRGAAPIError("No clock found in the fabric")
+                raise PRGAInternalError("No clock found in the fabric")
 
         # 2. process other interfaces
-        for interface in set(iter(interfaces)):
-            if interface.is_syscon:
-                continue
+        for interface in others:
+            pf = "" if interface.id_ is None else (interface.id_ + "_")
 
-            elif interface.is_softreg:
-                pf = "" if interface.id_ is None else (interface.id_ + "_")
-
+            if interface.is_softreg:
                 d.add_port(pf + "req_rdy",          PortDirection.output)
                 d.add_port(pf + "req_val",          PortDirection.input_)
                 d.add_port(pf + "req_addr",         PortDirection.input_,   interface.addr_width)
@@ -390,84 +444,89 @@ class Integration(object):
                 else:
                     d.add_port(pf + "req_wr",       PortDirection.input_,   1)
 
-                if interface.ecc_type.is_parity_even or interface.ecc_type.is_parity_odd:
-                    d.add_port(pf + "resp_ecc",     PortDirection.output,   1)
+                if interface.ecc_type.ecc_bits > 0:
+                    d.add_port(pf + "resp_ecc",     PortDirection.output,   interface.ecc_type.ecc_bits)
 
             elif interface.is_memory_piton:
-                pf = "" if interface.id_ is None else (interface.id_ + "_")
+                d.add_port(pf + "req_rdy",          PortDirection.input_)
+                d.add_port(pf + "req_val",          PortDirection.output)
+                d.add_port(pf + "req_type",         PortDirection.output,   3)
+                d.add_port(pf + "req_addr",         PortDirection.output,   40)
+                d.add_port(pf + "req_data",         PortDirection.output,   64)
+                d.add_port(pf + "req_size",         PortDirection.output,   3)
+                d.add_port(pf + "req_threadid",     PortDirection.output,   1)
+                d.add_port(pf + "req_amo_opcode",   PortDirection.output,   4)
 
-                if not interface.axi4:
-                    d.add_port(pf + "req_rdy",          PortDirection.input_)
-                    d.add_port(pf + "req_val",          PortDirection.output)
-                    d.add_port(pf + "req_type",         PortDirection.output,   3)
-                    d.add_port(pf + "req_addr",         PortDirection.output,   40)
-                    d.add_port(pf + "req_data",         PortDirection.output,   64)
-                    d.add_port(pf + "req_size",         PortDirection.output,   3)
-                    d.add_port(pf + "req_threadid",     PortDirection.output,   1)
-                    d.add_port(pf + "req_amo_opcode",   PortDirection.output,   4)
-                    d.add_port(pf + "req_ecc",          PortDirection.output,   1)
-                    d.add_port(pf + "resp_rdy",         PortDirection.output)
-                    d.add_port(pf + "resp_val",         PortDirection.input_)
-                    d.add_port(pf + "resp_type",        PortDirection.input_,   3)
-                    d.add_port(pf + "resp_threadid",    PortDirection.input_,   1)
-                    d.add_port(pf + "resp_addr",        PortDirection.input_,   slice(10, 3, -1))
-                    d.add_port(pf + "resp_data",        PortDirection.input_,   128)
+                if interface.ecc_type.ecc_bits > 0:
+                    d.add_port(pf + "req_ecc",      PortDirection.output,   interface.ecc_type.ecc_bits)
 
-                else:
-                    # AW channel
-                    d.add_port(pf + "awready",	        PortDirection.input_,	1)
-                    d.add_port(pf + "awvalid",	        PortDirection.output,	1)
-                    d.add_port(pf + "awid",	            PortDirection.output,	1)
-                    d.add_port(pf + "awaddr",	        PortDirection.output,	40)
-                    d.add_port(pf + "awlen",	        PortDirection.output,	8)
-                    d.add_port(pf + "awsize",	        PortDirection.output,	3)
-                    d.add_port(pf + "awburst",	        PortDirection.output,	2)
-                    d.add_port(pf + "awcache",	        PortDirection.output,	4)
-                    d.add_port(pf + "awuser",	        PortDirection.output,	1)
-                    d.add_port(pf + "awlock",	        PortDirection.output,	1)
-                    d.add_port(pf + "awprot",	        PortDirection.output,	3)
-                    d.add_port(pf + "awqos",	        PortDirection.output,	4)
-                    d.add_port(pf + "awregion",	        PortDirection.output,	4)
+                d.add_port(pf + "resp_rdy",         PortDirection.output)
+                d.add_port(pf + "resp_val",         PortDirection.input_)
+                d.add_port(pf + "resp_type",        PortDirection.input_,   3)
+                d.add_port(pf + "resp_threadid",    PortDirection.input_,   1)
+                d.add_port(pf + "resp_addr",        PortDirection.input_,   slice(10, 3, -1))
+                d.add_port(pf + "resp_data",        PortDirection.input_,   128)
 
-                    # W channel 
-                    d.add_port(pf + "wready",	        PortDirection.input_,	1)
-                    d.add_port(pf + "wvalid",	        PortDirection.output,	1)
-                    d.add_port(pf + "wdata",	        PortDirection.output,	64)
-                    d.add_port(pf + "wstrb",	        PortDirection.output,	8)
-                    d.add_port(pf + "wlast",	        PortDirection.output,	1)
-                    d.add_port(pf + "wuser",	        PortDirection.output,	1)
+            elif interface.is_memory_piton_axi4w:
+                # AW channel
+                d.add_port(pf + "awready",	        PortDirection.input_,	1)
+                d.add_port(pf + "awvalid",	        PortDirection.output,	1)
+                d.add_port(pf + "awid",	            PortDirection.output,	1)
+                d.add_port(pf + "awaddr",	        PortDirection.output,	40)
+                d.add_port(pf + "awlen",	        PortDirection.output,	8)
+                d.add_port(pf + "awsize",	        PortDirection.output,	3)
+                d.add_port(pf + "awburst",	        PortDirection.output,	2)
+                d.add_port(pf + "awcache",	        PortDirection.output,	4)
+                d.add_port(pf + "awlock",	        PortDirection.output,	1)
+                d.add_port(pf + "awprot",	        PortDirection.output,	3)
+                d.add_port(pf + "awqos",	        PortDirection.output,	4)
+                d.add_port(pf + "awregion",	        PortDirection.output,	4)
 
-                    # B channel 
-                    d.add_port(pf + "bready",	        PortDirection.output,	1)
-                    d.add_port(pf + "bvalid",	        PortDirection.input_,	1)
-                    d.add_port(pf + "bresp",	        PortDirection.input_,	2)
-                    d.add_port(pf + "bid",	            PortDirection.input_,	1)
+                if interface.ecc_type.ecc_bits > 0:
+                    d.add_port(pf + "awuser",	    PortDirection.output,	interface.ecc_type.ecc_bits)
 
-                    # AR channel
-                    d.add_port(pf + "arready",	        PortDirection.input_,	1)
-                    d.add_port(pf + "arvalid",	        PortDirection.output,	1)
-                    d.add_port(pf + "arid",	            PortDirection.output,	1)
-                    d.add_port(pf + "araddr",	        PortDirection.output,	40)
-                    d.add_port(pf + "arlen",	        PortDirection.output,	8)
-                    d.add_port(pf + "arsize",	        PortDirection.output,	3)
-                    d.add_port(pf + "arburst",	        PortDirection.output,	2)
-                    d.add_port(pf + "arlock",	        PortDirection.output,	1)
-                    d.add_port(pf + "arcache",	        PortDirection.output,	4)
-                    d.add_port(pf + "aruser",	        PortDirection.output,	64 + 4 + 1)
-                    d.add_port(pf + "arprot",	        PortDirection.output,	3)
-                    d.add_port(pf + "arqos",	        PortDirection.output,	4)
-                    d.add_port(pf + "arregion",	        PortDirection.output,	4)
+                # W channel 
+                d.add_port(pf + "wready",	        PortDirection.input_,	1)
+                d.add_port(pf + "wvalid",	        PortDirection.output,	1)
+                d.add_port(pf + "wdata",	        PortDirection.output,	64)
+                d.add_port(pf + "wstrb",	        PortDirection.output,	8)
+                d.add_port(pf + "wlast",	        PortDirection.output,	1)
 
-                    # R channel
-                    d.add_port(pf + "rready",	        PortDirection.output,	1)
-                    d.add_port(pf + "rvalid",	        PortDirection.input_,	1)
-                    d.add_port(pf + "rresp",	        PortDirection.input_,	2)
-                    d.add_port(pf + "rid",	            PortDirection.input_,	1)
-                    d.add_port(pf + "rdata",	        PortDirection.input_,	64)
-                    d.add_port(pf + "rlast",	        PortDirection.input_,	1)
+                if interface.ecc_type.ecc_bits > 0:
+                    d.add_port(pf + "wuser",	    PortDirection.output,	interface.ecc_type.ecc_bits)
+
+                # B channel 
+                d.add_port(pf + "bready",	        PortDirection.output,	1)
+                d.add_port(pf + "bvalid",	        PortDirection.input_,	1)
+                d.add_port(pf + "bresp",	        PortDirection.input_,	2)
+                d.add_port(pf + "bid",	            PortDirection.input_,	1)
+
+            elif interface.is_memory_piton_axi4r:
+                # AR channel
+                d.add_port(pf + "arready",	        PortDirection.input_,	1)
+                d.add_port(pf + "arvalid",	        PortDirection.output,	1)
+                d.add_port(pf + "arid",	            PortDirection.output,	1)
+                d.add_port(pf + "araddr",	        PortDirection.output,	40)
+                d.add_port(pf + "arlen",	        PortDirection.output,	8)
+                d.add_port(pf + "arsize",	        PortDirection.output,	3)
+                d.add_port(pf + "arburst",	        PortDirection.output,	2)
+                d.add_port(pf + "arlock",	        PortDirection.output,	1)
+                d.add_port(pf + "arcache",	        PortDirection.output,	4)
+                d.add_port(pf + "aruser",	        PortDirection.output,	64 + 4 + interface.ecc_type.ecc_bits)
+                d.add_port(pf + "arprot",	        PortDirection.output,	3)
+                d.add_port(pf + "arqos",	        PortDirection.output,	4)
+                d.add_port(pf + "arregion",	        PortDirection.output,	4)
+
+                # R channel
+                d.add_port(pf + "rready",	        PortDirection.output,	1)
+                d.add_port(pf + "rvalid",	        PortDirection.input_,	1)
+                d.add_port(pf + "rresp",	        PortDirection.input_,	2)
+                d.add_port(pf + "rid",	            PortDirection.input_,	1)
+                d.add_port(pf + "rdata",	        PortDirection.input_,	64)
+                d.add_port(pf + "rlast",	        PortDirection.input_,	1)
 
             else:
-                raise PRGAAPIError("Unsupported interface class: {}".format(interface))
+                raise PRGAInternalError("Unsupported interface class: {}".format(interface))
 
         # 3. return design interface object
         return d
@@ -480,6 +539,8 @@ class Integration(object):
             intfs (:obj:`Container` [`SystemIntf` ]):
         """
 
+        known_intfs = set( ("syscon", "reg_piton", "memory_piton") )
+
         # categorization
         classes = {}
         for intf in intfs:
@@ -490,7 +551,7 @@ class Integration(object):
                 and len(classes["reg_piton"]) == 1
                 and len(classes["memory_piton"]) == 1
                 and sum(len(x) for k, x in classes.items()
-                    if k not in ("syscon", "reg_piton", "memory_piton")) == 0):
+                    if k not in known_intfs) == 0):
             return
 
         raise NotImplementedError("Unsupported system interface: {}".format(intfs))
@@ -503,17 +564,20 @@ class Integration(object):
             intfs (:obj:`Container` [`SystemIntf` ]):
         """
 
+        known_intfs = set( ("syscon", "softreg", "memory_piton", "memory_piton_axi4r", "memory_piton_axi4w") )
+
         # categorization
         classes = {}
         for intf in intfs:
             classes.setdefault(intf.name, set()).add(intf)
 
         # validate
-        if (len(classes["syscon"]) == 1
+        if (len(classes["syscon"]) <= 1
                 and len(classes["softreg"]) == 1
-                and len(classes["memory_piton"]) == 1
+                and (len(classes["memory_piton"]) == 1 or
+                    (len(classes["memory_piton_axi4r"]) == 1 and len(classes["memory_piton_axi4w"]) == 1))
                 and sum(len(x) for k, x in classes.items()
-                    if k not in ("syscon", "softreg", "memory_piton")) == 0):
+                    if k not in known_intfs) == 0):
             return
 
         raise NotImplementedError("Unsupported fabric interface: {}".format(intfs))
@@ -538,10 +602,19 @@ class Integration(object):
             SystemIntf.reg_piton("reg"),
             SystemIntf.memory_piton("ccm"),
             ])
-        fabric_intfs = set([FabricIntf.syscon("app"),
-            FabricIntf.softreg("ureg", strb = True),
-            FabricIntf.memory_piton("uccm" if not fabric_axi4 else None, axi4 = fabric_axi4),
-            ])
+
+        fabric_intfs = None
+        if fabric_axi4:
+            fabric_intfs = set([FabricIntf.syscon("app"),
+                FabricIntf.softreg("ureg", strb = True),
+                FabricIntf.memory_piton_axi4r(),
+                FabricIntf.memory_piton_axi4w(),
+                ])
+        else:
+            fabric_intfs = set([FabricIntf.syscon("app"),
+                FabricIntf.softreg("ureg", strb = True),
+                FabricIntf.memory_piton("uccm"),
+                ])
         
         if fabric_wrapper is True:
             fabric_wrapper = name + "_core"
@@ -584,7 +657,8 @@ class Integration(object):
                     ecc = "parity_even", addr_width = 12, data_bytes = 8, strb = True)
 
             if fabric_axi4:
-                cls._create_intf_ports_memory_piton_axi4(core, False, unused = True)
+                cls._create_intf_ports_memory_piton_axi4r(core, False, unused = True)
+                cls._create_intf_ports_memory_piton_axi4w(core, False, unused = True)
             else:
                 cls._create_intf_ports_memory_piton(core, False, "uccm_", ecc = "parity_even")
 
@@ -643,7 +717,8 @@ class Integration(object):
                 ),
             fabric_intfs = (FabricIntf.syscon("app"),
                 FabricIntf.softreg("ureg"),
-                FabricIntf.memory_piton(axi4 = True),
+                FabricIntf.memory_piton_axi4r,
+                FabricIntf.memory_piton_axi4w,
                 ),
             *,
             name = "prga_system",

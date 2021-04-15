@@ -32,14 +32,24 @@ module prga_app_softregs (
     , output reg [{{ dwidth(name) }} - 1:0] var_{{ name }}_o
         {%- endif %}
 
-        {%- if r.type_.is_pulse_ack %}
+        {%- if r.type_.name in ("pulse_ack", "cbl", "cbl_2stage") %}
     , input wire var_{{ name }}_ack
-        {%- elif r.type_.is_busywait %}
+        {%- endif %}
+
+        {%- if r.type_.is_cbl_2stage %}
+    , input wire var_{{ name }}_done
+        {%- endif %}
+
+        {%- if r.type_.is_busywait %}
     , input wire var_{{ name }}_busy
-        {%- elif r.type_.is_rdempty or r.type_.is_rdempty_la %}
+        {%- endif %}
+
+        {%- if r.type_.name in ("rdempty", "rdempty_la") %}
     , output reg var_{{ name }}_rd
     , input wire var_{{ name }}_empty
-        {%- elif r.type_.is_wrfull %}
+        {%- endif %}
+
+        {%- if r.type_.is_wrfull %}
     , output reg var_{{ name }}_wr
     , input wire var_{{ name }}_full
         {%- endif %}
@@ -140,13 +150,47 @@ module prga_app_softregs (
         end
     end
 
+        {%- elif r.type_.is_cbl %}
+    // {{ r.type_.name }} soft register: {{ name }}
+    reg var_{{ name }}_rd;
+    always @(posedge clk) begin
+        if (~rst_n) begin
+            var_{{ name }}_o <= {{ rstval(name) }};
+        end else if (var_{{ name }}_rd) begin
+            var_{{ name }}_o <= ~{{ rstval(name) }};
+        end else if (var_{{ name }}_ack) begin
+            var_{{ name }}_o <= {{ rstval(name) }};
+        end
+    end
+
+        {%- elif r.type_.is_cbl_2stage %}
+    // {{ r.type_.name }} soft register: {{ name }}
+    reg var_{{ name }}_rd, var_{{ name }}_trx_blocked;
+    always @(posedge clk) begin
+        if (~rst_n) begin
+            var_{{ name }}_o <= {{ rstval(name) }};
+            var_{{ name }}_trx_blocked <= 1'b0;
+        end else if (var_{{ name }}_rd) begin
+            var_{{ name }}_o <= ~{{ rstval(name) }};
+            var_{{ name }}_trx_blocked <= 1'b1;
+        end else begin
+            if (var_{{ name }}_ack) begin
+                var_{{ name }}_o <= {{ rstval(name) }};
+            end
+
+            if (var_{{ name }}_done) begin
+                var_{{ name }}_trx_blocked <= 1'b0;
+            end
+        end
+    end
+
         {%- endif %}
     {% endfor %}
 
     // pipeline implementation
     always @* begin
         {%- for name, r in module.softregs.regs.items() %}
-            {%- if r.type_.is_rdempty or r.type_.is_rdempty_la or r.type_.is_bar %}
+            {%- if r.type_.name in ("rdempty", "rdempty_la", "bar", "cbl", "cbl_2stage") %}
         var_{{ name }}_rd = 1'b0;
             {%- elif r.type_.name in ("basic", "pulse", "pulse_ack", "decoupled", "busywait", "wrfull") %}
         var_{{ name }}_trx = 1'b0;
@@ -165,7 +209,7 @@ module prga_app_softregs (
                     var_{{ name }}_rd = softreg_req_val && !softreg_req_wr;
                     softreg_req_rdy = softreg_req_wr || !var_{{ name }}_empty;
                 end
-            {%- elif r.type_.is_bar %}
+            {%- elif r.type_.name in ("bar", "cbl", "cbl_2stage") %}
                 {{ addr(name) }}: begin
                     var_{{ name }}_rd = softreg_req_val && !softreg_req_wr;
                 end
@@ -194,6 +238,9 @@ module prga_app_softregs (
             {%- elif r.type_.is_busywait %}
             {{ addr(name) }}:
                 data_r_next[0] = var_{{ name }}_busy;
+            {%- elif r.type_.is_cbl or r.type_.is_cbl_2stage %}
+            {{ addr(name) }}:
+                data_r_next[0] = 1'b1;
             {%- elif r.type_.is_bar %}
             {{ addr(name) }}:
                 data_r_next[0+:{{ dwidth(name) }}] = var_{{ name }}_latched;
@@ -249,6 +296,19 @@ module prga_app_softregs (
                 {%- if r.type_.name in ("busywait", "pulse_ack", "wrfull") %}
                 {{ addr(name) }}:
                 if (var_{{ name }}_trx_blocked) begin
+                    stall_r = 1'b1;
+                    softreg_resp_val = 1'b0;
+                end
+                {%- elif r.type_.is_cbl %}
+                {{ addr(name) }}:
+                if (var_{{ name }}_o != {{ rstval(name) }} && !var_{{ name }}_ack) begin
+                    stall_r = 1'b1;
+                    softreg_resp_val = 1'b0;
+                end
+                {%- elif r.type_.is_cbl_2stage %}
+                {{ addr(name) }}:
+                if ((var_{{ name }}_o != {{ rstval(name) }} && !var_{{ name }}_ack)
+                        || (var_{{ name }}_trx_blocked && !var_{{ name }}_done)) begin
                     stall_r = 1'b1;
                     softreg_resp_val = 1'b0;
                 end
