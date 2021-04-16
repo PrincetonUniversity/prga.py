@@ -2,7 +2,8 @@
 //  Async FIFO but without data
 `timescale 1ns/1ps
 module prga_async_tokenfifo #(
-    parameter DEPTH_LOG2 = 1
+    parameter DEPTH_LOG2 = 1,
+    parameter DO_SYNC_RST = 0
 ) (
     input wire [0:0] wclk,
     input wire [0:0] wrst,
@@ -16,6 +17,35 @@ module prga_async_tokenfifo #(
     );
 
     // Assumption: wrst and rrst are both "async assertion, sync deassertion"
+    wire wrst_sync, rrst_sync;
+
+    generate if (DO_SYNC_RST) begin
+        reg wrst_f, rrst_f;
+
+        // ASYNC assertion!
+        always @(posedge wclk or posedge wrst) begin
+            if (wrst) begin
+                wrst_f <= 1'b1;
+            end else begin
+                wrst_f <= 1'b0;
+            end
+        end
+
+        // ASYNC assertion!
+        always @(posedge rclk or posedge rrst) begin
+            if (rrst) begin
+                rrst_f <= 1'b1;
+            end else begin
+                rrst_f <= 1'b0;
+            end
+        end
+
+        assign wrst_sync = wrst_f;
+        assign rrst_sync = rrst_f;
+    end else begin
+        assign wrst_sync = wrst;
+        assign rrst_sync = rrst;
+    end endgenerate
 
     // counters
     reg [DEPTH_LOG2:0]  b_wptr_wclk, g_wptr_wclk, g_wptr_rclk_s0, g_wptr_rclk_s1, b_wptr_rclk,
@@ -36,7 +66,7 @@ module prga_async_tokenfifo #(
 
     // write-domain
     always @(posedge wclk) begin
-        if (wrst) begin
+        if (wrst_sync) begin
             b_wptr_wclk <= 'b0;
             g_wptr_wclk <= 'b0;
             g_rptr_wclk_s0 <= 'b0;
@@ -56,7 +86,7 @@ module prga_async_tokenfifo #(
 
     // read-domain
     always @(posedge rclk) begin
-        if (rrst) begin
+        if (rrst_sync) begin
             b_rptr_rclk <= 'b0;
             g_rptr_rclk <= 'b0;
             g_wptr_rclk_s0 <= 'b0;
@@ -74,7 +104,7 @@ module prga_async_tokenfifo #(
         end
     end
 
-    assign full = wrst || b_rptr_wclk == {~b_wptr_wclk[DEPTH_LOG2], b_wptr_wclk[0 +: DEPTH_LOG2]};
-    assign empty = rrst || b_rptr_rclk == b_wptr_rclk;
+    assign full = wrst_sync || b_rptr_wclk == {~b_wptr_wclk[DEPTH_LOG2], b_wptr_wclk[0 +: DEPTH_LOG2]};
+    assign empty = rrst_sync || b_rptr_rclk == b_wptr_rclk;
 
 endmodule

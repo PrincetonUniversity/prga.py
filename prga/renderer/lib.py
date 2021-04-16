@@ -967,12 +967,20 @@ class BuiltinCellLibrary(object):
                     view = ModuleView.design,
                     module_class = ModuleClass.aux,
                     verilog_template = "stdlib/{}.v".format(d))
-        for d in ("prga_ram_1r1w_dc", "prga_async_fifo", "prga_async_tokenfifo", "prga_clkdiv"):
+        for d in ("prga_ram_1r1w_dc", "prga_async_fifo", "prga_async_tokenfifo", "prga_clkdiv",
+                "prga_valrdy_cdc", "prga_sync_basic", "prga_async_fifo_ptr"):
             context._database[ModuleView.design, d] = Module(d,
                     is_cell = True,
                     view = ModuleView.design,
                     module_class = ModuleClass.aux,
                     verilog_template = "cdclib/{}.v".format(d))
+        # CDC v2
+        for d in ("prga_async_fifo", ):
+            context._database[ModuleView.design, d + ".v2"] = Module(d,
+                    is_cell = True,
+                    view = ModuleView.design,
+                    module_class = ModuleClass.aux,
+                    verilog_template = "cdclib/{}.v2.v".format(d))
 
         # module dependencies
         ModuleUtils.instantiate(context._database[ModuleView.design, "prga_ram_1r1w_byp"],
@@ -989,6 +997,18 @@ class BuiltinCellLibrary(object):
                 context._database[ModuleView.design, "prga_ram_1r1w_dc"], "ram")
         ModuleUtils.instantiate(context._database[ModuleView.design, "prga_async_fifo"],
                 context._database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
+        ModuleUtils.instantiate(context._database[ModuleView.design, "prga_async_fifo_ptr"],
+                context._database[ModuleView.design, "prga_sync_basic"], "prga_sync_basic")
+        ModuleUtils.instantiate(context._database[ModuleView.design, "prga_async_fifo.v2"],
+                context._database[ModuleView.design, "prga_ram_1r1w_dc"], "prga_ram_1r1w_dc")
+        ModuleUtils.instantiate(context._database[ModuleView.design, "prga_async_fifo.v2"],
+                context._database[ModuleView.design, "prga_async_fifo_ptr"], "prga_async_fifo_ptr")
+        ModuleUtils.instantiate(context._database[ModuleView.design, "prga_async_fifo.v2"],
+                context._database[ModuleView.design, "prga_fifo_lookahead_buffer"], "prga_fifo_lookahead_buffer")
+        ModuleUtils.instantiate(context._database[ModuleView.design, "prga_valrdy_cdc"],
+                context._database[ModuleView.design, "prga_async_fifo.v2"], "prga_async_fifo")
+        ModuleUtils.instantiate(context._database[ModuleView.design, "prga_valrdy_cdc"],
+                context._database[ModuleView.design, "prga_fifo_resizer"], "prga_fifo_resizer")
 
         # add headers
         context._add_verilog_header("prga_utils.vh", "stdlib/include/prga_utils.tmpl.vh")
