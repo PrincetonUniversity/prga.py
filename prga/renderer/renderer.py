@@ -168,7 +168,7 @@ class FileRenderer(object):
             order (:obj:`float`): Rendering ordering when multiple ``template`` s are used to render ``file_``. The
                 higher this value is, the earlier it is rendered. In addition, ``order`` is used to sort techmap
                 commands in the synthesis script. Techmaps are executed before lutmap if ``order`` is non-negative,
-                and after lutmap if ``order`` is negative.
+                and after lutmap if ``order`` is negative. The default order is 1.
             **kwargs: Additional key-value parameters to be passed into the template when rendering
         """
         self.tasks.setdefault(file_, []).append( (order, template, dict(**kwargs)) )
