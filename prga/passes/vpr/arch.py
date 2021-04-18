@@ -381,23 +381,19 @@ class _VPRArchGeneration(AbstractPass):
             leaf = hierarchy.hierarchy[0]
             if hasattr(leaf, "vpr_num_pb"):
                 parent_name = leaf.key[0]
-                if module.module_class.is_mode:
-                    fasm_features = self.fasm.fasm_features_for_intrablock_module(module, hierarchy)
+                fasm_prefixes = []
+                for i in range(leaf.vpr_num_pb):
+                    inst = leaf.parent.instances[parent_name, i]._extend_hierarchy(
+                            above = hierarchy.hierarchy[1:])
+                    fasm_prefixes.append(self.fasm.fasm_prefix_for_intrablock_module(module, inst))
+                if any(fasm_prefixes):
+                    fasm_prefixes = ' '.join(s or FASM_NONE for s in fasm_prefixes)
                 else:
-                    fasm_prefixes = []
-                    for i in range(leaf.vpr_num_pb):
-                        inst = leaf.parent.instances[parent_name, i]._extend_hierarchy(
-                                above = hierarchy.hierarchy[1:])
-                        fasm_prefixes.append(self.fasm.fasm_prefix_for_intrablock_module(module, inst))
-                    if any(fasm_prefixes):
-                        fasm_prefixes = ' '.join(s or FASM_NONE for s in fasm_prefixes)
-                    else:
-                        fasm_prefixes = None
+                    fasm_prefixes = None
             else:
                 parent_name = leaf.name
-                fasm_features = self.fasm.fasm_features_for_intrablock_module(module, hierarchy)
-                if not module.module_class.is_mode:
-                    fasm_prefixes = self.fasm.fasm_prefix_for_intrablock_module(module, hierarchy)
+                fasm_prefixes = self.fasm.fasm_prefix_for_intrablock_module(module, hierarchy)
+            fasm_features = self.fasm.fasm_features_for_intrablock_module(module, hierarchy)
         else:
             parent_name = module.name
             fasm_prefixes = self.fasm.fasm_prefix_for_intrablock_module(module, hierarchy)
@@ -684,10 +680,6 @@ class VPRArchGeneration(_VPRArchGeneration):
     @property
     def key(self):
         return "vpr.arch"
-
-    @property
-    def dependences(self):
-        return ("prog.insertion", )
 
     @property
     def _update_summary(self):

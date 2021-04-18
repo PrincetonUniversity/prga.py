@@ -63,12 +63,11 @@ class Flow(Object):
         """
         self._passes.append( pass_ )
 
-    def run(self, context, renderer = None):
+    def run(self, context):
         """Run all added passes on ``context``.
 
         Args:
             context (`Context`):
-            renderer (`FileRenderer`):
         """
         if not hasattr(context, "_applied_passes"):
             context._applied_passes = set()
@@ -150,9 +149,8 @@ class Flow(Object):
             _logger.info("********************")
             _logger.info("running pass '%s'", pass_.key)
             t = time.time()
-            pass_.run(context, renderer)
+            pass_.run(context, context.renderer)
             _logger.info("pass '%s' took %f seconds", pass_.key, time.time() - t)
             context._applied_passes.add(pass_.key)
         # 4. render all files
-        if renderer is not None:
-            renderer.render()
+        context.renderer.render()

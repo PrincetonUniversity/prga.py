@@ -1,6 +1,7 @@
 # -*- encoding: ascii -*-
 
 from ...util import Object, uno
+from ...netlist.net.util import NetUtils
 from ...exception import PRGAAPIError
 
 __all__ = ['FASMDelegate', 'VPRScalableDelegate']
@@ -43,7 +44,8 @@ class FASMDelegate(Object):
         Returns:
             :obj:`Sequence` [:obj:`str` ]: "fasm_mux" values
         """
-        return tuple()
+        # XXX: Pay attention to the trailing comma. This line returns a tuple, not a string
+        return "{}->{}".format(NetUtils._reference(source, byname = True), NetUtils._reference(sink, byname = True)),
 
     def fasm_params_for_primitive(self, instance = None):
         """Get the "fasm_params" strings for hierarchical primitive ``instance``.
@@ -72,7 +74,14 @@ class FASMDelegate(Object):
         Notes:
             This method is called for **EACH** multi-"num_pb" instances.
         """
-        return None
+        if module.module_class.is_primitive and module.primitive_class.is_multimode:
+            return ""
+        elif module.module_class.is_mode:
+            return hierarchy.hierarchy[0].name + '@' + module.key
+        elif hierarchy is not None:
+            return hierarchy.hierarchy[0].name
+        else:
+            return ''
 
     def fasm_features_for_intrablock_module(self, module, hierarchy = None):
         """Get the features for ``module`` in intra-block ``hierarchy``.
@@ -101,7 +110,7 @@ class FASMDelegate(Object):
         Notes:
             This method is called for **EACH** multi-"vpr_pb" instances.
         """
-        return None
+        return instance.hierarchy[0].name + ".DATA"
 
     def fasm_prefix_for_tile(self, instance = None):
         """Get the prefix for tile ``instance``.
@@ -112,7 +121,15 @@ class FASMDelegate(Object):
         Returns:
             :obj:`Sequence` [:obj:`str` ]: "fasm_prefix" values
         """
-        return tuple()
+        prefix = (".".join(i.name for i in reversed(instance.hierarchy)) + ".") if instance else ""
+        retval = []
+        for subtile, blkinst in instance.model.instances.items():
+            if not isinstance(subtile, int):
+                continue
+            elif subtile >= len(retval):
+                retval.extend(None for _ in range(subtile - len(retval) + 1))
+            retval[subtile] = prefix + blkinst.name
+        return tuple(retval)
 
     def fasm_features_for_interblock_switch(self, source, sink, hierarchy = None):
         """Get the "fasm_features" string for the connection from ``source`` to ``sink``.
@@ -125,7 +142,8 @@ class FASMDelegate(Object):
         Returns:
             :obj:`Sequence` [:obj:`str` ]: "fasm_features" values
         """
-        return tuple()
+        prefix = (".".join(i.name for i in reversed(hierarchy.hierarchy)) + ".") if hierarchy else ""
+        return tuple(prefix + feature for feature in self.fasm_mux_for_intrablock_switch(source, sink, hierarchy))
 
 # ----------------------------------------------------------------------------
 # -- Scalable Architecture Delegate ------------------------------------------
