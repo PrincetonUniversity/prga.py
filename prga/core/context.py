@@ -5,9 +5,10 @@ from .common import (Global, Segment, ModuleClass, PrimitiveClass, PrimitivePort
 from .builder import (DesignViewPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder,
         SliceBuilder, IOBlockBuilder, LogicBlockBuilder,
         SwitchBoxBuilder, TileBuilder, ArrayBuilder)
-from ..integration import Integration
 from ..netlist import TimingArcType, PortDirection, Module, ModuleUtils, NetUtils
+from ..renderer.renderer import FileRenderer
 from ..renderer.lib import BuiltinCellLibrary
+from ..passes.vpr.delegate import FASMDelegate
 from ..util import Object, ReadonlyMappingProxy, uno
 from ..exception import PRGAAPIError, PRGAInternalError
 
@@ -56,91 +57,92 @@ class Context(Object):
     """The main interface to PRGA architecture description.
 
     Args:
-        prog_type (:obj:`str`): Programming circuitry type
+        template_search_paths (:obj:`str` or :obj:`Container` [:obj:`str` ]): Additional search paths other than the
+            default ones
 
     Keyword Args:
-        database (:obj:`MutableMapping` [:obj:`Hashable`, `Module` ]): The module database. If not set, a new
-            database is created
-        **kwargs: Custom attributes assigned to the created context 
+        **kwargs: Custom attributes assigned to the context 
 
     Architecture context manages all resources created/added to the FPGA, including all modules, the
     routing graph, programming circuitry and more.
     """
 
     __slots__ = [
-            "_prog_type",           # programming circuitry type
+            '_prog_entry',          # programming circuitry entry point
             '_globals',             # global wires
             '_tunnels',             # direct inter-block tunnels
             '_segments',            # wire segments
             '_database',            # module database
             '_top',                 # fpga top in abstract view
-            '_system_top',          # system top in design view
             '_switch_delegate',     # switch delegate
             '_fasm_delegate',       # FASM delegate
             '_verilog_headers',     # Verilog header rendering tasks
             'summary',              # FPGA summary
             "version",              # version of the context
+            'template_search_paths',    # File renderer template search paths
             '__dict__',
 
             # non-persistent variables
             'cwd',                  # root path of the context. Set when unpickled/created
+            '_renderer',            # File renderer. Created on demand
             ]
 
-    def __init__(self, prog_type, *, database = None, **kwargs):
-        self._prog_type = prog_type
+    def __init__(self, template_search_paths = None, **kwargs):
         self._globals = {}
         self._tunnels = {}
         self._segments = {}
         self._top = None
-        self._system_top = None
+        self._fasm_delegate = FASMDelegate()
         self._verilog_headers = {}
-        if database is None:
-            self._new_database()
+
+        if template_search_paths is None:
+            self.template_search_paths = []
+        elif isinstance(template_search_paths, str):
+            self.template_search_paths = [template_search_paths]
         else:
-            self._database = database
+            self.template_search_paths = list(iter(template_search_paths))
+
         self.version = VERSION
         self.summary = ContextSummary()
         self.summary.cwd = self.cwd = os.getcwd()
-        self.summary.prog_type = prog_type
+        self.summary.prog_type = "abstract"
+
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-    def _add_verilog_header(self, f, template, *deps,
-            key = None, **parameters):
-        """Add a Verilog header. This rendering task will be collected via the `VerilogCollection` pass.
-        
-        Args:
-            f (:obj:`str`): Name of the output file
-            template (:obj:`str`): Name of the template or source file
-            *deps (:obj:`str`): Other header files that this one depends on
-
-        Keyword Args:
-            key (:obj:`str`): A key to index this verilog header. Default to ``f``
-            **parameters: Extra parameters for the template
-        """
-        self._verilog_headers[uno(key, f)] = f, template, set(deps), parameters
+        self._new_database()
 
     def _new_database(self, dont_add_design_view_primitives = tuple()):
-        database = self._database = {}
-
+        self._database = {}
         BuiltinCellLibrary.register(self, dont_add_design_view_primitives)
-        Integration._register_cells(self)
 
     # == low-level API =======================================================
-    @property
-    def system_top(self):
-        """`Module`: System top module in design view."""
-        return self._system_top
-
-    @system_top.setter
-    def system_top(self, v):
-        self._system_top = v
-        self.summary.system_top = v.name
-
     @property
     def database(self):
         """:obj:`Mapping` [:obj:`tuple` [`ModuleView`, :obj:`Hashable` ], `Module` ]: Module database."""
         return ReadonlyMappingProxy(self._database)
+
+    @property
+    def renderer(self):
+        """`FileRenderer`: File renderer of the current context."""
+        try:
+            return self._renderer
+        except AttributeError:
+            r = self._renderer = FileRenderer(*self.template_search_paths)
+            return r
+
+    @renderer.setter
+    def renderer(self, r):
+        self._renderer = r
+
+    @property
+    def prog_entry(self):
+        """`AbstractProgCircuitryEntry`: Programming circuitry type entry point."""
+        try:
+            return self._prog_entry
+        except AttributeError:
+            raise PRGAInternalError("Programming circuitry not set.\n"
+                    "Possible cause: the context is not materialized by a programming circuitry entry point yet.")
 
     @property
     def switch_delegate(self):
@@ -152,19 +154,12 @@ class Context(Object):
             return self._switch_delegate
         except AttributeError:
             raise PRGAInternalError("Switch delegate not set.\n"
-                    "Possible cause: the context is not created by a programming circuitry entry point.")
+                    "Possible cause: the context is not materialized by a programming circuitry entry point yet.")
 
     @property
     def fasm_delegate(self):
-        """`FASMDelegate`: FASM delegate for bitstream generation.
-        
-        This is usually set by the programming circuitry entry point, e.g., `Scanchain`.
-        """
-        try:
-            return self._fasm_delegate
-        except AttributeError:
-            raise PRGAInternalError("FASM delegate not set.\n"
-                    "Possible cause: the context is not created by a programming circuitry entry point.")
+        """`FASMDelegate`: FASM delegate for bitstream generation."""
+        return self._fasm_delegate
 
     def build_multimode(self, name, **kwargs):
         """Create a multi-mode primitive in abstract view.
@@ -208,6 +203,22 @@ class Context(Object):
             return DesignViewPrimitiveBuilder(self, primitive)
 
     # == high-level API ======================================================
+    # -- Verilog headers -----------------------------------------------------
+    def add_verilog_header(self, f, template, *deps,
+            key = None, **parameters):
+        """Add a Verilog header. This rendering task will be collected via the `VerilogCollection` pass.
+        
+        Args:
+            f (:obj:`str`): Name of the output file
+            template (:obj:`str`): Name of the template or source file
+            *deps (:obj:`str`): Other header files that this one depends on
+
+        Keyword Args:
+            key (:obj:`str`): A key to index this verilog header. Default to ``f``
+            **parameters: Extra parameters for the template
+        """
+        self._verilog_headers[uno(key, f)] = f, template, set(deps), parameters
+
     # -- Global Wires --------------------------------------------------------
     @property
     def globals_(self):
@@ -609,16 +620,28 @@ class Context(Object):
         Args:
             file_ (:obj:`str` or file-like object): output file or its name
         """
+        try:
+            r = self._renderer
+            del self._renderer
+        except AttributeError:
+            r = None
+
         cwd = self.cwd
         del self.cwd
+
         del self.summary.cwd
+
         if isinstance(file_, str):
             pickle.dump(self, open(file_, "wb"))
             _logger.info("Context pickled to {}".format(file_))
         else:
             pickle.dump(self, file_)
             _logger.info("Context pickled to {}".format(file_.name))
+
         self.summary.cwd = self.cwd = cwd
+
+        if r is not None:
+            self._renderer = r
 
     def pickle_summary(self, file_):
         """Pickle the summary into a binary file.

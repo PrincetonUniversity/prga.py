@@ -111,8 +111,8 @@ class Pktchain(Scanchain):
                 }
         context._switch_delegate = SwitchDelegate(context)
         context._fasm_delegate = PktchainFASMDelegate(context)
-        context._add_verilog_header("pktchain.vh", "include/pktchain.tmpl.vh")
-        context._add_verilog_header("pktchain_system.vh", "piton_v0/include/pktchain_system.tmpl.vh",
+        context.add_verilog_header("pktchain.vh", "include/pktchain.tmpl.vh")
+        context.add_verilog_header("pktchain_system.vh", "piton_v0/include/pktchain_system.tmpl.vh",
                 "pktchain.vh", "prga_system.vh")
         cls._register_cells(context, phit_width, chain_width)
         return context

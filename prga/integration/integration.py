@@ -259,8 +259,8 @@ class Integration(object):
             context (`Context`):
         """
         # 1. add prga_system header
-        context._add_verilog_header("prga_system.vh", "piton_v0/include/prga_system.tmpl.vh")
-        context._add_verilog_header("prga_system_axi4.vh", "piton_v0/include/prga_system_axi4.tmpl.vh",
+        context.add_verilog_header("prga_system.vh", "piton_v0/include/prga_system.tmpl.vh")
+        context.add_verilog_header("prga_system_axi4.vh", "piton_v0/include/prga_system_axi4.tmpl.vh",
                 "prga_system.vh", "prga_axi4.vh")
 
         # 2. register modules

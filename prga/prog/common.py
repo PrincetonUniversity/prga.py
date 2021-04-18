@@ -9,6 +9,7 @@ from ..exception import PRGAInternalError
 from abc import abstractmethod
 from collections import namedtuple
 from bisect import bisect
+from copy import deepcopy
 
 __all__ = ["ProgDataBitmap", "ProgDataValue"]
 
@@ -84,28 +85,28 @@ class ProgDataValue(object):
 class AbstractProgCircuitryEntry(Object):
     """Abstract base class for programming circuitry entry point."""
 
-    @classmethod
-    @abstractmethod
-    def new_context(cls):
-        """Create a new context.
+    # @classmethod
+    # @abstractmethod
+    # def new_context(cls):
+    #     """Create a new context.
 
-        Returns:
-            `Context`:
-        """
-        raise NotImplementedError
+    #     Returns:
+    #         `Context`:
+    #     """
+    #     raise NotImplementedError
 
-    @classmethod
-    def new_renderer(cls, additional_template_search_paths = tuple()):
-        """Create a new file renderer.
+    # @classmethod
+    # def new_renderer(cls, additional_template_search_paths = tuple()):
+    #     """Create a new file renderer.
 
-        Args:
-            additional_template_search_paths (:obj:`Sequence` [:obj:`str` ]): Additional paths where the renderer
-                should search for template files
+    #     Args:
+    #         additional_template_search_paths (:obj:`Sequence` [:obj:`str` ]): Additional paths where the renderer
+    #             should search for template files
 
-        Returns:
-            `FileRenderer`:
-        """
-        return FileRenderer(*additional_template_search_paths)
+    #     Returns:
+    #         `FileRenderer`:
+    #     """
+    #     return FileRenderer(*additional_template_search_paths)
 
     @classmethod
     def buffer_prog_ctrl(cls, context, design_view = None, _cache = None):
@@ -202,3 +203,22 @@ class AbstractProgCircuitryEntry(Object):
 
             _cache[m.key] = len(levels)
             return len(levels)
+
+    @classmethod
+    def materialize(cls, ctx, inplace = False):
+        """Materialize the abstract context to this configuration circuitry type.
+
+        Args:
+            ctx (`Context`): An abstract context, or a context previously materialized to another configuration
+                circuitry type.
+            inplace (:obj:`bool`): If set, the context is modified in-place. Otherwise (by default), ``ctx`` is
+                deep-copied before processed
+
+        Returns:
+            `Context`:
+        """
+        if not inplace:
+            ctx = deepcopy(ctx)
+        ctx._prog_entry = cls
+        ctx.summary.prog_type = cls.__module__ + '.' + cls.__name__
+        return ctx
