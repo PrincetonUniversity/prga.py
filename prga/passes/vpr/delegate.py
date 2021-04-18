@@ -45,7 +45,7 @@ class FASMDelegate(Object):
             :obj:`Sequence` [:obj:`str` ]: "fasm_mux" values
         """
         # XXX: Pay attention to the trailing comma. This line returns a tuple, not a string
-        return "{}->{}".format(NetUtils._reference(source, byname = True), NetUtils._reference(sink, byname = True)),
+        return "{{{}->{}}}".format(NetUtils._reference(source, byname = True), NetUtils._reference(sink, byname = True)),
 
     def fasm_params_for_primitive(self, instance = None):
         """Get the "fasm_params" strings for hierarchical primitive ``instance``.
@@ -110,7 +110,7 @@ class FASMDelegate(Object):
         Notes:
             This method is called for **EACH** multi-"vpr_pb" instances.
         """
-        return instance.hierarchy[0].name + ".DATA"
+        return "LUT[{}:{}]".format(2 ** len(instance.pins['in']) - 1, 0)
 
     def fasm_prefix_for_tile(self, instance = None):
         """Get the prefix for tile ``instance``.
