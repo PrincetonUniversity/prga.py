@@ -59,7 +59,8 @@ class FASMDelegate(Object):
         Notes:
             This method is called **ONLY ONCE** for multi-"num_pb" instances.
         """
-        return {}
+        return { param: '{}[{}:0]'.format(param, width - 1) 
+                for param, width in getattr(instance.model, "parameters", {}).items() }
 
     def fasm_prefix_for_intrablock_module(self, module, hierarchy = None):
         """Get the prefix for ``module`` in intra-block ``hierarchy``.

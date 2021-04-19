@@ -167,6 +167,7 @@ class DesignViewPrimitiveBuilder(_BasePrimitiveBuilder):
         m = Module(abstract.name,
                 is_cell = not not_cell,
                 view = ModuleView.design,
+                key = abstract.key,
                 module_class = ModuleClass.primitive,
                 primitive_class = abstract.primitive_class,
                 **kwargs)
