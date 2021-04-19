@@ -18,12 +18,11 @@ class AbstractPass(Object):
         raise NotImplementedError
 
     @abstractmethod
-    def run(self, context, renderer = None):
+    def run(self, context):
         """Run the pass.
 
         Args:
             context (`Context`): The context which manages all architecture data
-            renderer (`FileRenderer`): The renderer that all file generating tasks are added to
         """
         raise NotImplementedError
 

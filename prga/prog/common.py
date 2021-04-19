@@ -205,6 +205,17 @@ class AbstractProgCircuitryEntry(Object):
             return len(levels)
 
     @classmethod
+    @abstractmethod
+    def insert_prog_circuitry(cls, context, *args, **kwargs):
+        """Insert programming circuitry into the FPGA. This method will be called by the `ProgCircuitryInsertion`
+        pass.
+
+        Args:
+            context (`Context`):
+        """
+        raise NotImplementedError
+
+    @classmethod
     def materialize(cls, ctx, inplace = False):
         """Materialize the abstract context to this configuration circuitry type.
 

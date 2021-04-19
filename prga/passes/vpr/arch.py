@@ -515,7 +515,7 @@ class _VPRArchGeneration(AbstractPass):
                 "z_offset": 0,
                 })
 
-    def run(self, context, renderer = None):
+    def run(self, context):
         # create and add VPR summary if not present
         if not hasattr(context.summary, 'vpr'):
             context.summary.vpr = {}

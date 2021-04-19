@@ -55,13 +55,13 @@ class SwitchDelegate(Object):
             pass
 
         # create and add new switch module
-        switch = self.context._database[ModuleView.design, key] = Module(
+        switch = self.context._add_module(Module(
                 "sw" + str(width),
                 is_cell = True,
                 view = ModuleView.design,
                 key = key,
                 module_class = ModuleClass.switch,
-                verilog_template = "builtin/switch.tmpl.v")
+                verilog_template = "builtin/switch.tmpl.v"))
 
         # ports and timing arcs
         i = ModuleUtils.create_port(switch, 'i', width, PortDirection.input_, net_class = NetClass.switch)
@@ -299,7 +299,7 @@ class Translation(AbstractPass):
         _logger.info(" .. Translated: {}".format(module))
         return design
 
-    def run(self, context, renderer = None):
+    def run(self, context):
         top = uno(self.top, context.top)
         if top is None:
             raise PRGAAPIError("Top-level array not set yet.")

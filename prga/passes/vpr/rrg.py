@@ -348,7 +348,7 @@ class VPR_RRG_Generation(AbstractPass):
                 return
         _logger.debug("Physical connection {} -> {} ignored due to reachability".format(head_pin_bit, tail_pin_bit))
 
-    def run(self, context, renderer = None):
+    def run(self, context):
         # runtime-generated data
         self.tile2id = {}
         self.tilepin2ptc = {}

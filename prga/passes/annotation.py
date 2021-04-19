@@ -81,5 +81,5 @@ class SwitchPathAnnotation(AbstractPass):
 
         _logger.info(" .. Annotated: {}".format(umod))
 
-    def run(self, context, renderer = None):
+    def run(self, context):
         self.__process_module(context)

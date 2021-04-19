@@ -136,8 +136,7 @@ class TileBuilder(BaseArrayBuilder):
                 for k, v in kwargs.items():
                     setattr(box, k, v)
             except KeyError:
-                box = self._context._database[ModuleView.abstract, key] = ConnectionBoxBuilder.new(
-                        self._module, ori, offset, **kwargs)
+                box = self._context._add_module(ConnectionBoxBuilder.new(self._module, ori, offset, **kwargs))
             inst = ModuleUtils.instantiate(self._module, box, "i_cbox_{}{}".format(ori.name[0], offset),
                     key = (ori, offset))
         return ConnectionBoxBuilder(self._context, inst.model)

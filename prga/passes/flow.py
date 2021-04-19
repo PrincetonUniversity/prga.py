@@ -149,8 +149,11 @@ class Flow(Object):
             _logger.info("********************")
             _logger.info("running pass '%s'", pass_.key)
             t = time.time()
-            pass_.run(context, context.renderer)
+            pass_.run(context)
             _logger.info("pass '%s' took %f seconds", pass_.key, time.time() - t)
             context._applied_passes.add(pass_.key)
         # 4. render all files
-        context.renderer.render()
+        try:
+            context._renderer.render()
+        except AttributeError:
+            pass

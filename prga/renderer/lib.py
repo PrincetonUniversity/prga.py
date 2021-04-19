@@ -1,7 +1,7 @@
 # -*- encoding: ascii -*-
 
 from ..core.common import ModuleView, ModuleClass, PrimitiveClass, PrimitivePortClass, NetClass, IOType
-# from ..prog import ProgDataBitmap, ProgDataValue
+from ..prog import ProgDataBitmap, ProgDataValue
 from ..netlist import Module, NetUtils, ModuleUtils, PortDirection, TimingArcType
 from ..exception import PRGAInternalError
 from ..util import uno
@@ -28,7 +28,6 @@ class BuiltinCellLibrary(object):
                 verilog_template = "builtin/adder.lib.tmpl.v",
                 vpr_model = "m_adder",
                 parameters = { "CIN_MODE": 2, },    # parameter name: bit width
-                # prog_parameters = { "CIN_MODE": ProgDataBitmap( (0, 2) ), },
                 )
         inputs = [
                 ubdr.create_input("a", 1),
@@ -47,6 +46,11 @@ class BuiltinCellLibrary(object):
         ubdr.commit()
 
     @classmethod
+    def _annotate_m_adder(cls, context):
+        adder = context.primitives["adder"]
+        adder.prog_parameters = { "CIN_MODE": ProgDataBitmap( (0, 2) ), }
+
+    @classmethod
     def _install_m_dffe(cls, context):
         ubdr = context.build_primitive('dffe',
                 techmap_template = "builtin/dffe.techmap.tmpl.v",
@@ -54,8 +58,6 @@ class BuiltinCellLibrary(object):
                 verilog_template = "builtin/dffe.lib.tmpl.v",
                 vpr_model = "m_dffe",
                 parameters = { "ENABLE_CE": 1, },
-                # prog_enable = ProgDataValue(1, (0, 1)),
-                # prog_parameters = { "ENABLE_CE": ProgDataBitmap( (1, 1) ), },
                 )
         clock = ubdr.create_clock("C")
         for input_ in (
@@ -67,17 +69,21 @@ class BuiltinCellLibrary(object):
 
         ubdr.commit()
 
-        # if name not in dont_add_design_view_primitives:
-        #     NetUtils.create_timing_arc(TimingArcType.seq_start, lbdr.ports["C"], lbdr.ports["Q"])
-        #     NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["C"], lbdr.ports["D"])
-        #     NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["C"], lbdr.ports["E"])
+    @classmethod
+    def _install_dffe(cls, context):
+        lbdr = context.build_design_view_primitive("dffe", verilog_template = "builtin/dffe.tmpl.v")
 
-        #     lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
-        #     lbdr.create_prog_port("prog_data", 2, PortDirection.input_)
+        NetUtils.create_timing_arc(TimingArcType.seq_start, lbdr.ports["C"], lbdr.ports["Q"])
+        NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["C"], lbdr.ports["D"])
+        NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["C"], lbdr.ports["E"])
 
-        #     lbdr.commit()
-        # else:
-        #     ubdr.commit()
+        lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
+        lbdr.create_prog_port("prog_data", 2, PortDirection.input_)
+
+        lbdr.commit()
+
+        lbdr.counterpart.prog_enable = ProgDataValue(1, (0, 1))
+        lbdr.counterpart.prog_parameters = { "ENABLE_CE": ProgDataBitmap( (1, 1) ), }
 
     @classmethod
     def _install_m_luts(cls, context):
@@ -85,45 +91,49 @@ class BuiltinCellLibrary(object):
             name = "lut" + str(i)
 
             # abstract
-            umod = context._database[ModuleView.abstract, name] = Module(name,
+            umod = context._add_module(Module(name,
                     is_cell = True,
                     view = ModuleView.abstract,
                     module_class = ModuleClass.primitive,
-                    primitive_class = PrimitiveClass.lut)
+                    primitive_class = PrimitiveClass.lut))
             in_ = ModuleUtils.create_port(umod, 'in', i, PortDirection.input_,
                     port_class = PrimitivePortClass.lut_in)
             out = ModuleUtils.create_port(umod, 'out', 1, PortDirection.output,
                     port_class = PrimitivePortClass.lut_out)
             NetUtils.create_timing_arc(TimingArcType.comb_matrix, in_, out)
 
-            # # design
-            # if name not in dont_add_design_view_primitives:
-            #     lmod = context._database[ModuleView.design, name] = Module(name,
-            #             is_cell = True,
-            #             view = ModuleView.design,
-            #             module_class = ModuleClass.primitive, 
-            #             primitive_class = PrimitiveClass.lut,
-            #             verilog_template = "builtin/lut.tmpl.v")
-            #     in_ = ModuleUtils.create_port(lmod, 'in', i, PortDirection.input_,
-            #             net_class = NetClass.user, port_class = PrimitivePortClass.lut_in)
-            #     out = ModuleUtils.create_port(lmod, 'out', 1, PortDirection.output,
-            #             net_class = NetClass.user, port_class = PrimitivePortClass.lut_out)
-            #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, in_, out)
-            #     ModuleUtils.create_port(lmod, "prog_done", 1,          PortDirection.input_, net_class = NetClass.prog)
-            #     ModuleUtils.create_port(lmod, "prog_data", 2 ** i + 1, PortDirection.input_, net_class = NetClass.prog)
+    @classmethod
+    def _install_luts(cls, context):
+        for i in range(2, 9):
+            name = "lut" + str(i)
 
-            #     # mark programming data bitmap
-            #     umod.prog_enable = ProgDataValue(1, (2 ** i, 1))
-            #     umod.prog_parameters = { "lut": ProgDataBitmap( (0, 2 ** i) ) }
+            lmod = context._add_module(Module(name,
+                is_cell = True,
+                view = ModuleView.design,
+                module_class = ModuleClass.primitive, 
+                primitive_class = PrimitiveClass.lut,
+                verilog_template = "builtin/lut.tmpl.v"))
+            in_ = ModuleUtils.create_port(lmod, 'in', i, PortDirection.input_,
+                    net_class = NetClass.user, port_class = PrimitivePortClass.lut_in)
+            out = ModuleUtils.create_port(lmod, 'out', 1, PortDirection.output,
+                    net_class = NetClass.user, port_class = PrimitivePortClass.lut_out)
+            NetUtils.create_timing_arc(TimingArcType.comb_matrix, in_, out)
+            ModuleUtils.create_port(lmod, "prog_done", 1,          PortDirection.input_, net_class = NetClass.prog)
+            ModuleUtils.create_port(lmod, "prog_data", 2 ** i + 1, PortDirection.input_, net_class = NetClass.prog)
+
+            # mark programming data bitmap
+            umod = context.primitives[name]
+            umod.prog_enable = ProgDataValue(1, (2 ** i, 1))
+            umod.prog_parameters = { "LUT": ProgDataBitmap( (0, 2 ** i) ) }
 
     @classmethod
     def _install_m_flipflop(cls, context):
         # abstract
-        umod = context._database[ModuleView.abstract, "flipflop"] = Module("flipflop",
+        umod = context._add_module(Module("flipflop",
                 is_cell = True,
                 view = ModuleView.abstract,
                 module_class = ModuleClass.primitive,
-                primitive_class = PrimitiveClass.flipflop)
+                primitive_class = PrimitiveClass.flipflop))
         clk = ModuleUtils.create_port(umod, "clk", 1, PortDirection.input_, is_clock = True,
                 port_class = PrimitivePortClass.clock)
         D = ModuleUtils.create_port(umod, "D", 1, PortDirection.input_,
@@ -133,66 +143,43 @@ class BuiltinCellLibrary(object):
         NetUtils.create_timing_arc(TimingArcType.seq_end, clk, D)
         NetUtils.create_timing_arc(TimingArcType.seq_start, clk, Q)
 
-        # # design
-        # if name not in dont_add_design_view_primitives:
-        #     lmod = context._database[ModuleView.design, name] = Module(name,
-        #             is_cell = True,
-        #             view = ModuleView.design,
-        #             module_class = ModuleClass.primitive,
-        #             primitive_class = PrimitiveClass.flipflop,
-        #             verilog_template = "builtin/flipflop.tmpl.v")
-        #     clk = ModuleUtils.create_port(lmod, "clk", 1, PortDirection.input_, is_clock = True,
-        #             net_class = NetClass.user, port_class = PrimitivePortClass.clock)
-        #     D = ModuleUtils.create_port(lmod, "D", 1, PortDirection.input_,
-        #             net_class = NetClass.user, port_class = PrimitivePortClass.D)
-        #     Q = ModuleUtils.create_port(lmod, "Q", 1, PortDirection.output,
-        #             net_class = NetClass.user, port_class = PrimitivePortClass.Q)
-        #     NetUtils.create_timing_arc(TimingArcType.seq_end, clk, D)
-        #     NetUtils.create_timing_arc(TimingArcType.seq_start, clk, Q)
-        #     ModuleUtils.create_port(lmod, "prog_done", 1, PortDirection.input_, net_class = NetClass.prog)
-        #     ModuleUtils.create_port(lmod, "prog_data", 1, PortDirection.input_, net_class = NetClass.prog)
+    @classmethod
+    def _install_flipflop(cls, context):
+        # design
+        lmod = context._add_module(Module("flipflop",
+                is_cell = True,
+                view = ModuleView.design,
+                module_class = ModuleClass.primitive,
+                primitive_class = PrimitiveClass.flipflop,
+                verilog_template = "builtin/flipflop.tmpl.v"))
+        clk = ModuleUtils.create_port(lmod, "clk", 1, PortDirection.input_, is_clock = True,
+                net_class = NetClass.user, port_class = PrimitivePortClass.clock)
+        D = ModuleUtils.create_port(lmod, "D", 1, PortDirection.input_,
+                net_class = NetClass.user, port_class = PrimitivePortClass.D)
+        Q = ModuleUtils.create_port(lmod, "Q", 1, PortDirection.output,
+                net_class = NetClass.user, port_class = PrimitivePortClass.Q)
+        NetUtils.create_timing_arc(TimingArcType.seq_end, clk, D)
+        NetUtils.create_timing_arc(TimingArcType.seq_start, clk, Q)
+        ModuleUtils.create_port(lmod, "prog_done", 1, PortDirection.input_, net_class = NetClass.prog)
+        ModuleUtils.create_port(lmod, "prog_data", 1, PortDirection.input_, net_class = NetClass.prog)
 
-        #     # mark programming data bitmap
-        #     umod.prog_enable = ProgDataValue(1, (0, 1))
+        # mark programming data bitmap
+        context.primitives["flipflop"].prog_enable = ProgDataValue(1, (0, 1))
 
     @classmethod
     def _install_m_io(cls, context):
         # register single-mode I/O
         for name in ("inpad", "outpad"):
             # abstract
-            umod = context._database[ModuleView.abstract, name] = Module(name,
+            umod = context._add_module(Module(name,
                     is_cell = True,
                     view = ModuleView.abstract,
                     module_class = ModuleClass.primitive,
-                    primitive_class = PrimitiveClass[name])
+                    primitive_class = PrimitiveClass[name]))
             if name == "inpad":
                 ModuleUtils.create_port(umod, "inpad", 1, PortDirection.output)
             else:
                 ModuleUtils.create_port(umod, "outpad", 1, PortDirection.input_)
-
-            # # design
-            # if name not in dont_add_design_view_primitives:
-            #     lmod = context._database[ModuleView.design, name] = Module(name,
-            #             is_cell = True,
-            #             view = ModuleView.design,
-            #             module_class = ModuleClass.primitive,
-            #             primitive_class = PrimitiveClass[name],
-            #             verilog_template = "builtin/{}.tmpl.v".format(name))
-            #     if name == "inpad":
-            #         u = ModuleUtils.create_port(lmod, "inpad", 1, PortDirection.output, net_class = NetClass.user)
-            #         l = ModuleUtils.create_port(lmod, "ipin", 1, PortDirection.input_,
-            #                 net_class = NetClass.io, key = IOType.ipin)
-            #         NetUtils.create_timing_arc(TimingArcType.comb_bitwise, l, u)
-            #     else:
-            #         u = ModuleUtils.create_port(lmod, "outpad", 1, PortDirection.input_, net_class = NetClass.user)
-            #         l = ModuleUtils.create_port(lmod, "opin", 1, PortDirection.output,
-            #                 net_class = NetClass.io, key = IOType.opin)
-            #         NetUtils.create_timing_arc(TimingArcType.comb_bitwise, u, l)
-            #     ModuleUtils.create_port(lmod, "prog_done", 1, PortDirection.input_, net_class = NetClass.prog)
-            #     ModuleUtils.create_port(lmod, "prog_data", 1, PortDirection.input_, net_class = NetClass.prog)
-
-            #     # mark programming data bitmap
-            #     umod.prog_enable = ProgDataValue(1, (0, 1))
 
         # register dual-mode I/O
         if True:
@@ -218,33 +205,57 @@ class BuiltinCellLibrary(object):
 
             ubdr.commit()
 
-            # # design
-            # if name not in dont_add_design_view_primitives:
-            #     lbdr = ubdr.build_design_view_counterpart(verilog_template = "builtin/iopad.tmpl.v")
-            #     ipin = ModuleUtils.create_port(lbdr.module, "ipin", 1, PortDirection.input_,
-            #             net_class = NetClass.io, key = IOType.ipin)
-            #     opin = ModuleUtils.create_port(lbdr.module, "opin", 1, PortDirection.output,
-            #             net_class = NetClass.io, key = IOType.opin)
-            #     oe = ModuleUtils.create_port(lbdr.module, "oe", 1, PortDirection.output,
-            #             net_class = NetClass.io, key = IOType.oe)
-            #     NetUtils.create_timing_arc(TimingArcType.comb_bitwise, ipin, lbdr.ports["inpad"])
-            #     NetUtils.create_timing_arc(TimingArcType.comb_bitwise, lbdr.ports["outpad"], opin)
-            #     lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
-            #     lbdr.create_prog_port("prog_data", 2, PortDirection.input_)
+    @classmethod
+    def _install_io(cls, context):
+        # register single-mode I/O
+        for name in ("inpad", "outpad"):
+            # design
+            lmod = context._add_module(Module(name,
+                    is_cell = True,
+                    view = ModuleView.design,
+                    module_class = ModuleClass.primitive,
+                    primitive_class = PrimitiveClass[name],
+                    verilog_template = "builtin/{}.tmpl.v".format(name)))
+            if name == "inpad":
+                u = ModuleUtils.create_port(lmod, "inpad", 1, PortDirection.output, net_class = NetClass.user)
+                l = ModuleUtils.create_port(lmod, "ipin", 1, PortDirection.input_,
+                        net_class = NetClass.io, key = IOType.ipin)
+                NetUtils.create_timing_arc(TimingArcType.comb_bitwise, l, u)
+            else:
+                u = ModuleUtils.create_port(lmod, "outpad", 1, PortDirection.input_, net_class = NetClass.user)
+                l = ModuleUtils.create_port(lmod, "opin", 1, PortDirection.output,
+                        net_class = NetClass.io, key = IOType.opin)
+                NetUtils.create_timing_arc(TimingArcType.comb_bitwise, u, l)
+            ModuleUtils.create_port(lmod, "prog_done", 1, PortDirection.input_, net_class = NetClass.prog)
+            ModuleUtils.create_port(lmod, "prog_data", 1, PortDirection.input_, net_class = NetClass.prog)
 
-            #     lbdr.commit()
+            # mark programming data bitmap
+            context.primitives[name].prog_enable = ProgDataValue(1, (0, 1))
 
-            #     # mark programming data bitmap
-            #     i = ubdr.module.modes["mode_input"].instances["i_pad"]
-            #     i.prog_enable = ProgDataValue(1, (0, 2))
-            #     i.prog_bitmap = ProgDataBitmap( (0, 2) )
+        # register dual-mode I/O
+        if True:
+            lbdr = context.build_design_view_primitive("iopad", verilog_template = "builtin/iopad.tmpl.v")
+            ipin = ModuleUtils.create_port(lbdr.module, "ipin", 1, PortDirection.input_,
+                    net_class = NetClass.io, key = IOType.ipin)
+            opin = ModuleUtils.create_port(lbdr.module, "opin", 1, PortDirection.output,
+                    net_class = NetClass.io, key = IOType.opin)
+            oe = ModuleUtils.create_port(lbdr.module, "oe", 1, PortDirection.output,
+                    net_class = NetClass.io, key = IOType.oe)
+            NetUtils.create_timing_arc(TimingArcType.comb_bitwise, ipin, lbdr.ports["inpad"])
+            NetUtils.create_timing_arc(TimingArcType.comb_bitwise, lbdr.ports["outpad"], opin)
+            lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
+            lbdr.create_prog_port("prog_data", 2, PortDirection.input_)
 
-            #     o = ubdr.module.modes["mode_output"].instances["o_pad"]
-            #     o.prog_enable = ProgDataValue(2, (0, 2))
-            #     o.prog_bitmap = ProgDataBitmap( (0, 2) )
+            lbdr.commit()
 
-            # else:
-            #     ubdr.commit()
+            # mark programming data bitmap
+            i = lbdr.counterpart.modes["mode_input"].instances["i_pad"]
+            i.prog_enable = ProgDataValue(1, (0, 2))
+            i.prog_bitmap = ProgDataBitmap( (0, 2) )
+
+            o = lbdr.counterpart.modes["mode_output"].instances["o_pad"]
+            o.prog_enable = ProgDataValue(2, (0, 2))
+            o.prog_bitmap = ProgDataBitmap( (0, 2) )
 
     @classmethod
     def _install_m_fle6(cls, context):
@@ -305,84 +316,82 @@ class BuiltinCellLibrary(object):
 
         ubdr.commit()
 
-        # # design view
-        # if "fle6" not in dont_add_design_view_primitives:
-        #     lbdr = ubdr.build_design_view_counterpart(verilog_template = "fle6/fle6.tmpl.v")
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["out"])
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["out"])
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["cout"])
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["cout"])
-        #     NetUtils.create_timing_arc(TimingArcType.seq_start, lbdr.ports["clk"], lbdr.ports["out"])
-        #     NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["in"])
-        #     NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["cin"])
-        #     lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
-        #     lbdr.create_prog_port("prog_data", 70, PortDirection.input_)
+    @classmethod
+    def _install_fle6(cls, context):
+        lbdr = context.build_design_view_primitive("fle6", verilog_template = "fle6/fle6.tmpl.v")
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["out"])
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["out"])
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["cout"])
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["cout"])
+        NetUtils.create_timing_arc(TimingArcType.seq_start, lbdr.ports["clk"], lbdr.ports["out"])
+        NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["in"])
+        NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["cin"])
+        lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
+        lbdr.create_prog_port("prog_data", 70, PortDirection.input_)
 
-        #     lbdr.commit()
+        lbdr.commit()
 
-        #     # mark programming data bitmap
-        #     # mode (1): arith
-        #     mode = ubdr.module.modes["arith"]
-        #     mode.prog_enable = ProgDataValue(1, (68, 2))
+        # mark programming data bitmap
+        # mode (1): arith
+        mode = lbdr.counterpart.modes["arith"]
+        mode.prog_enable = ProgDataValue(1, (68, 2))
 
-        #     adder = mode.instances["i_adder"]
-        #     adder.prog_bitmap = ProgDataBitmap( (64, 2) )
+        adder = mode.instances["i_adder"]
+        adder.prog_bitmap = ProgDataBitmap( (64, 2) )
 
-        #     for i, p in enumerate(["s", "cout_fabric"]):
-        #         conn = NetUtils.get_connection(mode.instances["i_flipflop", i].pins["Q"],
-        #                 mode.ports["out"][i], skip_validations = True)
-        #         conn.prog_enable = ProgDataValue(0, (66 + i, 1))
+        for i, p in enumerate(["s", "cout_fabric"]):
+            conn = NetUtils.get_connection(mode.instances["i_flipflop", i].pins["Q"],
+                    mode.ports["out"][i], skip_validations = True)
+            conn.prog_enable = ProgDataValue(0, (66 + i, 1))
 
-        #         conn = NetUtils.get_connection(adder.pins[p], mode.ports["out"][i], skip_validations = True)
-        #         conn.prog_enable = ProgDataValue(1, (66 + i, 1))
+            conn = NetUtils.get_connection(adder.pins[p], mode.ports["out"][i], skip_validations = True)
+            conn.prog_enable = ProgDataValue(1, (66 + i, 1))
 
-        #     for i in range(2):
-        #         lut = mode.instances["i_lut5", i]
-        #         lut.prog_bitmap = ProgDataBitmap( (32 * i, 32) )
-        #         lut.prog_enable = None
+        for i in range(2):
+            lut = mode.instances["i_lut5", i]
+            lut.prog_bitmap = ProgDataBitmap( (32 * i, 32) )
+            lut.prog_enable = None
 
-        #         ff = mode.instances["i_flipflop", i]
-        #         ff.prog_bitmap = None
-        #         ff.prog_enable = None
+            ff = mode.instances["i_flipflop", i]
+            ff.prog_bitmap = None
+            ff.prog_enable = None
 
-        #     # mode (2): lut6x1
-        #     mode = ubdr.module.modes["lut6x1"]
-        #     mode.prog_enable = ProgDataValue(2, (68, 2))
+        # mode (2): lut6x1
+        mode = lbdr.counterpart.modes["lut6x1"]
+        mode.prog_enable = ProgDataValue(2, (68, 2))
 
-        #     lut = mode.instances["i_lut6"]
-        #     lut.prog_bitmap = ProgDataBitmap( (0, 64) )
-        #     lut.prog_enable = None
+        lut = mode.instances["i_lut6"]
+        lut.prog_bitmap = ProgDataBitmap( (0, 64) )
+        lut.prog_enable = None
 
-        #     ff = mode.instances["i_flipflop"]
-        #     ff.prog_bitmap = None
-        #     ff.prog_enable = None
+        ff = mode.instances["i_flipflop"]
+        ff.prog_bitmap = None
+        ff.prog_enable = None
 
-        #     conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"][0], skip_validations = True)
-        #     conn.prog_enable = ProgDataValue(0, (66, 1))
+        conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"][0], skip_validations = True)
+        conn.prog_enable = ProgDataValue(0, (66, 1))
 
-        #     conn = NetUtils.get_connection(lut.pins["out"], mode.ports["out"][0], skip_validations = True)
-        #     conn.prog_enable = ProgDataValue(1, (66, 1))
+        conn = NetUtils.get_connection(lut.pins["out"], mode.ports["out"][0], skip_validations = True)
+        conn.prog_enable = ProgDataValue(1, (66, 1))
 
-        #     # mode (3): lut5x2
-        #     mode = ubdr.module.modes["lut5x2"]
-        #     mode.prog_enable = ProgDataValue(3, (68, 2))
+        # mode (3): lut5x2
+        mode = lbdr.counterpart.modes["lut5x2"]
+        mode.prog_enable = ProgDataValue(3, (68, 2))
 
-        #     for i in range(2):
-        #         lut = mode.instances["i_lut5", i]
-        #         lut.prog_bitmap = ProgDataBitmap( (32 * i, 32) )
-        #         lut.prog_enable = None
+        for i in range(2):
+            lut = mode.instances["i_lut5", i]
+            lut.prog_bitmap = ProgDataBitmap( (32 * i, 32) )
+            lut.prog_enable = None
 
-        #         ff = mode.instances["i_flipflop", i]
-        #         ff.prog_bitmap = None
-        #         ff.prog_enable = None
+            ff = mode.instances["i_flipflop", i]
+            ff.prog_bitmap = None
+            ff.prog_enable = None
 
-        #         conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"][i], skip_validations = True)
-        #         conn.prog_enable = ProgDataValue(0, (66 + i, 1))
+            conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"][i], skip_validations = True)
+            conn.prog_enable = ProgDataValue(0, (66 + i, 1))
 
-        #         conn = NetUtils.get_connection(lut.pins["out"], mode.ports["out"][i], skip_validations = True)
-        #         conn.prog_enable = ProgDataValue(1, (66 + i, 1))
-        # else:
-        #     ubdr.commit()
+            conn = NetUtils.get_connection(lut.pins["out"], mode.ports["out"][i], skip_validations = True)
+            conn.prog_enable = ProgDataValue(1, (66 + i, 1))
 
     @classmethod
     def _install_m_grady18v0(cls, context):
@@ -491,96 +500,95 @@ class BuiltinCellLibrary(object):
 
         ubdr.commit()
 
-        # # design view
-        # if "grady18" not in dont_add_design_view_primitives:
-        #     lbdr = ubdr.build_design_view_counterpart(verilog_template = "grady18/grady18.tmpl.v")
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["out"])
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["out"])
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["cout"])
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["cout"])
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["cout_fabric"])
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["cout_fabric"])
-        #     NetUtils.create_timing_arc(TimingArcType.seq_start, lbdr.ports["clk"], lbdr.ports["out"])
-        #     NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["in"])
-        #     NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["cin"])
-        #     lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
-        #     lbdr.create_prog_port("prog_data", 74, PortDirection.input_)
+    @classmethod
+    def _install_grady18v0(cls, context):
+        lbdr = context.build_design_view_primitive("grady18", key = "grady18:v0",
+                verilog_template = "grady18/grady18.tmpl.v")
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["out"])
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["out"])
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["cout"])
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["cout"])
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["cout_fabric"])
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["cout_fabric"])
+        NetUtils.create_timing_arc(TimingArcType.seq_start, lbdr.ports["clk"], lbdr.ports["out"])
+        NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["in"])
+        NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["cin"])
+        lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
+        lbdr.create_prog_port("prog_data", 74, PortDirection.input_)
 
-        #     lbdr.commit()
+        lbdr.commit()
 
-        #     # mark programming data bitmap
-        #     # BLE5
-        #     # mode (1): arith
-        #     mode = ble5.modes["arith"]
-        #     mode.prog_enable = ProgDataValue(1, (34, 2))
+        # mark programming data bitmap
+        # BLE5
+        ble5 = context.primitives["grady18:v0.ble5"]
 
-        #     adder = mode.instances["i_adder"]
-        #     adder.prog_bitmap = ProgDataBitmap( (32, 2) )
+        # mode (1): arith
+        mode = ble5.modes["arith"]
+        mode.prog_enable = ProgDataValue(1, (34, 2))
 
-        #     conn = NetUtils.get_connection(adder.pins["s"], mode.ports["out"], skip_validations = True)
-        #     conn.prog_enable = ProgDataValue(1, (36, 1))
+        adder = mode.instances["i_adder"]
+        adder.prog_bitmap = ProgDataBitmap( (32, 2) )
 
-        #     ff = mode.instances["i_flipflop"]
-        #     ff.prog_bitmap = None
-        #     ff.prog_enable = None
+        conn = NetUtils.get_connection(adder.pins["s"], mode.ports["out"], skip_validations = True)
+        conn.prog_enable = ProgDataValue(1, (36, 1))
 
-        #     conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
-        #     conn.prog_enable = ProgDataValue(0, (36, 1))
+        ff = mode.instances["i_flipflop"]
+        ff.prog_bitmap = None
+        ff.prog_enable = None
 
-        #     for i in range(2):
-        #         lut = mode.instances["i_lut4", i]
-        #         lut.prog_bitmap = ProgDataBitmap( (16 * i, 16) )
-        #         lut.prog_enable = None
+        conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
+        conn.prog_enable = ProgDataValue(0, (36, 1))
 
-        #     # mode (2): lut5
-        #     mode = ble5.modes["lut5"]
-        #     mode.prog_enable = ProgDataValue(2, (34, 2))
+        for i in range(2):
+            lut = mode.instances["i_lut4", i]
+            lut.prog_bitmap = ProgDataBitmap( (16 * i, 16) )
+            lut.prog_enable = None
 
-        #     lut = mode.instances["i_lut5"]
-        #     lut.prog_bitmap = ProgDataBitmap( (0, 32) )
-        #     lut.prog_enable = None
+        # mode (2): lut5
+        mode = ble5.modes["lut5"]
+        mode.prog_enable = ProgDataValue(2, (34, 2))
 
-        #     conn = NetUtils.get_connection(lut.pins["out"], mode.ports["out"], skip_validations = True)
-        #     conn.prog_enable = ProgDataValue(1, (36, 1))
+        lut = mode.instances["i_lut5"]
+        lut.prog_bitmap = ProgDataBitmap( (0, 32) )
+        lut.prog_enable = None
 
-        #     ff = mode.instances["i_flipflop"]
-        #     ff.prog_bitmap = None
-        #     ff.prog_enable = None
+        conn = NetUtils.get_connection(lut.pins["out"], mode.ports["out"], skip_validations = True)
+        conn.prog_enable = ProgDataValue(1, (36, 1))
 
-        #     conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
-        #     conn.prog_enable = ProgDataValue(0, (36, 1))
+        ff = mode.instances["i_flipflop"]
+        ff.prog_bitmap = None
+        ff.prog_enable = None
 
-        #     # FLE8
-        #     # mode (1): ble5x2
-        #     mode = ubdr.module.modes["ble5x2"]
-        #     mode.prog_enable = None
+        conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
+        conn.prog_enable = ProgDataValue(0, (36, 1))
 
-        #     for i in range(2):
-        #         inst = mode.instances["i_ble5", i]
-        #         inst.prog_bitmap = ProgDataBitmap( (i * 37, 37) )
+        # FLE8
+        # mode (1): ble5x2
+        mode = lbdr.counterpart.modes["ble5x2"]
+        mode.prog_enable = None
 
-        #     # # mode (2): lut6
-        #     mode = ubdr.module.modes["lut6x1"]
-        #     mode.prog_enable = ProgDataValue(0xf, (34, 2), (71, 2))
+        for i in range(2):
+            inst = mode.instances["i_ble5", i]
+            inst.prog_bitmap = ProgDataBitmap( (i * 37, 37) )
 
-        #     for i in range(2):
-        #         lut = mode.instances["i_lut5", i]
-        #         lut.prog_bitmap = ProgDataBitmap( (37 * i, 32) )
-        #         lut.prog_enable = None
+        # # mode (2): lut6
+        mode = lbdr.counterpart.modes["lut6x1"]
+        mode.prog_enable = ProgDataValue(0xf, (34, 2), (71, 2))
 
-        #     conn = NetUtils.get_connection(mode.instances["i_mux2"].pins["o"], mode.ports["out"][0])
-        #     conn.prog_enable = ProgDataValue(1, (36, 1))
+        for i in range(2):
+            lut = mode.instances["i_lut5", i]
+            lut.prog_bitmap = ProgDataBitmap( (37 * i, 32) )
+            lut.prog_enable = None
 
-        #     ff = mode.instances["i_flipflop"]
-        #     ff.prog_bitmap = None
-        #     ff.prog_enable = None
+        conn = NetUtils.get_connection(mode.instances["i_mux2"].pins["o"], mode.ports["out"][0])
+        conn.prog_enable = ProgDataValue(1, (36, 1))
 
-        #     conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"][0])
-        #     conn.prog_enable = ProgDataValue(0, (36, 1))
+        ff = mode.instances["i_flipflop"]
+        ff.prog_bitmap = None
+        ff.prog_enable = None
 
-        #     lbdr.commit()
-        # else:
-        #     ubdr.commit()
+        conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"][0])
+        conn.prog_enable = ProgDataValue(0, (36, 1))
 
     @classmethod
     def _install_m_grady18(cls, context):
@@ -676,98 +684,96 @@ class BuiltinCellLibrary(object):
 
         ubdr.commit()
 
-        # # design view
-        # if "grady18v2" not in dont_add_design_view_primitives:
-        #     lbdr = ubdr.build_design_view_counterpart(verilog_template = "grady18/grady18v2.tmpl.v")
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["out"])
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["out"])
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["cout"])
-        #     NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["cout"])
-        #     NetUtils.create_timing_arc(TimingArcType.seq_start, lbdr.ports["clk"], lbdr.ports["out"])
-        #     NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["in"])
-        #     NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["ce"])
-        #     NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["cin"])
-        #     lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
-        #     lbdr.create_prog_port("prog_data", 76, PortDirection.input_)
+    @classmethod
+    def _install_grady18(cls, context):
+        lbdr = context.build_design_view_primitive("grady18", verilog_template = "grady18/grady18v2.tmpl.v")
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["out"])
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["out"])
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["in"], lbdr.ports["cout"])
+        NetUtils.create_timing_arc(TimingArcType.comb_matrix, lbdr.ports["cin"], lbdr.ports["cout"])
+        NetUtils.create_timing_arc(TimingArcType.seq_start, lbdr.ports["clk"], lbdr.ports["out"])
+        NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["in"])
+        NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["ce"])
+        NetUtils.create_timing_arc(TimingArcType.seq_end, lbdr.ports["clk"], lbdr.ports["cin"])
+        lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
+        lbdr.create_prog_port("prog_data", 76, PortDirection.input_)
 
-        #     lbdr.commit()
+        lbdr.commit()
 
-        #     # mark programming data bitmap
-        #     # BLE5
-        #     # mode (1): arith
-        #     mode = ble5.modes["arith"]
-        #     mode.prog_enable = ProgDataValue(1, (34, 2))
+        # mark programming data bitmap
+        # BLE5
+        ble5 = context.primitives["grady18.ble5"]
 
-        #     adder = mode.instances["i_adder"]
-        #     adder.prog_bitmap = ProgDataBitmap( (32, 2) )
+        # mode (1): arith
+        mode = ble5.modes["arith"]
+        mode.prog_enable = ProgDataValue(1, (34, 2))
 
-        #     conn = NetUtils.get_connection(adder.pins["s"], mode.ports["out"], skip_validations = True)
-        #     conn.prog_enable = ProgDataValue(1, (36, 1))
+        adder = mode.instances["i_adder"]
+        adder.prog_bitmap = ProgDataBitmap( (32, 2) )
 
-        #     ff = mode.instances["i_flipflop"]
-        #     ff.prog_bitmap = ProgDataBitmap( (37, 1) )
-        #     ff.prog_enable = None
-        #     ff.prog_parameters = { "ENABLE_CE": ProgDataBitmap( (0, 1) ), }
+        conn = NetUtils.get_connection(adder.pins["s"], mode.ports["out"], skip_validations = True)
+        conn.prog_enable = ProgDataValue(1, (36, 1))
 
-        #     conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
-        #     conn.prog_enable = ProgDataValue(0, (36, 1))
+        ff = mode.instances["i_flipflop"]
+        ff.prog_bitmap = ProgDataBitmap( (37, 1) )
+        ff.prog_enable = None
+        ff.prog_parameters = { "ENABLE_CE": ProgDataBitmap( (0, 1) ), }
 
-        #     for i in range(2):
-        #         lut = mode.instances["i_lut4", i]
-        #         lut.prog_bitmap = ProgDataBitmap( (16 * i, 16) )
-        #         lut.prog_enable = None
+        conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
+        conn.prog_enable = ProgDataValue(0, (36, 1))
 
-        #     # mode (2): lut5
-        #     mode = ble5.modes["lut5"]
-        #     mode.prog_enable = ProgDataValue(2, (34, 2))
+        for i in range(2):
+            lut = mode.instances["i_lut4", i]
+            lut.prog_bitmap = ProgDataBitmap( (16 * i, 16) )
+            lut.prog_enable = None
 
-        #     lut = mode.instances["i_lut5"]
-        #     lut.prog_bitmap = ProgDataBitmap( (0, 32) )
-        #     lut.prog_enable = None
+        # mode (2): lut5
+        mode = ble5.modes["lut5"]
+        mode.prog_enable = ProgDataValue(2, (34, 2))
 
-        #     conn = NetUtils.get_connection(lut.pins["out"], mode.ports["out"], skip_validations = True)
-        #     conn.prog_enable = ProgDataValue(1, (36, 1))
+        lut = mode.instances["i_lut5"]
+        lut.prog_bitmap = ProgDataBitmap( (0, 32) )
+        lut.prog_enable = None
 
-        #     ff = mode.instances["i_flipflop"]
-        #     ff.prog_bitmap = ProgDataBitmap( (37, 1) )
-        #     ff.prog_enable = None
-        #     ff.prog_parameters = { "ENABLE_CE": ProgDataBitmap( (0, 1) ), }
+        conn = NetUtils.get_connection(lut.pins["out"], mode.ports["out"], skip_validations = True)
+        conn.prog_enable = ProgDataValue(1, (36, 1))
 
-        #     conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
-        #     conn.prog_enable = ProgDataValue(0, (36, 1))
+        ff = mode.instances["i_flipflop"]
+        ff.prog_bitmap = ProgDataBitmap( (37, 1) )
+        ff.prog_enable = None
+        ff.prog_parameters = { "ENABLE_CE": ProgDataBitmap( (0, 1) ), }
 
-        #     # FLE8
-        #     # mode (1): ble5x2
-        #     mode = ubdr.module.modes["ble5x2"]
-        #     mode.prog_enable = None
+        conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"], skip_validations = True)
+        conn.prog_enable = ProgDataValue(0, (36, 1))
 
-        #     for i in range(2):
-        #         inst = mode.instances["i_ble5", i]
-        #         inst.prog_bitmap = ProgDataBitmap( (i * 38, 38) )
+        # FLE8
+        # mode (1): ble5x2
+        mode = lbdr.counterpart.modes["ble5x2"]
+        mode.prog_enable = None
 
-        #     # # mode (2): lut6
-        #     mode = ubdr.module.modes["lut6x1"]
-        #     mode.prog_enable = ProgDataValue(0xf, (34, 2), (72, 2))
+        for i in range(2):
+            inst = mode.instances["i_ble5", i]
+            inst.prog_bitmap = ProgDataBitmap( (i * 38, 38) )
 
-        #     for i in range(2):
-        #         lut = mode.instances["i_lut5", i]
-        #         lut.prog_bitmap = ProgDataBitmap( (38 * i, 32) )
-        #         lut.prog_enable = None
+        # # mode (2): lut6
+        mode = lbdr.counterpart.modes["lut6x1"]
+        mode.prog_enable = ProgDataValue(0xf, (34, 2), (72, 2))
 
-        #     conn = NetUtils.get_connection(mode.instances["i_mux2"].pins["o"], mode.ports["out"][0])
-        #     conn.prog_enable = ProgDataValue(1, (36, 1))
+        for i in range(2):
+            lut = mode.instances["i_lut5", i]
+            lut.prog_bitmap = ProgDataBitmap( (38 * i, 32) )
+            lut.prog_enable = None
 
-        #     ff = mode.instances["i_flipflop"]
-        #     ff.prog_bitmap = ProgDataBitmap( (37, 1) )
-        #     ff.prog_enable = None
-        #     ff.prog_parameters = { "ENABLE_CE": ProgDataBitmap( (0, 1) ), }
+        conn = NetUtils.get_connection(mode.instances["i_mux2"].pins["o"], mode.ports["out"][0])
+        conn.prog_enable = ProgDataValue(1, (36, 1))
 
-        #     conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"][0])
-        #     conn.prog_enable = ProgDataValue(0, (36, 1))
+        ff = mode.instances["i_flipflop"]
+        ff.prog_bitmap = ProgDataBitmap( (37, 1) )
+        ff.prog_enable = None
+        ff.prog_parameters = { "ENABLE_CE": ProgDataBitmap( (0, 1) ), }
 
-        #     lbdr.commit()
-        # else:
-        #     ubdr.commit()
+        conn = NetUtils.get_connection(ff.pins["Q"], mode.ports["out"][0])
+        conn.prog_enable = ProgDataValue(0, (36, 1))
 
     @classmethod
     def create_multimode_memory(cls, context, core_addr_width, data_width, *,
@@ -855,22 +861,22 @@ class BuiltinCellLibrary(object):
             mode.commit()
             design_modes[mode_name] = mode_addr_width - core_addr_width
 
-        # prog_data_width = len(design_modes).bit_length()
-        # for value, mode_name in enumerate(list(design_modes), 1):
-        #     prog_enable = ProgDataValue(value, (0, prog_data_width) )
-        #     multimode.module.modes[mode_name].prog_enable = prog_enable
-        #     design_modes[mode_name] = prog_enable, design_modes[mode_name]
+        prog_data_width = len(design_modes).bit_length()
+        for value, mode_name in enumerate(list(design_modes), 1):
+            prog_enable = ProgDataValue(value, (0, prog_data_width) )
+            multimode.module.modes[mode_name].prog_enable = prog_enable
+            design_modes[mode_name] = prog_enable, design_modes[mode_name]
 
-        # lbdr = multimode.build_design_view_counterpart(
-        #         core_addr_width = core_addr_width,
-        #         verilog_template = "bram/fracbram.tmpl.v",
-        #         modes = design_modes)
-        # lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
-        # lbdr.create_prog_port("prog_data", prog_data_width, PortDirection.input_)
-        # lbdr.instantiate(context.database[ModuleView.design, "prga_ram_1r1w_byp"],
-        #         "i_ram",
-        #         parameters = {"DATA_WIDTH": "DATA_WIDTH", "ADDR_WIDTH": "CORE_ADDR_WIDTH"})
-        # lbdr.commit()
+        lbdr = multimode.build_design_view_counterpart(
+                core_addr_width = core_addr_width,
+                verilog_template = "bram/fracbram.tmpl.v",
+                modes = design_modes)
+        lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
+        lbdr.create_prog_port("prog_data", prog_data_width, PortDirection.input_)
+        lbdr.instantiate(context.database[ModuleView.design, "prga_ram_1r1w_byp"],
+                "i_ram",
+                parameters = {"DATA_WIDTH": "DATA_WIDTH", "ADDR_WIDTH": "CORE_ADDR_WIDTH"})
+        lbdr.commit()
 
         return multimode.commit()
 
@@ -901,8 +907,8 @@ class BuiltinCellLibrary(object):
                 key = key,
                 vpr_model = "m_mul_a{}b{}".format(width_a, width_b),
                 parameters = { "SIGNED": 1, },
-                # prog_parameters = { "SIGNED": ProgDataBitmap( (1, 1) ), },
-                # prog_enable = ProgDataValue(1, (0, 1)),
+                prog_parameters = { "SIGNED": ProgDataBitmap( (1, 1) ), },
+                prog_enable = ProgDataValue(1, (0, 1)),
                 )
 
         inputs = [
@@ -913,16 +919,16 @@ class BuiltinCellLibrary(object):
         for i in inputs:
             ubdr.create_timing_arc(TimingArcType.comb_matrix, i, output)
 
-        # lbdr = ubdr.build_design_view_counterpart( verilog_template = "mul/mul.tmpl.v" )
-        # lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
-        # lbdr.create_prog_port("prog_data", 2, PortDirection.input_)
-        # lbdr.commit()
+        lbdr = ubdr.build_design_view_counterpart( verilog_template = "mul/mul.tmpl.v" )
+        lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
+        lbdr.create_prog_port("prog_data", 2, PortDirection.input_)
+        lbdr.commit()
 
         return ubdr.commit()
 
     @classmethod
     def install_abstract(cls, context):
-        """Install abstract-view modules into ``context``.
+        """Install the built-in abstract-view modules into ``context``.
 
         Args:
             context (`Context`):
@@ -950,111 +956,115 @@ class BuiltinCellLibrary(object):
         cls._install_m_grady18v0(context)
         cls._install_m_grady18(context)
 
-    # @classmethod
-    # def register(cls, context, dont_add_design_view_primitives = tuple()):
-    #     """Register designs shipped with PRGA into ``context`` database.
+    @classmethod
+    def install_design(cls, context):
+        """Install the built-in design-view modules into ``context``.
 
-    #     Args:
-    #         context (`Context`):
-    #     """
-    #     if not isinstance(dont_add_design_view_primitives, set):
-    #         dont_add_design_view_primitives = set(iter(dont_add_design_view_primitives))
+        Args:
+            context (`Context`):
+        """
 
-    #     # register built-in primitives: LUTs
-    #     cls._register_luts(context, dont_add_design_view_primitives)
+        # adder
+        cls._annotate_m_adder(context)
 
-    #     # register flipflops
-    #     cls._register_flipflop(context, dont_add_design_view_primitives)
+        # dffe
+        cls._install_dffe(context)
 
-    #     # register IOs
-    #     cls._register_io(context, dont_add_design_view_primitives)
+        # luts
+        cls._install_luts(context)
 
-    #     # register adder (abstract-only)
-    #     cls._install_m_adder(context)
+        # basic flip-flop
+        cls._install_flipflop(context)
 
-    #     # register configurable DFFE
-    #     cls._register_dffe(context, dont_add_design_view_primitives)
+        # IOs
+        cls._install_io(context)
 
-    #     # register FLE6
-    #     cls._register_fle6(context, dont_add_design_view_primitives)
+        # FLE6
+        cls._install_fle6(context)
 
-    #     # register grady18 (FLE8 from Brett Grady, FPL'18)
-    #     cls._register_grady18(context, dont_add_design_view_primitives)
+        # grady'18 FLE8, v0
+        cls._install_grady18v0(context)
 
-    #     # register grady18 variation #2
-    #     cls._register_grady18v2(context, dont_add_design_view_primitives)
+        # grady'18 FLE8, v1 (default)
+        cls._install_grady18(context)
 
-    #     # register simple buffers
-    #     for name in ("prga_simple_buf", "prga_simple_bufr", "prga_simple_bufe", "prga_simple_bufre"):
-    #         if name in dont_add_design_view_primitives:
-    #             continue
-    #         buf = context._database[ModuleView.design, name] = Module(name,
-    #                 is_cell = True,
-    #                 view = ModuleView.design,
-    #                 module_class = ModuleClass.aux,
-    #                 verilog_template = "stdlib/{}.v".format(name))
-    #         ModuleUtils.create_port(buf, "C", 1, PortDirection.input_, is_clock = True)
-    #         if name in ("prga_simple_bufr", "prga_simple_bufre"):
-    #             ModuleUtils.create_port(buf, "R", 1, PortDirection.input_)
-    #         if name in ("prga_simple_bufe", "prga_simple_bufre"):
-    #             ModuleUtils.create_port(buf, "E", 1, PortDirection.input_)
-    #         ModuleUtils.create_port(buf, "D", 1, PortDirection.input_)
-    #         ModuleUtils.create_port(buf, "Q", 1, PortDirection.output)
+    @classmethod
+    def install_stdlib(cls, context):
+        """Install standard PRGA designs/headers into ``context``.
 
-    #     # register auxiliary designs
-    #     for d in ("prga_ram_1r1w", "prga_ram_1r1w_byp", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer",
-    #             "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo", "prga_valrdy_buf"):
-    #         context._database[ModuleView.design, d] = Module(d,
-    #                 is_cell = True,
-    #                 view = ModuleView.design,
-    #                 module_class = ModuleClass.aux,
-    #                 verilog_template = "stdlib/{}.v".format(d))
-    #     for d in ("prga_ram_1r1w_dc", "prga_async_fifo", "prga_async_tokenfifo", "prga_clkdiv",
-    #             "prga_valrdy_cdc", "prga_sync_basic", "prga_async_fifo_ptr"):
-    #         context._database[ModuleView.design, d] = Module(d,
-    #                 is_cell = True,
-    #                 view = ModuleView.design,
-    #                 module_class = ModuleClass.aux,
-    #                 verilog_template = "cdclib/{}.v".format(d))
-    #     # CDC v2
-    #     for d in ("prga_async_fifo", ):
-    #         context._database[ModuleView.design, d + ".v2"] = Module(d,
-    #                 is_cell = True,
-    #                 view = ModuleView.design,
-    #                 module_class = ModuleClass.aux,
-    #                 verilog_template = "cdclib/{}.v2.v".format(d))
+        Args:
+            context (`Context`):
+        """
+        # add headers
+        context.add_verilog_header("prga_utils.vh", "stdlib/include/prga_utils.tmpl.vh")
+        context.add_verilog_header("prga_axi4.vh", "stdlib/include/prga_axi4.tmpl.vh")
 
-    #     # module dependencies
-    #     ModuleUtils.instantiate(context._database[ModuleView.design, "prga_ram_1r1w_byp"],
-    #             context._database[ModuleView.design, "prga_ram_1r1w"], "i_ram")
-    #     ModuleUtils.instantiate(context._database[ModuleView.design, "prga_fifo"],
-    #             context._database[ModuleView.design, "prga_ram_1r1w"], "ram")
-    #     ModuleUtils.instantiate(context._database[ModuleView.design, "prga_fifo"],
-    #             context._database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
-    #     ModuleUtils.instantiate(context._database[ModuleView.design, "prga_fifo_resizer"],
-    #             context._database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
-    #     ModuleUtils.instantiate(context._database[ModuleView.design, "prga_fifo_adapter"],
-    #             context._database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
-    #     ModuleUtils.instantiate(context._database[ModuleView.design, "prga_async_fifo"],
-    #             context._database[ModuleView.design, "prga_ram_1r1w_dc"], "ram")
-    #     ModuleUtils.instantiate(context._database[ModuleView.design, "prga_async_fifo"],
-    #             context._database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
-    #     ModuleUtils.instantiate(context._database[ModuleView.design, "prga_async_fifo_ptr"],
-    #             context._database[ModuleView.design, "prga_sync_basic"], "prga_sync_basic")
-    #     ModuleUtils.instantiate(context._database[ModuleView.design, "prga_async_fifo.v2"],
-    #             context._database[ModuleView.design, "prga_ram_1r1w_dc"], "prga_ram_1r1w_dc")
-    #     ModuleUtils.instantiate(context._database[ModuleView.design, "prga_async_fifo.v2"],
-    #             context._database[ModuleView.design, "prga_async_fifo_ptr"], "prga_async_fifo_ptr")
-    #     ModuleUtils.instantiate(context._database[ModuleView.design, "prga_async_fifo.v2"],
-    #             context._database[ModuleView.design, "prga_fifo_lookahead_buffer"], "prga_fifo_lookahead_buffer")
-    #     ModuleUtils.instantiate(context._database[ModuleView.design, "prga_valrdy_cdc"],
-    #             context._database[ModuleView.design, "prga_async_fifo.v2"], "prga_async_fifo")
-    #     ModuleUtils.instantiate(context._database[ModuleView.design, "prga_valrdy_cdc"],
-    #             context._database[ModuleView.design, "prga_fifo_resizer"], "prga_fifo_resizer")
+        # register simple buffers
+        for name in ("prga_simple_buf", "prga_simple_bufr", "prga_simple_bufe", "prga_simple_bufre"):
+            buf = context._add_module(Module(name,
+                    is_cell = True,
+                    view = ModuleView.design,
+                    module_class = ModuleClass.aux,
+                    verilog_template = "stdlib/{}.v".format(name)))
+            ModuleUtils.create_port(buf, "C", 1, PortDirection.input_, is_clock = True)
+            if name in ("prga_simple_bufr", "prga_simple_bufre"):
+                ModuleUtils.create_port(buf, "R", 1, PortDirection.input_)
+            if name in ("prga_simple_bufe", "prga_simple_bufre"):
+                ModuleUtils.create_port(buf, "E", 1, PortDirection.input_)
+            ModuleUtils.create_port(buf, "D", 1, PortDirection.input_)
+            ModuleUtils.create_port(buf, "Q", 1, PortDirection.output)
 
-    #     # add headers
-    #     context.add_verilog_header("prga_utils.vh", "stdlib/include/prga_utils.tmpl.vh")
-    #     context.add_verilog_header("prga_axi4.vh", "stdlib/include/prga_axi4.tmpl.vh")
+        # register auxiliary designs
+        for d in ("prga_ram_1r1w", "prga_ram_1r1w_byp", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer",
+                "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo", "prga_valrdy_buf"):
+            context._add_module(Module(d,
+                    is_cell = True,
+                    view = ModuleView.design,
+                    module_class = ModuleClass.aux,
+                    verilog_template = "stdlib/{}.v".format(d)))
+        for d in ("prga_ram_1r1w_dc", "prga_async_fifo", "prga_async_tokenfifo", "prga_clkdiv",
+                "prga_valrdy_cdc", "prga_sync_basic", "prga_async_fifo_ptr"):
+            context._add_module(Module(d,
+                    is_cell = True,
+                    view = ModuleView.design,
+                    module_class = ModuleClass.aux,
+                    verilog_template = "cdclib/{}.v".format(d)))
+        # CDC v2
+        for d in ("prga_async_fifo", ):
+            context._add_module(Module(d,
+                    is_cell = True,
+                    key = "prga_async_fifo:v2",
+                    view = ModuleView.design,
+                    module_class = ModuleClass.aux,
+                    verilog_template = "cdclib/{}.v2.v".format(d)))
 
-    #     # header dependencies
-    #     context.database[ModuleView.design, "prga_fifo_resizer"].verilog_dep_headers = ("prga_utils.vh", )
+        # module dependencies
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_ram_1r1w_byp"],
+                context.database[ModuleView.design, "prga_ram_1r1w"], "i_ram")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fifo"],
+                context.database[ModuleView.design, "prga_ram_1r1w"], "ram")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fifo"],
+                context.database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fifo_resizer"],
+                context.database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fifo_adapter"],
+                context.database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_async_fifo"],
+                context.database[ModuleView.design, "prga_ram_1r1w_dc"], "ram")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_async_fifo"],
+                context.database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_async_fifo_ptr"],
+                context.database[ModuleView.design, "prga_sync_basic"], "prga_sync_basic")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_async_fifo:v2"],
+                context.database[ModuleView.design, "prga_ram_1r1w_dc"], "prga_ram_1r1w_dc")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_async_fifo:v2"],
+                context.database[ModuleView.design, "prga_async_fifo_ptr"], "prga_async_fifo_ptr")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_async_fifo:v2"],
+                context.database[ModuleView.design, "prga_fifo_lookahead_buffer"], "prga_fifo_lookahead_buffer")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_valrdy_cdc"],
+                context.database[ModuleView.design, "prga_async_fifo:v2"], "prga_async_fifo")
+        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_valrdy_cdc"],
+                context.database[ModuleView.design, "prga_fifo_resizer"], "prga_fifo_resizer")
+
+        # header dependencies
+        context.database[ModuleView.design, "prga_fifo_resizer"].verilog_dep_headers = ("prga_utils.vh", )

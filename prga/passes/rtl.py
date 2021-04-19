@@ -71,19 +71,14 @@ class VerilogCollection(AbstractPass):
 
     @property
     def dependences(self):
-        if self.view.is_design:
-            return ("translation", )
-        else:
-            return ("translation", "materialization")
+        return ("translation", )
 
     @property
     def is_readonly_pass(self):
         return True
 
-    def run(self, context, renderer = None):
-        if renderer is None:
-            raise PRGAAPIError("File renderer is required for the Verilog Collection pass")
-        self.renderer = renderer
+    def run(self, context):
+        self.renderer = context.renderer
         if (top := context.system_top) is None:
             raise PRGAAPIError("System top module is not set")
 

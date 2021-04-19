@@ -35,9 +35,9 @@ class YosysScriptsCollection(AbstractPass):
     def is_readonly_pass(self):
         return True
 
-    def run(self, context, renderer = None):
-        if renderer is None:
-            raise PRGAAPIError("File renderer is required for the Yosys Script Collection pass")
+    def run(self, context):
+        renderer = context.renderer
+
         if not hasattr(context.summary, "yosys"):
             context.summary.yosys = {}
 

@@ -6,6 +6,7 @@ from ...core.context import Context
 from ...netlist import TimingArcType, PortDirection, Module, ModuleUtils, NetUtils, Const
 from ...passes.base import AbstractPass
 from ...passes.translation import SwitchDelegate
+from ...renderer.lib import BuiltinCellLibrary
 from ...util import Object, uno, Enum
 from ...exception import PRGAInternalError
 
@@ -120,53 +121,41 @@ class Magic(AbstractProgCircuitryEntry):
         ctx = super().materialize(ctx, inplace = inplace)
         ctx._switch_delegate = SwitchDelegate(ctx)
 
-        # TODO: add design-view cells
+        BuiltinCellLibrary.install_stdlib(ctx)
+        BuiltinCellLibrary.install_design(ctx)
 
-    class _InsertProgCircuitry(AbstractPass):
-        """Insert [fake] programming circuitry."""
+        return ctx
 
-        @classmethod
-        def __process_module(cls, context, design_view = None, _cache = None):
-            """Set ``prog_data`` of leaf modules to default 0."""
-            # short alias
-            lmod = uno(design_view, context.database[ModuleView.design, context.top.key])
+    @classmethod
+    def _insert_prog_circuitry(cls, context, design_view = None, _cache = None):
+        # short alias
+        lmod = uno(design_view, context.database[ModuleView.design, context.top.key])
 
-            # check if we should process ``design_view``
-            if lmod.module_class in (ModuleClass.primitive, ModuleClass.switch, ModuleClass.prog, ModuleClass.aux):
-                return
+        # check if we should process ``design_view``
+        if lmod.module_class in (ModuleClass.primitive, ModuleClass.switch, ModuleClass.prog, ModuleClass.aux):
+            return
 
-            # check if we've processed ``design_view``
-            _cache = uno(_cache, set())
-            if lmod.key in _cache:
-                return
-            _cache.add(lmod.key)
+        # check if we've processed ``design_view``
+        _cache = uno(_cache, set())
+        if lmod.key in _cache:
+            return
+        _cache.add(lmod.key)
 
-            # process ``lmod``
-            if (lmod.module_class.is_tile or lmod.module_class.is_array or
-                    lmod.module_class.is_slice or lmod.module_class.is_block):
-                for i in lmod.instances.values():
-                    cls.__process_module(context, i.model, _cache)
+        # process ``lmod``
+        if (lmod.module_class.is_tile or lmod.module_class.is_array or
+                lmod.module_class.is_slice or lmod.module_class.is_block):
+            for i in lmod.instances.values():
+                cls._insert_prog_circuitry(context, i.model, _cache)
 
-            if lmod.module_class.is_slice or lmod.module_class.is_block or lmod.module_class.is_routing_box:
-                # connect ``prog_data`` to constant 0
-                for i in lmod.instances.values():
-                    if (pin := i.pins.get("prog_data")) is not None:
-                        NetUtils.connect(Const(0, len(pin)), pin)
+        if lmod.module_class.is_slice or lmod.module_class.is_block or lmod.module_class.is_routing_box:
+            # connect ``prog_data`` to constant 0
+            for i in lmod.instances.values():
+                if (pin := i.pins.get("prog_data")) is not None:
+                    NetUtils.connect(Const(0, len(pin)), pin)
 
-            _logger.info(" .. Inserted: {}".format(lmod))
+        _logger.info(" .. Inserted: {}".format(lmod))
 
-        def run(self, context, renderer = None):
-            self.__process_module(context)
-            AbstractProgCircuitryEntry.buffer_prog_ctrl(context)
-
-        @property
-        def key(self):
-            return "prog.insertion.magic"
-
-        @property
-        def dependences(self):
-            return ("annotation.switch_path", )
-
-        @property
-        def passes_after_self(self):
-            return ("rtl", )
+    @classmethod
+    def insert_prog_circuitry(cls, context):
+        cls._insert_prog_circuitry(context)
+        cls.buffer_prog_ctrl(context)

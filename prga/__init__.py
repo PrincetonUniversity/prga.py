@@ -40,9 +40,9 @@ __all__.extend([
 
 # Flow Manager and Passes
 from .passes import (Flow, Translation, SwitchPathAnnotation, VerilogCollection, YosysScriptsCollection,
-        VPRScalableDelegate, VPRScalableArchGeneration, VPRArchGeneration, VPR_RRG_Generation)
+        ProgCircuitryInsertion, VPRScalableDelegate, VPRScalableArchGeneration, VPRArchGeneration, VPR_RRG_Generation)
 __all__.extend([
-    "Flow", "Translation", "SwitchPathAnnotation", "VerilogCollection", "VPRArchGeneration",
+    "Flow", "Translation", "SwitchPathAnnotation", "VerilogCollection", "VPRArchGeneration", "ProgCircuitryInsertion",
     "VPRScalableDelegate", "VPRScalableArchGeneration", "VPR_RRG_Generation", "YosysScriptsCollection",
     ])
 
