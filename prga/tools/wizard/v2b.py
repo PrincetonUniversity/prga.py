@@ -8,6 +8,7 @@ from ...exception import PRGAAPIError
 
 import os, logging
 from ruamel.yaml import YAML
+from copy import deepcopy
 
 __all__ = ['generate_v2b_project']
 
@@ -93,12 +94,15 @@ if __name__ == '__main__':
         os.chdir(dir_)
 
     # unpickle context
+    context_f = os.path.abspath(os.path.expandvars(config["context"]))
     _logger.info("Unpickling architecture context: {}".format(config["context"]))
-    context = Context.unpickle(os.path.expandvars(config["context"]))
+    context = Context.unpickle(context_f)
 
     # generate project
     _logger.info("Generating Verilog-to-Bitstream project ...")
     r = FileRenderer(os.path.join(os.path.dirname(__file__), "templates"))
+    config = deepcopy(config)
+    config["context"] = context_f
     generate_v2b_project(context, r, config, output)
 
     r.render()

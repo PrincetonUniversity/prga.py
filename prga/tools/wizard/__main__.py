@@ -9,6 +9,7 @@ from ...util import enable_stdout_logging
 
 import logging, os
 from ruamel.yaml import YAML
+from copy import deepcopy
 
 _logger = logging.getLogger(__name__)
 enable_stdout_logging(__name__, logging.INFO)
@@ -29,10 +30,13 @@ if (dir_ := os.path.dirname(args.configuration)):
     os.chdir(dir_)
 
 # unpickle context
+context_f = os.path.abspath(os.path.expandvars(config["context"]))
 _logger.info("Unpickling architecture context: {}".format(config["context"]))
-context = Context.unpickle(os.path.expandvars(config["context"]))
+context = Context.unpickle(context_f)
 
 r = FileRenderer(os.path.join(os.path.dirname(__file__), "templates"))
+config = deepcopy(config)
+config["context"] = context_f
 
 # generate Verilog-to-Bitstream project
 _logger.info("Generating Verilog-to-Bitstream project")

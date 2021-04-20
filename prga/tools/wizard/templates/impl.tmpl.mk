@@ -3,7 +3,7 @@
 # -- Binaries ----------------------------------------------------------------
 # ----------------------------------------------------------------------------
 # Use `make PYTHON=xxx` to replace these binaries if needed
-PYTHON ?= python
+PYTHON ?= python -O
 YOSYS ?= yosys
 VPR ?= vpr
 GENFASM ?= genfasm
@@ -18,6 +18,7 @@ SHELL = /bin/bash
 # -- Inputs ------------------------------------------------------------------
 # ----------------------------------------------------------------------------
 # ** PRGA Database **
+CONTEXT := {{ context }}
 SUMMARY := {{ summary }}
 
 # ** Application **
@@ -142,10 +143,10 @@ $(PACK_RESULT): $(VPR_ARCHDEF) $(SYN_EBLIF)
 
 $(IOPLAN_RESULT): $(SUMMARY) $(SYN_EBLIF) $(VPR_IOCONSTRAINTS)
 ifeq ($(VPR_IOCONSTRAINTS),)
-	$(PYTHON) -O -m prga.tools.ioplan -c $(SUMMARY) -i $(SYN_EBLIF) -o $@ \
+	$(PYTHON) -m prga.tools.ioplan -c $(SUMMARY) -i $(SYN_EBLIF) -o $@ \
 		| tee $(IOPLAN_LOG)
 else
-	$(PYTHON) -O -m prga.tools.ioplan -c $(SUMMARY) -i $(SYN_EBLIF) -o $@ -f $(VPR_IOCONSTRAINTS) \
+	$(PYTHON) -m prga.tools.ioplan -c $(SUMMARY) -i $(SYN_EBLIF) -o $@ -f $(VPR_IOCONSTRAINTS) \
 		| tee $(IOPLAN_LOG)
 endif
 
@@ -171,7 +172,7 @@ $(FASM_RESULT): $(VPR_ARCHDEF) $(VPR_RRGRAPH) $(SYN_EBLIF) $(PACK_RESULT) $(PLAC
 	mv $(APP).fasm $@
 
 $(BITGEN_RESULT): $(SUMMARY) $(FASM_RESULT)
-	$(PYTHON) -O -m prga.tools.bitgen -c $(SUMMARY) -f $(FASM_RESULT) -o $@ --verif
+	$(PYTHON) -m prga.tools.bitgen -c $(CONTEXT) -f $(FASM_RESULT) -o $@ --verif
 
 $(IMPLWRAP_V): $(SUMMARY) $(SYN_EBLIF) $(IOPLAN_RESULT)
-	$(PYTHON) -O -m prga.tools.wizard.implwrap -c $(SUMMARY) -i $(SYN_EBLIF) -f $(IOPLAN_RESULT) -o $@
+	$(PYTHON) -m prga.tools.wizard.implwrap -c $(SUMMARY) -i $(SYN_EBLIF) -f $(IOPLAN_RESULT) -o $@
