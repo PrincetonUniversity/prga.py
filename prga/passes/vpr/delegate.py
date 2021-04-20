@@ -95,7 +95,7 @@ class FASMDelegate(Object):
         Notes:
             This method is called **ONLY ONCE** for multi-"num_pb" instances.
         """
-        return tuple()
+        return '+', 
 
     def fasm_prefix_for_tile(self, instance = None):
         """Get the prefix for tile ``instance``.

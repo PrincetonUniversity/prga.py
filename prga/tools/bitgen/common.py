@@ -12,7 +12,7 @@ class FASMFeatureConn(namedtuple('FASMFeatureConn', 'src sink hierarchy', defaul
     def type_(self):
         return 'conn'
 
-class FASMFeaturePlain(namedtuple('FASMFeaturePlain', 'feature hierarchy', defaults=(None, ))):
+class FASMFeaturePlain(namedtuple('FASMFeaturePlain', 'feature module hierarchy', defaults=(None, ))):
     @property
     def type_(self):
         return 'plain'
@@ -38,7 +38,7 @@ class AbstractBitstreamGenerator(Object):
     _reprog_value = re.compile("(?P<width>\d+)'(?P<notation>[bdhBDH])(?P<value>[a-fA-F0-9]+)")
 
     def parse_feature(self, line):
-        """Parse FASM features.
+        """Parse one FASM feature.
 
         Args:
             line (:obj:`str`):
@@ -98,12 +98,45 @@ class AbstractBitstreamGenerator(Object):
             return FASMFeatureParam(name, ProgDataValue(value, (int(low), int(width))), hierarchy)
 
         else:
-            return FASMFeaturePlain(last, hierarchy)
+            return FASMFeaturePlain(last, module, hierarchy)
 
-    def generate_verif(self, fasm, output, *args, **kwargs):
-        """Generate bitstream for verification purpose."""
-        raise NotImplementedError("Cannot generate bitstream for verification purpose")
+    def generate_bitstream(self, input_, output, **kwargs):
+        """Generate bitstream without storing parsed data.
 
-    def generate_raw(self, fasm, output, *args, **kwargs):
-        """Generate raw bitstream."""
-        raise NotImplementedError("Cannot generate raw bitstream")
+        Args:
+            input_ (:obj:`str` of file-like object):
+            output (:obj:`str` of file-like object):
+        """
+        raise NotImplementedError
+
+    def parse_fasm(self, input_, **kwargs):
+        """Parse an FASM file, and annotate configuration into ``self.context``.
+
+        Args:
+            input_ (:obj:`str` of file-like object):
+        """
+        raise NotImplementedError
+
+    def unparse_bitstream(self, bitstream, **kwargs):
+        """Output a bitstream based on existing annotations in ``self.context``.
+
+        Args:
+            output (:obj:`str` of file-like object):
+        """
+        raise NotImplementedError
+
+    def unparse_fasm(self, output, **kwargs):
+        """Output an FASM file based on existing annotations in ``self.context`.
+
+        Args:
+            output (:obj:`str` of file-like object):
+        """
+        raise NotImplementedError
+
+    def parse_bitstream(self, input_, **kwargs):
+        """Parse a bitstream, then annotate back into ``self.context``.
+
+        Args:
+            input_ (:obj:`str` of file-like object):
+        """
+        raise NotImplementedError

@@ -427,7 +427,8 @@ class _VPRArchGeneration(AbstractPass):
                                     {'name': port.name, 'num_pins': len(port), })
 
                         # 2.1.2 body
-                        self._pb_type_body(mode, mode_name, hierarchy, "@" + mode.key)
+                        self._pb_type_body(mode, mode_name, hierarchy, "@" + mode.key,
+                                self.fasm.fasm_features_for_intrablock_module(mode, hierarchy))
                     
                     # 2.2 interconnects
                     with self.xml.element("interconnect"):

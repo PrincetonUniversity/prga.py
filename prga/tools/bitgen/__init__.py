@@ -13,8 +13,6 @@ def def_argparser(name):
             help="Raw FASM input")
     parser.add_argument("-o", "--output", metavar="output",
             help="Output file")
-    parser.add_argument("--verif", action="store_true",
-            help="Generate verification bitstream instead of raw bitstream")
 
     return parser
 

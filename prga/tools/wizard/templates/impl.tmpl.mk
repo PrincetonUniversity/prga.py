@@ -172,7 +172,7 @@ $(FASM_RESULT): $(VPR_ARCHDEF) $(VPR_RRGRAPH) $(SYN_EBLIF) $(PACK_RESULT) $(PLAC
 	mv $(APP).fasm $@
 
 $(BITGEN_RESULT): $(SUMMARY) $(FASM_RESULT)
-	$(PYTHON) -m prga.tools.bitgen -c $(CONTEXT) -f $(FASM_RESULT) -o $@ --verif
+	$(PYTHON) -m prga.tools.bitgen -c $(CONTEXT) -f $(FASM_RESULT) -o $@
 
 $(IMPLWRAP_V): $(SUMMARY) $(SYN_EBLIF) $(IOPLAN_RESULT)
 	$(PYTHON) -m prga.tools.wizard.implwrap -c $(SUMMARY) -i $(SYN_EBLIF) -f $(IOPLAN_RESULT) -o $@

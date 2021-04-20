@@ -35,11 +35,7 @@ _logger.info("Programming circuitry type: {}".format(context.prog_entry.__name__
 generator = _generators[context.prog_entry.__name__](context)
 
 # generate bitstream
-if args.verif:
-    _logger.info("Generating verification bitstream ...")
-    generator.generate_verif(args.fasm, args.output)
-else:
-    _logger.info("Generating raw bitstream ...")
-    generator.generate_raw(args.fasm, args.output)
+_logger.info("Generating bitstream: {} from FASM: {} ...".format(args.output, args.fasm))
+generator.generate_bitstream(args.fasm, args.output)
 
 _logger.info("Bitstream generated. Bye")

@@ -43,7 +43,7 @@ class MagicBitstreamGenerator(AbstractBitstreamGenerator):
             output.write("force {}{}prog_data[{}:{}] = {}'h{:x};\n".format(
                 prefix, path, o + l - 1, o, l, v))
 
-    def generate_verif(self, fasm, output, *, prefix = 'dut.', verbose = True):
+    def generate_bitstream(self, fasm, output, *, prefix = 'dut.', verbose = True):
         if isinstance(fasm, str):
             fasm = open(fasm, "r")
 
@@ -84,5 +84,18 @@ class MagicBitstreamGenerator(AbstractBitstreamGenerator):
                 feature.value.bitmap.remap(bitmap)
                 self._emit_lines(output, feature.value, prefix, feature.hierarchy)
 
+            elif feature.type_ == "plain" and feature.feature == "+":
+                leaf = feature.hierarchy.hierarchy[0]
+
+                prog_enable = None
+                if (feature.module.module_class.is_mode
+                        or (prog_enable := getattr(leaf, "prog_enable", self._none)) is self._none):
+                    prog_enable = getattr(feature.module, "prog_enable", None)
+
+                if prog_enable is None:
+                    continue
+
+                self._emit_lines(output, prog_enable, prefix, feature.hierarchy)
+
             else:
-                _logger.warning("[Line {:0>4d}] Unsupported feature")
+                _logger.warning("[Line {:0>4d}] Unsupported feature: {}".format(lineno, line.strip()))
