@@ -9,6 +9,7 @@ from ...xml import XMLGenerator
 from ...exception import PRGAInternalError
 
 from abc import abstractproperty, abstractmethod
+from collections.abc import Sequence
 from itertools import product
 import os, gzip
 
@@ -40,7 +41,7 @@ class _VPRArchGeneration(AbstractPass):
         return True
 
     @classmethod
-    def _net2vpr(cls, net, parent_name = None, bitwise = False):
+    def _net2vpr(cls, net, parent_name, bitwise = False):
         if net.net_type.is_concat:
             return " ".join(cls._net2vpr(i, parent_name, bitwise) for i in net.items)
         elif net.net_type.is_const:
@@ -55,7 +56,7 @@ class _VPRArchGeneration(AbstractPass):
             suffix = '[{}:{}]'.format(net.index.stop - 1, net.index.start)
             net = net.bus
         if net.net_type.is_port:
-            prefix = '{}.{}'.format(parent_name or net.parent.name, net.name)
+            prefix = '{}.{}'.format(parent_name, net.name)
         elif hasattr(net.instance, "vpr_num_pb"):
             prefix = '{}[{}].{}'.format(*net.instance.key, net.model.name)
         else:
@@ -117,7 +118,7 @@ class _VPRArchGeneration(AbstractPass):
                     with self.xml.element("equivalent_sites"):
                         self.xml.element_leaf("site", {"pb_type": block.name, "pin_mapping": "direct"})
 
-    def _interconnect(self, sink, instance = None, parent_name = None):
+    def _interconnect(self, sink, parent_name, instance = None):
         sources = NetUtils.concat(s for s in NetUtils.get_multisource(sink) if not s.net_type.is_const)
         if len(sources) == 0:
             return
@@ -175,111 +176,66 @@ class _VPRArchGeneration(AbstractPass):
                             '\n'.join('{} : {}'.format(src, ", ".join(fasm_mux) or FASM_NONE)
                                 for src, fasm_mux in fasm_muxes.items()))
 
-    def _leaf_pb_type(self, instance):
-        leaf, primitive, attrs = instance.hierarchy[0], instance.model, {}
-        
-        # FASM prefixes (one per each vpr_num_pb)
-        fasm_prefixes = None
-        if hasattr(leaf, "vpr_num_pb"):
-            attrs = {"name": leaf.key[0], "num_pb": leaf.vpr_num_pb}
-            fasm_prefixes = []
-            for i in range(leaf.vpr_num_pb):
-                inst = leaf.parent.instances[leaf.key[0], i]._extend_hierarchy(above = instance.hierarchy[1:])
-                fasm_prefixes.append(self.fasm.fasm_prefix_for_intrablock_module(primitive, inst))
-            if any(fasm_prefixes):
-                fasm_prefixes = ' '.join(s or FASM_NONE for s in fasm_prefixes)
-            else:
-                fasm_prefixes = None
+    def _hierarchy(self, module, instances = None):
+        attrs, hierarchy, fasm_prefixes = {}, None, None
+
+        if isinstance(instances, Sequence):
+            attrs = {"name": instances[0].hierarchy[0].key[0], "num_pb": len(instances), }
+            hierarchy = instances[0]
+            fasm_prefixes = tuple(self.fasm.fasm_prefix_for_intrablock_module(module, i) for i in instances)
+            fasm_prefixes = ' '.join(s or FASM_NONE for s in fasm_prefixes) if any(fasm_prefixes) else None
+        elif instances is not None:
+            attrs = {"name": instances.hierarchy[0].key, "num_pb": 1, }
+            hierarchy = instances
+            fasm_prefixes = self.fasm.fasm_prefix_for_intrablock_module(module, instances)
         else:
-            attrs = {"name": leaf.name, "num_pb": 1}
-            fasm_prefixes = self.fasm.fasm_prefix_for_intrablock_module(primitive, instance)
+            attrs = {"name": module.name, }
+            fasm_prefixes = self.fasm.fasm_prefix_for_intrablock_module(module)
 
-        # FASM features
-        fasm_features = self.fasm.fasm_features_for_intrablock_module(primitive, instance)
+        fasm_features = self.fasm.fasm_features_for_intrablock_module(module, hierarchy)
 
-        if primitive.primitive_class.is_multimode:
-            for lut_size in getattr(primitive, "emulate_luts", []):
-                self.lut_sizes.add( lut_size )
+        return attrs, hierarchy, fasm_prefixes, fasm_features
 
-            with self.xml.element("pb_type", attrs):
-                # 1. emit ports:
-                for port in primitive.ports.values():
-                    attrs = {'name': port.name, 'num_pins': len(port)}
-                    self.xml.element_leaf(
-                            'clock' if port.is_clock else port.direction.case('input', 'output'),
-                            attrs)
-                # 2. enumerate modes
-                for mode_name, mode in primitive.modes.items():
-                    with self.xml.element("mode", {"name": mode_name}):
-                        self._pb_type_body(mode, instance)
-                # 3. FASM metadata
-                if fasm_prefixes or fasm_features:
-                    with self.xml.element("metadata"):
-                        if fasm_prefixes:
-                            self.xml.element_leaf("meta", {"name": "fasm_prefix"}, fasm_prefixes)
-                        if fasm_features:
-                            self.xml.element_leaf("meta", {"name": "fasm_features"}, " ".join(fasm_features))
-            return
-        # bitwise_timing = True
-        if primitive.primitive_class.is_lut:
-            self.lut_sizes.add( len(primitive.ports['in']) )
-            # bitwise_timing = False
-            attrs.update({"blif_model": ".names", "class": "lut"})
-        elif primitive.primitive_class.is_flipflop:
-            attrs.update({"blif_model": ".latch", "class": "flipflop"})
-        elif primitive.primitive_class.is_inpad:
-            attrs.update({"blif_model": ".input"})
-        elif primitive.primitive_class.is_outpad:
-            attrs.update({"blif_model": ".output"})
-        elif primitive.primitive_class.is_memory:
-            self.active_primitives.add( primitive.key )
-            # bitwise_timing = False
-            attrs.update({"class": "memory",
-                "blif_model": ".subckt " + primitive.vpr_model, })
-        elif primitive.primitive_class.is_custom:
-            self.active_primitives.add( primitive.key )
-            # bitwise_timing = getattr(primitive, "vpr_bitwise_timing", True)
-            attrs.update({
-                "blif_model": ".subckt " + primitive.vpr_model, })
-        parent_name = attrs["name"]
-        with self.xml.element('pb_type', attrs):
-            # 1. emit ports
-            for port in primitive.ports.values():
-                attrs = {'name': port.name, 'num_pins': len(port)}
-                if (port_class := getattr(port, 'port_class', None)) is not None:
-                    attrs['port_class'] = port_class.name
-                self.xml.element_leaf(
-                        'clock' if port.is_clock else port.direction.case('input', 'output'),
-                        attrs)
-            # 2. timing
-            for port in primitive.ports.values():
-                for arc in NetUtils.get_timing_arcs(sink = port):
-                    # FIXME: fake timing here
-                    if arc.type_.is_comb_bitwise or arc.type_.is_comb_matrix:
-                        self.xml.element_leaf("delay_constant", {"max": 1e-10,
-                            "in_port": self._net2vpr(arc.source, parent_name),
-                            "out_port": self._net2vpr(arc.sink, parent_name)})
-                    elif arc.type_.is_seq_start:
-                        self.xml.element_leaf("T_clock_to_Q", {"max": 1e-10,
-                            "port": self._net2vpr(arc.sink, parent_name),
-                            "clock": arc.source.name})
-                    elif arc.type_.is_seq_end:
-                        self.xml.element_leaf("T_setup", {"value": 1e-10,
-                            "port": self._net2vpr(arc.sink, parent_name),
-                            "clock": arc.source.name})
-            # 3. FASM parameters
-            fasm_params = ({} if primitive.primitive_class.is_lut else
-                    self.fasm.fasm_params_for_primitive(instance)) 
-            if fasm_prefixes or fasm_features or any(fasm_params.values()):
-                with self.xml.element("metadata"):
-                    if fasm_prefixes:
-                        self.xml.element_leaf("meta", {"name": "fasm_prefix"}, fasm_prefixes)
-                    if fasm_features:
-                        self.xml.element_leaf("meta", {"name": "fasm_features"}, " ".join(fasm_features))
-                    if any(fasm_params.values()):
-                        self.xml.element_leaf("meta", {"name": "fasm_params"},
-                            '\n'.join("{} = {}".format(p or FASM_NONE, param)
-                                for param, p in fasm_params.items()))
+    def _pb_type_leaf_body(self, primitive, name, hierarchy, fasm_prefixes = None, fasm_features = None):
+        # 1. emit ports
+        for port in primitive.ports.values():
+            port_attrs = {'name': port.name, 'num_pins': len(port)}
+            if (port_class := getattr(port, 'port_class', None)) is not None:
+                port_attrs['port_class'] = port_class.name
+            self.xml.element_leaf(
+                    'clock' if port.is_clock else port.direction.case('input', 'output'),
+                    port_attrs)
+
+        # 2. timing
+        for port in primitive.ports.values():
+            for arc in NetUtils.get_timing_arcs(sink = port):
+                # FIXME: fake timing here
+                if arc.type_.is_comb_bitwise or arc.type_.is_comb_matrix:
+                    self.xml.element_leaf("delay_constant", {"max": 1e-10,
+                        "in_port": self._net2vpr(arc.source, name),
+                        "out_port": self._net2vpr(arc.sink, name)})
+                elif arc.type_.is_seq_start:
+                    self.xml.element_leaf("T_clock_to_Q", {"max": 1e-10,
+                        "port": self._net2vpr(arc.sink, name),
+                        "clock": arc.source.name})
+                elif arc.type_.is_seq_end:
+                    self.xml.element_leaf("T_setup", {"value": 1e-10,
+                        "port": self._net2vpr(arc.sink, name),
+                        "clock": arc.source.name})
+
+        # 3. FASM parameters
+        fasm_params = ({} if primitive.primitive_class.is_lut else
+                self.fasm.fasm_params_for_primitive(hierarchy)) 
+        if fasm_prefixes or fasm_features or any(fasm_params.values()):
+            with self.xml.element("metadata"):
+                if fasm_prefixes:
+                    self.xml.element_leaf("meta", {"name": "fasm_prefix"}, fasm_prefixes)
+                if fasm_features:
+                    self.xml.element_leaf("meta", {"name": "fasm_features"}, " ".join(fasm_features))
+                if any(fasm_params.values()):
+                    self.xml.element_leaf("meta", {"name": "fasm_params"},
+                        '\n'.join("{} = {}".format(p or FASM_NONE, param)
+                            for param, p in fasm_params.items()))
 
                 # if port.is_clock:
                 #     continue
@@ -374,96 +330,181 @@ class _VPRArchGeneration(AbstractPass):
                 #                 attrs["min"] = min_of_min
                 #             self.xml.element_leaf("T_clock_to_Q", attrs)
 
-    def _pb_type_body(self, module, hierarchy = None):
-        # parent name, FASM
-        parent_name, fasm_prefixes, fasm_features = module.name, None, None
-        if hierarchy:
-            leaf = hierarchy.hierarchy[0]
-            if hasattr(leaf, "vpr_num_pb"):
-                parent_name = leaf.key[0]
-                fasm_prefixes = []
-                for i in range(leaf.vpr_num_pb):
-                    inst = leaf.parent.instances[parent_name, i]._extend_hierarchy(
-                            above = hierarchy.hierarchy[1:])
-                    fasm_prefixes.append(self.fasm.fasm_prefix_for_intrablock_module(module, inst))
-                if any(fasm_prefixes):
-                    fasm_prefixes = ' '.join(s or FASM_NONE for s in fasm_prefixes)
-                else:
-                    fasm_prefixes = None
-            else:
-                parent_name = leaf.name
-                fasm_prefixes = self.fasm.fasm_prefix_for_intrablock_module(module, hierarchy)
-            fasm_features = self.fasm.fasm_features_for_intrablock_module(module, hierarchy)
-        else:
-            parent_name = module.name
-            fasm_prefixes = self.fasm.fasm_prefix_for_intrablock_module(module, hierarchy)
-            fasm_features = self.fasm.fasm_features_for_intrablock_module(module, hierarchy)
+    def _pb_type_lut(self, primitive, instances):
+        lut_size = len(primitive.ports['in'])
+        self.lut_sizes.add( lut_size )
+
+        attrs, hierarchy, fasm_prefixes, fasm_features = self._hierarchy(primitive, instances)
+        name = attrs["name"]
+
+        with self.xml.element("pb_type", attrs):
+            # 1. emit ports
+            for port in primitive.ports.values():
+                self.xml.element_leaf(
+                        'clock' if port.is_clock else port.direction.case('input', 'output'),
+                        {'name': port.name, "num_pins": len(port), })
+
+            # 2. internal LUT pb_type
+            internal_name = attrs["name"] + "_lut"
+            with self.xml.element("pb_type", {
+                "name": internal_name,
+                "num_pb": 1,
+                "blif_model": ".names",
+                "class": "lut",
+                }):
+
+                self._pb_type_leaf_body(primitive, internal_name, hierarchy)
+
+            # 3. interconnect
+            with self.xml.element("interconnect"):
+                for port in primitive.ports.values():
+                    self.xml.element_leaf("direct", {
+                        "name": "direct_" + port.name,
+                        "input": "{}.{}".format(port.direction.case(name, internal_name), port.name),
+                        "output": "{}.{}".format(port.direction.case(internal_name, name), port.name),
+                        })
+
+            # 4. FASM metadata
+            with self.xml.element("metadata"):
+                if fasm_prefixes:
+                    self.xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefixes)
+                if fasm_features:
+                    self.xml.element_leaf('meta', {'name': 'fasm_features'}, " ".join(fasm_features))
+                self.xml.element_leaf("meta", {"name": "fasm_type"}, "LUT")
+                self.xml.element_leaf("meta", {"name": "fasm_lut"},
+                        "LUT[{}:0] = {}[0]".format(2 ** lut_size - 1, internal_name))
+
+    def _pb_type_leaf(self, primitive, instances):
+        attrs, hierarchy, fasm_prefixes, fasm_features = self._hierarchy(primitive, instances)
+
+        # bitwise_timing = True
+        if primitive.primitive_class.is_flipflop:
+            attrs.update({"blif_model": ".latch", "class": "flipflop"})
+        elif primitive.primitive_class.is_inpad:
+            attrs.update({"blif_model": ".input"})
+        elif primitive.primitive_class.is_outpad:
+            attrs.update({"blif_model": ".output"})
+        elif primitive.primitive_class.is_memory:
+            self.active_primitives.add( primitive.key )
+            # bitwise_timing = False
+            attrs.update({"class": "memory",
+                "blif_model": ".subckt " + primitive.vpr_model, })
+        elif primitive.primitive_class.is_custom:
+            self.active_primitives.add( primitive.key )
+            # bitwise_timing = getattr(primitive, "vpr_bitwise_timing", True)
+            attrs.update({
+                "blif_model": ".subckt " + primitive.vpr_model, })
+
+        with self.xml.element('pb_type', attrs):
+            self._pb_type_leaf_body(primitive, attrs["name"], hierarchy, fasm_prefixes, fasm_features)
+
+    def _pb_type_multimode(self, module, instances):
+        attrs, hierarchy, fasm_prefixes, fasm_features = self._hierarchy(module, instances)
+
+        # TODO: A more generic way to "emulate" other primitives
+        for lut_size in getattr(module, "emulate_luts", []):
+            self.lut_sizes.add( lut_size )
+
+        with self.xml.element("pb_type", attrs):
+            # 1. emit ports:
+            for port in module.ports.values():
+                self.xml.element_leaf(
+                        'clock' if port.is_clock else port.direction.case('input', 'output'),
+                        {'name': port.name, 'num_pins': len(port), })
+            
+            # 2. enumerate modes
+            name = attrs["name"]
+            for mode in module.modes.values():
+                mode_name = "{}_{}".format(name, mode.key)
+
+                with self.xml.element("mode", {"name": mode.key}):
+                    # 2.1 mode-internal pb_type
+                    with self.xml.element("pb_type", {"name": mode_name, "num_pb": 1}):
+                        # 2.1.1 emit ports
+                        for port in mode.ports.values():
+                            self.xml.element_leaf(
+                                    'clock' if port.is_clock else port.direction.case('input', 'output'),
+                                    {'name': port.name, 'num_pins': len(port), })
+
+                        # 2.1.2 body
+                        self._pb_type_body(mode, mode_name, hierarchy, "@" + mode.key)
+                    
+                    # 2.2 interconnects
+                    with self.xml.element("interconnect"):
+                        for port in mode.ports.values():
+                            self.xml.element_leaf("direct", {
+                                "name": "direct_" + port.name,
+                                "input": "{}.{}".format(port.direction.case(name, mode_name), port.name),
+                                "output": "{}.{}".format(port.direction.case(mode_name, name), port.name),
+                                })
+
+            # 3. FASM
+            if fasm_prefixes or fasm_features:  # or any(fasm_luts.values()):
+                with self.xml.element("metadata"):
+                    if fasm_prefixes:
+                        self.xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefixes)
+                    if fasm_features:
+                        self.xml.element_leaf('meta', {'name': 'fasm_features'}, " ".join(fasm_features))
+
+    def _pb_type_body(self, module, name, hierarchy, fasm_prefixes = None, fasm_features = None):
         # sub instances
-        fasm_luts = {}
         for instance in module.instances.values():
-            leaves = []
-            if (vpr_num_pb := getattr(instance, "vpr_num_pb", None)) is not None:
+            sub_name, subs = instance.key, instance
+
+            if (num_pb := getattr(instance, "vpr_num_pb", None)) is not None:
                 if instance.key[1] != 0:
                     continue
-                leaves.append( (instance.key[0], 0, instance) )
-                leaves.extend( (instance.key[0], i, module.instances[instance.key[0], i])
-                        for i in range(1, vpr_num_pb) )
-            else:
-                leaves.append( (instance.key, 0, instance) )
-            cur_hierarchy = instance._extend_hierarchy(above = hierarchy)
+
+                sub_name = instance.key[0]
+                subs = tuple(module.instances[sub_name, i]._extend_hierarchy(above = hierarchy)
+                        for i in range(num_pb))
+
             if instance.model.module_class.is_slice:
-                self._pb_type(instance.model, cur_hierarchy)
+                self._pb_type(instance.model, subs)
+
             elif instance.model.module_class.is_primitive:
-                self._leaf_pb_type(cur_hierarchy)
-                if instance.model.primitive_class.is_lut:
-                    for key, i, leaf in leaves:
-                        lut = leaf._extend_hierarchy(above = hierarchy)
-                        fasm_luts['{}[{}]'.format(key, i)] = self.fasm.fasm_lut(lut)
+                if instance.model.primitive_class.is_multimode:
+                    self._pb_type_multimode(instance.model, subs)
+
+                elif instance.model.primitive_class.is_lut:
+                    self._pb_type_lut(instance.model, subs)
+
+                else:
+                    self._pb_type_leaf(instance.model, subs)
+
         # interconnects
         with self.xml.element('interconnect'):
             for net in ModuleUtils._iter_nets(module):
                 if not net.is_sink:
                     continue
                 for sink in net:
-                    self._interconnect(sink, hierarchy, parent_name)
+                    self._interconnect(sink, name, hierarchy)
+
         # FASM
-        if fasm_prefixes or fasm_features or any(fasm_luts.values()):
+        if fasm_prefixes or fasm_features:  # or any(fasm_luts.values()):
             with self.xml.element("metadata"):
                 if fasm_prefixes:
                     self.xml.element_leaf('meta', {'name': 'fasm_prefix'}, fasm_prefixes)
                 if fasm_features:
                     self.xml.element_leaf('meta', {'name': 'fasm_features'}, " ".join(fasm_features))
-                if any(fasm_luts.values()):
-                    self.xml.element_leaf('meta', {'name': 'fasm_type'},
-                            'LUT' if len(fasm_luts) == 1 else 'SPLIT_LUT')
-                    self.xml.element_leaf('meta', {'name': 'fasm_lut'},
-                            '\n'.join('{} = {}'.format(lut or FASM_NONE, name)
-                                for name, lut in fasm_luts.items()))
 
-    def _pb_type(self, module, hierarchy = None):
-        attrs, parent_name = {}, module.name
-        if hierarchy:
-            leaf = hierarchy.hierarchy[0]
-            if (vpr_num_pb := getattr(hierarchy.hierarchy[0], "vpr_num_pb", None)):
-                parent_name = leaf.key[0]
-                attrs["num_pb"] = vpr_num_pb
-            else:
-                parent_name = leaf.name
-                attrs["num_pb"] = 1
-        attrs["name"] = parent_name
+    def _pb_type(self, module, instances = None):
+        attrs, hierarchy, fasm_prefixes, fasm_features = self._hierarchy(module, instances)
+
         with self.xml.element("pb_type", attrs):
             # 1. emit ports:
             for port in module.ports.values():
-                attrs = {'name': port.name, 'num_pins': len(port)}
+                port_attrs = {'name': port.name, 'num_pins': len(port)}
                 if not port.is_clock and hasattr(port, 'global_'):
-                    attrs['is_non_clock_global'] = "true"
+                    port_attrs['is_non_clock_global'] = "true"
                 if getattr(port, "vpr_equivalent_pins", False):
-                    attrs["equivalent"] = "full"
+                    port_attrs["equivalent"] = "full"
                 self.xml.element_leaf(
                         'clock' if port.is_clock else port.direction.case('input', 'output'),
-                        attrs)
+                        port_attrs)
+
             # 2. emit pb_type body
-            self._pb_type_body(module, hierarchy)
+            self._pb_type_body(module, attrs["name"], hierarchy, fasm_prefixes, fasm_features)
 
     def _model(self, primitive):
         with self.xml.element("model", {"name": primitive.vpr_model}):

@@ -75,10 +75,8 @@ class FASMDelegate(Object):
         Notes:
             This method is called for **EACH** multi-"num_pb" instances.
         """
-        if module.module_class.is_primitive and module.primitive_class.is_multimode:
-            return ""
-        elif module.module_class.is_mode:
-            return hierarchy.hierarchy[0].name + '@' + module.key
+        if module.module_class.is_mode:
+            return '@' + module.key
         elif hierarchy is not None:
             return hierarchy.hierarchy[0].name
         else:
@@ -98,20 +96,6 @@ class FASMDelegate(Object):
             This method is called **ONLY ONCE** for multi-"num_pb" instances.
         """
         return tuple()
-
-    def fasm_lut(self, instance):
-        """Get the "fasm_lut" strings for hierarchical LUT ``instance``.
-
-        Args:
-            instance (`AbstractInstance`): Hierarchical instance in the logic/io block
-
-        Returns:
-            :obj:`str`: "fasm_lut" value
-
-        Notes:
-            This method is called for **EACH** multi-"vpr_pb" instances.
-        """
-        return "LUT[{}:{}]".format(2 ** len(instance.pins['in']) - 1, 0)
 
     def fasm_prefix_for_tile(self, instance = None):
         """Get the prefix for tile ``instance``.
