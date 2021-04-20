@@ -8,10 +8,12 @@ from ..util import uno
 
 from itertools import product
 from math import floor, log2
+import re
 
 import logging
 
 _logger = logging.getLogger(__name__)
+_reprog_memory_mode = re.compile("^\d+[TGMKx]\d+b$")
 
 __all__ = ['BuiltinCellLibrary']
 
@@ -776,9 +778,116 @@ class BuiltinCellLibrary(object):
         conn.prog_enable = ProgDataValue(0, (36, 1))
 
     @classmethod
+    def create_memory(cls, context, addr_width, data_width, *,
+            name = None, vpr_model = None, memory_type = "1r1w", **kwargs):
+        """Create a single-mode RAM.
+
+        Args:
+            context (`Context`):
+            addr_width (:obj:`int`): Width of the address port\(s\)
+            data_width (:obj:`int`): Width of the data port\(s\)
+
+        Keyword Args:
+            name (:obj:`str`): Name of the memory module. Default: "ram_{memory_type}_a{addr_width}d{data_width}"
+            vpr_model (:obj:`str`): Name of the VPR model. Default: "m_ram_{memory_type}"
+            memory_type (:obj:`str`): ``"1r1w"``, ``"1rw"`` or ``"2rw"``. Default is ``"1r1w"``
+            **kwargs: Additional attributes assigned to the primitive
+
+        Returns:
+            ``Module``:
+        """
+        if memory_type == "1r1w":
+            kwargs.setdefault("verilog_template", "bram/1r1w.lib.tmpl.v")
+            kwargs.setdefault("bram_rule_template", "bram/1r1w.tmpl.rule")
+            kwargs.setdefault("techmap_template", "bram/1r1w.techmap.tmpl.v")
+        elif memory_type in ("1rw", "2rw"):
+            kwargs.setdefault("verilog_template", "bram/lib.tmpl.v")
+            kwargs.setdefault("bram_rule_template", "bram/tmpl.rule")
+            kwargs.setdefault("techmap_template", "bram/techmap.tmpl.v")
+        else:
+            raise PRGAAPIError("Unsupported memory type: {}. Supported values are: 1r1w, 1rw, 2rw"
+                    .format(memory_type))
+
+        name = uno(name, "ram_{}_a{}d{}".format(memory_type, addr_width, data_width))
+        m = context._add_module(Module(name,
+            is_cell = True,
+            view = ModuleView.abstract,
+            module_class = ModuleClass.primitive,
+            primitive_class = PrimitiveClass.memory,
+            vpr_model = uno(vpr_model, "m_ram_{}".format(memory_type)),
+            memory_type = memory_type,
+            **kwargs))
+
+        clk = ModuleUtils.create_port(m, "clk", 1, PortDirection.input_,
+                is_clock = True, port_class = PrimitivePortClass.clock)
+        i, o = PortDirection.input_, PortDirection.output
+        inputs, outputs = [], []
+
+        if memory_type == "1rw":
+            inputs.append(ModuleUtils.create_port(m, "we", 1, i,
+                port_class = PrimitivePortClass.write_en))
+            inputs.append(ModuleUtils.create_port(m, "addr", addr_width, i,
+                port_class = PrimitivePortClass.address))
+            inputs.append(ModuleUtils.create_port(m, "data", data_width, i,
+                port_class = PrimitivePortClass.data_in))
+            outputs.append(ModuleUtils.create_port(m, "out", data_width, o,
+                port_class = PrimitivePortClass.data_out))
+        elif memory_type == "2rw":
+            inputs.append(ModuleUtils.create_port(m, "we1", 1, i,
+                port_class = PrimitivePortClass.write_en1))
+            inputs.append(ModuleUtils.create_port(m, "addr1", addr_width, i,
+                port_class = PrimitivePortClass.address1))
+            inputs.append(ModuleUtils.create_port(m, "data1", data_width, i,
+                port_class = PrimitivePortClass.data_in1))
+            outputs.append(ModuleUtils.create_port(m, "out1", data_width, o,
+                port_class = PrimitivePortClass.data_out1))
+            inputs.append(ModuleUtils.create_port(m, "we2", 1, i,
+                port_class = PrimitivePortClass.write_en2))
+            inputs.append(ModuleUtils.create_port(m, "addr2", addr_width, i,
+                port_class = PrimitivePortClass.address2))
+            inputs.append(ModuleUtils.create_port(m, "data2", data_width, i,
+                port_class = PrimitivePortClass.data_in2))
+            outputs.append(ModuleUtils.create_port(m, "out2", data_width, o,
+                port_class = PrimitivePortClass.data_out2))
+        elif memory_type == "1r1w":
+            inputs.append(ModuleUtils.create_port(m, "we", 1, i,
+                port_class = PrimitivePortClass.write_en1))
+            inputs.append(ModuleUtils.create_port(m, "waddr", addr_width, i,
+                port_class = PrimitivePortClass.address1))
+            inputs.append(ModuleUtils.create_port(m, "din", data_width, i,
+                port_class = PrimitivePortClass.data_in1))
+            inputs.append(ModuleUtils.create_port(m, "raddr", addr_width, i,
+                port_class = PrimitivePortClass.address2))
+            outputs.append(ModuleUtils.create_port(m, "dout", data_width, o,
+                port_class = PrimitivePortClass.data_out2))
+
+        for i in inputs:
+            NetUtils.create_timing_arc(TimingArcType.seq_end, clk, i)
+        for o in outputs:
+            NetUtils.create_timing_arc(TimingArcType.seq_start, clk, o)
+
+        return m
+
+    @classmethod
+    def _create_memory_design(cls, context, abstract):
+        """Create design-view for memories."""
+        if abstract.memory_type == "1r1w":
+            lbdr = context.build_design_view_primitive(abstract.name,
+                    key = abstract.key,
+                    verilog_template = "bram/1r1w.sim.tmpl.v")
+            lbdr.instantiate(
+                    context.database[ModuleView.design, "prga_ram_1r1w_byp"],
+                    "i_ram")
+            lbdr.commit()
+        else:
+            context.build_design_view_primitive(abstract.name,
+                    key = abstract.key,
+                    verilog_template = "bram/sim.tmpl.v").commit()
+
+    @classmethod
     def create_multimode_memory(cls, context, core_addr_width, data_width, *,
-            addr_width = None, name = None, key = None):
-        """Build a multi-mode RAM.
+            addr_width = None, name = None):
+        """Create a multi-mode RAM.
 
         Args:
             context (`Context`):
@@ -789,10 +898,9 @@ class BuiltinCellLibrary(object):
         Keyword Args:
             name (:obj:`str`): Name of the multi-mode primitive. ``"fracram_a{addr_width}d{data_width}"`` by default.
             addr_width (:obj:`int`): The maximum address width. See notes for more information
-            key (:obj:`Hashable`): Key of the created primitive in the database. Same as ``name`` if not set
 
         Returns:
-            `Module`: User view of the multi-modal primitive
+            `Module`: Abstract view of the multi-modal primitive
         
         Notes:
             This method builds a multi-mode, fracturable 1R1W RAM. For example,
@@ -815,8 +923,7 @@ class BuiltinCellLibrary(object):
                     .format(addr_width, core_addr_width, default_addr_width))
 
         name = uno(name, "fracram_a{}d{}".format(addr_width, data_width))
-        key = uno(key, name)
-        multimode = context.build_multimode(name, key = key)
+        multimode = context.build_multimode(name, core_addr_width = core_addr_width)
         multimode.create_clock("clk")
         multimode.create_input("waddr", addr_width)
         multimode.create_input("din", data_width)
@@ -824,7 +931,6 @@ class BuiltinCellLibrary(object):
         multimode.create_input("raddr", addr_width)
         multimode.create_output("dout", data_width)
 
-        design_modes = {}
         for mode_addr_width in range(core_addr_width, addr_width + 1):
             mode_name = None
 
@@ -845,11 +951,9 @@ class BuiltinCellLibrary(object):
             mode = multimode.build_mode(mode_name)
 
             core = mode.instantiate(
-                    context.create_memory("ram_1r1w_a{}d{}".format(mode_addr_width, mode_data_width),
-                        mode_addr_width, mode_data_width,
-                        dont_create_design_view_counterpart = True,
+                    cls.create_memory(context, mode_addr_width, mode_data_width,
                         techmap_order = 1. + 1 / float(mode_addr_width)),
-                    "i_ram_a{}".format(mode_addr_width),
+                    "i_ram",
                     )
             NetUtils.connect(mode.ports["clk"], core.pins["clk"])
             NetUtils.connect(mode.ports["waddr"][:mode_addr_width], core.pins["waddr"])
@@ -859,30 +963,34 @@ class BuiltinCellLibrary(object):
             NetUtils.connect(core.pins["dout"], mode.ports["dout"][0:mode_data_width])
 
             mode.commit()
-            design_modes[mode_name] = mode_addr_width - core_addr_width
 
-        prog_data_width = len(design_modes).bit_length()
-        for value, mode_name in enumerate(list(design_modes), 1):
-            prog_enable = ProgDataValue(value, (0, prog_data_width) )
-            multimode.module.modes[mode_name].prog_enable = prog_enable
-            design_modes[mode_name] = prog_enable, design_modes[mode_name]
+        return multimode.commit()
 
-        lbdr = multimode.build_design_view_counterpart(
-                core_addr_width = core_addr_width,
+    @classmethod
+    def _create_multimode_memory_design(cls, context, abstract):
+        """Create design-view for a multi-mode memory."""
+
+        prog_data_width = len(abstract.modes).bit_length()
+        modes = {}
+        for value, (mode_name, mode) in enumerate(abstract.modes.items(), 1):
+            prog_enable = mode.prog_enable = ProgDataValue(value, (0, prog_data_width))
+            modes[mode_name] = prog_enable, len(mode.instances["i_ram"].pins["waddr"]) - abstract.core_addr_width
+
+        lbdr = context.build_design_view_primitive(abstract.name,
+                key = abstract.key,
+                core_addr_width = abstract.core_addr_width,
                 verilog_template = "bram/fracbram.tmpl.v",
-                modes = design_modes)
-        lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
+                modes = modes)
+        lbdr.create_prog_port("prog_done", 1,               PortDirection.input_)
         lbdr.create_prog_port("prog_data", prog_data_width, PortDirection.input_)
         lbdr.instantiate(context.database[ModuleView.design, "prga_ram_1r1w_byp"],
                 "i_ram",
                 parameters = {"DATA_WIDTH": "DATA_WIDTH", "ADDR_WIDTH": "CORE_ADDR_WIDTH"})
         lbdr.commit()
 
-        return multimode.commit()
-
     @classmethod
     def create_multiplier(cls, context, width_a, width_b = None, *,
-            name = None, key = None):
+            name = None):
         """Create a basic combinational multiplier.
 
         Args:
@@ -892,7 +1000,6 @@ class BuiltinCellLibrary(object):
 
         Keyword Args:
             name (:obj:`str`): Name of the primitive. ``"mul_a{width_a}b{width_b}"`` by default.
-            key (:obj:`Hashable`): Key of the created primitive in the database. Same as ``name`` if not set
 
         Returns:
             `Module`: User view of the multiplier
@@ -900,11 +1007,9 @@ class BuiltinCellLibrary(object):
         width_b = uno(width_b, width_a)
 
         name = uno(name, "mul_a{}b{}".format(width_a, width_b))
-        key = uno(key, name)
         ubdr = context.build_primitive(name,
                 techmap_template = "mul/techmap.tmpl.v",
                 verilog_template = "mul/lib.tmpl.v",
-                key = key,
                 vpr_model = "m_mul_a{}b{}".format(width_a, width_b),
                 parameters = { "SIGNED": 1, },
                 prog_parameters = { "SIGNED": ProgDataBitmap( (1, 1) ), },
@@ -919,12 +1024,18 @@ class BuiltinCellLibrary(object):
         for i in inputs:
             ubdr.create_timing_arc(TimingArcType.comb_matrix, i, output)
 
-        lbdr = ubdr.build_design_view_counterpart( verilog_template = "mul/mul.tmpl.v" )
+        return ubdr.commit()
+
+    @classmethod
+    def _create_multiplier_design(cls, context, abstract):
+        """Create design-view for multipliers."""
+
+        lbdr = context.build_design_view_primitive(abstract.name,
+                key = abstract.key,
+                verilog_template = "mul/mul.tmpl.v" )
         lbdr.create_prog_port("prog_done", 1, PortDirection.input_)
         lbdr.create_prog_port("prog_data", 2, PortDirection.input_)
         lbdr.commit()
-
-        return ubdr.commit()
 
     @classmethod
     def install_abstract(cls, context):
@@ -987,6 +1098,29 @@ class BuiltinCellLibrary(object):
 
         # grady'18 FLE8, v1 (default)
         cls._install_grady18(context)
+
+        # find all abstract-only primitives, and see if we can automatically create design-views for them
+        abstracts = []
+        for module in context.primitives.values():
+            if (ModuleView.design, module.key) not in context.database:
+                abstracts.append(module)
+
+        abstract_only = []
+        for abstract in abstracts:
+            if abstract.primitive_class.is_memory:
+                cls._create_memory_design(context, abstract)
+            elif (abstract.primitive_class.is_multimode
+                    and all(_reprog_memory_mode.match(mode_name) for mode_name in abstract.modes)):
+                cls._create_multimode_memory_design(context, abstract)
+            elif (abstract.primitive_class.is_custom
+                    and getattr(abstract, "techmap_template", None) == "mul/techmap.tmpl.v"
+                    and getattr(abstract, "verilog_template", None) == "mul/lib.tmpl.v"):
+                cls._create_multiplier_design(context, abstract)
+            else:
+                abstract_only.append(abstract)
+
+        for abstract in abstract_only:
+            _logger.warning("No design view available for primitive '{}'".format(abstract.name))
 
     @classmethod
     def install_stdlib(cls, context):

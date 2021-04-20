@@ -4,6 +4,8 @@ from ...netlist.net.util import NetUtils
 from ...prog.common import ProgDataValue
 from .common import AbstractBitstreamGenerator
 
+from copy import deepcopy
+
 import logging
 _logger = logging.getLogger(__name__)
 
@@ -37,6 +39,7 @@ class MagicBitstreamGenerator(AbstractBitstreamGenerator):
             return
 
         if bitmap is not None:
+            value = deepcopy(value)
             value.bitmap = value.bitmap.remap(bitmap)
 
         for v, (o, l) in value.breakdown():

@@ -334,28 +334,25 @@ class Context(Object):
         """
         return PrimitiveBuilder(self, self._add_module(PrimitiveBuilder.new(name, vpr_model = vpr_model, **kwargs)))
 
-    def create_memory(self, name, addr_width, data_width, *, vpr_model = None, memory_type = "1r1w",
-            dont_create_design_view_counterpart = False, **kwargs):
+    def create_memory(self, addr_width, data_width, *,
+            name = None, vpr_model = None, memory_type = "1r1w", **kwargs):
         """Create a memory in abstract view.
 
         Args:
-            name (:obj:`str`): Name of the memory
             addr_width (:obj:`int`): Number of bits of the address ports
             data_width (:obj:`int`): Number of bits of the data ports
 
         Keyword Args:
+            name (:obj:`str`): Name of the memory module. Default: "ram_{memory_type}_a{addr_width}d{data_width}"
             vpr_model (:obj:`str`): Name of the VPR model. Default: "m_ram_{memory_type}"
             memory_type (:obj:`str`): ``"1r1w"``, ``"1rw"`` or ``"2rw"``. Default is ``"1r1w"``
-            dont_create_design_view_counterpart (:obj:`bool`): If set to ``True``, the design view of this module won't
-                be created automatically
-            **kwargs: Additional attributes to be associated with the primitive
+            **kwargs: Additional attributes assigned to the primitive
 
         Returns:
             `Module`:
         """
-        return PrimitiveBuilder(self, self._add_module(PrimitiveBuilder.new_memory(name,
-            addr_width, data_width, vpr_model = vpr_model, memory_type = memory_type, **kwargs)
-            )).commit(dont_create_design_view_counterpart = dont_create_design_view_counterpart)
+        return BuiltinCellLibrary.create_memory(self, addr_width, data_width,
+                name = name, vpr_model = vpr_model, memory_type = memory_type, **kwargs)
 
     def create_multimode_memory(self, core_addr_width, data_width, *,
             addr_width = None, name = None):
