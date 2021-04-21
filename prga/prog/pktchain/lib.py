@@ -2,13 +2,12 @@
 
 from .protocol import PktchainProtocol
 from ..common import ProgDataBitmap
-from ..scanchain.lib import Scanchain #, ScanchainFASMDelegate
+from ..scanchain.lib import Scanchain
 from ...core.common import ModuleClass, ModuleView, NetClass, Orientation
-from ...core.context import Context
 from ...netlist import PortDirection, Const, Module, NetUtils, ModuleUtils
 from ...passes.base import AbstractPass
 from ...passes.translation import SwitchDelegate
-from ...renderer import FileRenderer
+from ...renderer.lib import BuiltinCellLibrary
 from ...integration import Integration
 from ...exception import PRGAInternalError
 from ...tools.ioplan import IOPlanner
@@ -19,60 +18,6 @@ from itertools import product
 
 _logger = logging.getLogger(__name__)
 
-ADDITIONAL_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
-
-# # ----------------------------------------------------------------------------
-# # -- FASM Delegate -----------------------------------------------------------
-# # ----------------------------------------------------------------------------
-# class PktchainFASMDelegate(ScanchainFASMDelegate):
-#     """FASM delegate for pktchain programming circuitry.
-# 
-#     Args:
-#         context (`Context`):
-#     """
-# 
-#     def _instance_branch_offset(self, instance):
-#         branch, leaf, bitmap = None, None, None
-#         for i in instance.hierarchy:
-#             if (bitmap_inc := getattr(i, "prog_bitmap", None)) is not None:
-#                 if bitmap is None:
-#                     bitmap = bitmap_inc
-#                 else:
-#                     bitmap = bitmap.remap(bitmap_inc)
-#             if (branchmap := getattr(i, "prog_pktchain_branchmap", None)) is not None:
-#                 branch, leaf_inc = branchmap[uno(branch, 0)]
-#                 if leaf is None:
-#                     leaf = leaf_inc
-#                 else:
-#                     leaf += leaf_inc
-#             if bitmap_inc is None and branchmap is None:
-#                 _logger.warning("No programming info found for {}".format(i))
-#                 return None
-#         return branch, leaf, bitmap
-# 
-#     def fasm_prefix_for_tile(self, instance):
-#         if (v := self._instance_branch_offset(instance)) is None:
-#             return tuple()
-#         branch, leaf, bitmap = v
-#         retval = []
-#         for subtile, blkinst in instance.model.instances.items():
-#             if not isinstance(subtile, int):
-#                 continue
-#             elif subtile >= len(retval):
-#                 retval.extend(None for _ in range(subtile - len(retval) + 1))
-#             if (bitmap_root := getattr(blkinst, "prog_bitmap", None)) is not None:
-#                 retval[subtile] = "b{}l{}.{}".format(branch, leaf,
-#                         self._bitmap(bitmap_root.remap(bitmap)))
-#         return tuple(retval)
-# 
-#     def fasm_features_for_interblock_switch(self, source, sink, hierarchy = None):
-#         if not (features := self.fasm_mux_for_intrablock_switch(source, sink)):
-#             return tuple()
-#         if (v := self._instance_branch_offset(hierarchy)) is None:
-#             return tuple()
-#         branch, leaf, bitmap = v
-#         return tuple("b{}l{}.{}.{}".format(branch, leaf, self._bitmap(bitmap), f) for f in features)
-
 # ----------------------------------------------------------------------------
 # -- Pktchain Programming Circuitry Main Entry -------------------------------
 # ----------------------------------------------------------------------------
@@ -80,50 +25,61 @@ class Pktchain(Scanchain):
     """Entry point for pktchain programming circuitry."""
 
     @classmethod
-    def new_context(cls, phit_width = 8, chain_width = 1, *,
-            router_fifo_depth_log2 = 4):
-        """Create a new context.
+    def materialize(cls, ctx, inplace = False, *,
+            phit_width = 8, chain_width = 1, router_fifo_depth_log2 = 4):
 
-        Args:
-            phit_width (:obj:`int`): Data width of the packet-switch network
-            chain_width (:obj:`int`): Width of the scanchain
-
-        Keyword Args:
-            router_fifo_depth_log2 (:obj:`int`): Depth of the FIFO of packet-switch network routers
-
-        Returns:
-            `Context`:
-        """
         if phit_width not in (1, 2, 4, 8, 16, 32):
             raise PRGAAPIError("Unsupported programming phit width: {}. Supported values are: [1, 2, 4, 8, 16, 32]"
                     .format(phit_width))
         if chain_width not in (1, 2, 4):
             raise PRGAAPIError("Unsupported programming chain width: {}. Supported values are: [1, 2, 4]"
                     .format(chain_width))
-        context = Context("pktchain")
-        context.summary.scanchain = {"chain_width": chain_width}
-        context.summary.pktchain = {
+
+        ctx = super().materialize(ctx, inplace = inplace, chain_width = chain_width)
+        ctx.summary.pktchain = {
                 "fabric": {
                     "phit_width": phit_width,
                     "router_fifo_depth_log2": router_fifo_depth_log2,
                     },
                 "protocol": PktchainProtocol
                 }
-        context._switch_delegate = SwitchDelegate(context)
-        context._fasm_delegate = PktchainFASMDelegate(context)
-        context.add_verilog_header("pktchain.vh", "include/pktchain.tmpl.vh")
-        context.add_verilog_header("pktchain_system.vh", "piton_v0/include/pktchain_system.tmpl.vh",
+
+        ctx.template_search_paths.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'))
+        ctx.add_verilog_header("pktchain.vh", "include/pktchain.tmpl.vh")
+        ctx.add_verilog_header("pktchain_system.vh", "piton_v0/include/pktchain_system.tmpl.vh",
                 "pktchain.vh", "prga_system.vh")
-        cls._register_cells(context, phit_width, chain_width)
-        return context
+        cls.__install_cells(ctx, chain_width, phit_width)
+
+        return ctx
 
     @classmethod
-    def new_renderer(cls, additional_template_search_paths = tuple()):
-        return super().new_renderer(tuple(iter(additional_template_search_paths)) +
-                (ADDITIONAL_TEMPLATE_SEARCH_PATH,))
+    def insert_prog_circuitry(cls, context, *,
+            iter_instances = None, insert_delimiter = None):
+        cls.buffer_prog_ctrl(context)
+        branches = Pktchain._insert_pktchain(context,
+                iter_instances = iter_instances, insert_delimiter = insert_delimiter)
+
+        # update summary
+        context.summary.pktchain["fabric"]["branches"] = branches
+        num_leaves = len(branches[0])
+        for i, branch in enumerate(branches[1:]):
+            if len(branch) != num_leaves:
+                raise PRGAInternalError("Unbalanced branch. Branch No. {} has {} leaves but others have {}"
+                        .format(i + 1, len(branch), num_leaves))
+
+                _logger.info("Pktchain inserted: {} branches on primary backbone, {} leaves per branch"
+                        .format(len(branches), num_leaves))
+
+        total = 0
+        for i, branch in enumerate(branches):
+            _logger.info(" .. Branch No. {}:".format(i))
+            for j, leaf in enumerate(branch):
+                _logger.info("   .. Leaf No. {}: {} bits".format(j, leaf))
+                total += leaf
+        _logger.info(" .. Total effective bitstream bits: {}".format(total))
 
     @classmethod
-    def insert_pktchain(cls, context, design_view = None, *,
+    def _insert_pktchain(cls, context, design_view = None, *,
             iter_instances = None, insert_delimiter = None, _not_top = False):
         """Inject pktchain network and routers in ``module``. This method should be called only on arrays.
 
@@ -203,18 +159,18 @@ class Pktchain(Scanchain):
             if linst.model.module_class.is_array:
                 if ((sub_branches := getattr(linst.model, "pktchain_branches", None)) is None
                         and getattr(linst.model, "scanchain_bitcount", None) is None):
-                    sub_branches = cls.insert_pktchain(context, linst.model,
+                    sub_branches = cls._insert_pktchain(context, linst.model,
                             iter_instances = iter_instances, insert_delimiter = insert_delimiter, _not_top = True)
 
                 if not sub_branches:
                     cls._connect_pktchain_leaf(context, lmod, linst, leaf_prog_nets)
                     
-                    linst.scanchain_offset = scanchain_offset
+                    linst.scanchain_bitmap = ProgDataBitmap( (scanchain_offset, linst.model.scanchain_bitcount) )
                     linst.pktchain_branchmap = (len(branches), len(leaves)),
 
                     if (uinst := umod.instances.get(linst.key)) is not None:
-                        uinst.prog_bitmap = ProgDataBitmap( (scanchain_offset, linst.model.scanchain_bitcount) )
-                        uinst.prog_pktchain_branchmap = (len(branches), len(leaves)),
+                        uinst.scanchain_bitmap = linst.scanchain_bitmap
+                        uinst.pktchain_branchmap = linst.pktchain_branchmap
 
                     scanchain_offset += linst.model.scanchain_bitcount
                 else:
@@ -240,7 +196,7 @@ class Pktchain(Scanchain):
                     leaves.extend( sub_branches[sub_branch_id] )
 
                     if (uinst := umod.instances.get(linst.key)) is not None:
-                        uinst.prog_pktchain_branchmap = branchmap
+                        uinst.pktchain_branchmap = branchmap
 
                     # connect
                     if "o" in branch_prog_nets:
@@ -310,10 +266,7 @@ class Pktchain(Scanchain):
         return tuple(branches)
 
     @classmethod
-    def _register_cells(cls, context, phit_width, chain_width):
-        # register scanchain stuff
-        super()._register_cells(context)
-
+    def __install_cells(cls, context, chain_width, phit_width):
         # alias
         mvl = ModuleView.design
         mcp = ModuleUtils.create_port
@@ -594,7 +547,7 @@ class Pktchain(Scanchain):
         ichain, bitcount = instance, 0
         if (prog_data := instance.pins.get("prog_data")) is None:
             if (bitcount := getattr(instance.model, "scanchain_bitcount", None)) is None:
-                bitcount = cls.insert_scanchain(context, instance.model,
+                bitcount = cls._insert_scanchain(context, instance.model,
                         iter_instances = iter_instances, insert_delimiter = insert_delimiter)
             if bitcount == 0:
                 return 0
@@ -609,12 +562,12 @@ class Pktchain(Scanchain):
         cls._connect_pktchain_leaf(context, module, ichain, leaf_prog_nets)
 
         # update
-        instance.scanchain_offset = scanchain_offset
+        instance.scanchain_bitmap = ProgDataBitmap( (scanchain_offset, bitcount) )
         instance.pktchain_branchmap = (branch_id, leaf_id),     # trailing comma converts this to a tuple
 
         if (uinst := context.database[ModuleView.abstract, module.key].instances.get(instance.key)) is not None:
-            uinst.prog_bitmap = ProgDataBitmap( (scanchain_offset, bitcount) )
-            uinst.prog_pktchain_branchmap = (branch_id, leaf_id),
+            uinst.scanchain_bitmap = instance.scanchain_bitmap
+            uinst.pktchain_branchmap = instance.pktchain_branchmap
 
         return bitcount
 
@@ -661,62 +614,6 @@ class Pktchain(Scanchain):
                 .format(scanchain_bitcount, len(leaves), branch_id, module))
         leaves.append( scanchain_bitcount )
         leaf_prog_nets.clear()
-
-    class InsertProgCircuitry(AbstractPass):
-        """Insert programming circuitry.
-
-        Keyword Args:
-            iter_instances (:obj:`Callable` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
-                the instances in a module. In addition, when the module is an array, ``None`` can be yielded to
-                control pktchain router injection. When one ``None`` is yielded, a pktchain router is injected for
-                tiles/switch boxes that are not already controlled by another pktchain router. When two ``None`` are
-                yielded consecutively, the current secondary pktchain is terminated and attached to the primary
-                pktchain.
-            insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if ``we`` buffers are inserted at
-                the beginning and end of the scanchain inside ``design_view``. By default, buffers are inserted in
-                all logic/IO blocks and routing boxes.
-        """
-
-        __slots__ = ["iter_instances", "insert_delimiter"]
-
-        def __init__(self, *, iter_instances = None, insert_delimiter = None):
-            self.iter_instances = iter_instances
-            self.insert_delimiter = insert_delimiter
-
-        def run(self, context, renderer = None):
-            Pktchain.buffer_prog_ctrl(context)
-            branches = Pktchain.insert_pktchain(context,
-                    iter_instances = self.iter_instances, insert_delimiter = self.insert_delimiter)
-
-            # update summary
-            context.summary.pktchain["fabric"]["branches"] = branches
-            num_leaves = len(branches[0])
-            for i, branch in enumerate(branches[1:]):
-                if len(branch) != num_leaves:
-                    raise PRGAInternalError("Unbalanced branch. Branch No. {} has {} leaves but others have {}"
-                            .format(i + 1, len(branch), num_leaves))
-
-            _logger.info("Pktchain inserted: {} branches on primary backbone, {} leaves per branch"
-                    .format(len(branches), num_leaves))
-            total = 0
-            for i, branch in enumerate(branches):
-                _logger.info(" .. Branch No. {}:".format(i))
-                for j, leaf in enumerate(branch):
-                    _logger.info("   .. Leaf No. {}: {} bits".format(j, leaf))
-                    total += leaf
-            _logger.info(" .. Total effective bitstream bits: {}".format(total))
-
-        @property
-        def key(self):
-            return "prog.insertion.pktchain"
-
-        @property
-        def dependences(self):
-            return ("annotation.switch_path", )
-
-        @property
-        def passes_after_self(self):
-            return ("rtl", )
 
     class BuildSystemPitonVanilla(AbstractPass):
         """Create a system for SoC integration, specifically for OpenPiton vanilla."""

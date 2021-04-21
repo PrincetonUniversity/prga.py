@@ -3,6 +3,7 @@
 from . import def_argparser
 from .magic import MagicBitstreamGenerator
 from .scanchain import ScanchainBitstreamGenerator
+from .pktchain import PktchainBitstreamGenerator
 from ...core.context import Context
 from ...util import enable_stdout_logging, uno
 
@@ -11,6 +12,7 @@ import logging, os
 _generators = {
         'Magic':        MagicBitstreamGenerator,
         'Scanchain':    ScanchainBitstreamGenerator,
+        'Pktchain':     PktchainBitstreamGenerator,
         }
 
 _logger = logging.getLogger(__name__)

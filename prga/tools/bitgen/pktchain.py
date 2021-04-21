@@ -10,8 +10,16 @@ import struct, re
 class PktchainBitstreamGenerator(AbstractBitstreamGenerator):
     """Bitstream generator for 'pktchain' programming circuitry."""
 
+    __slots__ = ["bits"]
+
+    def __init__(self, context):
+        super().__init__(context)
+
+        self.bits = [[bitarray('0', endian="little") * leaf
+            for leaf in branch] for branch in context.summary.pktchain["fabric"]["branches"]]
+
+    _none = object()
     _reversed_crc_lookup = {}   # to be filled later
-    _reprog_branch = re.compile("b(?P<branch>\d+)l(?P<leaf>\d+)")
 
     @classmethod
     def _int2bitseq(cls, v, bigendian = True):
@@ -40,47 +48,86 @@ class PktchainBitstreamGenerator(AbstractBitstreamGenerator):
             raise PRGAInternalError("No prefix checksum found for CRC-8 CCITT value 0x{:08x} prepended with {} zeros"
                     .format(crc, zeros))
 
-    def generate_verif(self, summary, fasm, output):
-        # process arguments
+    def _set_bits(self, value, hierarchy = None, inplace = False):
+        branch, leaf = 0, 0
+
+        if hierarchy:
+            for i in hierarchy.hierarchy:
+                if (bitmap := getattr(i, "scanchain_bitmap", self._none)) is self._none:
+                    bitmap = getattr(i, "prog_bitmap", self._none)
+
+                if bitmap is None:
+                    return
+
+                elif bitmap is not self._none:
+                    value = value.remap(bitmap, inplace = inplace)
+                    inplace = True
+
+                if (branchmap := getattr(i, "pktchain_branchmap", None)) is not None:
+                    branch, leaf_inc = branchmap[branch]
+                    leaf += leaf_inc
+
+        for v, (offset, length) in value.breakdown():
+            segment = bitarray(bin(v)[2:])
+            segment.reverse()
+            if length > len(segment):
+                segment.extend('0' * (length - len(segment)))
+
+            self.bits[branch][leaf][offset : offset + length] = segment
+
+    def generate_bitstream(self, fasm, output):
         if isinstance(fasm, str):
             fasm = open(fasm, "r")
 
-        if isinstance(output, str):
-            output = open(output, "w")
-
-        # initialize bitstream
-        fabric = summary.pktchain["fabric"]
-        bits = [[bitarray('0', endian="little") * leaf
-            for leaf in branch] for branch in fabric["branches"]]
-        protocol = summary.pktchain["protocol"]
-
-        # process features
         for lineno, line in enumerate(fasm, 1):
-            # parse generic features
-            prefixes, value = self.parse_feature(line)
 
-            # get branch & leaf ID
-            branch, leaf = 0, 0
-            for prefix in prefixes:
-                if (obj := self._reprog_branch.fullmatch(prefix)):
-                    branch += int(obj.group("branch"))
-                    leaf += int(obj.group("leaf"))
+            feature = self.parse_feature(line)
+
+            if feature.type_ == "conn":
+                if (prog_enable := getattr(feature.conn, "prog_enable", self._none)) is self._none:
+                    for net in getattr(feature.conn, "switch_path", tuple()):
+                        bus, idx = (net.bus, net.index) if net.net_type.is_bit else (net, 0)
+                        self._set_bits(bus.instance.model.prog_enable[idx],
+                                bus.instance._extend_hierarchy(above = feature.hierarchy))
+
+                elif prog_enable is None:
+                    continue
+
                 else:
-                    raise PRGAAPIError("[LINE {:>06d}]: Unexpected prefix '{}'"
-                            .format(lineno, prefix))
+                    self._set_bits(prog_enable, feature.hierarchy)
 
-            # apply value
-            for v, (offset, length) in value.breakdown():
-                segment = bitarray(bin(v)[2:])
-                segment.reverse()
-                if length > len(segment):
-                    segment.extend('0' * (length - len(segment)))
+            elif feature.type_ == "param":
+                leaf = feature.hierarchy.hierarchy[0]
 
-                bits[branch][leaf][offset : offset + length] = segment
+                if (parameters := getattr(leaf, "prog_parameters", self._none)) is self._none:
+                    if (parameters := getattr(leaf.model, "prog_parameters", self._none)) is self._none:
+                        continue
+
+                if parameters is None or (bitmap := parameters.get(feature.parameter)) is None:
+                    continue
+
+                feature.value.remap(bitmap, inplace = True)
+                self._set_bits(feature.value, feature.hierarchy, True)
+
+            elif feature.type_ == "plain" and feature.feature == "+":
+                leaf = feature.hierarchy.hierarchy[0]
+
+                prog_enable = None
+                if (feature.module.module_class.is_mode
+                        or (prog_enable := getattr(leaf, "prog_enable", self._none)) is self._none):
+                    prog_enable = getattr(feature.module, "prog_enable", None)
+
+                if prog_enable is None:
+                    continue
+
+                self._set_bits(prog_enable, feature.hierarchy)
+
+            else:
+                _logger.warning("[Line {:0>4d}] Unsupported feature: {}".format(lineno, line.strip()))
 
         # add CRC
-        chain_width = summary.scanchain["chain_width"]
-        for branch in bits:
+        chain_width = self.context.summary.scanchain["chain_width"]
+        for branch in self.bits:
             for leaf_id, leaf_bs in enumerate(branch):
                 # generate checksum
                 crc = [self.crc(iter(b for i, b in enumerate(reversed(leaf_bs)) if i % (chain_width) == idx))
@@ -103,11 +150,16 @@ class PktchainBitstreamGenerator(AbstractBitstreamGenerator):
                 branch[leaf_id] = fullstream
 
         # dump the bitstream (or more precisely, the "packet" stream)
+        if isinstance(output, str):
+            output = open(output, "w")
+
+        fabric = self.context.summary.pktchain["fabric"]
+        protocol = self.context.summary.pktchain["protocol"]
         max_packet_frames = min(256, (2 ** fabric["router_fifo_depth_log2"]) // (32 // fabric["phit_width"])) - 1
         for pkt in count():
             completed = True
-            for leaf_id, branch_id in product(reversed(range(len(bits[0]))), reversed(range(len(bits)))):
-                bitstream = bits[branch_id][leaf_id]
+            for leaf_id, branch_id in product(reversed(range(len(self.bits[0]))), reversed(range(len(self.bits)))):
+                bitstream = self.bits[branch_id][leaf_id]
                 if not any(bitstream):
                     continue
                 total_frames = len(bitstream) // 32

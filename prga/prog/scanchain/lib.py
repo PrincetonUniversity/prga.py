@@ -2,9 +2,7 @@
 
 from ..common import AbstractProgCircuitryEntry, ProgDataBitmap
 from ...core.common import NetClass, ModuleClass, ModuleView
-from ...core.context import Context
 from ...passes.translation import SwitchDelegate
-from ...passes.vpr.delegate import FASMDelegate
 from ...netlist import Module, ModuleUtils, PortDirection, NetUtils
 from ...renderer.lib import BuiltinCellLibrary
 from ...util import uno
@@ -34,7 +32,7 @@ class Scanchain(AbstractProgCircuitryEntry):
         ctx.renderer = None
 
         ctx.summary.scanchain = {"chain_width": chain_width}
-        cls._install_cells(ctx)
+        cls.__install_cells(ctx)
 
         return ctx
 
@@ -187,7 +185,7 @@ class Scanchain(AbstractProgCircuitryEntry):
         return offset
 
     @classmethod
-    def _install_cells(cls, context):
+    def __install_cells(cls, context):
         # register scanchain delimeter
         delim = Module("scanchain_delim",
                 is_cell = True,
