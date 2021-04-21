@@ -5,7 +5,7 @@ from ...exception import PRGAInternalError, PRGAAPIError
 
 from bitarray import bitarray
 from itertools import product, count
-import struct, re
+import struct
 
 class PktchainBitstreamGenerator(AbstractBitstreamGenerator):
     """Bitstream generator for 'pktchain' programming circuitry."""
@@ -129,6 +129,9 @@ class PktchainBitstreamGenerator(AbstractBitstreamGenerator):
         chain_width = self.context.summary.scanchain["chain_width"]
         for branch in self.bits:
             for leaf_id, leaf_bs in enumerate(branch):
+                if len(leaf_bs) == 0:
+                    continue
+
                 # generate checksum
                 crc = [self.crc(iter(b for i, b in enumerate(reversed(leaf_bs)) if i % (chain_width) == idx))
                         for idx in reversed(range(chain_width))]

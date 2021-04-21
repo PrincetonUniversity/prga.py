@@ -3,7 +3,7 @@
 from .protocol import PktchainProtocol
 from ..common import ProgDataBitmap
 from ..scanchain.lib import Scanchain
-from ...core.common import ModuleClass, ModuleView, NetClass, Orientation
+from ...core.common import ModuleClass, ModuleView, NetClass, Orientation, Corner
 from ...netlist import PortDirection, Const, Module, NetUtils, ModuleUtils
 from ...passes.base import AbstractPass
 from ...passes.translation import SwitchDelegate
@@ -11,10 +11,10 @@ from ...renderer.lib import BuiltinCellLibrary
 from ...integration import Integration
 from ...exception import PRGAInternalError
 from ...tools.ioplan import IOPlanner
-from ...util import uno
+from ...util import uno, Object, Enum
 
 import os, logging
-from itertools import product
+from itertools import product, count
 
 _logger = logging.getLogger(__name__)
 
@@ -78,6 +78,92 @@ class Pktchain(Scanchain):
                 total += leaf
         _logger.info(" .. Total effective bitstream bits: {}".format(total))
 
+    class _PktchainRouterCtrl(Enum):
+        _terminate_leaf = 0
+        _terminate_branch = 1
+
+    TERMINATE_LEAF      = _PktchainRouterCtrl._terminate_leaf
+    TERMINATE_BRANCH    = _PktchainRouterCtrl._terminate_branch
+
+    class DefaultInstanceIterator(Object):
+        """Default implementation of ``iter_instances`` to be used by ``Pktchain.insert_prog_circuitry``.
+
+        Args:
+            context (`Context`):
+        """
+
+        __slots__ = ["context"]
+
+        def __init__(self, context):
+            self.context = context
+
+        def __call__(self, module):
+            if module.module_class.is_array:
+                abstract = self.context.database[ModuleView.abstract, module.key]
+
+                # traverse columns
+                for x in range(module.width):
+                    for y in range(module.height):
+
+                        # southwest switch-box
+                        if i := module.instances.get( ((x, y), Corner.southwest) ): yield i
+
+                        # southeast switch-box
+                        if i := module.instances.get( ((x, y), Corner.southeast) ): yield i
+
+                        # tile or array
+                        if (root := abstract._instances.get_root( (x, y) )) and root.key.y == y:
+                            if root.model.module_class.is_array:
+                                #     instance,                     sub-branch ID
+                                yield (module.instances[root.key],  root.key.x - x)
+
+                            elif root.key.x == x:
+                                yield module.instances[root.key]
+
+                        # northwest switch-box
+                        if i := module.instances.get( ((x, y), Corner.northwest) ): yield i
+
+                        # northeast switch-box
+                        if i := module.instances.get( ((x, y), Corner.northeast) ): yield i
+
+                        # insert router if ``root`` is None or ``root`` is a tile instance
+                        if root is None or root.model.module_class.is_tile:
+                            yield Pktchain.TERMINATE_LEAF
+
+                    # terminate branch
+                    yield Pktchain.TERMINATE_BRANCH
+
+            elif module.module_class.is_tile:
+                # south connection-boxes
+                for x in reversed(range(module.width)):
+                    if i := module.instances.get( (Orientation.south, x) ): yield i
+
+                # west connection-boxes
+                for y in range(module.height):
+                    if i := module.instances.get( (Orientation.west, y) ): yield i
+
+                # block instances
+                blocks = []
+                for i in count():
+                    if instance := module.instances.get(i):
+                        blocks.append(instance)
+                    else:
+                        break
+                for block in reversed(blocks):
+                    yield block
+
+                # east connection-boxes
+                for y in range(module.height):
+                    if i := module.instances.get( (Orientation.east, y) ): yield i
+
+                # north connection-boxes
+                for x in reversed(range(module.width)):
+                    if i := module.instances.get( (Orientation.north, x) ): yield i
+
+            else:
+                for i in module.instances.values():
+                    yield i
+
     @classmethod
     def _insert_pktchain(cls, context, design_view = None, *,
             iter_instances = None, insert_delimiter = None, _not_top = False):
@@ -90,11 +176,9 @@ class Pktchain(Scanchain):
 
         Keyword Args:
             iter_instances (:obj:`Callable` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
-                the instances in a module. In addition, when the module is an array, ``None`` can be yielded to
-                control pktchain router injection. When one ``None`` is yielded, a pktchain router is injected for
-                tiles/switch boxes that are not already controlled by another pktchain router. When two ``None`` are
-                yielded consecutively, the current pktchain branch is terminated and attached to the primary pktchain
-                chunk.
+                the instances in a module. In addition, when the module is an array, `Pktchain.TERMINATE_LEAF` can
+                be yielded to control pktchain router injection. Furthermore, `Pktchain.TERMINATE_BRANCH` can be
+                yielded to terminate the current branch and attach the branch to the main programming backbone (chunk).
             insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if ``we`` buffers are inserted at
                 the beginning and end of the scanchain inside ``design_view``. By default, buffers are inserted in
                 all logic/IO blocks and routing boxes.
@@ -105,7 +189,7 @@ class Pktchain(Scanchain):
         chain_width = context.summary.scanchain["chain_width"]
         lmod = uno(design_view, context.database[ModuleView.design, context.top.key])
         umod = context.database[ModuleView.abstract, lmod.key]
-        iter_instances = uno(iter_instances, lambda m: m.instances.values())
+        iter_instances = uno(iter_instances, cls.DefaultInstanceIterator(context))
 
         # quick check
         if not lmod.module_class.is_array:
@@ -121,25 +205,18 @@ class Pktchain(Scanchain):
         leaves, leaf_prog_nets, scanchain_offset = [], {}, 0
 
         # traverse instances
-        none_once = False
         for linst in iter_instances(lmod):
-            # when ``None`` is yielded, insert router or dispatcher/gatherer
-            if linst is None:
-                _logger.debug("Pktchain break")
 
-                if none_once:
-                    dispatcher, gatherer = cls._wrap_pktchain_branch(context, lmod,
-                            dispatcher, gatherer, branch_prog_nets, branches, leaves, _not_top)
-                else:
-                    cls._wrap_pktchain_leaf(context, lmod, len(branches),
-                            branch_prog_nets, leaves, leaf_prog_nets, scanchain_offset)
-                    scanchain_offset = 0
-
-                none_once = not none_once
+            if linst is cls.TERMINATE_LEAF:
+                cls._wrap_pktchain_leaf(context, lmod, len(branches),
+                        branch_prog_nets, leaves, leaf_prog_nets, scanchain_offset)
+                scanchain_offset = 0
                 continue
-
-            # handling instances
-            none_once = False
+            
+            elif linst is cls.TERMINATE_BRANCH:
+                dispatcher, gatherer = cls._wrap_pktchain_branch(context, lmod,
+                        dispatcher, gatherer, branch_prog_nets, branches, leaves, _not_top)
+                continue
 
             # get sub-branch ID
             try:
@@ -173,11 +250,10 @@ class Pktchain(Scanchain):
                         uinst.pktchain_branchmap = linst.pktchain_branchmap
 
                     scanchain_offset += linst.model.scanchain_bitcount
+
                 else:
-                    # wrap up remaining scanchains
-                    cls._wrap_pktchain_leaf(context, lmod, len(branches),
-                            branch_prog_nets, leaves, leaf_prog_nets, scanchain_offset)
-                    scanchain_offset = 0
+                    if scanchain_offset > 0 or leaf_prog_nets:
+                        raise PRGAInternalError("Unterminated leaf before merging sub-branches in {}".format(linst))
 
                     # get branch map
                     if not 0 <= sub_branch_id < len(sub_branches):
@@ -219,21 +295,18 @@ class Pktchain(Scanchain):
                         context, lmod, linst, iter_instances, insert_delimiter,
                         leaf_prog_nets, scanchain_offset, len(branches), len(leaves))
 
-        # if we have a branch, wrap it and update our main branch map
-        if branch_prog_nets or branches or leaves:
-            # wrap up remaining scanchains
-            cls._wrap_pktchain_leaf(context, lmod, len(branches),
-                    branch_prog_nets, leaves, leaf_prog_nets, scanchain_offset)
+        # end of traversal
+        if leaves:
+            raise PRGAInternalError("Dangling leaves (unterminated branch) after end of instance traversal in {}"
+                    .format(lmod))
 
-            # wrap up remaining branches
-            if branch_prog_nets:
-                dispatcher, gatherer = cls._wrap_pktchain_branch(context, lmod, dispatcher, gatherer,
-                        branch_prog_nets, branches, leaves, _not_top)
+        elif branches:
+            if leaf_prog_nets or scanchain_offset > 0:
+                raise PRGAInternalError("Unterminated leaf after end of instance traversal in {}".format(lmod))
+            assert not branch_prog_nets
 
-            # update branch map
             lmod.pktchain_branches = tuple(branches)
 
-        # if not, treat this array as a regular scanchain-based module
         elif leaf_prog_nets:
             prog_ports = cls._get_or_create_scanchain_prog_nets(lmod, chain_width)
 
@@ -574,9 +647,6 @@ class Pktchain(Scanchain):
     @classmethod
     def _wrap_pktchain_leaf(cls, context, module, branch_id,
             branch_prog_nets, leaves, leaf_prog_nets, scanchain_bitcount):
-        if not leaf_prog_nets:
-            return
-
         _logger.debug("Wrapping leaf No. {} on branch No. {} in {}"
                 .format(len(leaves), branch_id, module))
 
@@ -592,9 +662,13 @@ class Pktchain(Scanchain):
             NetUtils.connect(prog_nets[port], router.pins[port])
 
         # connect scanchain to router
-        NetUtils.connect(leaf_prog_nets["prog_dout"], router.pins["prog_din"])
+        if prog_dout := leaf_prog_nets.get("prog_dout"):
+            NetUtils.connect(prog_dout, router.pins["prog_din"])
+            NetUtils.connect(router.pins["prog_dout"], leaf_prog_nets["prog_din"])
+        else:
+            NetUtils.connect(router.pins["prog_dout"], router.pins["prog_din"])
+
         NetUtils.connect(leaf_prog_nets.get("prog_we_o", router.pins["prog_we_o"]), router.pins["prog_we"])
-        NetUtils.connect(router.pins["prog_dout"], leaf_prog_nets["prog_din"])
         for pin in leaf_prog_nets.get("prog_we", []):
             NetUtils.connect(router.pins["prog_we_o"], pin)
 
