@@ -130,7 +130,13 @@ class Context(Object):
 
     @renderer.setter
     def renderer(self, r):
-        self._renderer = r
+        if r is None:
+            try:
+                del self._renderer
+            except AttributeError:
+                pass
+        else:
+            self._renderer = r
 
     @property
     def prog_entry(self):

@@ -39,8 +39,7 @@ class MagicBitstreamGenerator(AbstractBitstreamGenerator):
             return
 
         if bitmap is not None:
-            value = deepcopy(value)
-            value.bitmap = value.bitmap.remap(bitmap)
+            value = value.remap(bitmap)
 
         for v, (o, l) in value.breakdown():
             output.write("force {}{}prog_data[{}:{}] = {}'h{:x};\n".format(
@@ -60,19 +59,17 @@ class MagicBitstreamGenerator(AbstractBitstreamGenerator):
             feature = self.parse_feature(line)
 
             if feature.type_ == "conn":
-                conn = NetUtils.get_connection(feature.src, feature.sink, skip_validations = True)
-
-                if (prog_enable := getattr(conn, "prog_enable", self._none)) is self._none:
-                    for net in getattr(conn, "switch_path", tuple()):
+                if (prog_enable := getattr(feature.conn, "prog_enable", self._none)) is self._none:
+                    for net in getattr(feature.conn, "switch_path", tuple()):
                         bus, idx = (net.bus, net.index) if net.net_type.is_bit else (net, 0)
                         self._emit_lines(output, bus.instance.model.prog_enable[idx], prefix,
                                 bus.instance._extend_hierarchy(above = feature.hierarchy))
 
+                elif prog_enable is None:
+                    continue
+
                 else:
-                    if prog_enable is None:
-                        continue
-                    else:
-                        self._emit_lines(output, prog_enable, prefix, feature.hierarchy)
+                    self._emit_lines(output, prog_enable, prefix, feature.hierarchy)
 
             elif feature.type_ == "param":
                 leaf = feature.hierarchy.hierarchy[0]
@@ -84,7 +81,7 @@ class MagicBitstreamGenerator(AbstractBitstreamGenerator):
                 if parameters is None or (bitmap := parameters.get(feature.parameter)) is None:
                     continue
 
-                feature.value.bitmap.remap(bitmap)
+                feature.value.remap(bitmap, inplace = True)
                 self._emit_lines(output, feature.value, prefix, feature.hierarchy)
 
             elif feature.type_ == "plain" and feature.feature == "+":

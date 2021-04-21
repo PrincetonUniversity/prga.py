@@ -19,6 +19,19 @@ class ProgDataBitmap(object):
 
     __slots__ = ["_bitmap"]
     def __init__(self, *args):
+        self._construct(args)
+
+    def __repr__(self):
+        return "ProgDataBitmap({})".format(
+                ", ".join("[{}+:{}]->[{}+:{}]".format(offset, range_.length, range_.offset, range_.length)
+                    for offset, range_ in self._bitmap[:-1]))
+
+    @property
+    def length(self):
+        """:obj:`int`: Length of the bitmap."""
+        return self._bitmap[-1][0]
+
+    def _construct(self, args):
         bitmap, offset = [], 0
         for arg in args:
             arg = ProgDataRange(*arg)
@@ -48,11 +61,14 @@ class ProgDataBitmap(object):
             length -= maxlen
             offset += maxlen
 
-    def remap(self, bitmap):
+    def remap(self, bitmap, *, inplace = False):
         """Remap ``self`` onto ``bitmap``.
 
         Args:
             bitmap (`ProgDataBitmap`):
+
+        keyword Args:
+            inplace (:obj:`bool`):
 
         Returns:
             `ProgDataBitmap`:
@@ -61,7 +77,11 @@ class ProgDataBitmap(object):
         for _, srcmap in self._bitmap[:-1]:
             for dstmap in bitmap.query(*srcmap):
                 args.append(dstmap)
-        return type(self)(*args)
+        if inplace:
+            self._construct(args)
+            return self
+        else:
+            return type(self)(*args)
 
 class ProgDataValue(object):
 
@@ -69,6 +89,26 @@ class ProgDataValue(object):
     def __init__(self, value, *args):
         self.value = value
         self.bitmap = ProgDataBitmap(*args)
+
+    def __repr__(self):
+        return "ProgDataValue({}'h{:x}, {})".format(
+                self.bitmap.length, self.value, repr(self.bitmap))
+
+    def remap(self, bitmap, *, inplace = False):
+        """Remap this value onto ``bitmap``.
+
+        Args:
+            bitmap (`ProgDataBitmap`):
+
+        keyword Args:
+            inplace (:obj:`bool`):
+
+        Returns:
+            `ProgDataValue`:
+        """
+        v = self if inplace else deepcopy(self)
+        v.bitmap.remap(bitmap, inplace = True)
+        return v
 
     def breakdown(self):
         """Break bitmapped value into multiple simple values.
@@ -84,29 +124,6 @@ class ProgDataValue(object):
 # ----------------------------------------------------------------------------
 class AbstractProgCircuitryEntry(Object):
     """Abstract base class for programming circuitry entry point."""
-
-    # @classmethod
-    # @abstractmethod
-    # def new_context(cls):
-    #     """Create a new context.
-
-    #     Returns:
-    #         `Context`:
-    #     """
-    #     raise NotImplementedError
-
-    # @classmethod
-    # def new_renderer(cls, additional_template_search_paths = tuple()):
-    #     """Create a new file renderer.
-
-    #     Args:
-    #         additional_template_search_paths (:obj:`Sequence` [:obj:`str` ]): Additional paths where the renderer
-    #             should search for template files
-
-    #     Returns:
-    #         `FileRenderer`:
-    #     """
-    #     return FileRenderer(*additional_template_search_paths)
 
     @classmethod
     def buffer_prog_ctrl(cls, context, design_view = None, _cache = None):
@@ -216,7 +233,7 @@ class AbstractProgCircuitryEntry(Object):
         raise NotImplementedError
 
     @classmethod
-    def materialize(cls, ctx, inplace = False):
+    def materialize(cls, ctx, inplace = False, **kwargs):
         """Materialize the abstract context to this configuration circuitry type.
 
         Args:
@@ -224,6 +241,9 @@ class AbstractProgCircuitryEntry(Object):
                 circuitry type.
             inplace (:obj:`bool`): If set, the context is modified in-place. Otherwise (by default), ``ctx`` is
                 deep-copied before processed
+
+        Keyword Args:
+            **kwargs: Additional keyword parameters specific to the programming circuitry type.
 
         Returns:
             `Context`:

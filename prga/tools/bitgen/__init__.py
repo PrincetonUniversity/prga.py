@@ -13,6 +13,9 @@ def def_argparser(name):
             help="Raw FASM input")
     parser.add_argument("-o", "--output", metavar="output",
             help="Output file")
+    parser.add_argument("-p", "--prog_type", metavar="prog_type",
+            help=("[Export Option] Overwrite the programming circuitry type in the pickled context. "
+                "For example, use `Magic` to generate a fake bitstream with Verilog `force` statements. "))
 
     return parser
 

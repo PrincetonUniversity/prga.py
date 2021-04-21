@@ -3,125 +3,16 @@
 from ..common import AbstractProgCircuitryEntry, ProgDataBitmap
 from ...core.common import NetClass, ModuleClass, ModuleView
 from ...core.context import Context
-from ...passes.base import AbstractPass
 from ...passes.translation import SwitchDelegate
 from ...passes.vpr.delegate import FASMDelegate
 from ...netlist import Module, ModuleUtils, PortDirection, NetUtils
-from ...renderer import FileRenderer
+from ...renderer.lib import BuiltinCellLibrary
 from ...util import uno
 from ...exception import PRGAInternalError
 
 import os, logging
 
 _logger = logging.getLogger(__name__)
-
-ADDITIONAL_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
-
-# ----------------------------------------------------------------------------
-# -- FASM Delegate -----------------------------------------------------------
-# ----------------------------------------------------------------------------
-class ScanchainFASMDelegate(FASMDelegate):
-    """FASM delegate for scanchain programming circuitry.
-    
-    Args:
-        context (`Context`):
-    """
-
-    _none = object()
-
-    __slots__ = ['context']
-    def __init__(self, context):
-        self.context = context
-
-    @classmethod
-    def __hierarchy_prefix(cls, hierarchy = None):
-        if hierarchy is None:
-            return ""
-        bitmap = None
-        for i in hierarchy.hierarchy:
-            if (bitmap_inc := getattr(i, "prog_bitmap", None)) is not None:
-                if bitmap is None:
-                    bitmap = bitmap_inc
-                else:
-                    bitmap = bitmap.remap(bitmap_inc)
-        if bitmap is None:
-            return ""
-        else:
-            return cls._bitmap(bitmap)
-
-    def fasm_mux_for_intrablock_switch(self, source, sink, hierarchy = None):
-        conn = NetUtils.get_connection(source, sink, skip_validations = True)
-        if (prog_enable := getattr(conn, "prog_enable", self._none)) is not self._none:
-            if prog_enable is None:
-                return tuple()
-            else:
-                return self._value(prog_enable, True)
-        fasm_features = []
-        for net in getattr(conn, "switch_path", tuple()):
-            bus, idx = (net.bus, net.index) if net.net_type.is_bit else (net, 0)
-            fasm_features.extend("+{}#{}.{}".format(
-                bus.instance.scanchain_offset, len(bus.instance.pins["prog_data"]), v)
-                for v in self._value(bus.instance.model.prog_enable[idx], True))
-        return tuple(fasm_features)
-
-    def fasm_params_for_primitive(self, instance):
-        leaf = instance.hierarchy[0]
-        if (parameters := getattr(leaf, "prog_parameters", self._none)) is self._none:
-            if (parameters := getattr(leaf.model, "prog_parameters", self._none)) is self._none:
-                return {}
-        return {k: bitmap for k, v in uno(parameters, {}).items()
-                if (bitmap := self._bitmap(v, True))}
-
-    def fasm_prefix_for_intrablock_module(self, module, hierarchy = None):
-        if hierarchy:
-            leaf = hierarchy.hierarchy[0]
-            if (prog_bitmap := getattr(leaf, "prog_bitmap", None)) is not None:
-                return self._bitmap(prog_bitmap)
-            else:
-                return None
-        else:
-            return None
-
-    def fasm_features_for_intrablock_module(self, module, hierarchy = None):
-        if (module.module_class.is_mode
-                or hierarchy is None
-                or (prog_enable := getattr(hierarchy.hierarchy[0], "prog_enable", self._none)) is self._none):
-            prog_enable = getattr(module, "prog_enable", None)
-        if prog_enable is None:
-            return tuple()
-        else:
-            return self._value(prog_enable, True)
-
-    def fasm_lut(self, instance):
-        leaf = instance.hierarchy[0]
-        if (parameters := getattr(leaf, "prog_parameters", self._none)) is self._none:
-            if (parameters := getattr(leaf.model, "prog_parameters", self._none)) is self._none:
-                return None
-        if (bitmap := parameters.get("lut")) is not None:
-            if len(bitmap._bitmap) != 2:
-                raise PRGAInternalError("Invalid bitmap for LUT: {}".format(instance.model))
-            return self._bitmap(bitmap, True)
-        else:
-            return None
-
-    def fasm_prefix_for_tile(self, instance):
-        retval = []
-        for subtile, blkinst in instance.model.instances.items():
-            if not isinstance(subtile, int):
-                continue
-            elif subtile >= len(retval):
-                retval.extend(None for _ in range(subtile - len(retval) + 1))
-            retval[subtile] = self.__hierarchy_prefix(blkinst._extend_hierarchy(above = instance))
-        return tuple(retval)
-
-    def fasm_features_for_interblock_switch(self, source, sink, hierarchy = None):
-        if (features := self.fasm_mux_for_intrablock_switch(source, sink, hierarchy)):
-            if prefix := self.__hierarchy_prefix(hierarchy):
-                return tuple(prefix + "." + feature for feature in features)
-            else:
-                return features
-        else:
-            return tuple()
 
 # ----------------------------------------------------------------------------
 # -- Scanchain Programming Circuitry Main Entry ------------------------------
@@ -130,20 +21,32 @@ class Scanchain(AbstractProgCircuitryEntry):
     """Entry point for scanchain programming circuitry."""
 
     @classmethod
-    def new_context(cls, chain_width = 1):
-        ctx = Context("scanchain")
-        ctx.summary.scanchain = {"chain_width": chain_width}
+    def materialize(cls, ctx, inplace = False, *,
+            chain_width = 1):
+
+        ctx = super().materialize(ctx, inplace = inplace)
         ctx._switch_delegate = SwitchDelegate(ctx)
-        ctx._fasm_delegate = ScanchainFASMDelegate(ctx)
-        cls._register_cells(ctx)
+
+        BuiltinCellLibrary.install_stdlib(ctx)
+        BuiltinCellLibrary.install_design(ctx)
+
+        ctx.template_search_paths.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'))
+        ctx.renderer = None
+
+        ctx.summary.scanchain = {"chain_width": chain_width}
+        cls._install_cells(ctx)
+
         return ctx
 
     @classmethod
-    def new_renderer(cls, additional_template_search_paths = tuple()):
-        return FileRenderer(*additional_template_search_paths, ADDITIONAL_TEMPLATE_SEARCH_PATH)
+    def insert_prog_circuitry(cls, context, *,
+            iter_instances = None, insert_delimiter = None):
+        cls.buffer_prog_ctrl(context)
+        context.summary.scanchain["bitstream_size"] = cls._insert_scanchain(context,
+                iter_instances = iter_instances, insert_delimiter = insert_delimiter)
 
     @classmethod
-    def insert_scanchain(cls, context, design_view = None, *,
+    def _insert_scanchain(cls, context, design_view = None, *,
             iter_instances = None, insert_delimiter = None):
         """Insert the scanchain.
         
@@ -191,7 +94,7 @@ class Scanchain(AbstractProgCircuitryEntry):
             # check if `linst` requires programming data
             if (prog_data := linst.pins.get("prog_data")) is None:
                 if (bitcount := getattr(linst.model, "scanchain_bitcount", None)) is None:
-                    bitcount = cls.insert_scanchain(context, linst.model, iter_instances = iter_instances)
+                    bitcount = cls._insert_scanchain(context, linst.model, iter_instances = iter_instances)
                 if bitcount == 0:
                     continue
 
@@ -238,9 +141,9 @@ class Scanchain(AbstractProgCircuitryEntry):
             prog_nets["prog_din"] = ichain.pins["prog_dout"]
 
             # update
-            linst.scanchain_offset = offset
+            linst.scanchain_bitmap = ProgDataBitmap( (offset, bitcount) )
             if (uinst := umod.instances.get(linst.key)) is not None:
-                uinst.prog_bitmap = ProgDataBitmap( (offset, bitcount) )
+                uinst.scanchain_bitmap = linst.scanchain_bitmap
             offset += bitcount
 
         # close this segment
@@ -284,7 +187,7 @@ class Scanchain(AbstractProgCircuitryEntry):
         return offset
 
     @classmethod
-    def _register_cells(cls, context):
+    def _install_cells(cls, context):
         # register scanchain delimeter
         delim = Module("scanchain_delim",
                 is_cell = True,
@@ -375,38 +278,3 @@ class Scanchain(AbstractProgCircuitryEntry):
                 nets[key] = port
         
         return nets
-
-    class InsertProgCircuitry(AbstractPass):
-        """Insert programming circuitry.
-
-        Keyword Args:
-            iter_instances (:obj:`Function` [`Module` ] -> :obj:`Iterable` [`Instance` ]): Custom ordering of
-                the instances in a module
-            insert_delimiter (:obj:`Function` [`Module` ] -> :obj:`bool`): Determine if ``we`` buffers are inserted at
-                the beginning and end of the scanchain inside ``design_view``. By default, buffers are inserted in
-                all logic/IO blocks and routing boxes.
-        
-        """
-
-        __slots__ = ["iter_instances", "insert_delimiter"]
-
-        def __init__(self, *, iter_instances = None, insert_delimiter = None):
-            self.iter_instances = iter_instances
-            self.insert_delimiter = insert_delimiter
-
-        def run(self, context, renderer = None):
-            Scanchain.buffer_prog_ctrl(context)
-            context.summary.scanchain["bitstream_size"] = Scanchain.insert_scanchain(context,
-                    iter_instances = self.iter_instances, insert_delimiter = self.insert_delimiter)
-
-        @property
-        def key(self):
-            return "prog.insertion.scanchain"
-
-        @property
-        def dependences(self):
-            return ("annotation.switch_path", )
-
-        @property
-        def passes_after_self(self):
-            return ("rtl", )

@@ -27,7 +27,7 @@ class FASMDelegate(Object):
                     for v, (o, l) in value.breakdown())
         else:
             return cls._bitmap(value.bitmap) + ".~{}'h{:x}".format(
-                    value.bitmap._bitmap[-1][0], value.value)
+                    value.bitmap.length, value.value)
 
     def reset(self):
         """Reset the delegate."""

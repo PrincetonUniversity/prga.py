@@ -7,7 +7,7 @@ from ...util import Object
 import re
 from collections import namedtuple
 
-class FASMFeatureConn(namedtuple('FASMFeatureConn', 'src sink hierarchy', defaults=(None, ))):
+class FASMFeatureConn(namedtuple('FASMFeatureConn', 'conn hierarchy', defaults=(None, ))):
     @property
     def type_(self):
         return 'conn'
@@ -83,7 +83,7 @@ class AbstractBitstreamGenerator(Object):
         last = tokens[-1]
         if len(subtokens := last.split('->')) > 1:
             src, sink = map(lambda n: NetUtils._dereference(module, n, byname = True), subtokens)
-            return FASMFeatureConn(src, sink, hierarchy)
+            return FASMFeatureConn(NetUtils.get_connection(src, sink, skip_validations = True), hierarchy)
 
         elif len(subtokens := last.split('=')) > 1:
             # parameter and range specifier

@@ -2,7 +2,7 @@
 
 from .protocol import PktchainProtocol
 from ..common import ProgDataBitmap
-from ..scanchain.lib import Scanchain, ScanchainFASMDelegate
+from ..scanchain.lib import Scanchain #, ScanchainFASMDelegate
 from ...core.common import ModuleClass, ModuleView, NetClass, Orientation
 from ...core.context import Context
 from ...netlist import PortDirection, Const, Module, NetUtils, ModuleUtils
@@ -21,57 +21,57 @@ _logger = logging.getLogger(__name__)
 
 ADDITIONAL_TEMPLATE_SEARCH_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
 
-# ----------------------------------------------------------------------------
-# -- FASM Delegate -----------------------------------------------------------
-# ----------------------------------------------------------------------------
-class PktchainFASMDelegate(ScanchainFASMDelegate):
-    """FASM delegate for pktchain programming circuitry.
-
-    Args:
-        context (`Context`):
-    """
-
-    def _instance_branch_offset(self, instance):
-        branch, leaf, bitmap = None, None, None
-        for i in instance.hierarchy:
-            if (bitmap_inc := getattr(i, "prog_bitmap", None)) is not None:
-                if bitmap is None:
-                    bitmap = bitmap_inc
-                else:
-                    bitmap = bitmap.remap(bitmap_inc)
-            if (branchmap := getattr(i, "prog_pktchain_branchmap", None)) is not None:
-                branch, leaf_inc = branchmap[uno(branch, 0)]
-                if leaf is None:
-                    leaf = leaf_inc
-                else:
-                    leaf += leaf_inc
-            if bitmap_inc is None and branchmap is None:
-                _logger.warning("No programming info found for {}".format(i))
-                return None
-        return branch, leaf, bitmap
-
-    def fasm_prefix_for_tile(self, instance):
-        if (v := self._instance_branch_offset(instance)) is None:
-            return tuple()
-        branch, leaf, bitmap = v
-        retval = []
-        for subtile, blkinst in instance.model.instances.items():
-            if not isinstance(subtile, int):
-                continue
-            elif subtile >= len(retval):
-                retval.extend(None for _ in range(subtile - len(retval) + 1))
-            if (bitmap_root := getattr(blkinst, "prog_bitmap", None)) is not None:
-                retval[subtile] = "b{}l{}.{}".format(branch, leaf,
-                        self._bitmap(bitmap_root.remap(bitmap)))
-        return tuple(retval)
-
-    def fasm_features_for_interblock_switch(self, source, sink, hierarchy = None):
-        if not (features := self.fasm_mux_for_intrablock_switch(source, sink)):
-            return tuple()
-        if (v := self._instance_branch_offset(hierarchy)) is None:
-            return tuple()
-        branch, leaf, bitmap = v
-        return tuple("b{}l{}.{}.{}".format(branch, leaf, self._bitmap(bitmap), f) for f in features)
+# # ----------------------------------------------------------------------------
+# # -- FASM Delegate -----------------------------------------------------------
+# # ----------------------------------------------------------------------------
+# class PktchainFASMDelegate(ScanchainFASMDelegate):
+#     """FASM delegate for pktchain programming circuitry.
+# 
+#     Args:
+#         context (`Context`):
+#     """
+# 
+#     def _instance_branch_offset(self, instance):
+#         branch, leaf, bitmap = None, None, None
+#         for i in instance.hierarchy:
+#             if (bitmap_inc := getattr(i, "prog_bitmap", None)) is not None:
+#                 if bitmap is None:
+#                     bitmap = bitmap_inc
+#                 else:
+#                     bitmap = bitmap.remap(bitmap_inc)
+#             if (branchmap := getattr(i, "prog_pktchain_branchmap", None)) is not None:
+#                 branch, leaf_inc = branchmap[uno(branch, 0)]
+#                 if leaf is None:
+#                     leaf = leaf_inc
+#                 else:
+#                     leaf += leaf_inc
+#             if bitmap_inc is None and branchmap is None:
+#                 _logger.warning("No programming info found for {}".format(i))
+#                 return None
+#         return branch, leaf, bitmap
+# 
+#     def fasm_prefix_for_tile(self, instance):
+#         if (v := self._instance_branch_offset(instance)) is None:
+#             return tuple()
+#         branch, leaf, bitmap = v
+#         retval = []
+#         for subtile, blkinst in instance.model.instances.items():
+#             if not isinstance(subtile, int):
+#                 continue
+#             elif subtile >= len(retval):
+#                 retval.extend(None for _ in range(subtile - len(retval) + 1))
+#             if (bitmap_root := getattr(blkinst, "prog_bitmap", None)) is not None:
+#                 retval[subtile] = "b{}l{}.{}".format(branch, leaf,
+#                         self._bitmap(bitmap_root.remap(bitmap)))
+#         return tuple(retval)
+# 
+#     def fasm_features_for_interblock_switch(self, source, sink, hierarchy = None):
+#         if not (features := self.fasm_mux_for_intrablock_switch(source, sink)):
+#             return tuple()
+#         if (v := self._instance_branch_offset(hierarchy)) is None:
+#             return tuple()
+#         branch, leaf, bitmap = v
+#         return tuple("b{}l{}.{}.{}".format(branch, leaf, self._bitmap(bitmap), f) for f in features)
 
 # ----------------------------------------------------------------------------
 # -- Pktchain Programming Circuitry Main Entry -------------------------------
