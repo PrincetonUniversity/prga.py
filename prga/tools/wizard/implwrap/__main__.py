@@ -49,13 +49,18 @@ _logger.info("Reading IO constraints: {}".format(args.fixed))
 IOPlanner.parse_io_constraints(app, args.fixed)
 
 # select the correct implementation wrapper generator
-prog_entry = summary.prog_type.split('.')[-1]
-_logger.info("Programming circuitry type: {}".format(prog_entry))
+prog_type = summary.prog_type.split('.')[-1]
+if args.prog_type is not None:
+    _logger.info("Using programming circuitry type: {} ({} used in architecture)"
+            .format(args.prog_type, prog_type))
+    prog_type = args.prog_type
+else:
+    _logger.info("Using programming circuitry type: {}".format(prog_type))
 
 # generate implementation wrapper
 _logger.info("Generating implementation wrapper")
 r = FileRenderer()
-generate_implwrap_common(summary, app, r, args.output, prog_entry + ".tmpl.v")
+generate_implwrap_common(summary, app, r, args.output, prog_type + ".tmpl.v")
 r.render()
 
 _logger.info("Implementation wrapper generated. Bye")

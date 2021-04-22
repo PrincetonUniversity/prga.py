@@ -297,10 +297,10 @@ class Pktchain(Scanchain):
 
         # end of traversal
         if leaves:
-            raise PRGAInternalError("Dangling leaves (unterminated branch) after end of instance traversal in {}"
-                    .format(lmod))
+            dispatcher, gatherer = cls._wrap_pktchain_branch(context, lmod,
+                    dispatcher, gatherer, branch_prog_nets, branches, leaves, _not_top)
 
-        elif branches:
+        if branches:
             if leaf_prog_nets or scanchain_offset > 0:
                 raise PRGAInternalError("Unterminated leaf after end of instance traversal in {}".format(lmod))
             assert not branch_prog_nets

@@ -37,10 +37,10 @@ context = Context.unpickle(args.context)
 # select the correct bitstream generator
 prog_type = uno(args.prog_type, context.prog_entry.__name__)
 if prog_type != context.prog_entry.__name__:
-    _logger.info("Use programming circuitry type: {} ({} used in architecture)"
+    _logger.info("Using programming circuitry type: {} ({} used in architecture)"
             .format(prog_type, context.prog_entry.__name__))
 else:
-    _logger.info("Use programming circuitry type: {}".format(prog_type))
+    _logger.info("Using programming circuitry type: {}".format(prog_type))
 generator = _generators[prog_type](context)
 
 # generate bitstream
