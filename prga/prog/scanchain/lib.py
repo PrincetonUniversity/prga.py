@@ -187,15 +187,13 @@ class Scanchain(AbstractProgCircuitryEntry):
     @classmethod
     def __install_cells(cls, context):
         # register scanchain delimeter
-        delim = Module("scanchain_delim",
+        delim = context._add_module(Module("scanchain_delim",
                 is_cell = True,
                 view = ModuleView.design,
                 module_class = ModuleClass.prog,
-                verilog_template = "scanchain_delim.tmpl.v")
+                verilog_template = "scanchain_delim.tmpl.v"))
         cls._get_or_create_scanchain_prog_nets(delim, context.summary.scanchain["chain_width"])
         ModuleUtils.create_port(delim, "prog_we_o", 1, PortDirection.output, net_class = NetClass.prog)
-
-        context._database[ModuleView.design, "scanchain_delim"] = delim
 
     @classmethod
     def _get_or_create_scanchain_data_cell(cls, context, data_width):
@@ -227,35 +225,8 @@ class Scanchain(AbstractProgCircuitryEntry):
 
     @classmethod
     def _get_or_create_scanchain_prog_nets(cls, module, chain_width, excludes = None):
-        nets = {}
         excludes = set(uno(excludes, []))
-
-        # prog_clk
-        if "prog_clk" not in excludes:
-            if (prog_clk := module.ports.get("prog_clk")) is None:
-                prog_clk = ModuleUtils.create_port(module, "prog_clk", 1, PortDirection.input_,
-                        is_clock = True, net_class = NetClass.prog)
-            nets["prog_clk"] = prog_clk
-
-        # prog_rst
-        if "prog_rst" not in excludes:
-            if (buf := module.instances.get("i_buf_prog_rst_l0")) is None:
-                if (port := module.ports.get("prog_rst")) is None:
-                    port = ModuleUtils.create_port(module, "prog_rst", 1, PortDirection.input_,
-                            net_class = NetClass.prog)
-                nets["prog_rst"] = port
-            else:
-                nets["prog_rst"] = buf.pins["Q"]
-
-        # prog_done
-        if "prog_done" not in excludes:
-            if (buf := module.instances.get("i_buf_prog_done_l0")) is None:
-                if (port := module.ports.get("prog_done")) is None:
-                    port = ModuleUtils.create_port(module, "prog_done", 1, PortDirection.input_,
-                            net_class = NetClass.prog)
-                nets["prog_done"] = port
-            else:
-                nets["prog_done"] = buf.pins["Q"]
+        nets = cls._get_or_create_prog_nets(module, excludes)
 
         # prog_we
         if "prog_we" not in excludes:

@@ -32,10 +32,12 @@ __all__.extend(["Context", "VERSION"])
 from .prog.magic.lib import Magic
 from .prog.scanchain.lib import Scanchain
 from .prog.pktchain.lib import Pktchain
+from .prog.frame.lib import Frame
 __all__.extend([
     "Magic",
     "Scanchain",
     "Pktchain",
+    "Frame",
     ])
 
 # Flow Manager and Passes

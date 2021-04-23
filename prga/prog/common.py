@@ -126,6 +126,40 @@ class AbstractProgCircuitryEntry(Object):
     """Abstract base class for programming circuitry entry point."""
 
     @classmethod
+    def _get_or_create_prog_nets(cls, module, excludes = None):
+        nets = {}
+        excludes = set(uno(excludes, []))
+
+        # prog_clk
+        if "prog_clk" not in excludes:
+            if (prog_clk := module.ports.get("prog_clk")) is None:
+                prog_clk = ModuleUtils.create_port(module, "prog_clk", 1, PortDirection.input_,
+                        is_clock = True, net_class = NetClass.prog)
+            nets["prog_clk"] = prog_clk
+
+        # prog_rst
+        if "prog_rst" not in excludes:
+            if (buf := module.instances.get("i_buf_prog_rst_l0")) is None:
+                if (port := module.ports.get("prog_rst")) is None:
+                    port = ModuleUtils.create_port(module, "prog_rst", 1, PortDirection.input_,
+                            net_class = NetClass.prog)
+                nets["prog_rst"] = port
+            else:
+                nets["prog_rst"] = buf.pins["Q"]
+
+        # prog_done
+        if "prog_done" not in excludes:
+            if (buf := module.instances.get("i_buf_prog_done_l0")) is None:
+                if (port := module.ports.get("prog_done")) is None:
+                    port = ModuleUtils.create_port(module, "prog_done", 1, PortDirection.input_,
+                            net_class = NetClass.prog)
+                nets["prog_done"] = port
+            else:
+                nets["prog_done"] = buf.pins["Q"]
+
+        return nets
+
+    @classmethod
     def buffer_prog_ctrl(cls, context, design_view = None, _cache = None):
         """Buffer and balance basic programming ctrl signals: ``prog_clk``, ``prog_rst`` and ``prog_done``.
 
@@ -233,6 +267,7 @@ class AbstractProgCircuitryEntry(Object):
         raise NotImplementedError
 
     @classmethod
+    @abstractmethod
     def materialize(cls, ctx, inplace = False, **kwargs):
         """Materialize the abstract context to this configuration circuitry type.
 
