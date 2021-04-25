@@ -38,7 +38,7 @@ class FileRenderer(object):
         elif net.net_type.is_concat:
             return '{' + ',\n'.join(cls._net2verilog(i) for i in reversed(net.items)) + '}'
         elif net.net_type.is_slice:
-            return '{}[{}:{}]'.format(cls._net2verilog(net.bus), net.index.stop - 1, net.index.start)
+            return '{}[{}:{}]'.format(cls._net2verilog(net.bus), net.range_.stop - 1, net.range_.start)
         elif net.net_type.is_bit:
             return '{}[{}]'.format(cls._net2verilog(net.bus), net.index)
         elif net.net_type.is_port:

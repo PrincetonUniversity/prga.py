@@ -2,7 +2,7 @@
 """Common enums and abstract base class for nets."""
 
 from ...util import Enum, Object, uno
-from ...exception import PRGAIndexError, PRGATypeError
+from ...exception import PRGAIndexError, PRGATypeError, PRGAInternalError
 
 from abc import abstractproperty, abstractmethod
 from collections.abc import Sequence
@@ -236,37 +236,37 @@ class Slice(AbstractNet):
 
     Args:
         bus (`AbstractNet`): The referenced bus
-        index (:obj:`slice`): Index of the bit(s) in the bus.
+        range_ (:obj:`slice`): Range of the bit(s) in the bus.
 
     Do not directly instantiate this class. Index into the bus instead, e.g. ``module.ports[0:4]``
     """
 
-    __slots__ = ['bus', 'index']
+    __slots__ = ['bus', 'range_']
 
     # == internal API ========================================================
-    def __init__(self, bus, index):
+    def __init__(self, bus, range_):
         self.bus = bus
-        self.index = index
+        self.range_ = range_
 
     def __repr__(self):
         if self.__len__() == 1:
-            return 'BitRef({}[{}])'.format(self.bus, self.index.start)
+            return 'BitRef({}[{}])'.format(self.bus, self.index)
         else:
-            return 'Slice({}[{}:{}])'.format(self.bus, self.index.stop - 1, self.index.start)
+            return 'Slice({}[{}:{}])'.format(self.bus, self.range_.stop - 1, self.range_.start)
 
     def __len__(self):
-        return self.index.stop - self.index.start
+        return self.range_.stop - self.range_.start
 
     def __getitem__(self, index):
         index = self._auto_index(index)
-        return self.bus[self.index.start + index.start:self.index.start + index.stop]
+        return self.bus[self.range_.start + index.start:self.range_.start + index.stop]
 
     def __iter__(self):
-        for i in range(self.index.start, self.index.stop):
+        for i in range(self.range_.start, self.range_.stop):
             yield self.bus[i]
 
     def __reversed__(self):
-        for i in reversed(range(self.index.start, self.index.stop)):
+        for i in reversed(range(self.range_.start, self.range_.stop)):
             yield self.bus[i]
 
     # == low-level API =======================================================
@@ -282,6 +282,15 @@ class Slice(AbstractNet):
     @property
     def is_clock(self):
         return self.bus.is_clock
+
+    @property
+    def index(self):
+        """:obj:`int`: Index of the bit in the bus. Only valid when this object is a bit reference, i.e. length equals
+        to 1."""
+        if self.__len__() != 1:
+            raise PRGAInternalError("{} is not a bit reference. len({}) == {}"
+                    .format(self, self, self.__len__()))
+        return self.range_.start
 
 # ----------------------------------------------------------------------------
 # -- A Concatenation of Slices and/or buses ----------------------------------

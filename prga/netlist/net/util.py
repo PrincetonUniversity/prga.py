@@ -177,17 +177,17 @@ class NetUtils(Object):
                     i.index == l[-1].index + 1):
                 l[-1] = cls._slice(bus, slice(l[-1].index, i.index + 1))
             elif (l[-1].net_type.is_slice and (bus := cls.__concat_same(i.bus, l[-1].bus)) and
-                    i.index == l[-1].index.stop):
-                l[-1] = cls._slice(bus, slice(l[-1].index.start, i.index + 1))
+                    i.index == l[-1].range_.stop):
+                l[-1] = cls._slice(bus, slice(l[-1].range_.start, i.index + 1))
             else:
                 l.append( i )
         elif i.net_type.is_slice:
             if (l[-1].net_type.is_bit and (bus := cls.__concat_same(i.bus, l[-1].bus)) and
-                    i.index.start == l[-1].index + 1):
-                l[-1] = cls._slice(bus, slice(l[-1].index, i.index.stop))
+                    i.range_.start == l[-1].index + 1):
+                l[-1] = cls._slice(bus, slice(l[-1].index, i.range_.stop))
             elif (l[-1].net_type.is_slice and (bus := cls.__concat_same(i.bus, l[-1].bus)) and
-                    i.index.start == l[-1].index.stop):
-                l[-1] = cls._slice(bus, slice(l[-1].index.start, i.index.stop))
+                    i.range_.start == l[-1].range_.stop):
+                l[-1] = cls._slice(bus, slice(l[-1].range_.start, i.range_.stop))
             else:
                 l.append( i )
         elif i.net_type.is_concat:
@@ -195,6 +195,92 @@ class NetUtils(Object):
                 cls.__concat_append(l, ii)
         else:
             raise PRGAInternalError("Unsupported net type: {}".format(i.net_type))
+
+    @classmethod
+    def __break_bits_if_needed(cls, net):
+        if net.net_type.is_slice:
+            net = net.bus
+        if net.net_type in (NetType.port, NetType.pin):
+            if net._coalesce_connections and len(net) > 1:
+                cls._break_bits(net)
+
+    @classmethod
+    def __connect(cls, module, source, sink, **kwargs):
+        """Connect ``source`` and ``sink``. This method should only be used in `NetUtils.connect` and
+        `NetUtils._break_bits` because it doesn't validate ``source`` or ``sink``."""
+        srcref, sinkref = map(lambda x: cls._reference(x), (source, sink))
+        if (conn := sink._connections.get(srcref)) is None:
+            if not module.allow_multisource and len(sink._connections):
+                raise PRGAInternalError(
+                        "{} is already connected to {}. ({} does not support multi-connections)"
+                        .format(sink, next(iter(sink._connections.values())), module))
+            conn = sink._connections[srcref] = NetConnection(source, sink, **kwargs)
+            if not source.net_type.is_const:
+                source._connections[sinkref] = conn
+        else:
+            for k, v in kwargs.items():
+                setattr(conn, k, v)
+
+    @classmethod
+    def __pair_bitwise(cls, sources, sinks):
+        source_items = sources.items if sources.net_type.is_concat else [sources]
+        sink_items = sinks.items if sinks.net_type.is_concat else [sinks]
+
+        source_list, sink_list = [], []
+        source_idx, source_bits, sink_idx, sink_bits = 0, 0, 0, 0
+
+        while source_idx < len(source_items) and sink_idx < len(sink_items):
+            source, sink = source_items[source_idx], sink_items[sink_idx]
+
+            if source_bits == sink_bits:
+                # bus-wise connection is possible
+                source_is_bus = (source.net_type.is_const or
+                        (source.net_type in (NetType.port, NetType.pin) and source._coalesce_connections))
+                sink_is_bus = sink.net_type in (NetType.port, NetType.pin) and sink._coalesce_connections
+
+                if len(source) == len(sink) and source_is_bus and sink_is_bus:
+                    # bus-wise connection!
+                    source_list.append(source)
+                    sink_list.append(sink)
+
+                else:
+                    cls.__break_bits_if_needed(source)
+                    cls.__break_bits_if_needed(sink)
+                    source_list.extend(source)
+                    sink_list.extend(sink)
+
+                source_idx += 1
+                sink_idx += 1
+                source_bits += len(source)
+                sink_bits += len(sink)
+
+            elif source_bits < sink_bits:   # use source
+                cls.__break_bits_if_needed(source)
+                source_list.extend(source)
+                source_idx += 1
+                source_bits += len(source)
+
+            else:                           # use sink
+                cls.__break_bits_if_needed(sink)
+                sink_list.extend(sink)
+                sink_idx += 1
+                sink_bits += len(sink)
+
+        for source in source_items[source_idx:]:
+            cls.__break_bits_if_needed(source)
+            source_list.extend(source)
+            source_bits += len(source)
+
+        for sink in sink_items[sink_idx:]:
+            cls.__break_bits_if_needed(sink)
+            sink_list.extend(sink)
+            sink_bits += len(sink)
+
+        if source_bits != sink_bits:
+            _logger.warning("Width mismatch: len({}) = {} != len({}) = {}"
+                    .format(sources, source_bits, sinks, sink_bits))
+
+        return zip(source_list, sink_list)
 
     @classmethod
     def _slice(cls, bus, index):
@@ -248,7 +334,7 @@ class NetUtils(Object):
                     return cls._reference(net.bus, byname = True) + "[{}]".format(net.index)
                 else:
                     return cls._reference(net.bus, byname = True) + "[{}:{}]".format(
-                            net.index.stop - 1, net.index.start)
+                            net.range_.stop - 1, net.range_.start)
             else:
                 return (net.index, cls._reference(net.bus))
         else:
@@ -318,6 +404,37 @@ class NetUtils(Object):
             return instance[0]._extend_hierarchy(below = tuple(reversed(instance[1:]))).pins[ref[0]]
 
     @classmethod
+    def _break_bits(cls, bus):
+        """Break ``bus`` into bits and keep connections in sync. That is, if ``bus`` is a sink, the source connected
+        to it is broken and connected bit-wisely.
+
+        Args:
+            bus (`Port` or `Pin`):
+        """
+
+        if bus.parent.coalesce_connections:
+            raise PRGAInternalError(
+                    "Cannot break {} into bits because its parent {} do not support bit-wise connections"
+                    .format(bus, bus.parent))
+        elif not bus._coalesce_connections:
+            raise PRGAInternalError("{} is already broken into bits".format(bus))
+
+        connections = bus._break_bits()
+        if bus.is_sink:
+            assert len(connections) <= 1
+            if len(connections) == 1:
+                conn = next(iter(connections.values()))
+                cls._break_bits(conn.source)    # this will update the connections bit-wisely
+
+        else:
+            for conn in connections.values():
+                if conn.sink._coalesce_connections:
+                    conn.sink._break_bits()
+
+                for src, sink in zip(bus, conn.sink):
+                    cls.__connect(bus.parent, src, sink)
+
+    @classmethod
     def concat(cls, items):
         """`Slice`, `Concat` or other nets: Concatenate the provided iterable of nets."""
         # concatenating
@@ -346,6 +463,7 @@ class NetUtils(Object):
         """
         # 1. concat the sources & sinks
         sources, sinks = map(cls.concat, (sources, sinks))
+
         # 2. get the parent module
         anchor = sinks
         if anchor.net_type.is_concat:
@@ -361,8 +479,12 @@ class NetUtils(Object):
             raise PRGAInternalError(
                     "{} is a cell module. Create timing arcs with `NetUtils.create_timing_arc` instead"
                     .format(module))
-        # 3. if module does not support bitwise connection
+
+        # 3. create connection pairs
+        pairs = None
+
         if module.coalesce_connections:
+            # 3.1 bus pairs if module does not support bit-wise connections
             if fully:
                 raise PRGAInternalError("{} does not support bitwise connections (invalid 'fully' flag)"
                         .format(module))
@@ -373,11 +495,25 @@ class NetUtils(Object):
                             .format(item))
                     list_.append(item)
             sources, sinks = source_list, sink_list
+            if len(sources) != len(sinks):
+                _logger.warning("Width mismatch: len({}) = {} != len({}) = {}"
+                        .format(sources, len(sources), sinks, len(sinks)))
+            pairs = zip(sources, sinks)
+
+        elif fully:
+            # 3.2 fully connected
+            for concat, list_ in ( (sources, (source_list := [])), (sinks, (sink_list := [])) ):
+                for item in (concat.items if concat.net_type.is_concat else [concat]):
+                    cls.__break_bits_if_needed(item)
+                    for i in item:
+                        list_.append( i )
+            pairs = product(source_list, sink_list)
+
+        else:
+            # 3.3 bitwise connection
+            pairs = cls.__pair_bitwise(sources, sinks)
+
         # 4. connect!
-        if not fully and len(sources) != len(sinks):
-            _logger.warning("Width mismatch: len({}) = {} != len({}) = {}"
-                    .format(sources, len(sources), sinks, len(sinks)))
-        pairs = product(sources, sinks) if fully else zip(sources, sinks)
         for src, sink in pairs:
             if src.net_type.is_reference or not src.is_source:
                 raise PRGAInternalError("{} is not a valid source".format(src))
@@ -392,30 +528,15 @@ class NetUtils(Object):
             elif len(src) != len(sink):
                 raise PRGAInternalError("Width mismatch: len({}) = {} != len({}) = {}"
                         .format(src, len(src), sink, len(sink)))
-            srcref, sinkref = map(lambda x: cls._reference(x), (src, sink))
-            if (conn := sink._connections.get(srcref)) is None:
-                if not module.allow_multisource and len(sink._connections):
-                    raise PRGAInternalError(
-                            "{} is already connected to {}. ({} does not support multi-connections)"
-                            .format(sink, next(iter(sink._connections.values())), module))
-                conn = sink._connections[srcref] = NetConnection(src, sink, **kwargs)
-                if not src.net_type.is_const:
-                    src._connections[sinkref] = conn
-            else:
-                for k, v in kwargs.items():
-                    setattr(conn, k, v)
+            cls.__connect(module, src, sink, **kwargs)
 
     @classmethod
-    def disconnect(cls, sources = None, sinks = None, *, fully = False):
+    def disconnect(cls, sources = None, sinks = None):
         """Disconnect ``sources`` and ``sinks``.
 
         Args:
             sources: a bus, a slice of a bus, a bit of a bus, or an iterable of the items listed above
             sink: a bus, a slice of a bus, a bit of a bus, or an iterable of the items listed above
-
-        Keyword Args:
-            fully (:obj:`bool`): If set, every bit in ``sources`` is disconnected from all bits in ``sinks``.
-                Otherwise disconnect in a pair-wise manner.
 
         Notes:
             If either ``sources`` or ``sinks`` is not given, all connections are removed from/to the given parameter.
@@ -450,11 +571,10 @@ class NetUtils(Object):
         if module is None:
             raise PRGAInternalError("At least one of 'sources' and 'sinks' must be specified")
 
-        # 3. check if module supports bitwise connection
+        # 3. create disconnection pairs
+        pairs = None
+
         if module.coalesce_connections:
-            if fully:
-                raise PRGAInternalError("{} does not support bitwise connections (invalid 'fully' flag)"
-                        .format(module))
             for concat, list_ in ( (sources, (source_list := [])), (sinks, (sink_list := [])) ):
                 if concat is None:
                     continue
@@ -463,24 +583,45 @@ class NetUtils(Object):
                         raise PRGAInternalError("{} does not support bitwise connections ({} is not a bus)"
                             .format(item))
                     list_.append(item)
-            sources, sinks = map(lambda x: x if len(x) else None, (source_list, sink_list))
+            if source_list and sink_list:
+                if len(source_list) != len(sink_list):
+                    _logger.warning("Width mismatch: len({}) = {} != len({}) = {}"
+                            .format(source_list, len(source_list), sink_list, len(sink_list)))
+                pairs = zip(source_list, sink_list)
+            elif source_list:
+                pairs = [ (src, None) for src in source_list ]
+            elif sink_list:
+                pairs = [ (None, sink) for sink in sink_list ]
 
-        # 4. prepare each pair of disconnection
-        if sources is not None and sinks is not None and not fully and len(sources) != len(sinks):
-            _logger.warning("Width mismatch: len({}) = {} != len({}) = {}"
-                    .format(sources, len(sources), sinks, len(sinks)))
+        # bit-wise disconnection
+        elif sources is None:
+            pairs = []
 
-        pairs = None
-        if sources is None:
-            pairs = [ (None, sink) for sink in sinks ]
+            for item in (sinks.items if sinks.net_type.is_concat else [sinks]):
+                if item.net_type in (NetType.port, NetType.pin) and item._coalesce_connections:
+                    pairs.append( (None, item) )
+                else:
+                    if item.net_type.is_slice and item.bus._coalesce_connections:
+                        cls._break_bits(item.bus)
+                    for i in item:
+                        pairs.append( (None, i) )
+
         elif sinks is None:
-            pairs = [ (src, None) for src in sources ]
-        elif fully:
-            pairs = product(sources, sinks)
-        else:
-            pairs = zip(sources, sinks)
+            pairs = []
 
-        # 5. disconnect!
+            for item in (sources.items if sources.net_type.is_concat else [sources]):
+                if item.net_type in (NetType.port, NetType.pin) and item._coalesce_connections:
+                    pairs.append( (item, None) )
+                else:
+                    if item.net_type.is_slice and item.bus._coalesce_connections:
+                        cls._break_bits(item.bus)
+                    for i in item:
+                        pairs.append( (i, None) )
+
+        else:
+            pairs = cls.__pair_bitwise(sources, sinks)
+            
+        # 4. disconnect!
         for src, sink in pairs:
             if src is None:     # disconnect all connections to ``sink``
                 sinkref = cls._reference(sink)
@@ -543,7 +684,7 @@ class NetUtils(Object):
                 raise PRGAInternalError(
                         "{} allows multi-source connections. Use `NetUtils.get_multisource` instead"
                         .format(sink.parent))
-            elif len(sink) == 1 or sink.parent.coalesce_connections:
+            elif sink.net_type.is_bit or sink._coalesce_connections:
                 it = iter(sink._connections.values())
                 try:
                     conn = next(it)
@@ -637,9 +778,9 @@ class NetUtils(Object):
                 raise PRGAInternalError(
                         "{} is a cell module. Get timing arcs with `NetUtils.get_timing_arc` instead"
                         .format(source.parent))
-            elif len(source) == 1 or source.parent.coalesce_connections:
+            elif source.net_type.is_bit or source._coalesce_connections:
                 return tuple(conn.sink for conn in source._connections.values())
-        elif source.net_type.is_slice and source.parent.coalesce_connections:
+        elif source.net_type.is_slice and source.bus._coalesce_connections:
             return tuple(sink[source.index] for sink in cls.get_sinks(source))
         bitwise = tuple(cls.get_sinks(bit) for bit in source)
         l = []
@@ -682,12 +823,14 @@ class NetUtils(Object):
                     "{} is a cell module. Get timing arcs with `NetUtils.get_timing_arc` instead"
                     .format(module))
         # 3. validate sink (second pass)
-        if module.coalesce_connections:
-            if sink.net_type not in (NetType.port, NetType.pin):
-                raise PRGAInternalError("{} does not support bitwise connections ({} is not a bus)"
-                        .format(module, sink))
-        elif len(sink) != 1:
-            raise PRGAInternalError("{} is not 1-bit wide".format(sink))
+        if sink.net_type in (NetType.port, NetType.pin):
+            if not sink._coalesce_connections:
+                raise PRGAInternalError("{} is connected bit-wisely. Cannot access bus-wise connection to it"
+                        .format(sink))
+        elif sink.bus._coalesce_connections:
+            raise PRGAInternalError("{} is connected as a bus. Cannot access bit-wise connection from {} to {}"
+                    .format(sink.bus, source, sink))
+
         # 4. validate source
         if source.net_type.is_reference:
             raise PRGAInternalError("{} is a reference".format(source))
@@ -697,12 +840,14 @@ class NetUtils(Object):
             if source.parent is not module:
                 raise PRGAInternalError("Source = {} and Sink = {} are not in the same module"
                         .format(source, sink))
-            elif module.coalesce_connections:
-                if source.net_type not in (NetType.port, NetType.pin):
-                    raise PRGAInternalError("{} does not support bitwise connections ({} is not a bus)"
-                            .format(module, source))
-            elif len(source) != 1:
-                raise PRGAInternalError("{} is not 1-bit wide".format(source))
+            elif source.net_type in (NetType.port, NetType.pin):
+                if not source._coalesce_connections:
+                    raise PRGAInternalError("{} is connected bit-wisely. Cannot access bus-wise connection from it"
+                            .format(source))
+            elif source.bus._coalesce_connections:
+                raise PRGAInternalError("{} is connected as a bus. Cannot access bit-wise connection from {} to {}"
+                        .format(source.bus, source, sink))
+
         # 5. get connection
         if (conn := sink._connections.get( cls._reference(source) )) is None and raise_error_if_unconnected:
             raise PRGAInternalError("{} and {} are not connected".format(source, sink))

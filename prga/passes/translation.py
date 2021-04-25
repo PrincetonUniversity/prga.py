@@ -124,7 +124,7 @@ class Translation(AbstractPass):
                         net_class = NetClass.io)
             return port
 
-    def _process_module(self, module, context, *, disable_coalesce = False, is_top = False):
+    def _process_module(self, module, context, *, is_top = False):
         # shortcut if the module is already processed
         if (design := context._database.get((ModuleView.design, module.key))) is not None:
             return design
@@ -152,8 +152,6 @@ class Translation(AbstractPass):
         if module.module_class.is_primitive:
             kwargs["primitive_class"] = module.primitive_class
             kwargs["is_cell"] = True
-        elif not disable_coalesce and module.coalesce_connections:
-            kwargs['coalesce_connections'] = True
 
         if (module.module_class.is_block or 
                 module.module_class.is_tile or 
@@ -202,8 +200,7 @@ class Translation(AbstractPass):
 
         # translate instances
         for instance in module.instances.values():
-            design_model = self._process_module(instance.model, context,
-                    disable_coalesce = disable_coalesce or not design.coalesce_connections)
+            design_model = self._process_module(instance.model, context)
             design_instance = ModuleUtils.instantiate(design, design_model, instance.name, key = instance.key,
                     **getattr(instance, "translate_attrs", {}))
 

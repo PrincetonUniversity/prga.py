@@ -84,9 +84,88 @@ class _Bit(AbstractNonReferenceNet):
         return self._bus.parent
 
 # ----------------------------------------------------------------------------
+# -- Bus ---------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+class _Bus(AbstractNonReferenceNet):
+    """Base class for `Port` and `Pin`."""
+
+    __slots__ = ["_connections", "_bits", "__dict__"]
+
+    def __init__(self, **kwargs):
+
+        if self.parent.allow_multisource and len(self) > 1:
+            self._bits = tuple( _Bit(self, i) for i in range(len(self)) )
+        else:
+            self._connections = {}
+
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+    def __getitem__(self, index):
+        index = self._auto_index(index)
+        if index.stop - index.start == 1:
+            try:
+                return self._bits[index.start]
+            except AttributeError:
+                pass
+        return NetUtils._slice(self, index)
+
+    def __iter__(self):
+        if len(self) == 1:
+            yield self
+
+        else:
+            try:
+                for i in self._bits:
+                    yield i
+
+            except AttributeError:
+                for i in range(len(self)):
+                    yield Slice(self, slice(i, i + 1))
+
+    def __reversed__(self):
+        if len(self) == 1:
+            yield self
+
+        else:
+            try:
+                for i in reversed(self._bits):
+                    yield i
+
+            except AttributeError:
+                for i in reversed(range(self._width)):
+                    yield Slice(self, slice(i, i + 1))
+
+    @property
+    def _coalesce_connections(self):
+        return hasattr(self, "_connections")
+
+    def _break_bits(self):
+        """Break bus coalescence into bits. This method should only be used in `NetUtils._break_bits`.
+        Beware that this method doesn't update the connections in the ``_connections`` mapping.
+
+        Returns:
+            :obj:`dict`: The current ``_connections`` value.
+
+        Raises:
+            :obj:`AttributeError`: If ``_connections`` is undefined, i.e. the bus is already broken into bits.
+        """
+        assert not (self.parent.coalesce_connections or len(self) == 1)
+
+        try:
+            connections = self._connections
+        except AttributeError as e:
+            raise e
+
+        del self._connections
+        self._bits = tuple( _Bit(self, i) for i in range(len(self)) )
+
+        return connections
+
+# ----------------------------------------------------------------------------
 # -- Port --------------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Port(AbstractNonReferenceNet):
+class Port(_Bus):
     """Ports of modules.
 
     Args:
@@ -103,7 +182,7 @@ class Port(AbstractNonReferenceNet):
             and accessible as dynamic attributes
     """
 
-    __slots__ = ['_parent', '_name', '_width', '_direction', '_is_clock', '_key', '_connections', '_bits', '__dict__']
+    __slots__ = ['_parent', '_name', '_width', '_direction', '_is_clock', '_key']
 
     def __init__(self, parent, name, width, direction, *, is_clock = False, key = None, **kwargs):
         self._parent = parent
@@ -113,13 +192,7 @@ class Port(AbstractNonReferenceNet):
         self._is_clock = is_clock
         self._key = uno(key, name)
 
-        if self._parent.coalesce_connections or len(self) == 1:
-            self._connections = {}
-        else:
-            self._bits = tuple(_Bit(self, i) for i in range(len(self)))
-
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+        super().__init__(**kwargs)
 
     def __repr__(self):
         return "{}{}({}/{})".format(self._direction.case("In", "Out"),
@@ -127,33 +200,6 @@ class Port(AbstractNonReferenceNet):
 
     def __len__(self):
         return self._width
-
-    def __getitem__(self, index):
-        index = self._auto_index(index)
-        if not (self._parent.coalesce_connections or len(self) == 1) and index.stop - index.start == 1:
-            return self._bits[index.start]
-        else:
-            return NetUtils._slice(self, index)
-
-    def __iter__(self):
-        if len(self) == 1:
-            yield self
-        elif self._parent.coalesce_connections:
-            for i in range(self._width):
-                yield Slice(self, slice(i, i + 1))
-        else:
-            for i in self._bits:
-                yield i
-
-    def __reversed__(self):
-        if len(self) == 1:
-            yield self
-        elif self._parent.coalesce_connections:
-            for i in reversed(range(self._width)):
-                yield Slice(self, slice(i, i + 1))
-        else:
-            for i in reversed(self._bits):
-                yield i
 
     # == low-level API =======================================================
     @property
@@ -195,7 +241,7 @@ class Port(AbstractNonReferenceNet):
 # ----------------------------------------------------------------------------
 # -- Pin ---------------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class Pin(AbstractNonReferenceNet):
+class Pin(_Bus):
     """Pins of instances.
 
     Args:
@@ -207,52 +253,19 @@ class Pin(AbstractNonReferenceNet):
             and accessible as dynamic attributes
     """
 
-    __slots__ = ['_instance', '_model', '_connections', '_bits', '__dict__']
+    __slots__ = ['_instance', '_model']
 
     def __init__(self, instance, model, **kwargs):
         self._instance = instance
         self._model = model
 
-        if self._instance.parent.coalesce_connections or len(self) == 1:
-            self._connections = {}
-        else:
-            self._bits = tuple(_Bit(self, i) for i in range(len(self)))
-
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+        super().__init__(**kwargs)
 
     def __repr__(self):
         return "Pin({}/{})".format(self._instance, self._model.name)
 
     def __len__(self):
         return len(self._model)
-
-    def __getitem__(self, index):
-        index = self._auto_index(index)
-        if not (self._instance.parent.coalesce_connections or len(self) == 1) and index.stop - index.start == 1:
-            return self._bits[index.start]
-        else:
-            return NetUtils._slice(self, index)
-
-    def __iter__(self):
-        if len(self) == 1:
-            yield self
-        elif self._instance.parent.coalesce_connections:
-            for i in range(len(self)):
-                yield Slice(self, slice(i, i + 1))
-        else:
-            for i in self._bits:
-                yield i
-
-    def __reversed__(self):
-        if len(self) == 1:
-            yield self
-        elif self._instance.parent.coalesce_connections:
-            for i in reversed(range(len(self))):
-                yield Slice(self, slice(i, i + 1))
-        else:
-            for i in reversed(self._bits):
-                yield i
 
     # == low-level API =======================================================
     @property

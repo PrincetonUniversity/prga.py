@@ -53,7 +53,7 @@ class _VPRArchGeneration(AbstractPass):
             suffix = '[{}]'.format(net.index)
             net = net.bus
         elif net.net_type.is_slice:
-            suffix = '[{}:{}]'.format(net.index.stop - 1, net.index.start)
+            suffix = '[{}:{}]'.format(net.range_.stop - 1, net.range_.start)
             net = net.bus
         if net.net_type.is_port:
             prefix = '{}.{}'.format(parent_name, net.name)
