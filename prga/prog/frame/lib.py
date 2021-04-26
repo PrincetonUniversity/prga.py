@@ -1,8 +1,8 @@
 # -*- encoding: ascii -*-
 
 from ..common import AbstractProgCircuitryEntry, ProgDataBitmap
-from ...core.common import NetClass, ModuleClass, ModuleView, Corner, Orientation
-from ...netlist import Module, ModuleUtils, PortDirection, NetUtils
+from ...core.common import NetClass, ModuleClass, ModuleView, Corner, Orientation, Dimension
+from ...netlist import Module, ModuleUtils, PortDirection, NetUtils, Const
 from ...passes.translation import SwitchDelegate
 from ...renderer.lib import BuiltinCellLibrary
 from ...util import uno, Object
@@ -90,6 +90,16 @@ class Frame(AbstractProgCircuitryEntry):
 
         ctx.summary.frame = {"word_width": word_width}
 
+        # install `prga_frame_and`
+        cell = ctx._add_module(Module("prga_frame_and",
+            is_cell = True,
+            view = ModuleView.design,
+            module_class = ModuleClass.prog,
+            verilog_template = "prga_frame_and.v"))
+        ModuleUtils.create_port(cell, "ix", 1, "input",  net_class = NetClass.prog)
+        ModuleUtils.create_port(cell, "iy", 1, "input",  net_class = NetClass.prog)
+        ModuleUtils.create_port(cell, "o",  1, "output", net_class = NetClass.prog)
+
         return ctx
 
     @classmethod
@@ -118,22 +128,41 @@ class Frame(AbstractProgCircuitryEntry):
                 2 + cbox_id_width + max_cbox_aw,    # 2'b11, cbox_id, cbox_addr
                 )
 
-        # final address mapping
-        addrmap = {
-                # widths
-                "tile":         tile_aw,
-                "sbox":         max_sbox_aw,
-                "block":        max_blk_aw,
-                "cbox":         max_cbox_aw,
+        # top-level array
+        x_width = (context.top.width - 1).bit_length()
+        y_width = (context.top.height - 1).bit_length()
 
-                # ranges
-                "sbox_id":      slice(tile_aw - 1 - sbox_id_width,      tile_aw - 1),
-                "subblock_id":  slice(tile_aw - 2 - subblock_id_width,  tile_aw - 2),
-                "cbox_id":      slice(tile_aw - 2 - cbox_id_width,      tile_aw - 2),
-                "subtile":      slice(tile_aw - 2,                      tile_aw - 1),
+        # final address mapping
+        context.summary.frame["addr_width"] = {
+                "fabric":       x_width + y_width + tile_aw,
+                "x":            x_width,
+                "y":            y_width,
+
+                "block":        tile_aw - 2 - subblock_id_width,
+                "cbox":         tile_aw - 2 - cbox_id_width,
+                "sbox":         tile_aw - 1 - sbox_id_width,
+                "tile":         tile_aw,
+
+                "subblock_id":  subblock_id_width,
+                "cbox_id":      cbox_id_width,
+                "sbox_id":      sbox_id_width,
                 }
 
-        cls._insert_frame_hier(context, addrmap)
+        _logger.info((
+                "Address mapping:\n"
+                " - fabric:      {fabric}\n"
+                " - x:           {x}\n"
+                " - y:           {y}\n"
+                " - block:       {block}\n"
+                " - cbox:        {cbox}\n"
+                " - sbox:        {sbox}\n"
+                " - tile:        {tile}\n"
+                " - subblock_id: {subblock_id}\n"
+                " - cbox_id:     {cbox_id}\n"
+                " - sbox_id:     {sbox_id}"
+                ).format(**context.summary.frame["addr_width"]))
+
+        cls._insert_frame_array(context)
 
     @classmethod
     def _get_or_create_frame_prog_nets(cls, module, word_width, addr_width, excludes = None):
@@ -244,22 +273,14 @@ class Frame(AbstractProgCircuitryEntry):
         return cell
 
     @classmethod
-    def _instantiate_frame_buffer(cls, context, dmod, nets, addr_width, *,
-            suffix = None, inplace = False):
-
-        rq_name  = "i_frame_rqbuf" + ("" if suffix is None else ("_" + suffix))
-        rsp_name  = "i_frame_rspbuf" + ("" if suffix is None else ("_" + suffix))
-
+    def _instantiate_buffer(cls, context, module, nets, addr_width, *,
+            suffix = ""):
         word_width = context.summary.frame["word_width"]
-        ibuf = ModuleUtils.instantiate(dmod,
-                cls._get_or_create_frame_buffer(context, addr_width + word_width + 2),
-                rq_name)
-        obuf = ModuleUtils.instantiate(dmod,
-                cls._get_or_create_frame_buffer(context, word_width),
-                rsp_name)
 
-        if not inplace:
-            nets = copy(nets)
+        # buffer write request
+        ibuf = ModuleUtils.instantiate(module,
+                cls._get_or_create_frame_buffer(context, addr_width + word_width + 2),
+                "i_frame_ibuf" + suffix)
 
         NetUtils.connect(nets["prog_clk"], ibuf.pins["prog_clk"])
         NetUtils.connect(nets["prog_rst"], ibuf.pins["prog_rst"])
@@ -268,37 +289,39 @@ class Frame(AbstractProgCircuitryEntry):
             NetUtils.connect(
                     [nets["prog_ce"], nets["prog_we"], nets["prog_addr"], nets["prog_din"]],
                     ibuf.pins["i"])
-            nets["prog_addr"]   = ibuf.pins["o"][2:2+addr_width]
+            nets["prog_addr"] = ibuf.pins["o"][2:2+addr_width]
         else:
             NetUtils.connect(
                     [nets["prog_ce"], nets["prog_we"], nets["prog_din"]],
                     ibuf.pins["i"])
 
-        nets["prog_ce"]     = ibuf.pins["o"][0]
-        nets["prog_we"]     = ibuf.pins["o"][1]
-        nets["prog_din"]    = ibuf.pins["o"][2+addr_width:]
+        nets["prog_ce"]   = ibuf.pins["o"][0]
+        nets["prog_we"]   = ibuf.pins["o"][1]
+        nets["prog_din"]  = ibuf.pins["o"][2+addr_width:]
+
+        # buffer read-back response
+        obuf = ModuleUtils.instantiate(module,
+                cls._get_or_create_frame_buffer(context, word_width),
+                "i_frame_obuf" + suffix)
 
         NetUtils.connect(nets["prog_clk"], obuf.pins["prog_clk"])
         NetUtils.connect(nets["prog_rst"], obuf.pins["prog_rst"])
-        NetUtils.connect(obuf.pins["o"],   nets["prog_dout"])
 
-        nets["prog_dout"]   = obuf.pins["i"]
+        if n := nets.get("prog_dout"):
+            NetUtils.connect(obuf.pins["o"], n)
 
-        return nets
+        nets["prog_dout"] = obuf.pins["i"]
 
     @classmethod
     def _instantiate_decoder(cls, context, module, nets, subnets, addrnet, *,
-            suffix = None, merger_stage = 1, dont_connect_subnets = False):
-
-        decoder_name = "i_frame_wldec" + ("" if suffix is None else ("_" + suffix))
-        merger_name = "i_frame_rbmerge" + ("" if suffix is None else ("_" + suffix))
+            suffix = "", merger_stage = 1, dont_connect_subnets = False):
 
         decoder = ModuleUtils.instantiate(module,
                 cls._get_or_create_frame_wldec(context, len(addrnet), len(subnets)),
-                decoder_name)
+                "i_frame_wldec" + suffix)
         merger = ModuleUtils.instantiate(module,
                 cls._get_or_create_frame_rbmerge(context, len(subnets), merger_stage),
-                merger_name)
+                "i_frame_rbmerger" + suffix)
 
         for i, subnet in enumerate(subnets):
             if "prog_ce" in subnet:
@@ -311,6 +334,9 @@ class Frame(AbstractProgCircuitryEntry):
 
                 if not dont_connect_subnets and (p := subnet.get("prog_din")):
                     NetUtils.connect(nets["prog_din"], p)
+
+            else:
+                NetUtils.connect(Const(0, len(merger.pins["dout"])), merger.pins["din" + str(i)])
 
         NetUtils.connect(addrnet, decoder.pins["addr_i"])
         NetUtils.connect(decoder.pins["ce_o"], merger.pins["ce"])
@@ -360,7 +386,7 @@ class Frame(AbstractProgCircuitryEntry):
 
             treenet = cls._instantiate_decoder( context, module, nets, subnets,
                     nets["prog_addr"][node.child_addr_width:addr_width],
-                    suffix = "i{}".format(len(_treenets)),
+                    suffix = "_i{}".format(len(_treenets)),
                     dont_connect_subnets = True,
                     )
 
@@ -370,107 +396,6 @@ class Frame(AbstractProgCircuitryEntry):
         else:
             return cls._construct_decoder_tree(context, module, nets, node.children[0],
                     _treenets = _treenets, baseaddr = baseaddr)
-
-    @classmethod
-    def _insert_frame_hier(cls, context, addrmap, *, dmod = None, _visited = None, _not_top = False):
-        """Insert frame-based programming circuitry hierarchically.
-
-        Args:
-            context (`Context`):
-            addrmap (:obj:`dict` [:obj:`str`, :obj:`tuple` [:obj:`int`, :obj:`int`]]):
-
-        Keyword Args:
-            dmod (`Module`): Design-view of the array or tile in which programming circuitry is to be inserted
-            _visited (:obj:`dict` [:obj:`Hashable`, :obj:`int` ]): Mapping from module keys to levels of buffering
-                inside that module. Blocks and routing boxes, i.e. leaf-level modules, are buffered for one level.
-                That is, a read access returns after three cycles \(1 cycle request buffering, 1 cycle read, 1 cycle
-                read-back merging\)
-            _not_top (:obj:`bool`): Marks ``dmod`` as not the top-level array
-
-        Returns:
-            :obj:`int`: Levels of buffering in ``dmod``
-        """
-        _visited = uno(_visited, {})
-        dmod = uno(dmod, context.database[ModuleView.design, context.top.key])
-        amod = context.database[ModuleView.abstract, dmod.key]
-        word_width = context.summary.frame["word_width"]
-
-        # tile
-        if dmod.module_class.is_tile:
-            nets = cls._get_or_create_frame_prog_nets(dmod, word_width, addrmap["tile"] - 1)
-
-            # buffer request
-            cls._instantiate_frame_buffer(context, dmod, nets, addrmap["tile"] - 1, inplace = True)
-
-            # find all the sub-blocks
-            subnets = []
-            for i in count():
-                if dinst := dmod.instances.get( i ):
-                    if ((prog_clk := dinst.pins.get("prog_clk"))
-                            and NetUtils.get_source(prog_clk) is None):
-                        NetUtils.connect(nets["prog_clk"],  dinst.pins["prog_clk"])
-                        NetUtils.connect(nets["prog_rst"],  dinst.pins["prog_rst"])
-                        NetUtils.connect(nets["prog_done"], dinst.pins["prog_done"])
-
-                    dinst.frame_addrmap = ProgDataBitmap( (i << addrmap["block"], 1 << addrmap["block"]) )
-                    amod.instances[i].frame_addrmap = dinst.frame_addrmap
-                    subnets.append( dinst.pins )
-                else:
-                    break
-
-            # instantiate a decoder for the subblocks
-            blknets = {}
-            if any("prog_ce" in subnet for subnet in subnets):
-                blknets = cls._instantiate_decoder(context, dmod, nets, subnets,
-                        nets["prog_addr"][addrmap["subblock_id"]],
-                        suffix = "blk", merger_stage = 3)
-
-            # find all the connection boxes
-            subnets = []
-            for key in chain(
-                    product( (Orientation.south, Orientation.north), range(dmod.width)),
-                    product( (Orientation.west,  Orientation.east),  range(dmod.height)) ):
-
-                if (dinst := dmod.instances.get( key )) is None:
-                    continue
-
-                if ((prog_clk := dinst.pins.get("prog_clk"))
-                        and NetUtils.get_source(prog_clk) is None):
-                    NetUtils.connect(nets["prog_clk"],  dinst.pins["prog_clk"])
-                    NetUtils.connect(nets["prog_rst"],  dinst.pins["prog_rst"])
-                    NetUtils.connect(nets["prog_done"], dinst.pins["prog_done"])
-
-                dinst.frame_addrmap = ProgDataBitmap(
-                        ((0x1 << (addrmap["tile"] - 2)) + (len(subnets) << addrmap["cbox"]),
-                            1 << addrmap["cbox"]) )
-                amod.instances[key].frame_addrmap = dinst.frame_addrmap
-                subnets.append( dinst.pins )
-
-            # instantiate a decoder for the connection boxes
-            cboxnets = {}
-            if any("prog_ce" in subnet for subnet in subnets):
-                cboxnets = cls._instantiate_decoder(context, dmod, nets, subnets,
-                        nets["prog_addr"][addrmap["cbox_id"]],
-                        suffix = "cbox", merger_stage = 3)
-
-            # instantiate root decoder
-            rootnets = cls._instantiate_decoder(context, dmod, nets, [blknets, cboxnets],
-                    nets["prog_addr"][addrmap["subtile"]],
-                    suffix = "tile", merger_stage = 3)
-
-            # connect tree root
-            NetUtils.connect(nets["prog_ce"],       rootnets["prog_ce"])
-            NetUtils.connect(nets["prog_we"],       rootnets["prog_we"])
-            NetUtils.connect(rootnets["prog_dout"], nets["prog_dout"])
-
-            _visited[dmod.key] = 2  # always 2 levels of buffering (one leve in tile, one level in block/cbox)
-            return 2
-
-        # array
-        for (x, y) in product(range(dmod.width), range(dmod.height)):
-            if (dinst := dmod.instances.get( (x, y) )) and dinst.model.key not in _visited:
-                cls._insert_frame_hier(context, addrmap,
-                        dmod = dinst.model, _visited = _visited, _not_top = True)
 
     @classmethod
     def _traverse_and_insert_leaves(cls, context, *, dmod = None, _visited = None):
@@ -517,6 +442,391 @@ class Frame(AbstractProgCircuitryEntry):
             return max_blk_aw, num_blk, max_cbox_aw, num_cbox, 0
 
     @classmethod
+    def _insert_frame_array(cls, context, *, dmod = None, _visited = None):
+        """Insert frame-based programming circuitry hierarchically.
+
+        Args:
+            context (`Context`):
+
+        Keyword Args:
+            dmod (`Module`): Design-view of the array in which programming circuitry is to be inserted
+            _visited (:obj:`dict` [:obj:`Hashable`, :obj:`int` ]): Mapping from module keys to levels of buffering
+                inside that module. Blocks and routing boxes, i.e. leaf-level modules, are buffered for one level.
+                That is, a read access returns after three cycles \(1 cycle request buffering, 1 cycle read, 1 cycle
+                read-back merging\)
+
+        Returns:
+            :obj:`int`: Levels of buffering in ``dmod``
+        """
+        _visited = uno(_visited, {})
+        dmod = uno(dmod, context.database[ModuleView.design, context.top.key])
+        amod = context.database[ModuleView.abstract, dmod.key]
+        word_width = context.summary.frame["word_width"]
+        addr_widths = context.summary.frame["addr_width"]
+        andcell = context.database[ModuleView.design, "prga_frame_and"]
+
+        maxlvl = -1
+        for (x, y) in product(range(dmod.width), range(dmod.height)):
+
+            # sub-tile or array
+            if (dinst := dmod.instances.get( (x, y) )):
+                if (lvl := (_visited.get(dinst.model.key))) is None:
+
+                    if dinst.model.module_class.is_tile:
+                        cls._insert_frame_tile(context, dinst.model)
+                        lvl = _visited[dinst.model.key] = 0
+
+                    else:
+                        lvl = cls._insert_frame_array(context,
+                                dmod = dinst.model, _visited = visited)
+
+                maxlvl = max(maxlvl, lvl)
+
+            # sbox
+            if maxlvl == -1:
+                for corner in Corner:
+                    if dinst := dmod.instances.get( ((x, y), corner) ):
+                        maxlvl = 0
+                        break
+
+        _visited[dmod.key] = maxlvl + 1
+        if maxlvl == -1:
+            # logging
+            _logger.info("Frame-based programming circuitry inserted into {}. No programming data needed"
+                    .format(dmod))
+
+            return 0
+
+        nets = None
+        if amod is context.top: # top-level array
+            context.summary.frame["readback_latency"] = 2 * (maxlvl + 1) + 1
+
+            x_width = addr_widths["x"]
+            y_width = addr_widths["y"]
+            fabric_width = addr_widths["fabric"]
+
+            nets = cls._get_or_create_frame_prog_nets(dmod, word_width, fabric_width)
+
+            # buffer write request and read-back response once at the fabric level
+            cls._instantiate_buffer(context, dmod, nets, fabric_width, suffix = "_l{}".format(maxlvl))
+
+            # decode x
+            xdec = ModuleUtils.instantiate(dmod,
+                    cls._get_or_create_frame_wldec(context, x_width, dmod.width),
+                    "i_frame_wldec_xtop")
+            NetUtils.connect(nets["prog_ce"], xdec.pins["ce_i"])
+            NetUtils.connect(nets["prog_we"], xdec.pins["we_i"])
+            NetUtils.connect(nets["prog_addr"][fabric_width - x_width:], xdec.pins["addr_i"])
+            nets["prog_cex"] = xdec.pins["ce_o"]
+            nets["prog_wex"] = xdec.pins["we_o"]
+
+            # decode y
+            ydec = ModuleUtils.instantiate(dmod,
+                    cls._get_or_create_frame_wldec(context, y_width, dmod.height),
+                    "i_frame_wldec_ytop")
+            NetUtils.connect(nets["prog_ce"], ydec.pins["ce_i"])
+            NetUtils.connect(nets["prog_we"], ydec.pins["we_i"])
+            NetUtils.connect(nets["prog_addr"][addr_widths["tile"]:fabric_width - x_width], ydec.pins["addr_i"])
+            nets["prog_cey"] = ydec.pins["ce_o"]
+            nets["prog_wey"] = ydec.pins["we_o"]
+
+            # adjust ``nets``
+            del nets["prog_ce"]
+            del nets["prog_we"]
+            nets["prog_addr"] = nets["prog_addr"][:addr_widths["tile"]]
+
+        else:                   # not top-level array
+            nets = cls._get_or_create_frame_prog_nets(dmod, word_width, addr_widths["tile"], ["prog_ce", "prog_we"])
+
+            # buffer cex/wex, cey/wey
+            for dim in Dimension:
+                bits = dim.case(dmod.width, dmod.height)
+
+                ce = ModuleUtils.create_port(dmod, "prog_ce" + dim.name, bits, "input", net_class = NetClass.prog)
+                we = ModuleUtils.create_port(dmod, "prog_we" + dim.name, bits, "input", net_class = NetClass.prog)
+
+                nets_ce = nets["prog_ce" + dim.name] = []
+                nets_we = nets["prog_we" + dim.name] = []
+
+                for i in range(bits):
+                    ibuf = ModuleUtils.instantiate(dmod,
+                            cls._get_or_create_frame_buffer(context, 2),
+                            "i_frame_ibuf_e{}{}_l{}".format(dim.name, i, maxlvl))
+                    NetUtils.connect(nets["prog_clk"], ibuf.pins["prog_clk"])
+                    NetUtils.connect(nets["prog_rst"], ibuf.pins["prog_rst"])
+                    NetUtils.connect([ce[i], we[i]], ibuf.pins["i"])
+                    nets_ce.append(ibuf.pins["o"][0])
+                    nets_we.append(ibuf.pins["o"][1])
+
+            # buffer addr/din
+            ibuf = ModuleUtils.instantiate(dmod,
+                    cls._get_or_create_frame_buffer(context, word_width + addr_widths["tile"]),
+                    "i_frame_ibuf_l{}".format(maxlvl))
+            NetUtils.connect(nets["prog_clk"], ibuf.pins["prog_clk"])
+            NetUtils.connect(nets["prog_rst"], ibuf.pins["prog_rst"])
+            NetUtils.connect([nets["prog_addr"], nets["prog_din"]], ibuf.pins["i"])
+            nets["prog_addr"] = ibuf.pins["o"][:addr_widths["tile"]]
+            nets["prog_din"] = ibuf.pins["o"][addr_widths["tile"]:]
+
+            # buffer dout
+            obuf = ModuleUtils.instantiate(dmod,
+                    cls._get_or_create_frame_buffer(context, word_width),
+                    "i_frame_obuf_l{}".format(maxlvl))
+            NetUtils.connect(nets["prog_clk"], obuf.pins["prog_clk"])
+            NetUtils.connect(nets["prog_rst"], obuf.pins["prog_rst"])
+            NetUtils.connect(obuf.pins["o"],   nets["prog_dout"])
+            nets["prog_dout"] = obuf.pins["i"]
+
+        # merge x
+        xmerge = ModuleUtils.instantiate(dmod,
+                cls._get_or_create_frame_rbmerge(context, dmod.width, 2 * maxlvl + 1),
+                "i_frame_rbmerge_xtop")
+        NetUtils.connect(nets["prog_clk"], xmerge.pins["prog_clk"])
+        NetUtils.connect(nets["prog_rst"], xmerge.pins["prog_rst"])
+        NetUtils.connect(nets["prog_cex"], xmerge.pins["ce"])
+        NetUtils.connect(xmerge.pins["dout"], nets["prog_dout"])
+
+        nets["prog_dout"] = []
+
+        # merge y
+        for x in range(dmod.width):
+            ymerge = ModuleUtils.instantiate(dmod,
+                    cls._get_or_create_frame_rbmerge(context, dmod.height, 2 * maxlvl + 1),
+                    "i_frame_rbmerge_ytop_x{}".format(x))
+            NetUtils.connect(nets["prog_clk"], ymerge.pins["prog_clk"])
+            NetUtils.connect(nets["prog_rst"], ymerge.pins["prog_rst"])
+            NetUtils.connect(nets["prog_cey"], ymerge.pins["ce"])
+            NetUtils.connect(ymerge.pins["dout"], xmerge.pins["din" + str(x)])
+            nets["prog_dout"].append( tuple(ymerge.pins["din" + str(y)]
+                for y in range(dmod.height)) )
+
+        nets["prog_dout"] = tuple(iter(nets["prog_dout"]))
+
+        # traverse tiles and sboxes again
+        for x, y in product( range(dmod.width), range(dmod.height) ):
+            xwls, ywls = 1, 1
+
+            # additional buffering?
+            minlvl = 0
+            if (dinst := dmod.instances.get((x, y))) and dinst.model.module_class.is_array:
+                if (minlvl := _visited[dinst.model.key]) == 0:
+                    continue    # well it turns out this tile does not require any programming data!
+
+                xwls, ywls = dinst.model.width, dinst.model.height
+
+            # local copy of nets
+            gridnets = {
+                    "prog_clk":  nets["prog_clk"],
+                    "prog_rst":  nets["prog_rst"],
+                    "prog_done": nets["prog_done"],
+                    "prog_cex":  nets["prog_cex"][x:x+xwls],
+                    "prog_wex":  nets["prog_wex"][x:x+xwls],
+                    "prog_cey":  nets["prog_cey"][y:y+ywls],
+                    "prog_wey":  nets["prog_wey"][y:y+ywls],
+                    "prog_addr": nets["prog_addr"],
+                    "prog_din":  nets["prog_din"],
+                    "prog_dout": tuple( nets["prog_dout"][xx][yy]
+                        for xx, yy in product(range(x, x + xwls), range(y, y + ywls)) ),
+                    }
+
+            # match buffering levels
+            for lvl in reversed(range(minlvl, maxlvl)):
+                # buffer cex/wex, cey/wey
+                for dim in Dimension:
+                    nets_ce, nets_we = [], []
+
+                    for i in dim.case(range(xwls), range(ywls)):
+                        ibuf = ModuleUtils.instantiate(dmod,
+                                cls._get_or_create_frame_buffer(context, 2),
+                                "i_frame_ibuf_e{}{}_l{}".format(dim.name, i + dim.case(x, y), lvl))
+                        NetUtils.connect(gridnets["prog_clk"], ibuf.pins["prog_clk"])
+                        NetUtils.connect(gridnets["prog_rst"], ibuf.pins["prog_rst"])
+                        NetUtils.connect(
+                                [gridnets["prog_ce" + dim.name][i], gridnets["prog_we" + dim.name][i]],
+                                ibuf.pins["i"])
+                        nets_ce.append(ibuf.pins["o"][0])
+                        nets_we.append(ibuf.pins["o"][1])
+
+                    gridnets["prog_ce" + dim.name] = nets_ce
+                    gridnets["prog_we" + dim.name] = nets_we
+
+                # buffer addr/din (if needed)
+                if (ibuf := dmod.instances.get(ibuf_name := "i_frame_ibuf_l{}".format(lvl))) is None:
+                    ibuf = ModuleUtils.instantiate(dmod,
+                            cls._get_or_create_frame_buffer(context, word_width + addr_widths["tile"]),
+                            ibuf_name)
+                    NetUtils.connect(gridnets["prog_clk"], ibuf.pins["prog_clk"])
+                    NetUtils.connect(gridnets["prog_rst"], ibuf.pins["prog_rst"])
+                    NetUtils.connect([gridnets["prog_addr"], gridnets["prog_data"]], ibuf.pins["i"])
+
+                gridnets["prog_addr"] = ibuf.pins["o"][:addr_widths["tile"]]
+                gridnets["prog_din"]  = ibuf.pins["o"][addr_widths["tile"]:]
+
+                # buffer dout
+                obuf = ModuleUtils.instantiate(dmod,
+                        cls._get_or_create_frame_buffer(context, word_width),
+                        "i_frame_obuf_x{}y{}_l{}".format(x, y, lvl))
+                NetUtils.connect(gridnets["prog_clk"], obuf.pins["prog_clk"])
+                NetUtils.connect(gridnets["prog_rst"], obuf.pins["prog_rst"])
+                for dout in gridnets["prog_dout"]:
+                    NetUtils.connect(obuf.pins["o"], dout)
+                gridnets["prog_dout"] = (obuf.pins["i"], )
+
+            # connect if ``dinst`` is an array
+            if dinst and dinst.model.module_class.is_array:
+                NetUtils.connect(gridnets["prog_cex"],  dinst.pins["prog_cex"])
+                NetUtils.connect(gridnets["prog_wex"],  dinst.pins["prog_wex"])
+                NetUtils.connect(gridnets["prog_cey"],  dinst.pins["prog_cey"])
+                NetUtils.connect(gridnets["prog_wey"],  dinst.pins["prog_wey"])
+                NetUtils.connect(gridnets["prog_addr"], dinst.pins["prog_addr"])
+                NetUtils.connect(gridnets["prog_din"],  dinst.pins["prog_din"])
+                for dout in gridnets["prog_dout"]:
+                    NetUtils.connect(dinst.pins["prog_dout"], dout)
+                continue
+
+            # if ``dinst`` is an array, or is an empty tile
+            # find all the switch boxes
+            subnets = []
+            for corner in Corner:
+                if sbox := dmod.instances.get( ((x, y), corner) ):
+                    if ((prog_clk := sbox.pins.get("prog_clk"))
+                            and NetUtils.get_source(prog_clk) is None):
+                        NetUtils.connect(gridnets["prog_clk"],  sbox.pins["prog_clk"])
+                        NetUtils.connect(gridnets["prog_rst"],  sbox.pins["prog_rst"])
+                        NetUtils.connect(gridnets["prog_done"], sbox.pins["prog_done"])
+
+                    sbox.frame_addrmap = ProgDataBitmap(
+                            (len(subnets) << addr_widths["sbox"], 1 << addr_widths["sbox"]) )
+                    amod.instances[sbox.key].frame_addrmap = sbox.frame_addrmap
+                    subnets.append( sbox.pins )
+
+                else:
+                    subnets.append({})
+
+            if dinst is None and not any(subnets):
+                continue
+            
+            # instantiate a decoder for the switch boxes
+            sboxnets = {}
+            if any(subnets):
+                sbox_id = slice(addr_widths["sbox"], addr_widths["tile"] - 1)
+                sboxnets = cls._instantiate_decoder(context, dmod, gridnets, subnets,
+                        gridnets["prog_addr"][sbox_id],
+                        suffix = "_x{}y{}_sbox".format(x, y))
+
+            # annotate tile instance
+            tilenets = {}
+            if dinst is not None:
+                dinst.frame_addrmap = ProgDataBitmap(
+                        ((1 << (addr_widths["tile"] - 1)), (1 << (addr_widths["tile"] - 1))) )
+                amod.instances[dinst.key].frame_addrmap = dinst.frame_addrmap
+                tilenets = dinst.pins
+
+            # instantiate a decoder between tile and sboxes
+            rootnets = cls._instantiate_decoder(context, dmod, gridnets,
+                    [sboxnets, {} if dinst is None else dinst.pins],
+                    gridnets["prog_addr"][-1:],
+                    suffix = "_x{}y{}_tile".format(x, y))
+
+            # instantiate and(cex, cey), and(wex, wey) and connect rootnets
+            for e in ("ce", "we"):
+                iand = ModuleUtils.instantiate(dmod, andcell, "i_frame_and{}_x{}y{}".format(e, x, y))
+                NetUtils.connect(gridnets["prog_" + e + "x"][0], iand.pins["ix"])
+                NetUtils.connect(gridnets["prog_" + e + "y"][0], iand.pins["iy"])
+                NetUtils.connect(iand.pins["o"], rootnets["prog_" + e])
+
+            # connect root
+            for dout in gridnets["prog_dout"]:
+                NetUtils.connect(rootnets["prog_dout"], dout)
+
+        # logging
+        _logger.info("Frame-based programming circuitry inserted into {}"
+                .format(dmod))
+        return maxlvl + 1
+
+    @classmethod
+    def _insert_frame_tile(cls, context, dmod):
+        """Insert frame-based programming circuitry hierarchically.
+
+        Args:
+            context (`Context`):
+            dmod (`Module`): Design-view of the tile in which programming circuitry is to be inserted
+            _visited (:obj:`dict` [:obj:`Hashable`, :obj:`int` ]): Mapping from module keys to levels of buffering
+                inside that module. Blocks and routing boxes, i.e. leaf-level modules, are buffered for one level.
+                That is, a read access returns after three cycles \(1 cycle request buffering, 1 cycle read, 1 cycle
+                read-back merging\)
+        """
+        amod = context.database[ModuleView.abstract, dmod.key]
+        word_width = context.summary.frame["word_width"]
+        addr_widths = context.summary.frame["addr_width"]
+
+        subblock_id = slice(addr_widths["block"], addr_widths["tile"] - 2)
+        cbox_id     = slice(addr_widths["cbox"],  addr_widths["tile"] - 2)
+
+        nets = cls._get_or_create_frame_prog_nets(dmod, word_width, addr_widths["tile"] - 1)
+
+        # find all the sub-blocks
+        subnets = []
+        for i in count():
+            if dinst := dmod.instances.get( i ):
+                if ((prog_clk := dinst.pins.get("prog_clk"))
+                        and NetUtils.get_source(prog_clk) is None):
+                    NetUtils.connect(nets["prog_clk"],  dinst.pins["prog_clk"])
+                    NetUtils.connect(nets["prog_rst"],  dinst.pins["prog_rst"])
+                    NetUtils.connect(nets["prog_done"], dinst.pins["prog_done"])
+
+                dinst.frame_addrmap = ProgDataBitmap( (i << addr_widths["block"], 1 << addr_widths["block"]) )
+                amod.instances[i].frame_addrmap = dinst.frame_addrmap
+                subnets.append( dinst.pins )
+            else:
+                break
+
+        # instantiate a decoder for the subblocks
+        blknets = {}
+        if any("prog_ce" in subnet for subnet in subnets):
+            blknets = cls._instantiate_decoder(context, dmod, nets, subnets,
+                    nets["prog_addr"][subblock_id],
+                    suffix = "_blk")
+
+        # find all the connection boxes
+        subnets = []
+        for key in chain(
+                product( (Orientation.south, Orientation.north), range(dmod.width)),
+                product( (Orientation.west,  Orientation.east),  range(dmod.height)) ):
+
+            if (dinst := dmod.instances.get( key )) is None:
+                continue
+
+            if ((prog_clk := dinst.pins.get("prog_clk"))
+                    and NetUtils.get_source(prog_clk) is None):
+                NetUtils.connect(nets["prog_clk"],  dinst.pins["prog_clk"])
+                NetUtils.connect(nets["prog_rst"],  dinst.pins["prog_rst"])
+                NetUtils.connect(nets["prog_done"], dinst.pins["prog_done"])
+
+            dinst.frame_addrmap = ProgDataBitmap(
+                    ((0x1 << (addr_widths["tile"] - 2)) + (len(subnets) << addr_widths["cbox"]),
+                        1 << addr_widths["cbox"]) )
+            amod.instances[key].frame_addrmap = dinst.frame_addrmap
+            subnets.append( dinst.pins )
+
+        # instantiate a decoder for the connection boxes
+        cboxnets = {}
+        if any("prog_ce" in subnet for subnet in subnets):
+            cboxnets = cls._instantiate_decoder(context, dmod, nets, subnets,
+                    nets["prog_addr"][cbox_id],
+                    suffix = "_cbox")
+
+        # instantiate root decoder
+        rootnets = cls._instantiate_decoder(context, dmod, nets, [blknets, cboxnets],
+                nets["prog_addr"][addr_widths["tile"] - 2:addr_widths["tile"] - 1],
+                suffix = "_tile")
+
+        # connect tree root
+        NetUtils.connect(nets["prog_ce"],       rootnets["prog_ce"])
+        NetUtils.connect(nets["prog_we"],       rootnets["prog_we"])
+        NetUtils.connect(rootnets["prog_dout"], nets["prog_dout"])
+
+    @classmethod
     def _insert_frame_leaf(cls, context, dmod, visited, *, _not_top = False):
         """Insert frame-based programming circuitry into logic/io blocks and switch/connection boxes.
 
@@ -556,6 +866,9 @@ class Frame(AbstractProgCircuitryEntry):
 
         # shortcut
         if not (inst_ims or inst_pds or inst_dos):
+            # logging
+            _logger.info("Frame-based programming circuitry inserted into {}. No programming data needed"
+                    .format(dmod))
             return 0
 
         # get the basic programming interface
@@ -569,6 +882,9 @@ class Frame(AbstractProgCircuitryEntry):
 
         # another shortcut
         if not (inst_ims or inst_pds):
+            # logging
+            _logger.info("Frame-based programming circuitry inserted into {}. No programming data needed"
+                    .format(dmod))
             return 0
 
         # abstract view of `dmod`
@@ -609,6 +925,9 @@ class Frame(AbstractProgCircuitryEntry):
 
         # one more shortcut
         if not inst_ims:
+            # logging
+            _logger.info("Frame-based programming circuitry inserted into {}. {} bits exposed to parent modules"
+                    .format(dmod, plain_bits))
             return 0
 
         # process `inst_ims`
@@ -632,7 +951,7 @@ class Frame(AbstractProgCircuitryEntry):
 
         # instantiate buffer for block/box
         if not _not_top:
-            cls._instantiate_frame_buffer(context, dmod, nets, tree.addr_width, inplace = True)
+            cls._instantiate_buffer(context, dmod, nets, tree.addr_width, suffix = "_l0")
 
         # instantiate decoders and mergers for the decoder tree
         assert tree is not None
@@ -655,5 +974,9 @@ class Frame(AbstractProgCircuitryEntry):
 
             elif ainst := amod.instances.get(dinst.key):
                 ainst.frame_addrmap = dinst.frame_addrmap
+
+        # logging
+        _logger.info("Frame-based programming circuitry inserted into {}. Address width: {} ({} {}b words)"
+                .format(dmod, tree.addr_width, 2 ** tree.addr_width, word_width))
 
         return tree.addr_width
