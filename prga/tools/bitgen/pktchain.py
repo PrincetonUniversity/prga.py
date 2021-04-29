@@ -75,7 +75,7 @@ class PktchainBitstreamGenerator(AbstractBitstreamGenerator):
 
             self.bits[branch][leaf][offset : offset + length] = segment
 
-    def generate_bitstream(self, fasm, output):
+    def generate_bitstream(self, fasm, output, args):
         self.parse_fasm(fasm)
 
         # add CRC

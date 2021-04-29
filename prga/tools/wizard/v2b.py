@@ -71,6 +71,9 @@ def generate_v2b_project(context, renderer, config, output = None):
     vpr["archdef"] = os.path.join(summary.cwd, summary.vpr["arch"])
     vpr["rrgraph"] = os.path.join(summary.cwd, summary.vpr["rrg"])
 
+    # other settings
+    param["enable_magic_checker"] = summary.prog_support_magic_checker
+
     # add script generation tasks
     renderer.add_generic(os.path.join(output, "syn.tcl"), "synth.app.tmpl.tcl", **param, **config)
     renderer.add_generic(os.path.join(output, "Makefile"), "impl.tmpl.mk", **param, **config)

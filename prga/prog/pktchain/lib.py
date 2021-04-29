@@ -43,6 +43,7 @@ class Pktchain(Scanchain):
                     },
                 "protocol": PktchainProtocol
                 }
+        ctx.summary.prog_support_magic_checker = True
 
         ctx.template_search_paths.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'))
         ctx.add_verilog_header("pktchain.vh", "include/pktchain.tmpl.vh")

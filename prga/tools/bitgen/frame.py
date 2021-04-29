@@ -118,7 +118,7 @@ class FrameBitstreamGenerator(AbstractBitstreamGenerator):
             segment = int2ba(v, length = length, endian = 'little')
             self.bst.set_data(addr + offset, addr + offset + length, segment)
 
-    def generate_bitstream(self, fasm, output):
+    def generate_bitstream(self, fasm, output, args):
         # use margin `32 + self.word_size` to avoid aligned overwrite
         self.bst = BitstreamSegmentTree(32 + self.word_size)
         self.parse_fasm(fasm)

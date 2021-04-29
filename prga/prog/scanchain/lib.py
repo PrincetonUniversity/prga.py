@@ -32,6 +32,7 @@ class Scanchain(AbstractProgCircuitryEntry):
         ctx.renderer = None
 
         ctx.summary.scanchain = {"chain_width": chain_width}
+        ctx.summary.prog_support_magic_checker = True
         cls.__install_cells(ctx)
 
         return ctx

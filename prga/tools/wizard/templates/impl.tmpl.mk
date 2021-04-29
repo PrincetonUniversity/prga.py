@@ -82,11 +82,19 @@ BITGEN_LOG := bitgen.log
 
 # ** Implementation Wrapper **
 IMPLWRAP_V := implwrap.v
+{%- if enable_magic_checker %}
+
+# ** Magic Bitstream Checker **
+CHECKER_V := checker.v
+{%- endif %}
 
 # ----------------------------------------------------------------------------
 # -- Aggregated Variables ----------------------------------------------------
 # ----------------------------------------------------------------------------
-OUTPUTS := $(SYN_RESULT) $(PACK_RESULT) $(IOPLAN_RESULT) $(PLACE_RESULT) $(ROUTE_RESULT) $(FASM_RESULT) $(BITGEN_RESULT)
+OUTPUTS := $(SYN_RESULT) $(PACK_RESULT) $(IOPLAN_RESULT) $(PLACE_RESULT) $(ROUTE_RESULT) $(FASM_RESULT) $(BITGEN_RESULT) $(IMPLWRAP_V)
+{%- if enable_magic_checker %}
+OUTPUTS += $(CHECKER_V)
+{%- endif %}
 LOGS := $(SYN_LOG) $(PACK_LOG) $(IOPLAN_LOG) $(PLACE_LOG) $(ROUTE_LOG) $(FASM_LOG) $(BITGEN_LOG)
 JUNKS := vpr_stdout.log *.rpt pack.out.post_routing
 
@@ -94,6 +102,9 @@ JUNKS := vpr_stdout.log *.rpt pack.out.post_routing
 # -- Phony Rules -------------------------------------------------------------
 # ----------------------------------------------------------------------------
 .PHONY: all syn synth pack ioplan place route fasm bitgen bitstream implwrap disp display clean
+{%- if enable_magic_checker %}
+.PHONY: checker
+{%- endif %}
 
 all: $(BITGEN_RESULT)
 
@@ -110,6 +121,10 @@ route: $(ROUTE_RESULT)
 fasm: $(FASM_RESULT)
 
 bitgen: $(BITGEN_RESULT)
+{%- if enable_magic_checker %}
+
+checker: $(CHECKER_V)
+{%- endif %}
 
 implwrap: $(IMPLWRAP_V)
 
@@ -176,3 +191,8 @@ $(BITGEN_RESULT): $(SUMMARY) $(FASM_RESULT)
 
 $(IMPLWRAP_V): $(SUMMARY) $(SYN_EBLIF) $(IOPLAN_RESULT)
 	$(PYTHON) -m prga.tools.wizard.implwrap -c $(SUMMARY) -i $(SYN_EBLIF) -f $(IOPLAN_RESULT) -o $@
+{%- if enable_magic_checker %}
+
+$(CHECKER_V): $(SUMMARY) $(FASM_RESULT)
+	$(PYTHON) -m prga.tools.bitgen -c $(CONTEXT) -f $(FASM_RESULT) -o $@ -p Magic --checkmode
+{%- endif %}

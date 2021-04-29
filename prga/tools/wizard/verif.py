@@ -87,6 +87,7 @@ def generate_verif_makefile(summary, renderer, v2b_dir, config_f, config = None,
             libs = libs,
             fpga = fpga,
             abspath = lambda p: os.path.abspath(os.path.expandvars(p)),
+            enable_magic_checker = summary.prog_support_magic_checker,
             )
 
 def generate_verif_testbench(renderer, v2b_dir, config, test = None, output = None):

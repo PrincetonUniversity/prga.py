@@ -100,6 +100,11 @@ IMPLWRAP_V := $(V2B_DIR)/implwrap.v
 
 # ** Bitstream **
 BITSTREAM := $(V2B_DIR)/bitgen.out
+{%- if enable_magic_checker %}
+
+# ** Magic Bitstream Checker **
+CHECKER_V := $(V2B_DIR)/checker.v
+{%- endif %}
 
 # ----------------------------------------------------------------------------
 # -- Outputs -----------------------------------------------------------------
@@ -155,7 +160,9 @@ endif
 $(BEHAV_SIM_LOG): $(BEHAV_SIM)
 	./$< $(RUN_FLAGS) | tee $@
 
-$(BEHAV_SIM): $(TB_SRCS) $(TEST_SRCS) $(TEST_INCS) $(BEHAV_SRCS) $(BEHAV_INCS)
+BEHAV_SIM_DEPS := $(TB_SRCS) $(TEST_SRCS) $(TEST_INCS)
+BEHAV_SIM_DEPS += $(BEHAV_SRCS) $(BEHAV_INCS)
+$(BEHAV_SIM): $(BEHAV_SIM_DEPS)
 	$(COMP) $(COMP_FLAGS) $(TB_COMP_FLAGS) $(TB_SRCS) \
 		$(TEST_COMP_FLAGS) $(addprefix -v ,$(TEST_SRCS)) \
 		$(BEHAV_COMP_FLAGS) $(addprefix -v ,$(BEHAV_SRCS)) \
@@ -165,7 +172,8 @@ $(BEHAV_SIM): $(TB_SRCS) $(TEST_SRCS) $(TEST_INCS) $(BEHAV_SRCS) $(BEHAV_INCS)
 $(POSTSYN_SIM_LOG): $(POSTSYN_SIM)
 	./$< $(RUN_FLAGS) | tee $@
 
-$(POSTSYN_SIM): $(TB_SRCS) $(TEST_SRCS) $(TEST_INCS) $(BEHAV_SRCS) $(BEHAV_INCS) $(LIB_SRCS) $(LIB_INCS) $(POSTSYN_SRCS)
+POSTSYN_SIM_DEPS := $(BEHAV_SIM_DEPS) $(LIB_SRCS) $(LIB_INCS) $(POSTSYN_SRCS)
+$(POSTSYN_SIM): $(POSTSYN_SIM_DEPS)
 	$(COMP) $(COMP_FLAGS) $(DEFPREFIX)PRGA_TEST_POSTSYN $(TB_COMP_FLAGS) $(TB_SRCS) \
 		$(TEST_COMP_FLAGS) $(addprefix -v ,$(TEST_SRCS)) \
 		$(BEHAV_COMP_FLAGS) $(addprefix -v ,$(BEHAV_SRCS)) \
@@ -175,13 +183,19 @@ $(POSTSYN_SIM): $(TB_SRCS) $(TEST_SRCS) $(TEST_INCS) $(BEHAV_SRCS) $(BEHAV_INCS)
 $(POSTIMPL_SIM_LOG): $(POSTIMPL_SIM)
 	./$< $(RUN_FLAGS) | tee $@
 
-$(POSTIMPL_SIM): $(TB_SRCS) $(TEST_SRCS) $(TEST_INCS) $(BEHAV_SRCS) $(BEHAV_INCS) $(LIB_SRCS) $(LIB_INCS) $(POSTSYN_SRCS) $(FPGA_SRCS) $(FPGA_INCS) $(IMPLWRAP_V) $(BITSTREAM)
+POSTIMPL_SIM_DEPS := $(POSTSYN_SIM_DEPS) $(FPGA_SRCS) $(FPGA_INCS)
+POSTIMPL_SIM_DEPS += $(IMPLWRAP_V) $(BITSTREAM)
+{%- if enable_magic_checker %}
+POSTIMPL_SIM_DEPS += $(CHECKER_V)
+{%- endif %}
+$(POSTIMPL_SIM): $(POSTIMPL_SIM_DEPS)
 	$(COMP) $(COMP_FLAGS) $(DEFPREFIX)PRGA_TEST_POSTIMPL $(TB_COMP_FLAGS) $(TB_SRCS) \
 		$(TEST_COMP_FLAGS) $(addprefix -v ,$(TEST_SRCS)) \
 		$(BEHAV_COMP_FLAGS) $(addprefix -v ,$(BEHAV_SRCS)) \
 		$(LIB_COMP_FLAGS) $(addprefix -v ,$(LIB_SRCS)) $(addprefix -v ,$(POSTSYN_SRCS)) \
 		$(FPGA_COMP_FLAGS) $(addprefix -v ,$(FPGA_SRCS)) \
-		$(DEFPREFIX)BITSTREAM='"$(shell realpath $(BITSTREAM))"' $(INCPREFIX)$(V2B_DIR) -v $(IMPLWRAP_V) \
+		$(DEFPREFIX)BITSTREAM='"$(shell realpath $(BITSTREAM))"' $(INCPREFIX)$(V2B_DIR) \
+		-v $(IMPLWRAP_V) {%- if enable_magic_checker %} -v $(CHECKER_V) {%- endif %} \
 		-o $@
 
 $(TB_SRCS): $(POSTSYN_SRCS)
@@ -195,3 +209,8 @@ $(IMPLWRAP_V):
 
 $(BITSTREAM):
 	$(MAKE) -C $(V2B_DIR) bitgen
+{%- if enable_magic_checker %}
+
+$(CHECKER_V):
+	$(MAKE) -C $(V2B_DIR) checker
+{%- endif %}

@@ -37,6 +37,8 @@ class ContextSummary(Object):
             'cwd',                  # root directory of the project
             # generic summaries: updated by 'SummaryUpdate'
             'prog_type',            # programming circuitry type
+            'prog_support_magic_checker',   # set if the programming circuitry type supports Magic bitstream checked
+                                            # in simulation
             'top',                  # top-level FPGA module name
             'ios',                  # list of `IO` s
             'active_blocks',        # dict of block keys to active orientations
@@ -106,6 +108,7 @@ class Context(Object):
         self.summary = ContextSummary()
         self.summary.cwd = self.cwd = os.getcwd()
         self.summary.prog_type = "abstract"
+        self.summary.prog_support_magic_checker = False
 
         for k, v in kwargs.items():
             setattr(self, k, v)

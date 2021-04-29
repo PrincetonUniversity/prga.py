@@ -93,6 +93,7 @@ class Frame(AbstractProgCircuitryEntry):
                 "word_width": word_width,
                 "protocol": FrameProtocol,
                 }
+        ctx.summary.prog_support_magic_checker = True
 
         # install `prga_frame_and`
         cell = ctx._add_module(Module("prga_frame_and",

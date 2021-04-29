@@ -172,11 +172,13 @@ class AbstractBitstreamGenerator(Object):
             else:
                 _logger.warning("[Line {:0>4d}] Unsupported feature: {}".format(lineno, line.strip()))
 
-    def generate_bitstream(self, input_, output):
+    def generate_bitstream(self, input_, output, args):
         """Generate bitstream without storing parsed data.
 
         Args:
             input_ (:obj:`str` of file-like object):
             output (:obj:`str` of file-like object):
+            args (:obj:`Sequence` [:obj:`str` ]): Remaining arguments other than the ones specified in the common
+                argument parser
         """
         raise NotImplementedError
