@@ -3,9 +3,10 @@
 from ...util import uno, Object
 from ...exception import PRGAInternalError
 
-from bitarray.util import zeros
+from bitarray import bitarray
+from bitarray.util import zeros, int2ba
 
-__all__ = ['BitstreamSegmentTree']
+__all__ = ['BitstreamSegmentTree', 'CRC']
 
 # ----------------------------------------------------------------------------
 # -- Bitstream Segment Tree --------------------------------------------------
@@ -501,3 +502,44 @@ class BitstreamSegmentTree(Object):
         """:obj:`int`: Minimum gap between segments. Two segments are merged when the distance between them is
         smaller than this gap."""
         return self._min_gap
+
+# ----------------------------------------------------------------------------
+# -- Cyclic Redundant Code (CRC) Calculator ----------------------------------
+# ----------------------------------------------------------------------------
+class CRC(Object):
+    """A CRC-8 CCITT CRC calculator.
+
+    Args:
+        lanes (:obj:`int`): Number of lanes
+    """
+
+    __slots__ = ['crc']
+    _mask = bitarray('11100000', endian='little')
+
+    def __init__(self, lanes = 1):
+        self.crc = list(bitarray('00000000', endian='little') for _ in range(lanes))
+
+    @property
+    def lanes(self):
+        """:obj:`int`: Number of lanes in this calculator."""
+        return len(self.crc)
+
+    def reset(self):
+        """Reset the current state."""
+        self.crc = list(bitarray('00000000', endian='little') for _ in range(self.lanes))
+
+    def consume(self, v):
+        """Consume a `CRC.lanes`-bit value and update the current state.
+
+        Args:
+            v (`bitarray`_): A `CRC.lanes`-bit value
+
+        .. _bitarray: https://pypi.org/project/bitarray/
+        """
+        for i, b in enumerate(v):
+            # shift by 1
+            self.crc[i] >>= 1
+
+            # inverse under specific conditions
+            if self.crc[i][-1] != b:
+                self.crc[i] ^= self._mask

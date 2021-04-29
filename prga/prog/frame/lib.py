@@ -1,5 +1,6 @@
 # -*- encoding: ascii -*-
 
+from .protocol import FrameProtocol
 from ..common import AbstractProgCircuitryEntry, ProgDataBitmap
 from ...core.common import NetClass, ModuleClass, ModuleView, Corner, Orientation, Dimension
 from ...netlist import Module, ModuleUtils, PortDirection, NetUtils, Const
@@ -88,7 +89,10 @@ class Frame(AbstractProgCircuitryEntry):
         ctx.template_search_paths.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'))
         ctx.renderer = None
 
-        ctx.summary.frame = {"word_width": word_width}
+        ctx.summary.frame = {
+                "word_width": word_width,
+                "protocol": FrameProtocol,
+                }
 
         # install `prga_frame_and`
         cell = ctx._add_module(Module("prga_frame_and",
@@ -368,10 +372,9 @@ class Frame(AbstractProgCircuitryEntry):
                 NetUtils.connect(nets["prog_addr"][:len(prog_addr)], prog_addr)
             NetUtils.connect(nets["prog_din"], node.instance.pins["prog_din"])
 
-            node.instance.frame_addrmap = ProgDataBitmap(
-                    (baseaddr, (2 ** (len(p) if (p := node.instance.pins.get("prog_addr")) else 0)) ) )
+            node.instance.frame_baseaddr = baseaddr
             if ainst := amod.instances.get(node.instance.key):
-                ainst.frame_addrmap = node.instance.frame_addrmap
+                ainst.frame_baseaddr = node.instance.frame_baseaddr
 
             return node.instance.pins
 
@@ -684,7 +687,7 @@ class Frame(AbstractProgCircuitryEntry):
                     NetUtils.connect(dinst.pins["prog_dout"], dout)
                 continue
 
-            # if ``dinst`` is an array, or is an empty tile
+            # if ``dinst`` is not an array, or is an empty tile
             # find all the switch boxes
             subnets = []
             for corner in Corner:
@@ -695,9 +698,7 @@ class Frame(AbstractProgCircuitryEntry):
                         NetUtils.connect(gridnets["prog_rst"],  sbox.pins["prog_rst"])
                         NetUtils.connect(gridnets["prog_done"], sbox.pins["prog_done"])
 
-                    sbox.frame_addrmap = ProgDataBitmap(
-                            (len(subnets) << addr_widths["sbox"], 1 << addr_widths["sbox"]) )
-                    amod.instances[sbox.key].frame_addrmap = sbox.frame_addrmap
+                    amod.instances[sbox.key].frame_id = sbox.frame_id = len(subnets)
                     subnets.append( sbox.pins )
 
                 else:
@@ -717,9 +718,6 @@ class Frame(AbstractProgCircuitryEntry):
             # annotate tile instance
             tilenets = {}
             if dinst is not None:
-                dinst.frame_addrmap = ProgDataBitmap(
-                        ((1 << (addr_widths["tile"] - 1)), (1 << (addr_widths["tile"] - 1))) )
-                amod.instances[dinst.key].frame_addrmap = dinst.frame_addrmap
                 tilenets = dinst.pins
 
             # instantiate a decoder between tile and sboxes
@@ -775,8 +773,6 @@ class Frame(AbstractProgCircuitryEntry):
                     NetUtils.connect(nets["prog_rst"],  dinst.pins["prog_rst"])
                     NetUtils.connect(nets["prog_done"], dinst.pins["prog_done"])
 
-                dinst.frame_addrmap = ProgDataBitmap( (i << addr_widths["block"], 1 << addr_widths["block"]) )
-                amod.instances[i].frame_addrmap = dinst.frame_addrmap
                 subnets.append( dinst.pins )
             else:
                 break
@@ -803,10 +799,7 @@ class Frame(AbstractProgCircuitryEntry):
                 NetUtils.connect(nets["prog_rst"],  dinst.pins["prog_rst"])
                 NetUtils.connect(nets["prog_done"], dinst.pins["prog_done"])
 
-            dinst.frame_addrmap = ProgDataBitmap(
-                    ((0x1 << (addr_widths["tile"] - 2)) + (len(subnets) << addr_widths["cbox"]),
-                        1 << addr_widths["cbox"]) )
-            amod.instances[key].frame_addrmap = dinst.frame_addrmap
+            amod.instances[key].frame_id = dinst.frame_id = len(subnets)
             subnets.append( dinst.pins )
 
         # instantiate a decoder for the connection boxes
@@ -965,15 +958,15 @@ class Frame(AbstractProgCircuitryEntry):
         # annotate address maps
         for dinst in inst_ims:
             if dinst is leaf_data_cell:
-                frame_addrmap = dinst.frame_addrmap
+                frame_baseaddr = dinst.frame_baseaddr
 
                 for dinst in inst_pds:
-                    dinst.frame_addrmap = frame_addrmap
+                    dinst.frame_baseaddr = frame_baseaddr
                     if ainst := amod.instances.get(dinst.key):
-                        ainst.frame_addrmap = frame_addrmap
+                        ainst.frame_baseaddr = frame_baseaddr
 
             elif ainst := amod.instances.get(dinst.key):
-                ainst.frame_addrmap = dinst.frame_addrmap
+                ainst.frame_baseaddr = dinst.frame_baseaddr
 
         # logging
         _logger.info("Frame-based programming circuitry inserted into {}. Address width: {} ({} {}b words)"

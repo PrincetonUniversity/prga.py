@@ -1,285 +1,71 @@
 # -*- encoding: ascii -*-
 
 from .common import AbstractBitstreamGenerator
+from .util import BitstreamSegmentTree, CRC
 from ...exception import PRGAInternalError
 from ...util import uno
 
-from bitarray import bitarray, frozenbitarray
-from bitarray.util import int2ba
+from bitarray.util import int2ba, zeros, ba2hex, parity
+from struct import unpack
+from itertools import chain, repeat
 
 __all__ = ['FrameBitstreamGenerator']
 
 class FrameBitstreamGenerator(AbstractBitstreamGenerator):
-    """Bitstream generator for 'frame' programming circuitry."""
+    """Bitstream generator for 'frame' Programming circuitry."""
 
-    __slots__ = ["bits", "word_size"]
-
-    class _FrameDataTreeNode(object):
-
-        __slots__ = [
-                # data only for the current node
-                "addr_low", "addr_high", "data",
-
-                # data for the subtree
-                "addr_min", "addr_max",
-
-                # tree metadata
-                "left", "right", "parent"]
-
-        _zero = bitarray('0', endian='little')
-
-        def __init__(self, addr_low, addr_high, data,
-                addr_min = None, addr_max = None,
-                left = None, right = None, parent = None):
-
-            self.addr_low = addr_low
-            self.addr_high = addr_high
-            self.data = data    # little-endian bitarray
-            self.addr_min = uno(addr_min, addr_low)
-            self.addr_max = uno(addr_max, addr_high)
-            self.left = left
-            self.right = right
-            self.parent = parent
-
-        @classmethod
-        def itertree(cls, root):
-            if root is None:
-                return
-
-            for x in cls.itertree(root.left):
-                yield x
-
-            yield root
-
-            for x in cls.itertree(root.right):
-                yield x
-
-        @classmethod
-        def _rotate_left(cls, node):
-            assert node.right is not None
-
-            new = node.right
-            node.right = new.left
-            if node.right is not None:
-                node.addr_max = node.right.addr_max
-                node.right.parent = node
-            else:
-                node.addr_max = node.addr_high
-
-            new.left = node
-            node.parent = new
-            new.addr_min = node.addr_min
-
-            return new
-
-        @classmethod
-        def _rotate_right(cls, node):
-            assert node.left is not None
-
-            new = node.left
-            node.left = new.right
-            if node.left is not None:
-                node.addr_min = node.left.addr_min
-                node.left.parent = node
-            else:
-                node.addr_min = node.addr_low
-
-            new.right = node
-            node.parent = new
-            new.addr_max = node.addr_max
-
-            return new
-
-        @classmethod
-        def _merge_subtree(cls, word_size, node):
-            if node.left is not None:
-                cls._merge_subtree(word_size, node.left)
-                cls._merge_left(word_size, node)
-
-            if node.right is not None:
-                cls._merge_subtree(word_size, node.right)
-                cls._merge_right(word_size, node)
-
-        @classmethod
-        def _merge_left(cls, word_size, node):
-            assert node.left is not None
-            assert node.left.right is None
-
-            node.data = (node.left.data
-                    + cls._zero * (word_size * (node.addr_low - node.left.addr_low) - len(node.left.data))
-                    + node.data)
-            node.addr_low = node.left.addr_low
-            node.left = node.left.left
-            if node.left is not None:
-                node.left.parent = node
-
-        @classmethod
-        def _merge_right(cls, word_size, node):
-            assert node.right is not None
-            assert node.right.left is None
-
-            node.data = (node.data
-                    + cls._zero * (word_size * (node.right.addr_low - node.addr_low) - len(node.data))
-                    + node.right.data)
-            node.addr_high = node.right.addr_high
-            node.right = node.right.right
-            if node.right is not None:
-                node.right.parent = node
-
-        @classmethod
-        def set_(cls, root, word_size, addr_low, data, bitoffset):
-            bitrem = (bitoffset + len(data)) % word_size
-            if bitrem > 0:
-                bitrem = word_size - bitrem
-
-            addr_high = (addr_low
-                    + (bitoffset + len(data)) // word_size
-                    + (1 if bitrem else 0))
-
-            if root is None:
-                return cls(addr_low, addr_high, cls._zero * bitoffset + data + cls._zero * bitrem)
-
-            cur = root
-            while True:
-                # case 1. strict left
-                if addr_high < cur.addr_low:
-                    if cur.left is None:
-                        new = cls(addr_low, addr_high,
-                                cls._zero * bitoffset + data + cls._zero * bitrem,
-                                parent = cur)
-                        cur.left = new
-                        cur.addr_min = addr_low
-
-                        break
-                    else:
-                        cur = cur.left
-                        continue
-
-                # case 2. strict right
-                if addr_low > cur.addr_high:
-                    if cur.right is None:
-                        new = cls(addr_low, addr_high,
-                                cls._zero * bitoffset + data + cls._zero * bitrem,
-                                parent = cur)
-                        cur.right = new
-                        cur.addr_max = addr_high
-
-                        break
-                    else:
-                        cur = cur.right
-                        continue
-
-                intersect_left  = cur.left  is not None and addr_low  <= cur.left.addr_max
-                intersect_right = cur.right is not None and addr_high >= cur.right.addr_min
-
-                # case 3. challenging: nodes-merging is possible
-                if intersect_left:
-                    # rotate
-                    left = cur.left
-                    while True:
-                        if addr_low < left.addr_low:
-                            if left.left is None:
-                                break
-                            else:
-                                left = cls._rotate_right(left)
-                                cur.left, left.parent = left, cur
-                        elif addr_low > left.addr_high:
-                            if left.right is None:
-                                break
-                            else:
-                                left = cls._rotate_left(left)
-                                cur.left, left.parent = left, cur
-                        else:
-                            break
-
-                    # merge the right subtree of ``left`` into it
-                    if left.right is not None:
-                        cls._merge_subtree(word_size, left.right)
-                        cls._merge_right(word_size, left)
-
-                    # merge ``left`` into ``cur``
-                    cls._merge_left(word_size, cur)
-
-                if intersect_right:
-                    # rotate
-                    right = cur.right
-                    while True:
-                        if addr_high > right.addr_high:
-                            if right.right is None:
-                                break
-                            else:
-                                right = cls._rotate_left(right)
-                                cur.right, right.parent = right, cur
-                        elif addr_high < right.addr_low:
-                            if right.left is None:
-                                break
-                            else:
-                                right = cls._rotate_right(right)
-                                cur.right, right.parent = right, cur
-                        else:
-                            break
-
-                    # merge the left subtree of ``right`` into it
-                    if right.left is not None:
-                        cls._merge_subtree(word_size, right.left)
-                        cls._merge_left(word_size, right)
-
-                    # merge ``right`` into ``cur``
-                    cls._merge_right(word_size, cur)
-
-                # safe data update
-                if addr_low < cur.addr_low:
-                    cur.data = cls._zero * (cur.addr_low - addr_low) * word_size + cur.data
-                    cur.addr_low = min(cur.addr_low, addr_low)
-                    cur.addr_min = min(cur.addr_low, cur.addr_min)
-                else:
-                    bitoffset += word_size * (addr_low - cur.addr_low)
-
-                if addr_high > cur.addr_high:
-                    cur.data = cur.data + cls._zero * (addr_high - cur.addr_high) * word_size
-                    cur.addr_high = max(cur.addr_high, addr_high)
-                    cur.addr_max = max(cur.addr_high, cur.addr_max)
-
-                cur.data[bitoffset : bitoffset + len(data)] = data
-
-                break
-
-            # update ancestors?
-            while (cur.parent is not None
-                    and (cur.parent.addr_min > cur.addr_min or cur.parent.addr_max < cur.addr_max)):
-                cur.parent.addr_min = min(cur.parent.addr_min, cur.addr_min)
-                cur.parent.addr_max = max(cur.parent.addr_max, cur.addr_max)
-                cur = cur.parent
-
-            return root
-
-        @classmethod
-        def print_(cls, root, p = print):
-            row = [ [root], [] ]
-            while any(row[0]):
-                row[1] = row[0]
-                row[0] = []
-
-                s = []
-                for n in row[1]:
-                    if n is None:
-                        s.append('nil')
-                        row[0].extend( (None, None) )
-                    else:
-                        s.append('{{{}{}:{}{}}}'.format(
-                            "{}-".format(n.addr_min) if n.addr_min < n.addr_low else '',
-                            n.addr_low, n.addr_high,
-                            "-{}".format(n.addr_max) if n.addr_max > n.addr_high else ''))
-                        row[0].extend( (n.left, n.right) )
-                p(', '.join(s))
+    __slots__ = ["bst", "output",
+            "offset_x", "offset_y",
+            "offset_subblock_id", "offset_cbox_id", "offset_sbox_id",
+            "cbox_base", "sbox_base", "block_base",
+            "word_size", "protocol",
+            ]
 
     def __init__(self, context):
         super().__init__(context)
 
-        self.bits = [[{ "block": [], "cbox": [], "sbox": [] }
-            for y in range(context.top.height)]
-            for x in range(context.top.width)]
-        self.word_size = context.summary.frame["word_size"]
+        self.bst = None
+        self.output = None
+
+        self.offset_y           = context.summary.frame["addr_width"]["tile"]
+        self.offset_x           = self.offset_y + context.summary.frame["addr_width"]["y"]
+        self.offset_subblock_id = context.summary.frame["addr_width"]["block"]
+        self.offset_cbox_id     = context.summary.frame["addr_width"]["cbox"]
+        self.offset_sbox_id     = context.summary.frame["addr_width"]["sbox"]
+        self.sbox_base          = 0
+        self.cbox_base          = 3 << (self.offset_y - 2)
+        self.block_base         = 2 << (self.offset_y - 2)
+        self.word_size          = context.summary.frame["word_width"]
+        self.protocol           = context.summary.frame["protocol"]
+
+    def _emit_inst(self, opcode, argument = None):
+        """Emit an instruction.
+
+        Args:
+            opcode (`FrameProtocol.Programming.MSGType`):
+            argument (:obj:`int`):
+        """
+        if opcode.is_NOP:
+            argument = int2ba( self.protocol.Programming.MAGIC.NOP, length = 24, endian = 'big' )
+        elif opcode.is_SOB:
+            argument = int2ba( self.protocol.Programming.MAGIC.SOB, length = 24, endian = 'big' )
+        elif opcode.is_EOB:
+            argument = int2ba( self.protocol.Programming.MAGIC.EOB, length = 24, endian = 'big' )
+        elif argument is None:
+            raise PRGAInternalError("Argument cannot be empty for instruction type {}"
+                    .format(opcode.name))
+        elif opcode.is_JR:
+            argument = int2ba( argument, length = 24, endian = 'big', signed = True )
+        else:
+            argument = int2ba( argument, length = 24, endian = 'big' )
+
+        inst = int2ba( opcode << 4, length = 8, endian = 'big' ) + argument
+        inst[4] = parity(inst[ 8:16])
+        inst[5] = parity(inst[16:24])
+        inst[6] = parity(inst[24:32])
+        inst[7] = parity(inst[ 0: 7])
+
+        self.output.write(ba2hex(inst) + " // {}, 0x{:0>6s}\n".format(opcode.name, ba2hex(argument)))
 
     def set_bits(self, value, hierarchy = None, *, inplace = False):
         x, y, type_, id_, baseaddr = 0, 0, None, 0, 0
@@ -316,3 +102,78 @@ class FrameBitstreamGenerator(AbstractBitstreamGenerator):
                 elif i.model.module_class.is_tile or i.model.module_class.is_array:
                     x += i.key[0]
                     y += i.key[1]
+
+        addr = (x << self.offset_x) + (y << self.offset_y) + baseaddr
+        if type_ == "block":
+            addr += self.block_base + (id_ << self.offset_subblock_id)
+        elif type_ == "sbox":
+            addr += self.sbox_base + (id_ << self.offset_sbox_id)
+        elif type_ == "cbox":
+            addr += self.cbox_base + (id_ << self.offset_cbox_id)
+        else:
+            raise PRGAInternalError("Unknown module type: {}".format(type_))
+        addr *= self.word_size
+
+        for v, (offset, length) in value.breakdown():
+            segment = int2ba(v, length = length, endian = 'little')
+            self.bst.set_data(addr + offset, addr + offset + length, segment)
+
+    def generate_bitstream(self, fasm, output):
+        # use margin `32 + self.word_size` to avoid aligned overwrite
+        self.bst = BitstreamSegmentTree(32 + self.word_size)
+        self.parse_fasm(fasm)
+
+        if isinstance(output, str):
+            output = open(output, 'w')
+        self.output = output
+
+        # a few header comments
+        self.output.write("// Frame-based bitstream\n// Word size: {}\n"
+                .format(self.word_size) )
+
+        # emit an SOB instruction
+        self._emit_inst(self.protocol.Programming.MSGType.SOB)
+        self.output.write('\n')
+        addr = 0
+
+        # # initialize CRC
+        # crc = CRC(self.word_size)
+        # word_cnt = 0
+
+        # output data
+        for offset, high, data in self.bst.itertree():
+            self.output.write("// Write bits {}:{}\n".format(high - 1, offset))
+            baseaddr = offset // self.word_size
+
+            # jump?
+            if (diff := baseaddr - addr) != 0 and -(1 << 23) <= diff < (1 << 23):
+                self._emit_inst(self.protocol.Programming.MSGType.JR, diff)
+            else:
+                if (baseaddr & (0xFFFFFF << 48)) != (addr & (0xFFFFFF << 48)):
+                    self._emit_inst(self.protocol.Programming.MSGType.JAE, baseaddr >> 48)
+                if (arg := baseaddr & (0xFFFFFF << 24)) != (addr & (0xFFFFFF << 24)):
+                    self._emit_inst(self.protocol.Programming.MSGType.JAH, arg >> 24)
+                if (arg := baseaddr & 0xFFFFFF) != (addr & 0xFFFFFF):
+                    self._emit_inst(self.protocol.Programming.MSGType.JAL, arg)
+
+            # align to word size
+            if rem := offset % self.word_size:
+                data = zeros(rem, endian='little') + data
+
+            if rem := len(data) % self.word_size:
+                data = data + zeros(self.word_size - rem, endian='little')
+
+            # emit "data" instruction
+            self._emit_inst(self.protocol.Programming.MSGType.DATA, len(data) // self.word_size - 1)
+
+            # emit data
+            for i in range(0, len(data), 32):
+                d = data[i:i+32]
+                d += zeros(32 - len(d), endian='little')
+                self.output.write('{:0>8x}\n'.format(unpack('<L', d.tobytes())[0]))
+
+            addr = baseaddr + len(data) // self.word_size
+            self.output.write("\n")
+
+        # output EOB
+        self._emit_inst(self.protocol.Programming.MSGType.EOB)

@@ -1,7 +1,7 @@
 # -*- encoding: ascii -*-
 
 from .common import AbstractBitstreamGenerator
-from ...exception import PRGAInternalError, PRGAAPIError
+from ...exception import PRGAInternalError
 
 from bitarray import bitarray
 from itertools import product, count
@@ -48,7 +48,7 @@ class PktchainBitstreamGenerator(AbstractBitstreamGenerator):
             raise PRGAInternalError("No prefix checksum found for CRC-8 CCITT value 0x{:08x} prepended with {} zeros"
                     .format(crc, zeros))
 
-    def _set_bits(self, value, hierarchy = None, inplace = False):
+    def set_bits(self, value, hierarchy = None, inplace = False):
         branch, leaf = 0, 0
 
         if hierarchy:
@@ -76,54 +76,7 @@ class PktchainBitstreamGenerator(AbstractBitstreamGenerator):
             self.bits[branch][leaf][offset : offset + length] = segment
 
     def generate_bitstream(self, fasm, output):
-        if isinstance(fasm, str):
-            fasm = open(fasm, "r")
-
-        for lineno, line in enumerate(fasm, 1):
-
-            feature = self.parse_feature(line)
-
-            if feature.type_ == "conn":
-                if (prog_enable := getattr(feature.conn, "prog_enable", self._none)) is self._none:
-                    for net in getattr(feature.conn, "switch_path", tuple()):
-                        bus, idx = (net.bus, net.index) if net.net_type.is_bit else (net, 0)
-                        self._set_bits(bus.instance.model.prog_enable[idx],
-                                bus.instance._extend_hierarchy(above = feature.hierarchy))
-
-                elif prog_enable is None:
-                    continue
-
-                else:
-                    self._set_bits(prog_enable, feature.hierarchy)
-
-            elif feature.type_ == "param":
-                leaf = feature.hierarchy.hierarchy[0]
-
-                if (parameters := getattr(leaf, "prog_parameters", self._none)) is self._none:
-                    if (parameters := getattr(leaf.model, "prog_parameters", self._none)) is self._none:
-                        continue
-
-                if parameters is None or (bitmap := parameters.get(feature.parameter)) is None:
-                    continue
-
-                feature.value.remap(bitmap, inplace = True)
-                self._set_bits(feature.value, feature.hierarchy, True)
-
-            elif feature.type_ == "plain" and feature.feature == "+":
-                leaf = feature.hierarchy.hierarchy[0]
-
-                prog_enable = None
-                if (feature.module.module_class.is_mode
-                        or (prog_enable := getattr(leaf, "prog_enable", self._none)) is self._none):
-                    prog_enable = getattr(feature.module, "prog_enable", None)
-
-                if prog_enable is None:
-                    continue
-
-                self._set_bits(prog_enable, feature.hierarchy)
-
-            else:
-                _logger.warning("[Line {:0>4d}] Unsupported feature: {}".format(lineno, line.strip()))
+        self.parse_fasm(fasm)
 
         # add CRC
         chain_width = self.context.summary.scanchain["chain_width"]
