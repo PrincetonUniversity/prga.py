@@ -87,6 +87,7 @@ class Frame(AbstractProgCircuitryEntry):
         BuiltinCellLibrary.install_design(ctx)
 
         ctx.template_search_paths.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'))
+        ctx.add_verilog_header("prga_frame.vh", "include/prga_frame.tmpl.vh")
         ctx.renderer = None
 
         ctx.summary.frame = {
@@ -109,6 +110,10 @@ class Frame(AbstractProgCircuitryEntry):
 
     @classmethod
     def insert_prog_circuitry(cls, context):
+        dtop = context.database[ModuleView.design, context.top.key]
+        if "prga_frame.vh" not in (deps := getattr(dtop, "verilog_dep_headers", tuple())):
+            dtop.verilog_dep_headers = deps + ("prga_frame.vh", )
+
         # distribute programming clock, buffer programming reset and done
         cls.buffer_prog_ctrl(context)
 

@@ -5,7 +5,7 @@ module {{ module.name }} #(
     , parameter NUM_SINKS  = {{ module.ports.ce_o|length }}
 ) (
     input wire                      ce_i
-    , input wire                    prog_we
+    , input wire                    we_i
     , input wire [ADDR_WIDTH-1:0]   addr_i
 
     , output wire [NUM_SINKS-1:0]   ce_o
@@ -15,7 +15,7 @@ module {{ module.name }} #(
     genvar i;
     generate for (i = 0; i < NUM_SINKS; i = i + 1) begin
         assign ce_o[i] = ce_i && addr_i == i;
-        assign we_o[i] = we_i && addr_i == o;
+        assign we_o[i] = we_i && addr_i == i;
     end endgenerate
 
 endmodule
