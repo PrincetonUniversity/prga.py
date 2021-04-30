@@ -59,7 +59,7 @@ module implwrap (
     // Buffer
     reg [63:0]                          buffer, buffer_next;
     reg [6:0]                           buffer_size, buffer_size_next;
-    reg                                 buffer_push;
+    reg                                 buffer_push, buffer_clear;
 
     always @(posedge tb_clk) begin
         if (tb_rst) begin
@@ -76,15 +76,21 @@ module implwrap (
         buffer_size_next = buffer_size;
         prog_din = buffer[0 +: `PRGA_FRAME_DATA_WIDTH];
 
-        if (prog_ce && prog_we) begin
-            buffer_next = buffer >> `PRGA_FRAME_DATA_WIDTH;
-            buffer_size_next = buffer_size - `PRGA_FRAME_DATA_WIDTH;
+        if (buffer_clear) begin
+            buffer_next = 64'd0;
+            buffer_size_next = 7'd0;
+        end else begin
+            if (prog_ce && prog_we) begin
+                buffer_next = buffer >> `PRGA_FRAME_DATA_WIDTH;
+                buffer_size_next = buffer_size - `PRGA_FRAME_DATA_WIDTH;
+            end
+
+            if (buffer_push) begin
+                buffer_next[buffer_size_next+:32] = inst;
+                buffer_size_next = buffer_size_next + 32;
+            end
         end
 
-        if (buffer_push) begin
-            buffer_next[buffer_size_next+:32] = inst;
-            buffer_size_next = buffer_size_next + 32;
-        end
     end
 
     // Sequential logic
@@ -118,6 +124,7 @@ module implwrap (
         prog_addr_next = prog_addr;
         word_cnt_next = word_cnt;
         buffer_push = 1'b0;
+        buffer_clear = 1'b1;
 
         case (state)
             RESET: begin
@@ -197,18 +204,25 @@ module implwrap (
                 end
             end
             PROG_DATA: begin
+                buffer_clear = 1'b0;
+
                 if (buffer_size >= `PRGA_FRAME_DATA_WIDTH) begin
                     prog_ce = 1'b1;
                     prog_we = 1'b1;
                     prog_addr_next = prog_addr + 1;
 
                     if (word_cnt == 0) begin
+                        buffer_clear = 1'b1;
                         state_next = PROG_INST;
                     end else begin
-                        word_cnt = word_cnt - 1;
+                        word_cnt_next = word_cnt - 1;
+
+                        if (buffer_size < 2 * `PRGA_FRAME_DATA_WIDTH) begin
+                            buffer_push = 1'b1;
+                            pc_next = pc + 1;
+                        end
                     end
-                end
-                if (buffer_size < (word_cnt + 1) * `PRGA_FRAME_DATA_WIDTH) begin
+                end else begin
                     buffer_push = 1'b1;
                     pc_next = pc + 1;
                 end
