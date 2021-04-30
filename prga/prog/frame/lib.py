@@ -483,11 +483,12 @@ class Frame(AbstractProgCircuitryEntry):
 
                     if dinst.model.module_class.is_tile:
                         cls._insert_frame_tile(context, dinst.model)
-                        lvl = _visited[dinst.model.key] = 0
+                        lvl = _visited[dinst.model.key] = 1
+                        # tile itself is 0, but we will buffer once before splitting between tile/sbox
 
                     else:
                         lvl = cls._insert_frame_array(context,
-                                dmod = dinst.model, _visited = visited)
+                                dmod = dinst.model, _visited = _visited)
 
                 maxlvl = max(maxlvl, lvl)
 
@@ -495,10 +496,11 @@ class Frame(AbstractProgCircuitryEntry):
             if maxlvl == -1:
                 for corner in Corner:
                     if dinst := dmod.instances.get( ((x, y), corner) ):
-                        maxlvl = 0
+                        # sbox itself is 0, but we will buffer once before splitting between tile/sbox
+                        maxlvl = 1
                         break
 
-        _visited[dmod.key] = maxlvl + 1
+        _visited[dmod.key] = maxlvl + 1     # we will buffer for one extra level in the array
         if maxlvl == -1:
             # logging
             _logger.info("Frame-based programming circuitry inserted into {}. No programming data needed"
@@ -616,12 +618,34 @@ class Frame(AbstractProgCircuitryEntry):
             xwls, ywls = 1, 1
 
             # additional buffering?
-            minlvl = 0
+            minlvl = 1
+            subnets = []
             if (dinst := dmod.instances.get((x, y))) and dinst.model.module_class.is_array:
                 if (minlvl := _visited[dinst.model.key]) == 0:
                     continue    # well it turns out this tile does not require any programming data!
 
                 xwls, ywls = dinst.model.width, dinst.model.height
+
+            # if ``dinst`` is not an array, or is an empty tile
+            # find all the switch boxes
+            elif (ainst := amod._instances.get_root( (x, y) )) is None or not ainst.model.module_class.is_array:
+                for corner in Corner:
+                    if sbox := dmod.instances.get( ((x, y), corner) ):
+                        if ((prog_clk := sbox.pins.get("prog_clk"))
+                                and NetUtils.get_source(prog_clk) is None):
+                            NetUtils.connect(nets["prog_clk"],  sbox.pins["prog_clk"])
+                            NetUtils.connect(nets["prog_rst"],  sbox.pins["prog_rst"])
+                            NetUtils.connect(nets["prog_done"], sbox.pins["prog_done"])
+
+                        amod.instances[sbox.key].frame_id = sbox.frame_id = len(subnets)
+                        subnets.append( sbox.pins )
+
+                    else:
+                        subnets.append({})
+
+            # shortcut
+            if dinst is None and not any(subnets):
+                continue
 
             # local copy of nets
             gridnets = {
@@ -645,14 +669,14 @@ class Frame(AbstractProgCircuitryEntry):
                     nets_ce, nets_we = [], []
 
                     for i in dim.case(range(xwls), range(ywls)):
-                        ibuf = ModuleUtils.instantiate(dmod,
-                                cls._get_or_create_frame_buffer(context, 2),
-                                "i_frame_ibuf_e{}{}_l{}".format(dim.name, i + dim.case(x, y), lvl))
-                        NetUtils.connect(gridnets["prog_clk"], ibuf.pins["prog_clk"])
-                        NetUtils.connect(gridnets["prog_rst"], ibuf.pins["prog_rst"])
-                        NetUtils.connect(
-                                [gridnets["prog_ce" + dim.name][i], gridnets["prog_we" + dim.name][i]],
-                                ibuf.pins["i"])
+                        iname = "i_frame_ibuf_e{}{}_l{}".format(dim.name, i + dim.case(x, y), lvl)
+                        if (ibuf := dmod.instances.get(iname)) is None:
+                            ibuf = ModuleUtils.instantiate(dmod, cls._get_or_create_frame_buffer(context, 2), iname)
+                            NetUtils.connect(gridnets["prog_clk"], ibuf.pins["prog_clk"])
+                            NetUtils.connect(gridnets["prog_rst"], ibuf.pins["prog_rst"])
+                            NetUtils.connect(
+                                    [gridnets["prog_ce" + dim.name][i], gridnets["prog_we" + dim.name][i]],
+                                    ibuf.pins["i"])
                         nets_ce.append(ibuf.pins["o"][0])
                         nets_we.append(ibuf.pins["o"][1])
 
@@ -666,7 +690,7 @@ class Frame(AbstractProgCircuitryEntry):
                             ibuf_name)
                     NetUtils.connect(gridnets["prog_clk"], ibuf.pins["prog_clk"])
                     NetUtils.connect(gridnets["prog_rst"], ibuf.pins["prog_rst"])
-                    NetUtils.connect([gridnets["prog_addr"], gridnets["prog_data"]], ibuf.pins["i"])
+                    NetUtils.connect([gridnets["prog_addr"], gridnets["prog_din"]], ibuf.pins["i"])
 
                 gridnets["prog_addr"] = ibuf.pins["o"][:addr_widths["tile"]]
                 gridnets["prog_din"]  = ibuf.pins["o"][addr_widths["tile"]:]
@@ -693,32 +717,26 @@ class Frame(AbstractProgCircuitryEntry):
                     NetUtils.connect(dinst.pins["prog_dout"], dout)
                 continue
 
-            # if ``dinst`` is not an array, or is an empty tile
-            # find all the switch boxes
-            subnets = []
-            for corner in Corner:
-                if sbox := dmod.instances.get( ((x, y), corner) ):
-                    if ((prog_clk := sbox.pins.get("prog_clk"))
-                            and NetUtils.get_source(prog_clk) is None):
-                        NetUtils.connect(gridnets["prog_clk"],  sbox.pins["prog_clk"])
-                        NetUtils.connect(gridnets["prog_rst"],  sbox.pins["prog_rst"])
-                        NetUtils.connect(gridnets["prog_done"], sbox.pins["prog_done"])
+            # buffer before splitting between tile and sbox
+            # instantiate and(cex, cey), and(wex, wey) first
+            for e in ("ce", "we"):
+                iand = ModuleUtils.instantiate(dmod, andcell, "i_frame_and{}_x{}y{}".format(e, x, y))
+                NetUtils.connect(gridnets["prog_" + e + "x"][0], iand.pins["ix"])
+                NetUtils.connect(gridnets["prog_" + e + "y"][0], iand.pins["iy"])
+                gridnets["prog_" + e] = iand.pins['o']
 
-                    amod.instances[sbox.key].frame_id = sbox.frame_id = len(subnets)
-                    subnets.append( sbox.pins )
+            assert len(gridnets["prog_dout"]) == 1
+            gridnets["prog_dout"] = gridnets["prog_dout"][0]
 
-                else:
-                    subnets.append({})
+            # instantiate buffer
+            cls._instantiate_buffer(context, dmod, gridnets, len(gridnets["prog_addr"]),
+                    suffix = "_x{}y{}_l0".format(x, y))
 
-            if dinst is None and not any(subnets):
-                continue
-            
             # instantiate a decoder for the switch boxes
             sboxnets = {}
             if any(subnets):
-                sbox_id = slice(addr_widths["sbox"], addr_widths["tile"] - 1)
                 sboxnets = cls._instantiate_decoder(context, dmod, gridnets, subnets,
-                        gridnets["prog_addr"][sbox_id],
+                        gridnets["prog_addr"][addr_widths["sbox"]:addr_widths["tile"] - 1],
                         suffix = "_x{}y{}_sbox".format(x, y))
 
             # annotate tile instance
@@ -728,20 +746,14 @@ class Frame(AbstractProgCircuitryEntry):
 
             # instantiate a decoder between tile and sboxes
             rootnets = cls._instantiate_decoder(context, dmod, gridnets,
-                    [sboxnets, {} if dinst is None else dinst.pins],
+                    [sboxnets, tilenets],
                     gridnets["prog_addr"][-1:],
                     suffix = "_x{}y{}_tile".format(x, y))
 
-            # instantiate and(cex, cey), and(wex, wey) and connect rootnets
-            for e in ("ce", "we"):
-                iand = ModuleUtils.instantiate(dmod, andcell, "i_frame_and{}_x{}y{}".format(e, x, y))
-                NetUtils.connect(gridnets["prog_" + e + "x"][0], iand.pins["ix"])
-                NetUtils.connect(gridnets["prog_" + e + "y"][0], iand.pins["iy"])
-                NetUtils.connect(iand.pins["o"], rootnets["prog_" + e])
-
-            # connect root
-            for dout in gridnets["prog_dout"]:
-                NetUtils.connect(rootnets["prog_dout"], dout)
+            # connect last-level buffer with the root decoder
+            NetUtils.connect(gridnets["prog_ce"],   rootnets["prog_ce"])
+            NetUtils.connect(gridnets["prog_we"],   rootnets["prog_we"])
+            NetUtils.connect(rootnets["prog_dout"], gridnets["prog_dout"])
 
         # logging
         _logger.info("Frame-based programming circuitry inserted into {}"

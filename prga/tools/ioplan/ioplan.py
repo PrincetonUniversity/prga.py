@@ -6,6 +6,7 @@ from ...exception import PRGAAPIError, PRGAInternalError
 from ...util import Object, uno
 
 import re, os, sys, logging
+from random import shuffle
 _logger = logging.getLogger(__name__)
 
 __all__ = ["IOPlanner"]
@@ -112,13 +113,15 @@ class IOPlanner(Object):
             raise PRGAAPIError("IO at {}, {} cannot be used as {:r}".format(Position(*position), subtile, direction))
         self.used[position, subtile] = io
 
-    def pop(self, direction, *, force_change_tile = False, use_global_driver_as_normal = False):
+    def pop(self, direction, *,
+            random = False, force_change_tile = False, use_global_driver_as_normal = False):
         """Pop the next available IO of for ``direction``.
 
         Args:
             direction (`PortDirection` or :obj:`str`):
 
         Keyword Args:
+            random (:obj:`bool`): If set, pop a random IO instead of the next one in the scanning
             force_change_tile (:obj:`bool`): If set, the scanning will start from a new tile. This is useful when
                 trying to reduce routing congestion
             use_global_driver_as_normal (:obj:`bool`): If set, global driver I/O pins are used as regular IO pins
@@ -128,22 +131,39 @@ class IOPlanner(Object):
         """
         if len(self.avail_nonglobals) == 0 and (not use_global_driver_as_normal or len(self.avail_globals) == 0):
             raise PRGAAPIError("Ran out of IOs")
-        if force_change_tile and self.subtile > 0:
+        if not random and force_change_tile and self.subtile > 0:
             self.__next_position()
         io = None
         direction = PortDirection.construct(direction)
-        while True:
-            key = self.position, self.subtile
-            if (io := self.avail_nonglobals.get( key, None )) is None:
-                if not use_global_driver_as_normal or (io := self.avail_globals.get( key, None )) is None:
+
+        if random:
+            pool = list(self.avail_nonglobals.items())
+
+            if use_global_driver_as_normal:
+                pool += list(self.avail_globals.items())
+
+            shuffle( pool )
+
+            for key, io in pool:
+                if direction in io.directions:
+                    self.avail_nonglobals.pop( key, None )
+                    self.avail_globals.pop( key, None )
+                    break
+
+        else:
+            while True:
+                key = self.position, self.subtile
+                if (io := self.avail_nonglobals.get( key, None )) is None:
+                    if not use_global_driver_as_normal or (io := self.avail_globals.get( key, None )) is None:
+                        self.__next_position()
+                        continue
+                if direction in io.directions:
+                    self.avail_nonglobals.pop( key, None )
+                    self.avail_globals.pop( key, None )
+                    break
+                else:
                     self.__next_position()
-                    continue
-            if direction in io.directions:
-                self.avail_nonglobals.pop( key, None )
-                self.avail_globals.pop( key, None )
-                break
-            else:
-                self.__next_position()
+
         self.used[io.position, io.subtile] = io
         self.subtile += 1
         return io.position, io.subtile
@@ -161,12 +181,15 @@ class IOPlanner(Object):
         self.counterclockwise = uno(counterclockwise, self.counterclockwise)
 
     @classmethod
-    def autoplan(cls, summary, app):
+    def autoplan(cls, summary, app, *, random = False):
         """Automatically generate IO constraints and write into ``app``.
 
         Args:
             summary (`Context` or `ContextSummary`):
             app (`AppIntf`): Interface of the application. May contain partial IO constraints.
+
+        Keyword Args:
+            random (:obj:`bool`): If set, IOs are assigned randomly
         """
         planner = cls(summary)
         # process existing partial constraints
@@ -178,7 +201,7 @@ class IOPlanner(Object):
         for port in app.ports.values():
             for i, io in port.iter_io_constraints():
                 if io is None:
-                    port.set_io_constraint(*planner.pop(port.direction), i)
+                    port.set_io_constraint(*planner.pop(port.direction, random = random), i)
 
     @classmethod
     def parse_io_constraints(cls, app, f):

@@ -15,6 +15,8 @@ def def_argparser(name):
             help="Output file for the IO constraints")
     parser.add_argument('-f', '--fix', type=str, dest="fixed",
             help="Partial IO constraints")
+    parser.add_argument('--random', action='store_true',
+            help="Assign IO randomly")
 
     return parser
 

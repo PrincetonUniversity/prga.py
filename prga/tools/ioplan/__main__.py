@@ -35,7 +35,7 @@ if args.fixed is not None:
     IOPlanner.parse_io_constraints(d, args.fixed)
 
 _logger.info("Autoplanning IO constraints ...")
-IOPlanner.autoplan(summary, d)
+IOPlanner.autoplan(summary, d, random = args.random)
 
 _logger.info("Writing constraints ...")
 IOPlanner.print_io_constraints(d, sys.stdout if args.output is None else open(args.output, "w"))
