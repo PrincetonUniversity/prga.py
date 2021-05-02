@@ -575,7 +575,7 @@ class BuiltinCellLibrary(object):
 
         # # mode (2): lut6
         mode = lbdr.counterpart.modes["lut6x1"]
-        mode.prog_enable = ProgDataValue(0xf, (34, 2), (71, 2))
+        mode.prog_enable = ProgDataValue(0xf, ((34, 2), (71, 2)))
 
         for i in range(2):
             lut = mode.instances["i_lut5", i]
@@ -759,7 +759,7 @@ class BuiltinCellLibrary(object):
 
         # # mode (2): lut6
         mode = lbdr.counterpart.modes["lut6x1"]
-        mode.prog_enable = ProgDataValue(0xf, (34, 2), (72, 2))
+        mode.prog_enable = ProgDataValue(0xf, ((34, 2), (72, 2)))
 
         for i in range(2):
             lut = mode.instances["i_lut5", i]
@@ -790,25 +790,93 @@ class BuiltinCellLibrary(object):
         Keyword Args:
             name (:obj:`str`): Name of the memory module. Default: "ram_{memory_type}_a{addr_width}d{data_width}"
             vpr_model (:obj:`str`): Name of the VPR model. Default: "m_ram_{memory_type}"
-            memory_type (:obj:`str`): ``"1r1w"``, ``"1rw"`` or ``"2rw"``. Default is ``"1r1w"``
+            memory_type (:obj:`str`): ``"1r1w"``, ``"1r1w_init"``, ``"1rw"`` or ``"2rw"``. Default is ``"1r1w"``.
+                ``"1r1w_init"`` memories are initializable and may be used as ROMs, but they are not supported by all
+                programming circuitry types
             **kwargs: Additional attributes assigned to the primitive
 
         Returns:
             ``Module``:
         """
+        name = uno(name, "ram_{}_a{}d{}".format(memory_type, addr_width, data_width))
+        if memory_type == "1r1w_init":  # very different way of handling this
+            # create a custom initializable primitive first
+            bdr = context.build_primitive(name = name + "_init",
+                    vpr_model = name + "_init",
+                    primitive_class = PrimitiveClass.blackbox_memory,
+                    verilog_template = "bram/init/1r1w.lib.tmpl.v",
+                    bram_rule_template = "bram/init/1r1w.tmpl.rule",
+                    techmap_template = "bram/init/1r1w.techmap.tmpl.v",
+                    parameters = {
+                        "INIT": data_width << addr_width,
+                        })
+            clk   = bdr.create_clock("clk")
+
+            inputs, outputs = [], []
+            inputs.append(  bdr.create_input("we",    1) )
+            inputs.append(  bdr.create_input("waddr", addr_width) )
+            inputs.append(  bdr.create_input("din",   data_width) )
+            inputs.append(  bdr.create_input("raddr", addr_width) )
+            outputs.append( bdr.create_output("dout", data_width) )
+
+            for i in inputs:
+                bdr.create_timing_arc("seq_end",   clk, i)
+            for o in outputs:
+                bdr.create_timing_arc("seq_start", clk, o)
+
+            init = bdr.commit()
+
+            # multimode wrapper
+            bdr = context.build_multimode(name, memory_type = memory_type)
+            bdr.create_clock("clk")
+            bdr.create_input("we",    1)
+            bdr.create_input("waddr", addr_width)
+            bdr.create_input("din",   data_width)
+            bdr.create_input("raddr", addr_width)
+            bdr.create_output("dout", data_width)
+
+            # mode (1): RAM w/ INIT
+            if True:
+                mode = bdr.build_mode( "init" )
+                core = mode.instantiate( init, "i_ram" )
+
+                for k, p in mode.ports.items():
+                    if p.direction.is_input:
+                        mode.connect(p, core.pins[k])
+                    else:
+                        mode.connect(core.pins[k], p)
+
+                mode.commit()
+
+            # mode (2): RAM w/o INIT
+            if True:
+                mode = bdr.build_mode( "noinit" )
+                core = mode.instantiate( cls.create_memory( context, addr_width, data_width ), "i_ram" )
+
+                for k, p in mode.ports.items():
+                    if p.direction.is_input:
+                        mode.connect(p, core.pins[k])
+                    else:
+                        mode.connect(core.pins[k], p)
+
+                mode.commit()
+
+            return bdr.commit()
+
         if memory_type == "1r1w":
             kwargs.setdefault("verilog_template", "bram/1r1w.lib.tmpl.v")
             kwargs.setdefault("bram_rule_template", "bram/1r1w.tmpl.rule")
             kwargs.setdefault("techmap_template", "bram/1r1w.techmap.tmpl.v")
+
         elif memory_type in ("1rw", "2rw"):
             kwargs.setdefault("verilog_template", "bram/lib.tmpl.v")
             kwargs.setdefault("bram_rule_template", "bram/tmpl.rule")
             kwargs.setdefault("techmap_template", "bram/techmap.tmpl.v")
+
         else:
-            raise PRGAAPIError("Unsupported memory type: {}. Supported values are: 1r1w, 1rw, 2rw"
+            raise PRGAAPIError("Unsupported memory type: {}. Supported values are: 1r1w, 1r1w_init, 1rw, 2rw"
                     .format(memory_type))
 
-        name = uno(name, "ram_{}_a{}d{}".format(memory_type, addr_width, data_width))
         m = context._add_module(Module(name,
             is_cell = True,
             view = ModuleView.abstract,
@@ -832,6 +900,7 @@ class BuiltinCellLibrary(object):
                 port_class = PrimitivePortClass.data_in))
             outputs.append(ModuleUtils.create_port(m, "out", data_width, o,
                 port_class = PrimitivePortClass.data_out))
+
         elif memory_type == "2rw":
             inputs.append(ModuleUtils.create_port(m, "we1", 1, i,
                 port_class = PrimitivePortClass.write_en1))
@@ -849,6 +918,7 @@ class BuiltinCellLibrary(object):
                 port_class = PrimitivePortClass.data_in2))
             outputs.append(ModuleUtils.create_port(m, "out2", data_width, o,
                 port_class = PrimitivePortClass.data_out2))
+
         elif memory_type == "1r1w":
             inputs.append(ModuleUtils.create_port(m, "we", 1, i,
                 port_class = PrimitivePortClass.write_en1))
@@ -878,7 +948,12 @@ class BuiltinCellLibrary(object):
             lbdr.instantiate(
                     context.database[ModuleView.design, "prga_ram_1r1w_byp"],
                     "i_ram")
+            lbdr.create_prog_port("prog_done", 1, "input")
             lbdr.commit()
+
+        elif abstract.memory_type == "1r1w_init":
+            _logger.warning("No design view available for primitive '{}'".format(abstract.name))
+
         else:
             context.build_design_view_primitive(abstract.name,
                     key = abstract.key,

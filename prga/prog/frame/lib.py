@@ -84,27 +84,18 @@ class Frame(AbstractProgCircuitryEntry):
         ctx._switch_delegate = SwitchDelegate(ctx)
 
         BuiltinCellLibrary.install_stdlib(ctx)
-        BuiltinCellLibrary.install_design(ctx)
-
-        ctx.template_search_paths.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'))
-        ctx.add_verilog_header("prga_frame.vh", "include/prga_frame.tmpl.vh")
-        ctx.renderer = None
 
         ctx.summary.frame = {
                 "word_width": word_width,
                 "protocol": FrameProtocol,
                 }
         ctx.summary.prog_support_magic_checker = True
+        ctx.template_search_paths.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'))
+        ctx.add_verilog_header("prga_frame.vh", "include/prga_frame.tmpl.vh")
+        ctx.renderer = None
 
-        # install `prga_frame_and`
-        cell = ctx._add_module(Module("prga_frame_and",
-            is_cell = True,
-            view = ModuleView.design,
-            module_class = ModuleClass.prog,
-            verilog_template = "prga_frame_and.v"))
-        ModuleUtils.create_port(cell, "ix", 1, "input",  net_class = NetClass.prog)
-        ModuleUtils.create_port(cell, "iy", 1, "input",  net_class = NetClass.prog)
-        ModuleUtils.create_port(cell, "o",  1, "output", net_class = NetClass.prog)
+        cls.__install_cells(ctx)
+        BuiltinCellLibrary.install_design(ctx)
 
         return ctx
 
@@ -173,6 +164,48 @@ class Frame(AbstractProgCircuitryEntry):
                 ).format(**context.summary.frame["addr_width"]))
 
         cls._insert_frame_array(context)
+
+    @classmethod
+    def __install_cells(cls, context):
+        # install `prga_frame_and`
+        cell = context._add_module(Module("prga_frame_and",
+            is_cell = True,
+            view = ModuleView.design,
+            module_class = ModuleClass.prog,
+            verilog_template = "prga_frame_and.v"))
+        ModuleUtils.create_port(cell, "ix", 1, "input",  net_class = NetClass.prog)
+        ModuleUtils.create_port(cell, "iy", 1, "input",  net_class = NetClass.prog)
+        ModuleUtils.create_port(cell, "o",  1, "output", net_class = NetClass.prog)
+
+        # create design views for 1r1w_init memories
+        word_width = context.summary.frame["word_width"]
+        for abstract in list(context.primitives.values()):  # snapshot
+            if (abstract.primitive_class.is_multimode
+                    and getattr(abstract, "memory_type", None) == "1r1w_init"):
+                lbdr = context.build_design_view_primitive(abstract.name,
+                        key = abstract.key,
+                        verilog_template = "1r1w.init.sim.tmpl.v",
+                        verilog_dep_headers = ("prga_utils.vh", ))
+                lbdr.instantiate(
+                        context.database[ModuleView.design, "prga_ram_1r1w_byp"],
+                        "i_ram")
+
+                dwidth = len(abstract.ports["din"])
+                num_slices = dwidth // word_width + (1 if dwidth % word_width > 0 else 0)
+                diff_addr_width = (num_slices - 1).bit_length()
+
+                cls._get_or_create_frame_prog_nets(lbdr.module, word_width,
+                        len(abstract.ports["waddr"]) + diff_addr_width)
+
+                abstract.modes["init"].instances["i_ram"].prog_parameters = {
+                        "INIT": ProgDataBitmap(
+                            (i * word_width << diff_addr_width, dwidth)
+                            for i in range(1 << len(abstract.ports["waddr"]))
+                            ),
+                        }
+                abstract.modes["init"].instances["i_ram"].prog_magic_ignore = True
+
+                lbdr.commit()
 
     @classmethod
     def _get_or_create_frame_prog_nets(cls, module, word_width, addr_width, excludes = None):

@@ -1,0 +1,21 @@
+bram _rommap__{{ module.name }}_
+    init 1
+    abits {{ module.ports.waddr|length }}
+    dbits {{ module.ports.din|length }}
+    groups 2
+    ports 1 1
+    wrmode 1 0
+    enable 1 1
+    transp 0 0
+    clocks 1 1
+    clkpol 1 1
+endbram
+
+match _rommap__{{ module.name }}_
+    make_outreg
+    {%- if _task_id < _num_tasks - 1 %}
+    or_next_if_better
+    {%- endif %}
+endmatch
+
+

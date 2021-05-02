@@ -57,7 +57,7 @@ class Pktchain(Scanchain):
     def insert_prog_circuitry(cls, context, *,
             iter_instances = None, insert_delimiter = None):
         cls.buffer_prog_ctrl(context)
-        branches = Pktchain._insert_pktchain(context,
+        branches = cls._insert_pktchain(context,
                 iter_instances = iter_instances, insert_delimiter = insert_delimiter)
 
         # update summary

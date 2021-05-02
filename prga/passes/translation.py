@@ -138,8 +138,8 @@ class Translation(AbstractPass):
             if self.create_blackbox_for_undefined_primitives and module.module_class.is_primitive:
                 pass
             else:
-                raise PRGAInternalError("Cannot translate module '{}'. Its module class is {:r}"
-                        .format(module, module.module_class))
+                raise PRGAInternalError("Cannot translate module '{}'. Its module class is {}"
+                        .format(module, module.module_class.name))
 
         # prepare the arguments for creating a new module
         kwargs = {

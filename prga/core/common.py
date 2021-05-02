@@ -363,6 +363,7 @@ class PrimitiveClass(Enum):
     memory      = 4     #: user-defined memory
     custom      = 5     #: user-defined primitives
     multimode   = 6     #: user-defined multi-mode primitives
+    blackbox_memory = 7 #: black-boxed memory
 
 # ----------------------------------------------------------------------------
 # -- Primitive Port Class ----------------------------------------------------

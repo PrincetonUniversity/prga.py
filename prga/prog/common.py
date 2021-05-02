@@ -18,7 +18,17 @@ ProgDataRange = namedtuple("ProgDataRange", "offset length")
 class ProgDataBitmap(object):
 
     __slots__ = ["_bitmap"]
-    def __init__(self, *args):
+    def __init__(self, args):
+        try:
+            if (len(args) == 2
+                    and isinstance(args[0], int)
+                    and isinstance(args[1], int)):
+                self._construct([args])
+                return
+
+        except TypeError:
+            pass
+
         self._construct(args)
 
     def __repr__(self):
@@ -86,9 +96,9 @@ class ProgDataBitmap(object):
 class ProgDataValue(object):
 
     __slots__ = ["value", "bitmap"]
-    def __init__(self, value, *args):
+    def __init__(self, value, args):
         self.value = value
-        self.bitmap = ProgDataBitmap(*args)
+        self.bitmap = ProgDataBitmap(args)
 
     def __repr__(self):
         return "ProgDataValue({}'h{:x}, {})".format(

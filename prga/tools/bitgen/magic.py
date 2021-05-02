@@ -24,16 +24,20 @@ class MagicBitstreamGenerator(AbstractBitstreamGenerator):
 
     def _process_hierarchy(self, hierarchy):
         if hierarchy is None:
-            return '', None
+            return None, None
 
-        path, bitmap = '', None
+        path, bitmap = 'prog_data', None
 
         for i in hierarchy.hierarchy:
-            if (prog_bitmap := getattr(i, "prog_bitmap", self._none)) is not self._none:
+            if getattr(i, "prog_magic_ignore", False) or getattr(i.model, "prog_magic_ignore", False):
+                return None, None
+
+            elif (prog_bitmap := getattr(i, "prog_bitmap", self._none)) is not self._none:
                 if prog_bitmap is None:
                     return None, None
                 else:
                     bitmap = prog_bitmap if bitmap is None else bitmap.remap(prog_bitmap)
+
             else:
                 path = i.name + '.' + path
 
@@ -47,14 +51,14 @@ class MagicBitstreamGenerator(AbstractBitstreamGenerator):
         if bitmap is not None:
             value = value.remap(bitmap, inplace = inplace)
 
-        f = "        force {x}.{p}prog_data[{h}:{o}] = {l}'h{v:x};\n"
+        f = "        force {x}.{p}[{h}:{o}] = {l}'h{v:x};\n"
         if self.checkmode:
             f = \
 """
-        if ({x}.{p}prog_data[{h}:{o}] != {l}'h{v:x}) begin
+        if ({x}.{p}[{h}:{o}] != {l}'h{v:x}) begin
             fail = 1'b1;
-            $display("[ERROR] {x}.{p}prog_data[{h}:{o}] == {l}'h%llx != {l}'h{v:x}",
-                    {x}.{p}prog_data[{h}:{o}]);
+            $display("[ERROR] {x}.{p}[{h}:{o}] == {l}'h%llx != {l}'h{v:x}",
+                    {x}.{p}[{h}:{o}]);
         end
 """
 

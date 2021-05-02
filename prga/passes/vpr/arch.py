@@ -3,7 +3,7 @@
 from .delegate import FASMDelegate
 from ..base import AbstractPass
 from ...core.builder import ArrayBuilder
-from ...core.common import (Orientation, Position, ModuleView, IO)
+from ...core.common import (Orientation, Position, ModuleView, IO, PrimitiveClass)
 from ...netlist import TimingArcType, NetUtils, ModuleUtils, PortDirection
 from ...xml import XMLGenerator
 from ...exception import PRGAInternalError
@@ -389,11 +389,13 @@ class _VPRArchGeneration(AbstractPass):
             # bitwise_timing = False
             attrs.update({"class": "memory",
                 "blif_model": ".subckt " + primitive.vpr_model, })
-        elif primitive.primitive_class.is_custom:
+        elif primitive.primitive_class in (PrimitiveClass.custom, PrimitiveClass.blackbox_memory):
             self.active_primitives.add( primitive.key )
             # bitwise_timing = getattr(primitive, "vpr_bitwise_timing", True)
             attrs.update({
                 "blif_model": ".subckt " + primitive.vpr_model, })
+        else:
+            raise PRGAInternalError("Unknown primitive class: {}".format(primitive.primitive_class.name))
 
         with self.xml.element('pb_type', attrs):
             self._pb_type_leaf_body(primitive, attrs["name"], hierarchy, fasm_prefixes, fasm_features)

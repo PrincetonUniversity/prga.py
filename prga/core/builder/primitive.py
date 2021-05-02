@@ -143,11 +143,12 @@ class DesignViewPrimitiveBuilder(_BasePrimitiveBuilder):
         Returns:
             `Module`:
         """
+        kwargs.setdefault("primitive_class", PrimitiveClass.custom)
+
         return Module(name,
                 is_cell = not not_cell,
                 view = ModuleView.design,
                 module_class = ModuleClass.primitive,
-                primitive_class = PrimitiveClass.custom,
                 **kwargs)
 
     @classmethod
@@ -229,11 +230,12 @@ class PrimitiveBuilder(_BasePrimitiveBuilder):
         Returns:
             `Module`:
         """
+        kwargs.setdefault("primitive_class", PrimitiveClass.custom)
+
         return Module(name,
                 is_cell = True,
                 view = ModuleView.abstract,
                 module_class = ModuleClass.primitive,
-                primitive_class = PrimitiveClass.custom,
                 vpr_model = uno(vpr_model, "m_{}".format(name)),
                 **kwargs)
 

@@ -1,7 +1,7 @@
 # -*- encoding: ascii -*-
 
 from .base import AbstractPass
-from ..core.common import ModuleView
+from ..core.common import ModuleView, PrimitiveClass
 from ..util import Object
 from ..exception import PRGAAPIError
 
@@ -50,7 +50,7 @@ class YosysScriptsCollection(AbstractPass):
 
         for primitive_key in context.summary.active_primitives:
             primitive = context.database[ModuleView.abstract, primitive_key]
-            if primitive.primitive_class.is_memory:
+            if primitive.primitive_class in (PrimitiveClass.memory, PrimitiveClass.blackbox_memory):
                 rule = os.path.join(self.output_dir, "bram.rule")
                 renderer.add_yosys_bram_rule(primitive,
                         getattr(primitive, "bram_rule_template", None),
