@@ -23,6 +23,7 @@ class FrameProtocol(object):
             +--------+--------+--------+--------+--------+--------+--------+--------+
 
         Instructions:
+
         - ``SOB``: Start of bitstream. Argument is a magic number: 0xC4816D
         - ``EOB``: End of bitstream. Argument is a magic number: 0xDABA47
         - ``JR``: Jump relative to the current address.

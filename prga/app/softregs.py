@@ -86,13 +86,13 @@ class SoftReg(Object):
 
     @property
     def has_port_i(self):
-        """:obj:`bool`: Tests if the soft register has input port `var_{name}_i`."""
+        """:obj:`bool`: Tests if the soft register has input port ``var_{name}_i``."""
         return self.type_ in (SoftRegType.kernel, SoftRegType.rdempty, SoftRegType.rdempty_la, SoftRegType.decoupled,
                 SoftRegType.bar)
 
     @property
     def has_port_o(self):
-        """:obj:`bool`: Tests if the soft register has input port `var_{name}_o`."""
+        """:obj:`bool`: Tests if the soft register has input port ``var_{name}_o``."""
         return self.type_ in (SoftRegType.const, SoftRegType.basic, SoftRegType.pulse, SoftRegType.pulse_ack,
                 SoftRegType.decoupled, SoftRegType.busywait, SoftRegType.wrfull, SoftRegType.cbl,
                 SoftRegType.cbl_2stage)
