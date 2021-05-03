@@ -4,7 +4,7 @@ from ..netlist import ModuleUtils, NetUtils, PortDirection
 from ..core.common import ModuleClass, ModuleView, NetClass
 from ..renderer import FileRenderer
 from ..util import Object, Enum, uno
-from ..exception import PRGAInternalError
+from ..exception import PRGAInternalError, PRGAAPIError
 
 from abc import abstractmethod
 from collections import namedtuple
@@ -293,8 +293,14 @@ class AbstractProgCircuitryEntry(Object):
         Returns:
             `Context`:
         """
+        if ctx.summary.prog_type != "abstract":
+            raise PRGAAPIError("Context already materialized to the {} protocol"
+                    .format(ctx.summary.prog_type))
+
         if not inplace:
             ctx = deepcopy(ctx)
+
         ctx._prog_entry = cls
         ctx.summary.prog_type = cls.__module__ + '.' + cls.__name__
+
         return ctx

@@ -2,7 +2,7 @@
 
 from .delegate import FASMDelegate
 from ..base import AbstractPass
-from ...core.builder import ArrayBuilder
+from ...core.builder.array.array import ArrayBuilder
 from ...core.common import (Orientation, Position, ModuleView, IO, PrimitiveClass)
 from ...netlist import TimingArcType, NetUtils, ModuleUtils, PortDirection
 from ...xml import XMLGenerator

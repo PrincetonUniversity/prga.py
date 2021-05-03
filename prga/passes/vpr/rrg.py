@@ -1,7 +1,7 @@
 # -*- encoding: ascii -*-
 
 from ..base import AbstractPass
-from ...core.builder import ArrayBuilder
+from ...core.builder.array.array import ArrayBuilder
 from ...core.common import (Orientation, ModuleView, Position)
 from ...util import uno
 from ...netlist import NetType, NetUtils, ModuleUtils

@@ -3,7 +3,7 @@
 from .base import AbstractPass
 from ..netlist import PortDirection, Module, ModuleUtils, NetUtils, TimingArcType
 from ..core.common import ModuleClass, NetClass, IOType, ModuleView, SegmentID, BlockPinID, Position
-from ..core.builder import ArrayBuilder
+from ..core.builder.array.array import ArrayBuilder
 from ..prog import ProgDataValue
 from ..util import Object, uno
 from ..exception import PRGAInternalError, PRGAAPIError
@@ -98,6 +98,10 @@ class Translation(AbstractPass):
     def __init__(self, top = None, *, create_blackbox_for_undefined_primitives = False):
         self.top = top
         self.create_blackbox_for_undefined_primitives = create_blackbox_for_undefined_primitives
+
+    @property
+    def dependences(self):
+        return ("materialization", )
 
     @property
     def key(self):

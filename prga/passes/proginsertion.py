@@ -10,10 +10,9 @@ __all__ = ['ProgCircuitryInsertion']
 class ProgCircuitryInsertion(AbstractPass):
     """Insert programming circuitry."""
 
-    __slots__ = ['_args', '_kwargs']
+    __slots__ = ['_kwargs']
 
-    def __init__(self, *args, **kwargs):
-        self._args = args
+    def __init__(self, **kwargs):
         self._kwargs = kwargs
 
     @property
@@ -29,4 +28,4 @@ class ProgCircuitryInsertion(AbstractPass):
         return ("rtl", )
 
     def run(self, context):
-        context.prog_entry.insert_prog_circuitry(context, *self._args, **self._kwargs)
+        context.prog_entry.insert_prog_circuitry(context, **self._kwargs)

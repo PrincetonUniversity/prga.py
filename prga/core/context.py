@@ -2,9 +2,11 @@
 
 from .common import (Global, Segment, ModuleClass, PrimitiveClass, PrimitivePortClass, ModuleView, OrientationTuple,
         DirectTunnel)
-from .builder import (DesignViewPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder,
-        SliceBuilder, IOBlockBuilder, LogicBlockBuilder,
-        SwitchBoxBuilder, TileBuilder, ArrayBuilder)
+from .builder.primitive import DesignViewPrimitiveBuilder, PrimitiveBuilder, MultimodeBuilder
+from .builder.block import SliceBuilder, LogicBlockBuilder, IOBlockBuilder
+from .builder.box import ConnectionBoxBuilder, SwitchBoxBuilder
+from .builder.array.tile import TileBuilder
+from .builder.array.array import ArrayBuilder
 from ..netlist import TimingArcType, PortDirection, Module, ModuleUtils, NetUtils
 from ..renderer.renderer import FileRenderer
 from ..renderer.lib import BuiltinCellLibrary
