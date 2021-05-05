@@ -11,7 +11,7 @@ module {{ module.name }} #(
     , input wire [DATA_WIDTH - 1:0] din
 
     , input wire [ADDR_WIDTH - 1:0] raddr
-    , output reg [DATA_WIDTH - 1:0] dout
+    , output wire [DATA_WIDTH - 1:0] dout
 
     , input wire [0:0] prog_done
     , input wire [{{ module.ports.prog_data|length - 1 }}:0] prog_data
@@ -20,10 +20,9 @@ module {{ module.name }} #(
     // non-fracturable memory core
     localparam  CORE_ADDR_WIDTH = {{ module.core_addr_width }};
 
-    reg [CORE_ADDR_WIDTH - 1:0]     int_waddr, int_raddr;
-    reg                             int_we, int_re;
-    reg [DATA_WIDTH - 1:0]          int_din, int_bw;
-    wire [DATA_WIDTH - 1:0]         int_dout;
+    wire [CORE_ADDR_WIDTH - 1:0]    i_waddr, i_raddr;
+    wire                            i_we, i_re;
+    wire [DATA_WIDTH - 1:0]         i_bw, i_din, i_dout;
 
     {{ module.instances["i_ram"].model.name }} {% if module.instances["i_ram"].parameters %}#(
         {%- set comma = joiner(",") %}
@@ -33,105 +32,37 @@ module {{ module.name }} #(
     ){% endif %}i_ram (
         .clk                        (clk)
         ,.rst                       (~prog_done)
-        ,.waddr                     (int_waddr)
-        ,.din                       (int_din)
-        ,.we                        (int_we)
-        ,.bw                        (int_bw)
-        ,.raddr                     (int_raddr)
-        ,.re                        (int_re)
-        ,.dout                      (int_dout)
+        ,.waddr                     (i_waddr)
+        ,.din                       (i_din)
+        ,.we                        (i_we)
+        ,.bw                        (i_bw)
+        ,.raddr                     (i_raddr)
+        ,.re                        (i_re)
+        ,.dout                      (i_dout)
         );
 
-    // sub-words
-    localparam  DATA_WIDTH_SR0 = DATA_WIDTH;
-    localparam  DATA_OFFSET_SR0_0 = 0;
-
-    wire [DATA_WIDTH_SR0 - 1:0] dout_sr0 [0:0];
-    assign dout_sr0[0] = int_dout;
-    {%- for i in range(1, module.ports.waddr|length - module.core_addr_width + 1) %}
-
-    localparam  DATA_WIDTH_SR{{ i }} = DATA_WIDTH_SR{{ i - 1 }} >> 1;
-        {%- for j in range(2 ** i) %}
-    localparam  DATA_OFFSET_SR{{ i }}_{{ j }} = DATA_OFFSET_SR{{ i - 1 }}_{{ j // 2 }} + {{ j % 2 }} * DATA_WIDTH_SR{{ i }};
+    // Fracturable memory controller
+    {{ module.instances["i_ctrl"].model.name }} {% if module.instances["i_ctrl"].parameters %}#(
+        {%- set comma2 = joiner(",") %}
+        {%- for k, v in module.instances["i_ctrl"].parameters.items() %}
+        {{ comma2() }}.{{ k }} ({{ v }})
         {%- endfor %}
-
-    wire [DATA_WIDTH_SR{{ i }} - 1:0] dout_sr{{ i }} [0:{{ 2 ** i - 1 }}];
-        {%- for j in range(2 ** i) %}
-    assign dout_sr{{ i }}[{{ j }}] = dout_sr{{ i - 1 }}[{{ j // 2 }}][{{ j % 2 }} * DATA_WIDTH_SR{{ i }} +: DATA_WIDTH_SR{{ i }}];
-        {%- endfor %}
-    {%- endfor %}
-
-    // modes
-    reg [ADDR_WIDTH - CORE_ADDR_WIDTH - 1:0]     wr_offset, rd_offset, rd_offset_f;
-
-    integer i;
-    always @*
-        for (i = 0; i < ADDR_WIDTH - CORE_ADDR_WIDTH; i = i + 1) begin
-            wr_offset[i] = waddr[ADDR_WIDTH - 1 - i];
-            rd_offset[i] = raddr[ADDR_WIDTH - 1 - i];
-        end
-
-    always @(posedge clk) begin
-        if (~prog_done) begin
-            rd_offset_f     <= {(ADDR_WIDTH - CORE_ADDR_WIDTH) {1'b0} };
-        end else begin
-            rd_offset_f     <= rd_offset;
-        end
-    end
-
-    always @* begin
-        if (~prog_done) begin
-            int_waddr   = {CORE_ADDR_WIDTH {1'b0} };
-            int_raddr   = {CORE_ADDR_WIDTH {1'b0} };
-            int_we      = 1'b0;
-            int_re      = 1'b0;
-            int_din     = {DATA_WIDTH {1'b0} };
-            int_bw      = {DATA_WIDTH {1'b0} };
-            dout        = {DATA_WIDTH {1'b0} };
-        end else begin
-            int_waddr   = waddr[0 +: CORE_ADDR_WIDTH];
-            int_raddr   = raddr[0 +: CORE_ADDR_WIDTH];
-            int_we      = 1'b0;
-            int_re      = 1'b0;
-            int_din     = din;
-            int_bw      = {DATA_WIDTH {1'b1} };
-            dout        = int_dout;
-
-            {% set endelse = joiner("end else ") %}
-            {%- for mode_name, (prog_enable, sr) in module.modes.items() %}
-            {{ endelse() }}if ({{ prog_enable.value }} == {
-                {%- set comma2 = joiner(", ") -%}
-                {%- for _, (o, l) in prog_enable.bitmap._bitmap[:-1] -%}
-                {{ comma2() }}prog_data[{{ o }}+:{{ l }}]
-                {%- endfor -%}
-            }) begin
-                // mode: {{ mode_name }}
-                int_we  = we;
-                int_re  = 1'b1;
-
-                {% if sr == 0 %}
-                int_din = din;
-                int_bw  = {DATA_WIDTH {1'b1} };
-                dout    = int_dout;
-                {%- else %}
-                case (wr_offset[ADDR_WIDTH - CORE_ADDR_WIDTH - 1 -: {{ sr }}])
-                    {%- for i in range(2 ** sr) %}
-                    {{ sr }}'d{{ i }}: begin
-                        int_din = din[0 +: DATA_WIDTH_SR{{ sr }}] << DATA_OFFSET_SR{{ sr }}_{{ i }};
-                        int_bw = {DATA_WIDTH_SR{{ sr }} {1'b1} } << DATA_OFFSET_SR{{ sr }}_{{ i }};
-                    end
-                    {%- endfor %}
-                endcase
-
-                case (rd_offset_f[ADDR_WIDTH - CORE_ADDR_WIDTH - 1 -: {{ sr }}])
-                    {%- for i in range(2 ** sr) %}
-                    {{ sr }}'d{{ i }}: dout = dout_sr{{ sr }}[{{ i }}];
-                    {%- endfor %}
-                endcase
-                {%- endif %}
-            {%- endfor %}
-            end
-        end
-    end
+    ){% endif %}i_ctrl (
+        .clk                        (clk)
+        ,.u_waddr_i                 (waddr)
+        ,.u_we_i                    (we)
+        ,.u_din_i                   (din)
+        ,.u_raddr_i                 (raddr)
+        ,.u_dout_o                  (dout)
+        ,.i_waddr_o                 (i_waddr)
+        ,.i_we_o                    (i_we)
+        ,.i_din_o                   (i_din)
+        ,.i_bw_o                    (i_bw)
+        ,.i_raddr_o                 (i_raddr)
+        ,.i_re_o                    (i_re)
+        ,.i_dout_i                  (i_dout)
+        ,.prog_done                 (prog_done)
+        ,.prog_data                 (prog_data)
+        );
 
 endmodule

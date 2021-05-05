@@ -998,7 +998,9 @@ class BuiltinCellLibrary(object):
                     .format(addr_width, core_addr_width, default_addr_width))
 
         name = uno(name, "fracram_a{}d{}".format(addr_width, data_width))
-        multimode = context.build_multimode(name, core_addr_width = core_addr_width)
+        multimode = context.build_multimode(name,
+                core_addr_width = core_addr_width,
+                memory_type = "1r1w_frac")
         multimode.create_clock("clk")
         multimode.create_input("waddr", addr_width)
         multimode.create_input("din", data_width)
@@ -1042,8 +1044,16 @@ class BuiltinCellLibrary(object):
         return multimode.commit()
 
     @classmethod
-    def _create_multimode_memory_design(cls, context, abstract):
-        """Create design-view for a multi-mode memory."""
+    def _get_or_create_multimode_memory_ctrl(cls, context, abstract):
+        """Create the design-view controller for a multi-mode memory."""
+
+        name = "fracbramctrl_a{}d{}c{}m{}".format(
+                len(abstract.ports["waddr"]),
+                len(abstract.ports["din"]),
+                abstract.core_addr_width,
+                len(abstract.modes))
+        if design := context.database.get( (ModuleView.design, name) ):
+            return design
 
         prog_data_width = len(abstract.modes).bit_length()
         modes = {}
@@ -1051,16 +1061,34 @@ class BuiltinCellLibrary(object):
             prog_enable = mode.prog_enable = ProgDataValue(value, (0, prog_data_width))
             modes[mode_name] = prog_enable, len(mode.instances["i_ram"].pins["waddr"]) - abstract.core_addr_width
 
+        return context._add_module(Module(name,
+            is_cell = True, 
+            view = ModuleView.design,
+            module_class = ModuleClass.aux,
+            verilog_template = "bram/fracbramctrl.tmpl.v",
+            addr_width = len(abstract.ports["waddr"]),
+            data_width = len(abstract.ports["din"]),
+            core_addr_width = abstract.core_addr_width,
+            prog_data_width = prog_data_width,
+            modes = modes))
+
+    @classmethod
+    def _create_multimode_memory_design(cls, context, abstract):
+        """Create design-view for a multi-mode memory."""
+
+        ctrl = cls._get_or_create_multimode_memory_ctrl(context, abstract)
+
         lbdr = context.build_design_view_primitive(abstract.name,
                 key = abstract.key,
                 core_addr_width = abstract.core_addr_width,
-                verilog_template = "bram/fracbram.tmpl.v",
-                modes = modes)
-        lbdr.create_prog_port("prog_done", 1,               PortDirection.input_)
-        lbdr.create_prog_port("prog_data", prog_data_width, PortDirection.input_)
+                verilog_template = "bram/fracbram.tmpl.v")
+        lbdr.create_prog_port("prog_done", 1,                    PortDirection.input_)
+        lbdr.create_prog_port("prog_data", ctrl.prog_data_width, PortDirection.input_)
         lbdr.instantiate(context.database[ModuleView.design, "prga_ram_1r1w_byp"],
                 "i_ram",
                 parameters = {"DATA_WIDTH": "DATA_WIDTH", "ADDR_WIDTH": "CORE_ADDR_WIDTH"})
+        lbdr.instantiate(ctrl, "i_ctrl")
+
         lbdr.commit()
 
     @classmethod
@@ -1185,7 +1213,8 @@ class BuiltinCellLibrary(object):
             if abstract.primitive_class.is_memory:
                 cls._create_memory_design(context, abstract)
             elif (abstract.primitive_class.is_multimode
-                    and all(_reprog_memory_mode.match(mode_name) for mode_name in abstract.modes)):
+                    and getattr(abstract, "memory_type", None) == "1r1w_frac"):
+                    # and all(_reprog_memory_mode.match(mode_name) for mode_name in abstract.modes)):
                 cls._create_multimode_memory_design(context, abstract)
             elif (abstract.primitive_class.is_custom
                     and getattr(abstract, "techmap_template", None) == "mul/techmap.tmpl.v"
