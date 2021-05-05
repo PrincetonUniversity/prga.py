@@ -196,7 +196,7 @@ class Frame(AbstractProgCircuitryEntry):
                 lbdr.instantiate(
                         context.database[ModuleView.design, "prga_ram_1r1w_byp"],
                         "i_ram",
-                        parameters = {
+                        verilog_parameters = {
                             "ADDR_WIDTH": "ADDR_WIDTH",
                             "DATA_WIDTH": "DATA_WIDTH",
                             })
@@ -210,8 +210,8 @@ class Frame(AbstractProgCircuitryEntry):
 
                 lbdr.instantiate(
                         context.database[ModuleView.design, "prga_frame_raminit"],
-                        "i_ctrl",
-                        parameters = {
+                        "i_init",
+                        verilog_parameters = {
                             "ADDR_WIDTH": "ADDR_WIDTH",
                             "DATA_WIDTH": "DATA_WIDTH",
                             "PROG_ADDR_WIDTH": len(lbdr.ports["prog_addr"]),

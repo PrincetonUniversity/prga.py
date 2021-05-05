@@ -807,9 +807,7 @@ class BuiltinCellLibrary(object):
                     verilog_template = "bram/init/1r1w.lib.tmpl.v",
                     bram_rule_template = "bram/init/1r1w.tmpl.rule",
                     techmap_template = "bram/init/1r1w.techmap.tmpl.v",
-                    parameters = {
-                        "INIT": data_width << addr_width,
-                        })
+                    parameters = { "INIT": data_width << addr_width, })
             clk   = bdr.create_clock("clk")
 
             inputs, outputs = [], []
@@ -947,7 +945,11 @@ class BuiltinCellLibrary(object):
                     verilog_template = "bram/1r1w.sim.tmpl.v")
             lbdr.instantiate(
                     context.database[ModuleView.design, "prga_ram_1r1w_byp"],
-                    "i_ram")
+                    "i_ram",
+                    verilog_parameters = {
+                        "DATA_WIDTH": len(lbdr.ports["din"]),
+                        "ADDR_WIDTH": len(lbdr.ports["waddr"]),
+                        })
             lbdr.create_prog_port("prog_done", 1, "input")
             lbdr.commit()
 
@@ -1086,7 +1088,10 @@ class BuiltinCellLibrary(object):
         lbdr.create_prog_port("prog_data", ctrl.prog_data_width, PortDirection.input_)
         lbdr.instantiate(context.database[ModuleView.design, "prga_ram_1r1w_byp"],
                 "i_ram",
-                parameters = {"DATA_WIDTH": "DATA_WIDTH", "ADDR_WIDTH": "CORE_ADDR_WIDTH"})
+                verilog_parameters = {
+                    "DATA_WIDTH": "DATA_WIDTH",
+                    "ADDR_WIDTH": "CORE_ADDR_WIDTH",
+                    })
         lbdr.instantiate(ctrl, "i_ctrl")
 
         lbdr.commit()

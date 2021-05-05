@@ -1,0 +1,8 @@
+{% macro instantiation(instance) -%}
+    {{ instance.model.name }} {% if instance.verilog_parameters %}#(
+        {%- set comma = joiner(",") %}
+        {%- for k, v in instance.verilog_parameters.items() %}
+        {{ comma() }}.{{ k }} ({{ v }})
+        {%- endfor %}
+    ){% endif %}{{ instance.name }}
+{%- endmacro %}
