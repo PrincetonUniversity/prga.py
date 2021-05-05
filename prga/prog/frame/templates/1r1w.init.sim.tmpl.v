@@ -23,64 +23,65 @@ module {{ module.name }} #(
     , input wire [PROG_DATA_WIDTH - 1:0] prog_din
     , input wire prog_ce
     , input wire prog_we
-    , output reg [PROG_DATA_WIDTH - 1:0] prog_dout
+    , output wire [PROG_DATA_WIDTH - 1:0] prog_dout
     );
 
-    localparam  NUM_SLICES = DATA_WIDTH / PROG_DATA_WIDTH + (DATA_WIDTH % PROG_DATA_WIDTH > 0 ? 1 : 0);
-    localparam  OFFSET_WIDTH = NUM_SLICES == 1 ? 0 : `PRGA_CLOG2(NUM_SLICES);
+    // memory core
+    wire                        i_clk, i_rst, i_we, i_re;
+    wire [ADDR_WIDTH - 1:0]     i_waddr, i_raddr;
+    wire [DATA_WIDTH - 1:0]     i_din, i_bw, i_dout;
 
-    wire [NUM_SLICES * PROG_DATA_WIDTH - 1:0] prog_din_aligned;
-    assign prog_din_aligned = { NUM_SLICES {prog_din} };
-
-    wire [NUM_SLICES * PROG_DATA_WIDTH - 1:0] prog_bw;
-
-    prga_ram_1r1w_byp #(
-        .DATA_WIDTH             (DATA_WIDTH)
-        ,.ADDR_WIDTH            (ADDR_WIDTH)
-    ) i_ram (
-        .clk                    (prog_done ? clk : prog_clk)    // XXX: This must be taken care of in a real tape out!
-        ,.rst                   (prog_rst)
-        ,.we                    (prog_done ? we : (prog_ce & prog_we))
-        ,.waddr                 (prog_done ? waddr : prog_addr[PROG_ADDR_WIDTH - 1:OFFSET_WIDTH])
-        ,.din                   (prog_done ? din : prog_din_aligned[0 +: DATA_WIDTH])
-        ,.bw                    (prog_done ? { DATA_WIDTH {1'b1} } : prog_bw[0 +: DATA_WIDTH])
-        ,.re                    (prog_done ? 1'b1 : (prog_ce & !prog_we))
-        ,.raddr                 (prog_done ? raddr : prog_addr[PROG_ADDR_WIDTH - 1:OFFSET_WIDTH])
-        ,.dout                  (dout)
+    {{ module.instances.i_ram.model.name }} {% if module.instances.i_ram.parameters %}#(
+        {%- set comma = joiner(",") %}
+        {%- for k, v in module.instances.i_ram.parameters.items() %}
+        {{ comma() }}.{{ k }} ({{ v }})
+        {%- endfor %}
+    ){%- endif %}i_ram (
+        .clk                    (i_clk)
+        ,.rst                   (i_rst)
+        ,.we                    (i_we)
+        ,.waddr                 (i_waddr)
+        ,.din                   (i_din)
+        ,.bw                    (i_bw)
+        ,.re                    (i_re)
+        ,.raddr                 (i_raddr)
+        ,.dout                  (i_dout)
         );
 
-    genvar gv_prog_bw, gv_prog_dout_candidates;
-    generate if (OFFSET_WIDTH == 0) begin
-        assign prog_bw = { PROG_DATA_WIDTH {1'b1} };
+    // programming ctrl
+    {{ module.instances.i_ctrl.model.name }} {% if module.instances.i_ctrl.parameters %}#(
+        {%- set comma2 = joiner(",") %}
+        {%- for k, v in module.instances.i_ram.parameters.items() %}
+        {{ comma2() }}.{{ k }} ({{ v }})
+        {%- endfor %}
+    ){%- endif %}i_ctrl (
+        .u_clk                  (clk)
+        ,.u_we                  (we)
+        ,.u_waddr               (waddr)
+        ,.u_din                 (din)
+        ,.u_bw                  ({ DATA_WIDTH {1'b1} })
+        ,.u_re                  (1'b1)
+        ,.u_raddr               (raddr)
+        ,.u_dout                (dout)
 
-        always @* begin
-            prog_dout = { PROG_DATA_WIDTH {1'b0} };
-            prog_dout[0 +: DATA_WIDTH] = dout;
-        end
-
-    end else begin
-        for (gv_prog_bw = 0; gv_prog_bw < NUM_SLICES; gv_prog_bw = gv_prog_bw + 1) begin
-            assign prog_bw[gv_prog_bw * PROG_DATA_WIDTH +: PROG_DATA_WIDTH] = { PROG_DATA_WIDTH {prog_addr[0 +: OFFSET_WIDTH] == gv_prog_bw} };
-        end
-
-        reg [OFFSET_WIDTH - 1:0] offset_f;
-        always @(posedge prog_clk) begin
-            if (prog_rst) begin
-                offset_f <= { OFFSET_WIDTH {1'b0} };
-            end else begin
-                offset_f <= (prog_ce & !prog_we) ? prog_addr[0 +: OFFSET_WIDTH] : { OFFSET_WIDTH {1'b0} };
-            end
-        end
-
-        wire [PROG_DATA_WIDTH - 1:0] prog_dout_candidates [0:NUM_SLICES - 1];
-        for (gv_prog_dout_candidates = 0; gv_prog_dout_candidates < NUM_SLICES; gv_prog_dout_candidates = gv_prog_dout_candidates + 1) begin
-            assign prog_dout_candidates[gv_prog_dout_candidates] = dout[gv_prog_dout_candidates * PROG_DATA_WIDTH +: PROG_DATA_WIDTH];
-        end
-
-        always @* begin
-            prog_dout = prog_dout_candidates[offset_f];
-        end
-
-    end endgenerate
+        ,.prog_clk              (prog_clk)
+        ,.prog_rst              (prog_rst)
+        ,.prog_done             (prog_done)
+        ,.prog_addr             (prog_addr)
+        ,.prog_din              (prog_din)
+        ,.prog_ce               (prog_ce)
+        ,.prog_we               (prog_we)
+        ,.prog_dout             (prog_dout)
+            
+        ,.i_clk                 (i_clk)
+        ,.i_rst                 (i_rst)
+        ,.i_we                  (i_we)
+        ,.i_waddr               (i_waddr)
+        ,.i_din                 (i_din)
+        ,.i_bw                  (i_bw)
+        ,.i_re                  (i_re)
+        ,.i_raddr               (i_raddr)
+        ,.i_dout                (i_dout)
+        );
 
 endmodule

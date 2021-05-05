@@ -177,6 +177,13 @@ class Frame(AbstractProgCircuitryEntry):
         ModuleUtils.create_port(cell, "iy", 1, "input",  net_class = NetClass.prog)
         ModuleUtils.create_port(cell, "o",  1, "output", net_class = NetClass.prog)
 
+        # install `prga_frame_raminit`
+        context._add_module(Module("prga_frame_raminit",
+            is_cell = True,
+            view = ModuleView.design,
+            module_class = ModuleClass.aux,
+            verilog_template = "prga_frame_raminit.tmpl.v"))
+
         # create design views for 1r1w_init memories
         word_width = context.summary.frame["word_width"]
         for abstract in list(context.primitives.values()):  # snapshot
@@ -188,7 +195,11 @@ class Frame(AbstractProgCircuitryEntry):
                         verilog_dep_headers = ("prga_utils.vh", ))
                 lbdr.instantiate(
                         context.database[ModuleView.design, "prga_ram_1r1w_byp"],
-                        "i_ram")
+                        "i_ram",
+                        parameters = {
+                            "ADDR_WIDTH": "ADDR_WIDTH",
+                            "DATA_WIDTH": "DATA_WIDTH",
+                            })
 
                 dwidth = len(abstract.ports["din"])
                 num_slices = dwidth // word_width + (1 if dwidth % word_width > 0 else 0)
@@ -196,6 +207,16 @@ class Frame(AbstractProgCircuitryEntry):
 
                 cls._get_or_create_frame_prog_nets(lbdr.module, word_width,
                         len(abstract.ports["waddr"]) + diff_addr_width)
+
+                lbdr.instantiate(
+                        context.database[ModuleView.design, "prga_frame_raminit"],
+                        "i_ctrl",
+                        parameters = {
+                            "ADDR_WIDTH": "ADDR_WIDTH",
+                            "DATA_WIDTH": "DATA_WIDTH",
+                            "PROG_ADDR_WIDTH": len(lbdr.ports["prog_addr"]),
+                            "PROG_DATA_WIDTH": len(lbdr.ports["prog_din"]),
+                            })
 
                 abstract.modes["init"].instances["i_ram"].prog_parameters = {
                         "INIT": ProgDataBitmap(
