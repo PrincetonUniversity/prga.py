@@ -53,9 +53,10 @@ class MagicBitstreamGenerator(AbstractBitstreamGenerator):
 
         for lineno, line in enumerate(fasm, 1):
 
-            feature = self.parse_feature(line)
+            if (feature := self.parse_feature(line)) is None:
+                continue
 
-            if feature.type_ == "conn":
+            elif feature.type_ == "conn":
                 if (prog_enable := getattr(feature.conn, "prog_magic_enable", self._none)) is not self._none:
                     pass
                 elif (prog_enable := getattr(feature.conn, "prog_enable", self._none)) is self._none:

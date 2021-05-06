@@ -38,7 +38,7 @@ class AbstractBitstreamGenerator(Object):
         self.context = context
 
     _reprog_param = re.compile("(?P<name>\w+)\[(?P<high>\d+):(?P<low>\d+)\]")
-    _reprog_value = re.compile("(?P<width>\d+)'(?P<notation>[bdhBDH])(?P<value>[a-fA-F0-9]+)")
+    _reprog_value = re.compile("(?P<width>\d+)'(?P<notation>[bdhBDH])(?P<value>[a-fA-F0-9xzXZ]+)")
     _none = object()
 
     def set_bits(self, value, hierarchy = None, *, inplace = False):
@@ -63,9 +63,15 @@ class AbstractBitstreamGenerator(Object):
         Returns:
             `FASMFeatureConn` or `FASMFeaturePlain` or `FASMFeatureParam`:
         """
+        # special handling first
+        if not (line := line.strip()):  # empty line
+            return None
+        elif line.startswith("#"):      # comment
+            return None
+
         # tokenize
         tokens, quoted = [], None
-        for token in line.strip().split('.'):
+        for token in line.split('.'):
             if not quoted:
                 if not token.startswith('{'):
                     tokens.append(token)
@@ -110,6 +116,10 @@ class AbstractBitstreamGenerator(Object):
             # value
             obj = self._reprog_value.match(subtokens[1])
             width, notation, value = obj.group( "width", "notation", "value" )
+            if all(c in "xzXZ" for c in value):     # no useful value at all
+                return None
+            else:
+                value = value.lower().replace('x','0').replace('z','0')
             value = int(value, {"b": 2, "d": 10, "h": 16, "B": 2, "D": 10, "H": 16}[notation])
 
             return FASMFeatureParam(name, ProgDataValue(value, (int(low), int(width))), hierarchy)
@@ -128,9 +138,10 @@ class AbstractBitstreamGenerator(Object):
 
         for lineno, line in enumerate(fasm, 1):
 
-            feature = self.parse_feature(line)
+            if (feature := self.parse_feature(line)) is None:
+                continue
 
-            if feature.type_ == "conn":
+            elif feature.type_ == "conn":
                 if (prog_enable := getattr(feature.conn, "prog_enable", self._none)) is self._none:
                     for net in getattr(feature.conn, "switch_path", tuple()):
                         bus, idx = (net.bus, net.index) if net.net_type.is_bit else (net, 0)
