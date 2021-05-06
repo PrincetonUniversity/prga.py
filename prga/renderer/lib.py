@@ -402,6 +402,7 @@ class BuiltinCellLibrary(object):
                 verilog_template = "builtin/mux.lib.tmpl.v",
                 techmap_template = "grady18/postlut.techmap.tmpl.v",
                 techmap_order = -1.,    # post-lutmap techmap
+                abstract_only = True,
                 vpr_model = "m_mux2")
         inputs = [
                 ubdr.create_input("i", 2),
@@ -413,7 +414,10 @@ class BuiltinCellLibrary(object):
         mux2 = ubdr.commit()
 
         # register a abstract-only multi-mode primitive: "grady18.ble5"
-        ubdr = context.build_multimode("grady18.ble5", key = "grady18:v0.ble5")
+        ubdr = context.build_multimode(
+                "grady18.ble5",
+                key = "grady18:v0.ble5",
+                abstract_only = True)
         ubdr.create_clock("clk")
         ubdr.create_input("in", 5)
         ubdr.create_input("cin", 1)
@@ -595,7 +599,9 @@ class BuiltinCellLibrary(object):
     @classmethod
     def _install_m_grady18(cls, context):
         # register a abstract-only multi-mode primitive: "grady18.ble5"
-        ubdr = context.build_multimode("grady18.ble5")
+        ubdr = context.build_multimode(
+                "grady18.ble5",
+                abstract_only = True)
         ubdr.create_clock("clk")
         ubdr.create_input("in", 5)
         ubdr.create_input("cin", 1)
@@ -800,14 +806,16 @@ class BuiltinCellLibrary(object):
         """
         name = uno(name, "ram_{}_a{}d{}".format(memory_type, addr_width, data_width))
         if memory_type == "1r1w_init":  # very different way of handling this
+
             # create a custom initializable primitive first
-            bdr = context.build_primitive(name = name + "_init",
-                    vpr_model = name + "_init",
+            bdr = context.build_primitive(name = name + ".init",
+                    vpr_model = uno(vpr_model, "m_ram_1r1w_init_a{}d{}".format(addr_width, data_width)),
                     primitive_class = PrimitiveClass.blackbox_memory,
                     verilog_template = "bram/init/1r1w.lib.tmpl.v",
                     bram_rule_template = "bram/init/1r1w.tmpl.rule",
                     techmap_template = "bram/init/1r1w.techmap.tmpl.v",
-                    parameters = { "INIT": data_width << addr_width, })
+                    parameters = { "INIT": data_width << addr_width, },
+                    abstract_only = True)
             clk   = bdr.create_clock("clk")
 
             inputs, outputs = [], []
@@ -825,7 +833,9 @@ class BuiltinCellLibrary(object):
             init = bdr.commit()
 
             # multimode wrapper
-            bdr = context.build_multimode(name, memory_type = memory_type)
+            bdr = context.build_multimode(name,
+                    memory_type = memory_type, 
+                    **kwargs)
             bdr.create_clock("clk")
             bdr.create_input("we",    1)
             bdr.create_input("waddr", addr_width)
@@ -963,7 +973,7 @@ class BuiltinCellLibrary(object):
 
     @classmethod
     def create_multimode_memory(cls, context, core_addr_width, data_width, *,
-            addr_width = None, name = None):
+            addr_width = None, name = None, memory_type = "1r1w", **kwargs):
         """Create a multi-mode RAM.
 
         Args:
@@ -975,6 +985,10 @@ class BuiltinCellLibrary(object):
         Keyword Args:
             name (:obj:`str`): Name of the multi-mode primitive. ``"fracram_a{addr_width}d{data_width}"`` by default.
             addr_width (:obj:`int`): The maximum address width. See notes for more information
+            memory_type (:obj:`str`): ``"1r1w"`` or ``"1r1w_init"``. Default is ``"1r1w"``.
+                ``"1r1w_init"`` memories are initializable and may be used as ROMs, but they are not supported by all
+                programming circuitry types
+            **kwargs: Additional attributes assigned to the primitive
 
         Returns:
             `Module`: Abstract view of the multi-modal primitive
@@ -992,6 +1006,9 @@ class BuiltinCellLibrary(object):
             ``512x72b``, ``1K36b``, ``2K18b``, ``4K9b``, ``8K4b``, ``16K2b``, ``32K1b``. Note that instead of a
             ``9K4b``, we got a ``8K4b``.
         """
+        if memory_type not in ("1r1w", "1r1w_init"):
+            raise PRGAInternalError("Invalid memory type. Supported values are: '1r1w', '1r1w_init'")
+
         default_addr_width = core_addr_width + int(floor(log2(data_width)))
         addr_width = uno(addr_width, default_addr_width)
 
@@ -999,10 +1016,10 @@ class BuiltinCellLibrary(object):
             raise PRGAInternalError("Invalid addr_width ({}). Valid numbers {} <= addr_width <= {}"
                     .format(addr_width, core_addr_width, default_addr_width))
 
-        name = uno(name, "fracram_a{}d{}".format(addr_width, data_width))
+        name = uno(name, "fracram_{}_a{}d{}".format(memory_type, addr_width, data_width))
         multimode = context.build_multimode(name,
                 core_addr_width = core_addr_width,
-                memory_type = "1r1w_frac")
+                memory_type = memory_type + "_frac")
         multimode.create_clock("clk")
         multimode.create_input("waddr", addr_width)
         multimode.create_input("din", data_width)
@@ -1031,7 +1048,10 @@ class BuiltinCellLibrary(object):
 
             core = mode.instantiate(
                     cls.create_memory(context, mode_addr_width, mode_data_width,
-                        techmap_order = 1. + 1 / float(mode_addr_width)),
+                        name = name + ".ram_{}_a{}d{}".format(memory_type, mode_addr_width, mode_data_width),
+                        memory_type = memory_type, techmap_order = 1. + 1 / float(mode_addr_width),
+                        abstract_only = True,
+                        ),
                     "i_ram",
                     )
             NetUtils.connect(mode.ports["clk"], core.pins["clk"])
@@ -1060,7 +1080,7 @@ class BuiltinCellLibrary(object):
         prog_data_width = len(abstract.modes).bit_length()
         modes = {}
         for value, (mode_name, mode) in enumerate(abstract.modes.items(), 1):
-            prog_enable = mode.prog_enable = ProgDataValue(value, (0, prog_data_width))
+            prog_enable = ProgDataValue(value, (0, prog_data_width))
             modes[mode_name] = prog_enable, len(mode.instances["i_ram"].pins["waddr"]) - abstract.core_addr_width
 
         return context._add_module(Module(name,
@@ -1093,6 +1113,9 @@ class BuiltinCellLibrary(object):
                     "ADDR_WIDTH": "CORE_ADDR_WIDTH",
                     })
         lbdr.instantiate(ctrl, "i_ctrl")
+
+        for mode_name, (prog_enable, _) in ctrl.modes.items():
+            abstract.modes[mode_name].prog_enable = prog_enable
 
         lbdr.commit()
 
@@ -1210,7 +1233,8 @@ class BuiltinCellLibrary(object):
         # find all abstract-only primitives, and see if we can automatically create design-views for them
         abstracts = []
         for module in context.primitives.values():
-            if (ModuleView.design, module.key) not in context.database:
+            if (not getattr(module, "abstract_only", False)
+                    and (ModuleView.design, module.key) not in context.database):
                 abstracts.append(module)
 
         abstract_only = []

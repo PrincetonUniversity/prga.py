@@ -15,13 +15,13 @@ module {{ module.name }} #(
     , output reg [DATA_WIDTH - 1:0]         u_dout_o
 
     // SRAM IP interface
-    , output reg [CORE_ADDR_WIDTH - 1:0]    i_waddr_o
-    , output reg                            i_we_o
-    , output reg [DATA_WIDTH - 1:0]         i_din_o
-    , output reg [DATA_WIDTH - 1:0]         i_bw_o
-    , output reg [CORE_ADDR_WIDTH - 1:0]    i_raddr_o
-    , output reg                            i_re_o
-    , input wire [DATA_WIDTH - 1:0]         i_dout_i
+    , output reg [CORE_ADDR_WIDTH - 1:0]    ip_waddr_o
+    , output reg                            ip_we_o
+    , output reg [DATA_WIDTH - 1:0]         ip_din_o
+    , output reg [DATA_WIDTH - 1:0]         ip_bw_o
+    , output reg [CORE_ADDR_WIDTH - 1:0]    ip_raddr_o
+    , output reg                            ip_re_o
+    , input wire [DATA_WIDTH - 1:0]         ip_dout_i
 
     , input wire [0:0] prog_done
     , input wire [{{ module.prog_data_width - 1 }}:0] prog_data
@@ -32,7 +32,7 @@ module {{ module.name }} #(
     localparam  DATA_OFFSET_SR0_0 = 0;
 
     wire [DATA_WIDTH_SR0 - 1:0] dout_sr0 [0:0];
-    assign dout_sr0[0] = i_dout_i;
+    assign dout_sr0[0] = ip_dout_i;
     {%- for i in range(1, module.addr_width - module.core_addr_width + 1) %}
 
     localparam  DATA_WIDTH_SR{{ i }} = DATA_WIDTH_SR{{ i - 1 }} >> 1;
@@ -66,21 +66,21 @@ module {{ module.name }} #(
 
     always @* begin
         if (~prog_done) begin
-            i_waddr_o   = {CORE_ADDR_WIDTH {1'b0} };
-            i_raddr_o   = {CORE_ADDR_WIDTH {1'b0} };
-            i_we_o      = 1'b0;
-            i_re_o      = 1'b0;
-            i_din_o     = {DATA_WIDTH {1'b0} };
-            i_bw_o      = {DATA_WIDTH {1'b0} };
+            ip_waddr_o  = {CORE_ADDR_WIDTH {1'b0} };
+            ip_raddr_o  = {CORE_ADDR_WIDTH {1'b0} };
+            ip_we_o     = 1'b0;
+            ip_re_o     = 1'b0;
+            ip_din_o    = {DATA_WIDTH {1'b0} };
+            ip_bw_o     = {DATA_WIDTH {1'b0} };
             u_dout_o    = {DATA_WIDTH {1'b0} };
         end else begin
-            i_waddr_o   = u_waddr_i[0 +: CORE_ADDR_WIDTH];
-            i_raddr_o   = u_raddr_i[0 +: CORE_ADDR_WIDTH];
-            i_we_o      = 1'b0;
-            i_re_o      = 1'b0;
-            i_din_o     = u_din_i;
-            i_bw_o      = {DATA_WIDTH {1'b1} };
-            u_dout_o    = i_dout_i;
+            ip_waddr_o  = u_waddr_i[0 +: CORE_ADDR_WIDTH];
+            ip_raddr_o  = u_raddr_i[0 +: CORE_ADDR_WIDTH];
+            ip_we_o     = 1'b0;
+            ip_re_o     = 1'b0;
+            ip_din_o    = u_din_i;
+            ip_bw_o     = {DATA_WIDTH {1'b1} };
+            u_dout_o    = ip_dout_i;
 
             {% set endelse = joiner("end else ") %}
             {%- for mode_name, (prog_enable, sr) in module.modes.items() %}
@@ -91,19 +91,19 @@ module {{ module.name }} #(
                 {%- endfor -%}
             }) begin
                 // mode: {{ mode_name }}
-                i_we_o  = u_we_i;
-                i_re_o  = 1'b1;
+                ip_we_o  = u_we_i;
+                ip_re_o  = 1'b1;
 
                 {% if sr == 0 %}
-                i_din_o = u_din_i;
-                i_bw_o  = {DATA_WIDTH {1'b1} };
-                u_dout_o  = i_dout_i;
+                ip_din_o = u_din_i;
+                ip_bw_o  = {DATA_WIDTH {1'b1} };
+                u_dout_o  = ip_dout_i;
                 {%- else %}
                 case (wr_offset[ADDR_WIDTH - CORE_ADDR_WIDTH - 1 -: {{ sr }}])
                     {%- for i in range(2 ** sr) %}
                     {{ sr }}'d{{ i }}: begin
-                        i_din_o = u_din_i[0 +: DATA_WIDTH_SR{{ sr }}] << DATA_OFFSET_SR{{ sr }}_{{ i }};
-                        i_bw_o = {DATA_WIDTH_SR{{ sr }} {1'b1} } << DATA_OFFSET_SR{{ sr }}_{{ i }};
+                        ip_din_o = u_din_i[0 +: DATA_WIDTH_SR{{ sr }}] << DATA_OFFSET_SR{{ sr }}_{{ i }};
+                        ip_bw_o = {DATA_WIDTH_SR{{ sr }} {1'b1} } << DATA_OFFSET_SR{{ sr }}_{{ i }};
                     end
                     {%- endfor %}
                 endcase

@@ -277,7 +277,7 @@ class _ModeBuilder(BaseBuilder):
         Returns:
             `Module`:
         """
-        m = Module(parent.name + "." + name,
+        m = Module(parent.name + "@" + name,
                 key = name,
                 allow_multisource = True,
                 module_class = ModuleClass.mode,

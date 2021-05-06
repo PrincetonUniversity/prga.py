@@ -21,20 +21,20 @@ module {{ module.name }} #(
     // non-fracturable memory core
     localparam  CORE_ADDR_WIDTH = {{ module.core_addr_width }};
 
-    wire [CORE_ADDR_WIDTH - 1:0]    i_waddr, i_raddr;
-    wire                            i_we, i_re;
-    wire [DATA_WIDTH - 1:0]         i_bw, i_din, i_dout;
+    wire [CORE_ADDR_WIDTH - 1:0]    ip_waddr, ip_raddr;
+    wire                            ip_we, ip_re;
+    wire [DATA_WIDTH - 1:0]         ip_bw, ip_din, ip_dout;
 
     {{ instantiation(module.instances.i_ram) }} (
         .clk                        (clk)
         ,.rst                       (~prog_done)
-        ,.waddr                     (i_waddr)
-        ,.din                       (i_din)
-        ,.we                        (i_we)
-        ,.bw                        (i_bw)
-        ,.raddr                     (i_raddr)
-        ,.re                        (i_re)
-        ,.dout                      (i_dout)
+        ,.waddr                     (ip_waddr)
+        ,.din                       (ip_din)
+        ,.we                        (ip_we)
+        ,.bw                        (ip_bw)
+        ,.raddr                     (ip_raddr)
+        ,.re                        (ip_re)
+        ,.dout                      (ip_dout)
         );
 
     // Fracturable memory controller
@@ -45,13 +45,13 @@ module {{ module.name }} #(
         ,.u_din_i                   (din)
         ,.u_raddr_i                 (raddr)
         ,.u_dout_o                  (dout)
-        ,.i_waddr_o                 (i_waddr)
-        ,.i_we_o                    (i_we)
-        ,.i_din_o                   (i_din)
-        ,.i_bw_o                    (i_bw)
-        ,.i_raddr_o                 (i_raddr)
-        ,.i_re_o                    (i_re)
-        ,.i_dout_i                  (i_dout)
+        ,.ip_waddr_o                (ip_waddr)
+        ,.ip_we_o                   (ip_we)
+        ,.ip_din_o                  (ip_din)
+        ,.ip_bw_o                   (ip_bw)
+        ,.ip_raddr_o                (ip_raddr)
+        ,.ip_re_o                   (ip_re)
+        ,.ip_dout_i                 (ip_dout)
         ,.prog_done                 (prog_done)
         ,.prog_data                 (prog_data)
         );

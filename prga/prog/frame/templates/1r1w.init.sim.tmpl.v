@@ -28,21 +28,21 @@ module {{ module.name }} #(
     );
 
     // memory core
-    wire                        i_clk, i_rst, i_we, i_re;
-    wire [ADDR_WIDTH - 1:0]     i_waddr, i_raddr;
-    wire [DATA_WIDTH - 1:0]     i_din, i_bw, i_dout;
+    wire                        ip_clk, ip_rst, ip_we, ip_re;
+    wire [ADDR_WIDTH - 1:0]     ip_waddr, ip_raddr;
+    wire [DATA_WIDTH - 1:0]     ip_din, ip_bw, ip_dout;
 
     // internal memory
     {{ instantiation(module.instances.i_ram) }} (
-        .clk                    (i_clk)
-        ,.rst                   (i_rst)
-        ,.we                    (i_we)
-        ,.waddr                 (i_waddr)
-        ,.din                   (i_din)
-        ,.bw                    (i_bw)
-        ,.re                    (i_re)
-        ,.raddr                 (i_raddr)
-        ,.dout                  (i_dout)
+        .clk                    (ip_clk)
+        ,.rst                   (ip_rst)
+        ,.we                    (ip_we)
+        ,.waddr                 (ip_waddr)
+        ,.din                   (ip_din)
+        ,.bw                    (ip_bw)
+        ,.re                    (ip_re)
+        ,.raddr                 (ip_raddr)
+        ,.dout                  (ip_dout)
         );
 
     // programming ctrl
@@ -65,15 +65,15 @@ module {{ module.name }} #(
         ,.prog_we               (prog_we)
         ,.prog_dout             (prog_dout)
             
-        ,.i_clk                 (i_clk)
-        ,.i_rst                 (i_rst)
-        ,.i_we                  (i_we)
-        ,.i_waddr               (i_waddr)
-        ,.i_din                 (i_din)
-        ,.i_bw                  (i_bw)
-        ,.i_re                  (i_re)
-        ,.i_raddr               (i_raddr)
-        ,.i_dout                (i_dout)
+        ,.ip_clk                (ip_clk)
+        ,.ip_rst                (ip_rst)
+        ,.ip_we                 (ip_we)
+        ,.ip_waddr              (ip_waddr)
+        ,.ip_din                (ip_din)
+        ,.ip_bw                 (ip_bw)
+        ,.ip_re                 (ip_re)
+        ,.ip_raddr              (ip_raddr)
+        ,.ip_dout               (ip_dout)
         );
 
 endmodule

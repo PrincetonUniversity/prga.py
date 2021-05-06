@@ -28,15 +28,15 @@ module {{ module.name }} #(
     , output reg [PROG_DATA_WIDTH - 1:0]    prog_dout
 
     // SRAM IP interface
-    , output wire                           i_clk
-    , output wire                           i_rst
-    , output wire                           i_we
-    , output wire [ADDR_WIDTH - 1:0]        i_waddr
-    , output wire [DATA_WIDTH - 1:0]        i_din
-    , output wire [DATA_WIDTH - 1:0]        i_bw
-    , output wire                           i_re
-    , output wire [ADDR_WIDTH - 1:0]        i_raddr
-    , input wire [DATA_WIDTH - 1:0]         i_dout
+    , output wire                           ip_clk
+    , output wire                           ip_rst
+    , output wire                           ip_we
+    , output wire [ADDR_WIDTH - 1:0]        ip_waddr
+    , output wire [DATA_WIDTH - 1:0]        ip_din
+    , output wire [DATA_WIDTH - 1:0]        ip_bw
+    , output wire                           ip_re
+    , output wire [ADDR_WIDTH - 1:0]        ip_raddr
+    , input wire [DATA_WIDTH - 1:0]         ip_dout
     );
 
     localparam  NUM_SLICES = DATA_WIDTH / PROG_DATA_WIDTH + (DATA_WIDTH % PROG_DATA_WIDTH > 0 ? 1 : 0);
@@ -54,7 +54,7 @@ module {{ module.name }} #(
 
         always @* begin
             prog_dout = { PROG_DATA_WIDTH {1'b0} };
-            prog_dout[0 +: DATA_WIDTH] = i_dout;
+            prog_dout[0 +: DATA_WIDTH] = ip_dout;
         end
 
     end else begin
@@ -73,7 +73,7 @@ module {{ module.name }} #(
 
         wire [PROG_DATA_WIDTH - 1:0] prog_dout_candidates [0:NUM_SLICES - 1];
         for (gv_prog_dout_candidates = 0; gv_prog_dout_candidates < NUM_SLICES; gv_prog_dout_candidates = gv_prog_dout_candidates + 1) begin
-            assign prog_dout_candidates[gv_prog_dout_candidates] = i_dout[gv_prog_dout_candidates * PROG_DATA_WIDTH +: PROG_DATA_WIDTH];
+            assign prog_dout_candidates[gv_prog_dout_candidates] = ip_dout[gv_prog_dout_candidates * PROG_DATA_WIDTH +: PROG_DATA_WIDTH];
         end
 
         always @* begin
@@ -85,14 +85,14 @@ module {{ module.name }} #(
     // XXX: the muxes below must be taken care of in a real tape-out because
     // they are in different clock domains!
 
-    assign i_clk    = prog_done ? u_clk : prog_clk;  // XXX: especially this one!!!
-    assign i_rst    = prog_rst;
-    assign i_we     = prog_done ? u_we : (prog_ce & prog_we);
-    assign i_waddr  = prog_done ? u_waddr : prog_addr[PROG_ADDR_WIDTH - 1:OFFSET_WIDTH];
-    assign i_din    = prog_done ? u_din : prog_din_aligned[0 +: DATA_WIDTH];
-    assign i_bw     = prog_done ? u_bw : prog_bw[0 +: DATA_WIDTH];
-    assign i_re     = prog_done ? u_re : (prog_ce & !prog_we);
-    assign i_raddr  = prog_done ? u_raddr : prog_addr[PROG_ADDR_WIDTH - 1:OFFSET_WIDTH];
-    assign u_dout   = i_dout;
+    assign ip_clk   = prog_done ? u_clk : prog_clk;  // XXX: especially this one!!!
+    assign ip_rst   = prog_rst;
+    assign ip_we    = prog_done ? u_we : (prog_ce & prog_we);
+    assign ip_waddr = prog_done ? u_waddr : prog_addr[PROG_ADDR_WIDTH - 1:OFFSET_WIDTH];
+    assign ip_din   = prog_done ? u_din : prog_din_aligned[0 +: DATA_WIDTH];
+    assign ip_bw    = prog_done ? u_bw : prog_bw[0 +: DATA_WIDTH];
+    assign ip_re    = prog_done ? u_re : prog_ce;
+    assign ip_raddr = prog_done ? u_raddr : prog_addr[PROG_ADDR_WIDTH - 1:OFFSET_WIDTH];
+    assign u_dout   = ip_dout;
 
 endmodule

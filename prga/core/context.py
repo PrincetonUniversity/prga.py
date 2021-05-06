@@ -366,7 +366,7 @@ class Context(Object):
                 name = name, vpr_model = vpr_model, memory_type = memory_type, **kwargs)
 
     def create_multimode_memory(self, core_addr_width, data_width, *,
-            addr_width = None, name = None):
+            addr_width = None, name = None, memory_type = '1r1w', **kwargs):
         """Create a multi-mode RAM.
 
         Args:
@@ -377,6 +377,10 @@ class Context(Object):
         Keyword Args:
             name (:obj:`str`): Name of the multi-mode primitive. ``"fracram_a{addr_width}d{data_width}"`` by default.
             addr_width (:obj:`int`): The maximum address width. See notes for more information
+            memory_type (:obj:`str`): ``"1r1w"`` or ``"1r1w_init"``. Default is ``"1r1w"``.
+                ``"1r1w_init"`` memories are initializable and may be used as ROMs, but they are not supported by all
+                programming circuitry types
+            **kwargs: Additional attributes assigned to the primitive
 
         Returns:
             `Module`: User view of the multi-modal primitive
@@ -395,7 +399,7 @@ class Context(Object):
             ``9K4b``, we got a ``8K4b``.
         """
         return BuiltinCellLibrary.create_multimode_memory(self, core_addr_width, data_width,
-                addr_width = addr_width, name = name)
+                addr_width = addr_width, name = name, memory_type = memory_type, **kwargs)
 
     def create_multiplier(self, width_a, width_b = None, *, name = None):
         """Create a basic combinational multiplier.

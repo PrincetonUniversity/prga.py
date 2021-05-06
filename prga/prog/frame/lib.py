@@ -182,20 +182,23 @@ class Frame(AbstractProgCircuitryEntry):
             is_cell = True,
             view = ModuleView.design,
             module_class = ModuleClass.aux,
-            verilog_template = "prga_frame_raminit.tmpl.v"))
+            verilog_template = "prga_frame_raminit.tmpl.v",
+            verilog_dep_headers = ("prga_utils.vh", )))
 
         # create design views for 1r1w_init memories
         word_width = context.summary.frame["word_width"]
         for abstract in list(context.primitives.values()):  # snapshot
-            if (abstract.primitive_class.is_multimode
+            if getattr(abstract, "abstract_only", False):
+                continue
+
+            elif (abstract.primitive_class.is_multimode
                     and getattr(abstract, "memory_type", None) == "1r1w_init"):
+
                 lbdr = context.build_design_view_primitive(abstract.name,
                         key = abstract.key,
                         verilog_template = "1r1w.init.sim.tmpl.v",
                         verilog_dep_headers = ("prga_utils.vh", ))
-                lbdr.instantiate(
-                        context.database[ModuleView.design, "prga_ram_1r1w_byp"],
-                        "i_ram",
+                lbdr.instantiate( context.database[ModuleView.design, "prga_ram_1r1w_byp"], "i_ram",
                         verilog_parameters = {
                             "ADDR_WIDTH": "ADDR_WIDTH",
                             "DATA_WIDTH": "DATA_WIDTH",
@@ -215,8 +218,10 @@ class Frame(AbstractProgCircuitryEntry):
                             "ADDR_WIDTH": "ADDR_WIDTH",
                             "DATA_WIDTH": "DATA_WIDTH",
                             "PROG_ADDR_WIDTH": len(lbdr.ports["prog_addr"]),
-                            "PROG_DATA_WIDTH": len(lbdr.ports["prog_din"]),
+                            "PROG_DATA_WIDTH": word_width,
                             })
+
+                lbdr.commit()
 
                 abstract.modes["init"].instances["i_ram"].prog_parameters = {
                         "INIT": ProgDataBitmap(
@@ -224,9 +229,77 @@ class Frame(AbstractProgCircuitryEntry):
                             for i in range(1 << len(abstract.ports["waddr"]))
                             ),
                         }
-                abstract.modes["init"].instances["i_ram"].prog_magic_ignore = True
+                abstract.modes["init"].instances["i_ram"].prog_magic_suffix = None
+
+            elif (abstract.primitive_class.is_multimode
+                    and getattr(abstract, "memory_type", None) == "1r1w_init_frac"):
+
+                lbdr = context.build_design_view_primitive(abstract.name,
+                        key = abstract.key,
+                        verilog_template = "fracbram.init.tmpl.v",
+                        core_addr_width = abstract.core_addr_width)
+
+                dwidth = len(abstract.ports["din"])
+                num_slices = dwidth // word_width + (1 if dwidth % word_width > 0 else 0)
+                diff_addr_width = (num_slices - 1).bit_length()
+
+                cls._get_or_create_frame_prog_nets(lbdr.module, word_width,
+                        abstract.core_addr_width + diff_addr_width + 1)
+
+                lbdr.instantiate( cls._get_or_create_frame_wldec(context, 1, 2), "i_wldec" )
+                lbdr.instantiate( cls._get_or_create_frame_rbmerge(context, 2, 1), "i_rbmerge" )
+                mmctrl = BuiltinCellLibrary._get_or_create_multimode_memory_ctrl(context, abstract)
+                lbdr.instantiate( mmctrl, "i_frac" )
+                lbdr.instantiate(
+                        cls._get_or_create_frame_data_cell(context, mmctrl.prog_data_width),
+                        "i_modesel" )
+                lbdr.instantiate(
+                        context.database[ModuleView.design, "prga_frame_raminit"],
+                        "i_init",
+                        verilog_parameters = {
+                            "ADDR_WIDTH": "CORE_ADDR_WIDTH",
+                            "DATA_WIDTH": "DATA_WIDTH",
+                            "PROG_ADDR_WIDTH": abstract.core_addr_width + diff_addr_width,
+                            "PROG_DATA_WIDTH": word_width,
+                            })
+                lbdr.instantiate( context.database[ModuleView.design, "prga_ram_1r1w_byp"], "i_ram",
+                        verilog_parameters = {
+                            "ADDR_WIDTH": "CORE_ADDR_WIDTH",
+                            "DATA_WIDTH": "DATA_WIDTH",
+                            })
 
                 lbdr.commit()
+
+                modebitmap = ProgDataBitmap(
+                        (word_width << (abstract.core_addr_width + diff_addr_width), mmctrl.prog_data_width)
+                        )
+                initbitmap = ProgDataBitmap(
+                                (i * word_width << diff_addr_width, dwidth)
+                                for i in range(1 << abstract.core_addr_width)
+                                )
+
+                for mode_name, (prog_enable, _) in mmctrl.modes.items():
+                    i_ram = abstract.modes[mode_name].instances["i_ram"]
+                    i_ram.prog_enable = prog_enable.remap( modebitmap )
+                    i_ram.prog_magic_enable = prog_enable
+                    i_ram.prog_magic_suffix = "i_modesel.prog_data_o"
+
+                    # XXX: the code below implements the address mapping in the fracbramctrl module
+                    mode_dwidth = dwidth
+                    mode_bitmap = ProgDataBitmap( (0, dwidth << abstract.core_addr_width) )
+                    for mode_addr_width in range(abstract.core_addr_width, len(i_ram.pins["waddr"])):
+                        nd = mode_dwidth // 2
+                        remap = ProgDataBitmap(chain(
+                            iter( (i * mode_dwidth, nd) for i in range(1 << mode_addr_width) ),
+                            iter( (i * mode_dwidth + nd, nd) for i in range(1 << mode_addr_width) ),
+                            ))
+                        mode_bitmap = remap.remap(mode_bitmap, inplace = True)
+                        mode_dwidth = nd
+                    mode_bitmap.remap(initbitmap, inplace = True)
+
+                    init = i_ram.model.modes["init"].instances["i_ram"]
+                    init.prog_parameters = { "INIT": mode_bitmap }
+                    init.prog_magic_suffix = None
 
     @classmethod
     def _get_or_create_frame_prog_nets(cls, module, word_width, addr_width, excludes = None):

@@ -155,7 +155,7 @@ module implwrap (
                     case (inst[`PRGA_FRAME_INST_OPCODE_BASE +: `PRGA_FRAME_INST_OPCODE_WIDTH])
                         `PRGA_FRAME_INST_OPCODE_SOB: begin
                             if (inst[0+:24] != `PRGA_FRAME_INST_MAGIC_SOB) begin
-                                $display("[ERROR] [BS DWORD %06d] Magic number mismatch (SOB: 0x%llx)",
+                                $display("[ERROR] [BS DWORD %06d] Magic number mismatch (SOB: 0x%h)",
                                     pc, `PRGA_FRAME_INST_MAGIC_SOB);
                                 $finish;
                             end else begin
@@ -164,14 +164,14 @@ module implwrap (
                         end
                         `PRGA_FRAME_INST_OPCODE_NOP: begin
                             if (inst[0+:24] != `PRGA_FRAME_INST_MAGIC_NOP) begin
-                                $display("[ERROR] [BS DWORD %06d] Magic number mismatch (NOP: 0x%llx)",
+                                $display("[ERROR] [BS DWORD %06d] Magic number mismatch (NOP: 0x%h)",
                                     pc, `PRGA_FRAME_INST_MAGIC_NOP);
                                 $finish;
                             end
                         end
                         `PRGA_FRAME_INST_OPCODE_EOB: begin
                             if (inst[0+:24] != `PRGA_FRAME_INST_MAGIC_EOB) begin
-                                $display("[ERROR] [BS DWORD %06d] Magic number mismatch (EOB: 0x%llx)",
+                                $display("[ERROR] [BS DWORD %06d] Magic number mismatch (EOB: 0x%h)",
                                     pc, `PRGA_FRAME_INST_MAGIC_EOB);
                                 $finish;
                             end else begin
@@ -196,7 +196,7 @@ module implwrap (
                             state_next = PROG_DATA;
                         end
                         default: begin
-                            $display("[ERROR] [BS DWORD %06d] Unsupported or unknown opcode: 0x%01x",
+                            $display("[ERROR] [BS DWORD %06d] Unsupported or unknown opcode: 0x%01h",
                                 pc, inst[`PRGA_FRAME_INST_OPCODE_BASE +: `PRGA_FRAME_INST_OPCODE_WIDTH]);
                             $finish;
                         end

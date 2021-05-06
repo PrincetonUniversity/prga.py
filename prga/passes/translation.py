@@ -134,16 +134,19 @@ class Translation(AbstractPass):
             return design
 
         # make sure the abstract module is tranlatible
-        if not (module.module_class.is_slice or
+        if (module.module_class.is_slice or
                 module.module_class.is_block or
                 module.module_class.is_routing_box or
                 module.module_class.is_tile or
                 module.module_class.is_array): 
-            if self.create_blackbox_for_undefined_primitives and module.module_class.is_primitive:
-                pass
-            else:
-                raise PRGAInternalError("Cannot translate module '{}'. Its module class is {}"
-                        .format(module, module.module_class.name))
+            pass
+        elif (module.module_class.is_primitive
+                and not getattr(module, "abstract_only", False)
+                and self.create_blackbox_for_undefined_primitives):
+            pass
+        else:
+            raise PRGAInternalError("Cannot translate module '{}'. Its module class is {}"
+                    .format(module, module.module_class.name))
 
         # prepare the arguments for creating a new module
         kwargs = {
