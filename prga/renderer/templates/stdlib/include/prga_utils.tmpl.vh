@@ -7,4 +7,7 @@
     {%- endfor %}
     -1
 
+`define PRGA_MAX2(a,b) ((a) > (b) ? (a) : (b))
+`define PRGA_MIN2(a,b) ((a) < (b) ? (a) : (b))
+
 `endif /* PRGA_UTILS_VH */
