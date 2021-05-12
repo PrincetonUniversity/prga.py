@@ -28,139 +28,68 @@ module prga_yami_mprot_sys (
     // -- FIFO ---------------------------------------------------------------
     , input wire                                        fifo_mfc_full
     , output reg                                        fifo_mfc_wr
-    , output reg [`PRGA_YAMI_MFC_FIFO_DATA_WIDTH-1:0]   fifo_mfc_data
+    , output reg [`PRGA_YAMI_MFC_FIFO_ELEM_WIDTH-1:0]   fifo_mfc_data
 
     , output reg                                        fifo_fmc_rd
     , input wire                                        fifo_fmc_empty
-    , input wire [`PRGA_YAMI_FMC_FIFO_DATA_WIDTH-1:0]   fifo_fmc_data
+    , input wire [`PRGA_YAMI_FMC_FIFO_ELEM_WIDTH-1:0]   fifo_fmc_data
 
-    // -- FMC/R (fabric-memory request channel) ------------------------------
-    , input wire                                        fmr_rdy
-    , output reg                                        fmr_vld
-    , output wire [`PRGA_YAMI_FMC_REQTYPE_WIDTH-1:0]    fmr_type
-    , output wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]       fmr_addr
-    , output wire [`PRGA_YAMI_THREAD_WIDTH-1:0]         fmr_thread
-    , output wire [`PRGA_YAMI_SIZE_WIDTH-1:0]           fmr_size
-    , output wire [`PRGA_YAMI_LEN_WIDTH-1:0]            fmr_len
+    // -- FMC (fabric-memory channel) ----------------------------------------
+    , input wire                                        fmc_rdy
+    , output reg                                        fmc_vld
+    , output wire [`PRGA_YAMI_REQTYPE_WIDTH-1:0]        fmc_type
+    , output wire [`PRGA_YAMI_SIZE_WIDTH-1:0]           fmc_size
+    , output wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]       fmc_addr
+    , output wire [`PRGA_YAMI_FMC_DATA_WIDTH-1:0]       fmc_data
 
-    // -- FMC/D (fabric-memory data channel) ---------------------------------
-    , input wire                                        fmd_rdy
-    , output reg                                        fmd_vld
-    , output wire [`PRGA_YAMI_FMC_DATA_WIDTH-1:0]       fmd_data
-
-    // -- MFC/R (memory-fabric response channel) -----------------------------
-    , output reg                                        mfr_rdy
-    , input wire                                        mfr_vld
-    , input wire [`PRGA_YAMI_MFC_RESPTYPE_WIDTH-1:0]    mfr_type
-    , input wire [`PRGA_YAMI_THREAD_WIDTH-1:0]          mfr_thread
-    , input wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]        mfr_addr
-    , input wire [`PRGA_YAMI_LEN_WIDTH-1:0]             mfr_len     // required only because this is not an endpoint
-
-    // -- MFC/D (memory-fabric data channel) ---------------------------------
-    , output reg                                        mfd_rdy
-    , input wire                                        mfd_vld
-    , input wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]        mfd_data
+    // -- MFC (memory-fabric channel) ----------------------------------------
+    , output reg                                        mfc_rdy
+    , input wire                                        mfc_vld
+    , input wire [`PRGA_YAMI_RESPTYPE_WIDTH-1:0]        mfc_type
+    , input wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]        mfc_addr
+    , input wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]        mfc_data
     );
 
     // =======================================================================
     // == FMC channel ========================================================
     // =======================================================================
 
-    // -- FSM ----------------------------------------------------------------
-    localparam  FMC_STATE_WIDTH     = 2;
-    localparam  FMC_STATE_RESET     = 2'd0,
-                FMC_STATE_HDR       = 2'd1,
-                FMC_STATE_PLD       = 2'd2;
-
-    reg [FMC_STATE_WIDTH-1:0]               fmc_state, fmc_state_next;
-    reg [`PRGA_YAMI_SIZE_WIDTH-1:0]         fmc_payload, fmc_payload_next;
-
-    always @(posedge clk) begin
-        if (~rst_n) begin
-            fmc_state   <= FMC_STATE_RESET;
-            fmc_payload <= { `PRGA_YAMI_FMC_SIZE_WIDTH {1'b0} };
-        end else begin
-            fmc_state   <= fmc_state_next;
-            fmc_payload <= fmc_payload_next;
-        end
-    end
-
-    // -- decode header ------------------------------------------------------
-
-    assign fmr_type         = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_HDR_REQTYPE_INDEX];
-    assign fmr_addr         = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_HDR_ADDR_INDEX];
-    assign fmr_thread       = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_HDR_THREAD_INDEX];
-    assign fmr_size         = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_HDR_SIZE_INDEX];
-    assign fmr_len          = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_HDR_LEN_INDEX];
-    assign fmd_data         = fifo_fmc_data[0 +: `PRGA_YAMI_FMC_DATA_WIDTH];
-    assign creg_resp_data   = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_HDR_CREG_DATA_INDEX];
+    // -- decode FIFO elemenet -----------------------------------------------
+    assign fmc_type             = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_REQTYPE_INDEX];
+    assign fmc_size             = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_SIZE_INDEX];
+    assign fmc_addr             = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_ADDR_INDEX];
+    assign fmc_data             = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_DATA_INDEX];
+    assign creg_resp_data       = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_CREG_DATA_INDEX];
 
     always @* begin
         creg_resp_vld = 1'b0;
         fifo_fmc_rd = 1'b0;
-        fmr_vld = 1'b0;
-        fmd_vld = 1'b0;
-        fmc_state_next = fmc_state;
-        fmc_payload_next = fmc_payload;
+        fmc_vld = 1'b0;
 
-        case (fmc_state)
-            FMC_STATE_RESET:
-                fmc_state_next = FMC_STATE_HDR;
-
-            FMC_STATE_HDR: begin
-                case (fmr_type)
-                    `PRGA_YAMI_FMC_REQTYPE_CREG_ACK: begin
-                        creg_resp_vld = !fifo_fmc_empty;
-                        fifo_fmc_rd = creg_resp_rdy;
-                    end
-
-                    `PRGA_YAMI_FMC_REQTYPE_LOAD,
-                    `PRGA_YAMI_FMC_REQTYPE_LOAD_NC,
-                    `PRGA_YAMI_FMC_REQTYPE_LOAD_REP_NC,
-                    `PRGA_YAMI_FMC_REQTYPE_AMO_LR: begin
-                        // memory requests without payload
-                        fifo_fmc_rd = fmr_rdy;
-                        fmr_vld = !fifo_fmc_empty;
-                    end
-
-                    `PRGA_YAMI_FMC_REQTYPE_STORE,
-                    `PRGA_YAMI_FMC_REQTYPE_STORE_NC,
-                    `PRGA_YAMI_FMC_REQTYPE_STORE_REP_NC,
-                    `PRGA_YAMI_FMC_REQTYPE_AMO_SC,
-                    `PRGA_YAMI_FMC_REQTYPE_AMO_SWAP,
-                    `PRGA_YAMI_FMC_REQTYPE_AMO_ADD,
-                    `PRGA_YAMI_FMC_REQTYPE_AMO_AND,
-                    `PRGA_YAMI_FMC_REQTYPE_AMO_OR,
-                    `PRGA_YAMI_FMC_REQTYPE_AMO_XOR,
-                    `PRGA_YAMI_FMC_REQTYPE_AMO_MAX,
-                    `PRGA_YAMI_FMC_REQTYPE_AMO_MAXU,
-                    `PRGA_YAMI_FMC_REQTYPE_AMO_MIN,
-                    `PRGA_YAMI_FMC_REQTYPE_AMO_MINU: begin
-                        // memory requests with payload
-                        fifo_fmc_rd = fmr_rdy;
-                        fmr_vld = !fifo_fmc_empty;
-
-                        if (fmr_rdy && !fifo_fmc_empty) begin
-                            fmc_state_next = FMC_STATE_PLD;
-                            fmc_payload_next = fmr_len;
-                        end
-                    end
-                endcase
+        case (fmc_type)
+            `PRGA_YAMI_REQTYPE_CREG_ACK: begin
+                fifo_fmc_rd = creg_resp_rdy;
+                creg_resp_vld = !fifo_fmc_empty;
             end
 
-            FMC_STATE_PLD: begin
-                fifo_fmc_rd = fmd_rdy;
-                fmd_vld = !fifo_fmc_empty;
-
-                if (fmd_rdy && !fifo_fmc_empty) begin
-                    if (|fmc_payload) begin
-                        fmc_payload_next = fmc_payload - 1;
-                    end else begin
-                        fmc_state_next = FMC_STATE_HDR;
-                    end
-                end
+            `PRGA_YAMI_REQTYPE_LOAD,
+            `PRGA_YAMI_REQTYPE_LOAD_NC,
+            `PRGA_YAMI_REQTYPE_STORE,
+            `PRGA_YAMI_REQTYPE_STORE_NC,
+            `PRGA_YAMI_REQTYPE_AMO_LR,
+            `PRGA_YAMI_REQTYPE_AMO_SC,
+            `PRGA_YAMI_REQTYPE_AMO_SWAP
+            `PRGA_YAMI_REQTYPE_AMO_ADD,
+            `PRGA_YAMI_REQTYPE_AMO_AND,
+            `PRGA_YAMI_REQTYPE_AMO_OR,
+            `PRGA_YAMI_REQTYPE_AMO_XOR,
+            `PRGA_YAMI_REQTYPE_AMO_MAX,
+            `PRGA_YAMI_REQTYPE_AMO_MAXU
+            `PRGA_YAMI_REQTYPE_AMO_MIN,
+            `PRGA_YAMI_REQTYPE_AMO_MINU: begin
+                fifo_fmc_rd = fmc_rdy;
+                fmc_vld = !fifo_fmc_empty;
             end
-
         endcase
     end
 
@@ -168,128 +97,23 @@ module prga_yami_mprot_sys (
     // == MFC channel ========================================================
     // =======================================================================
 
-    // -- disassemble multi-FIFO-element data --------------------------------
-    localparam  MFC_FIFO_ELEM_OFFSET_WIDTH = `PRGA_MAX2( 0, `PRGA_YAMI_MFC_DATA_BYTES_LOG2 - `PRGA_YAMI_MFC_FIFO_DATA_BYTES_LOG2 );
-
-    reg                                         mfd_data_elem_consume;
-    wire                                        mfd_data_last_elem;
-    reg [`PRGA_YAMI_MFC_FIFO_DATA_WIDTH-1:0]    mfd_data_elem;
-
-    generate
-        if (MFC_FIFO_ELEM_OFFSET_WIDTH == 0) begin
-            localparam  MFC_DATA_PER_FIFO_ELEM = `PRGA_YAMI_MFC_FIFO_DATA_WIDTH / `PRGA_YAMI_MFC_DATA_WIDTH;
-            always @* begin
-                mfd_data_elem = { MFC_DATA_PER_FIFO_ELEM {mfd_data} };
-            end
-
-            assign mfd_data_last_elem = 1'b1;
-
-        end else begin
-            localparam  MFC_FIFO_ELEMS_PER_DATA = 1 << MFC_FIFO_ELEM_OFFSET_WIDTH;
-
-            reg [MFC_FIFO_ELEM_OFFSET_WIDTH-1:0]        mfd_data_elem_offset;
-            wire [`PRGA_YAMI_MFC_FIFO_DATA_WIDTH-1:0]   mfd_data_elems  [0:MFC_FIFO_ELEMS_PER_DATA-1];
-
-            always @(posedge clk) begin
-                if (~rst_n) begin
-                    mfd_data_elem_offset    <= { MFC_FIFO_ELEM_OFFSET_WIDTH {1'b0} };
-                end else begin
-                    mfd_data_elem_offset    <= mfd_data_elem_consume ? (mfd_data_elem_offset + 1) : mfd_data_elem_offset;
-                end
-            end
-
-            integer gv_mfd_data;
-            for (gv_mfd_data = 0; gv_mfd_data < MFC_FIFO_ELEMS_PER_DATA; gv_mfd_data = gv_mfd_data + 1) begin: g_mfd_data
-                assign mfd_data_elems[gv_mfd_data] = mfd_data[gv_mfd_data * `PRGA_YAMI_MFC_FIFO_DATA_WIDTH +: `PRGA_YAMI_MFC_FIFO_DATA_WIDTH];
-            end
-
-            always @* begin
-                mfd_data_elem = mfd_data_elems[mfd_data_elem_offset];
-            end
-
-            assign mfd_data_last_elem = &mfd_data_elem_offset;
-
-        end
-    endgenerate
-
-    // -- FSM ----------------------------------------------------------------
-    localparam  MFC_STATE_WIDTH     = 2;
-    localparam  MFC_STATE_RESET     = 2'd0,
-                MFC_STATE_HDR       = 2'd1,
-                MFC_STATE_PLD       = 2'd2;
-
-    reg [MFC_STATE_WIDTH-1:0]                   mfc_state, mfc_state_next;
-    reg [`PRGA_YAMI_LEN_WIDTH-1:0]              mfc_payload, mfc_payload_next;
-
-    always @(posedge clk) begin
-        if (~rst_n) begin
-            mfc_state   <= MFC_STATE_RESET;
-            mfc_payload <= { `PRGA_YAMI_LEN_WIDTH {1'b0} };
-        end else begin
-            mfc_state   <= mfc_state_next;
-            mfc_payload <= mfc_payload_next;
-        end
-    end
-
     always @* begin
-        creg_req_rdy = 1'b0;
+        creg_req_rdy = !fifo_mfc_full;
+        mfc_rdy = !creg_req_vld && !fifo_mfc_full;
+        fifo_mfc_wr = creg_req_vld || mfc_vld;
+        fifo_mfc_data = { `PRGA_YAMI_MFC_FIFO_ELEM_WIDTH {1'b0} };
 
-        fifo_mfc_wr = 1'b0;
-        fifo_mfc_data = { `PRGA_YAMI_FMC_FIFO_DATA_WIDTH {1'b0} };
-
-        mfr_rdy = 1'b0;
-        mfd_rdy = 1'b0;
-        mfd_data_elem_consume = 1'b0;
-
-        mfc_state_next = mfc_state;
-        mfc_payload_next = mfc_payload;
-
-        case (mfc_state)
-            MFC_STATE_RESET:
-                mfc_state_next = MFC_STATE_HDR;
-
-            MFC_STATE_HDR: begin
-                creg_req_rdy = !fifo_mfc_full;
-
-                if (creg_req_vld) begin
-                    fifo_mfc_wr = 1'b1;
-                    fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_HDR_RESPTYPE_INDEX] = creg_req_we
-                                                                            ? `PRGA_YAMI_MFC_RESPTYPE_CREG_STORE
-                                                                            : `PRGA_YAMI_MFC_RESPTYPE_CREG_LOAD;
-                    fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_HDR_CREG_ADDR_INDEX] = creg_req_addr;
-                    fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_HDR_CREG_DATA_INDEX] = creg_req_data;
-
-                end else begin
-                    fifo_mfc_wr = mfr_vld;
-                    fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_HDR_RESPTYPE_INDEX] = mfr_type;
-                    fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_HDR_LEN_INDEX]       = mfr_len;
-                    fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_HDR_THREAD_INDEX]    = mfr_thread;
-                    fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_HDR_ADDR_INDEX]      = mfr_addr;
-
-                    mfr_rdy = !fifo_mfc_full;
-                    case (mfr_type)
-                        `PRGA_YAMI_MFC_RESPTYPE_LOAD_ACK,
-                        `PRGA_YAMI_MFC_RESPTYPE_AMO_DATA: if (mfr_vld && !fifo_mfc_full) begin
-                            mfc_state_next = MFC_STATE_PLD;
-                            mfc_payload_next = mfr_len;
-                        end
-                    endcase
-                end
-            end
-                
-            MFC_STATE_PLD: begin
-                fifo_mfc_wr = mfd_vld;
-                fifo_mfc_data = mfd_data_elem;
-                mfd_rdy = !fifo_mfc_full && mfd_data_last_elem;
-                mfd_data_elem_consume = mfd_vld && !fifo_mfc_full;
-
-                if (mfd_vld && !fifo_mfc_full && mfd_data_last_elem)
-                    if (mfc_payload)
-                        mfc_payload_next = mfc_payload - 1;
-                    else
-                        mfc_state_next = MFC_STATE_HDR;
-            end
-        endcase
+        if (creg_req_vld) begin
+            fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_RESPTYPE_INDEX] = creg_req_we
+                                                                ? `PRGA_YAMI_RESPTYPE_CREG_STORE
+                                                                : `PRGA_YAMI_RESPTYPE_CREG_LOAD;
+            fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_CREG_ADDR_INDEX] = creg_req_addr;
+            fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_CREG_DATA_INDEX] = creg_req_data;
+        end else begin
+            fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_RESPTYPE_INDEX] = mfc_type;
+            fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_ADDR_INDEX] = mfc_addr;
+            fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_DATA_INDEX] = mfc_data;
+        end
     end
 
 endmodule
