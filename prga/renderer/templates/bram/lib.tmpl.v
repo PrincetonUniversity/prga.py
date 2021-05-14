@@ -35,7 +35,6 @@
     end
 {%- endmacro -%}
 {%- set dualport = "addr1" in module.ports %}
-`timescale 1ns/1ps
 module {{ module.vpr_model }} #(
     {% if dualport %}
     parameter   ADDR_WIDTH = {{ module.ports.addr1|length }};
