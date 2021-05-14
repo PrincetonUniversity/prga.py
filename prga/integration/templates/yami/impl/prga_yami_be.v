@@ -2,14 +2,14 @@
 `timescale 1ns/1ps
 
 /*
-* Memory Protection Layer in fabric clock domain.
+* Memory Protection Layer in fabric clock domain (backend).
 */
 
 `include "prga_utils.vh"
 `include "prga_yami.vh"
 `default_nettype none
 
-module prga_yami_mprot_fbrc #(
+module prga_yami_be #(
     parameter   DEFAULT_FEATURES    = `PRGA_YAMI_CREG_FEATURE_LOAD | `PRGA_YAMI_CREG_FEATURE_STORE
     , parameter DEFAULT_TIMEOUT     = 32'd1000
 ) (
@@ -108,14 +108,14 @@ module prga_yami_mprot_fbrc #(
     end
 
     // -- error message --
-    reg [`PRGA_YAMI_CREG_DATA_WIDTH-1:0]    creg_errcode, creg_errcode_next;
+    reg [`PRGA_YAMI_CREG_ERRCODE_WIDTH-1:0] creg_errcode, creg_errcode_next;
     always @(posedge clk) begin
         if (~rst_n)
-            creg_errcode    <= { `PRGA_YAMI_CREG_DATA_WIDTH {1'b0} };
+            creg_errcode    <= { `PRGA_YAMI_CREG_ERRCODE_WIDTH {1'b0} };
         else if (event_error)
             creg_errcode    <= creg_errcode_next;
         else if (creg_activate)
-            creg_errcode    <= { `PRGA_YAMI_CREG_DATA_WIDTH {1'b0} };
+            creg_errcode    <= { `PRGA_YAMI_CREG_ERRCODE_WIDTH {1'b0} };
     end
 
     // =======================================================================
@@ -189,7 +189,7 @@ module prga_yami_mprot_fbrc #(
                         fmc_creg_data = creg_timeout;
 
                     `PRGA_YAMI_CREG_ADDR_ERRCODE:
-                        fmc_creg_data = creg_errcode;
+                        fmc_creg_data[0 +: `PRGA_YAMI_CREG_ERRCODE_WIDTH] = creg_errcode;
                 endcase
             end
 
@@ -344,12 +344,12 @@ module prga_yami_mprot_fbrc #(
         fifo_fmc_data = { `PRGA_YAMI_FMC_FIFO_ELEM_WIDTH {1'b0} };
         fmc_rdy = 1'b0;
         event_error = 1'b0;
-        creg_errcode_next = { `PRGA_YAMI_CREG_DATA_WIDTH {1'b0} };
+        creg_errcode_next = { `PRGA_YAMI_CREG_ERRCODE_WIDTH {1'b0} };
 
         if (fmc_creg_vld) begin
             fifo_fmc_wr = 1'b1;
             fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_REQTYPE_INDEX] = `PRGA_YAMI_REQTYPE_CREG_ACK];
-            fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_CREG_DATA_INDEX] = fmc_creg_data;
+            fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_DATA_INDEX] = fmc_creg_data;
         end else if (yami_active) begin
             fmc_rdy = !fifo_fmc_full;
 

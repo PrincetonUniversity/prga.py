@@ -2,14 +2,14 @@
 `timescale 1ns/1ps
 
 /*
-* Memory Protection Layer in fabric clock domain.
+* Memory Protection Layer in system clock domain (frontend).
 */
 
 `include "prga_utils.vh"
 `include "prga_yami.vh"
 `default_nettype none
 
-module prga_yami_mprot_sys (
+module prga_yami_fe (
     // -- Interface Ctrl -----------------------------------------------------
     input wire                                          clk
     , input wire                                        rst_n
@@ -59,7 +59,7 @@ module prga_yami_mprot_sys (
     assign fmc_size             = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_SIZE_INDEX];
     assign fmc_addr             = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_ADDR_INDEX];
     assign fmc_data             = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_DATA_INDEX];
-    assign creg_resp_data       = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_CREG_DATA_INDEX];
+    assign creg_resp_data       = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_DATA_INDEX];
 
     always @* begin
         creg_resp_vld = 1'b0;
