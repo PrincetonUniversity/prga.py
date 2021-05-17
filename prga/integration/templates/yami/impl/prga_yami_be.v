@@ -15,8 +15,9 @@ module prga_yami_be #(
     // -- Interface Ctrl -----------------------------------------------------
     input wire                                          clk
     , input wire                                        rst_n
-    , output wire                                       err_o       // error signal out
-    , input wire                                        shutdown_i  // quick shutdown
+    , output wire                                       err_o           // error signal to RXI
+    , input wire                                        deactivate_i    // deactivation from RXI
+    , input wire                                        activate_i      // activation from RXI
 
     // -- FIFO ---------------------------------------------------------------
     , input wire                                        fifo_fmc_full
@@ -62,11 +63,11 @@ module prga_yami_be #(
 
                 `PRGA_YAMI_CREG_STATUS_INACTIVE,
                 `PRGA_YAMI_CREG_STATUS_ERROR:
-                    status  <= creg_activate ? `PRGA_YAMI_CREG_STATUS_ACTIVE : status;
+                    status  <= creg_activate || activate_i ? `PRGA_YAMI_CREG_STATUS_ACTIVE : status;
 
                 `PRGA_YAMI_CREG_STATUS_ACTIVE:
                     status  <= event_error ? `PRGA_YAMI_CREG_STATUS_ERROR :
-                               creg_deactivate || shutdown_i ? `PRGA_YAMI_CREG_STATUS_INACTIVE : status;
+                               creg_deactivate || deactivate_i ? `PRGA_YAMI_CREG_STATUS_INACTIVE : status;
             endcase
     end
 

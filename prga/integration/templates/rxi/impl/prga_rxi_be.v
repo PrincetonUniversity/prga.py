@@ -15,7 +15,8 @@ module prga_rxi_fe #(
     input wire                                          clk
     , input wire                                        rst_n
     , input wire [NUM_YAMI-1:0]                         yami_err_i
-    , output wire [NUM_YAMI-1:0]                        yami_shutdown_o
+    , output wire                                       yami_deactivate_o
+    , output wire [NUM_YAMI-1:0]                        yami_activate_o
 
     // -- FE -> BE Async FIFO ------------------------------------------------
     , output reg                                        f2b_rd
@@ -74,7 +75,7 @@ module prga_rxi_fe #(
 
     wire rxi_active;
     assign rxi_active = status == `PRGA_RXI_STATUS_ACTIVE;
-    assign yami_shutdown_o = !rxi_active;
+    assign yami_deactivate_o = !rxi_active;
 
     // -- app reset --
     reg                             app_rst_countdown_rst;
@@ -128,6 +129,19 @@ module prga_rxi_fe #(
             b2f_errcode_unsynced    <= 1'b0;
         end
     end
+
+    // -- YAMI enable --
+    reg [NUM_YAMI-1:0]          yami_enable, yami_enable_next;
+
+    always @(posedge clk) begin
+        if (~rst_n) begin
+            yami_enable     <= { NUM_YAMI {1'b0} };
+        end else begin
+            yami_enable     <= yami_enable_next;
+        end
+    end
+
+    assign yami_activate_o = { NUM_YAMI {rxi_active} } & yami_enable;
 
     // =======================================================================
     // -- Application - RXI Channel ------------------------------------------ 
@@ -231,6 +245,7 @@ module prga_rxi_fe #(
         event_deactivate = 1'b0;
         app_rst_countdown_rst = 1'b0;
         timeout_limit_next = timeout_limit;
+        yami_enable_next = yami_enable;
 
         prq_din = PRQ_TOKEN_FWD;
         prq_wr = 1'b0;
@@ -288,6 +303,11 @@ module prga_rxi_fe #(
                 // request
                 `PRGA_RXI_NSRID_SOFTREG_TIMEOUT: if (!f2b_empty) begin
                     timeout_limit_next = f2b_data;
+                end
+
+                // update YAMI enable state as soon as we see this
+                `PRGA_RXI_NSRID_ENABLE_YAMI: if (!f2b_empty) begin
+                        yami_enable_next = f2b_data[0 +: NUM_YAMI];
                 end
             endcase
         end

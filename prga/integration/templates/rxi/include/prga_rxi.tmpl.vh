@@ -207,7 +207,13 @@
 */
 `define PRGA_RXI_NSRID_PROG_RST         5
 
-// #6 - #7: reserved
+/* #6: YAMI array
+*
+*   Enable YAMI instances
+*/
+`define PRGA_RXI_NSRID_ENABLE_YAMI      6
+
+// #7: reserved
 
 /* #8 - #15: scratchpads (8x registers)
 *

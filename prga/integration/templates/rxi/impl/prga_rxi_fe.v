@@ -138,14 +138,26 @@ module prga_rxi_fe #(
         );
 
     // -- soft register timeout --
-    reg                                 timeout_limit_we;
-    reg [`PRGA_RXI_DATA_WIDTH-1:0]      timeout_limit;
+    reg                             timeout_limit_we;
+    reg [`PRGA_RXI_DATA_WIDTH-1:0]  timeout_limit;
 
     always @(posedge clk) begin
         if (~rst_n) begin
             timeout_limit <= { `PRGA_RXI_DATA_WIDTH {1'b0} };
         end else if (timeout_limit_we) begin
             timeout_limit <= s_req_data;
+        end
+    end
+
+    // -- YAMI enable state --
+    reg                             yami_enable_we;
+    reg [`PRGA_RXI_DATA_WIDTH-1:0]  yami_enable;
+
+    always @(posedge clk) begin
+        if (~rst_n) begin
+            yami_enable <= { `PRGA_RXI_DATA_WIDTH {1'b0} };
+        end else if (yami_enable_we) begin
+            yami_enable <= s_req_data;
         end
     end
 
@@ -398,6 +410,7 @@ module prga_rxi_fe #(
         event_deactivate = 1'b0;
         clkdiv_factor_we = 1'b0;
         timeout_limit_we = 1'b0;
+        yami_enable_we = 1'b0;
         prog_rst_countdown_rst = 1'b0;
         scratchpad_strb = { `PRGA_RXI_DATA_BYTES {1'b0} };
         iq_wr = { `PRGA_RXI_NUM_HSR_IQS {1'b0} };
@@ -520,6 +533,21 @@ module prga_rxi_fe #(
             // load does nothing and returns bogus data
             buffer_bogus;
             prog_rst_countdown_rst = s_req_vld && !prq_full && &s_req_strb;
+        end
+
+        // -- YAMI enable --
+        // -----------------
+        else if (s_req_id == `PRGA_RXI_NSRID_ENABLE_YAMI) begin
+
+            // store needs to be forwarded into the application clock domain
+            if (&s_req_strb) begin
+                forward_f2b;
+                yami_enable_we = s_req_vld && !f2b_full && !prq_full;
+            end
+
+            // buffer load response
+            else
+                buffer_response(yami_enable);
         end
 
         // -- reserved control register space --
