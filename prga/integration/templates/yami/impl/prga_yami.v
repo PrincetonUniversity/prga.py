@@ -20,7 +20,7 @@ module prga_yami #(
     // -- Ctrl Registers -----------------------------------------------------
     , output wire                                       creg_req_rdy
     , input wire                                        creg_req_vld
-    , input wire                                        creg_req_we
+    , input wire [`PRGA_YAMI_CREG_DATA_BYTES-1:0]       creg_req_strb
     , input wire [`PRGA_YAMI_CREG_ADDR_WIDTH-1:0]       creg_req_addr
     , input wire [`PRGA_YAMI_CREG_DATA_WIDTH-1:0]       creg_req_data
 
@@ -88,7 +88,7 @@ module prga_yami #(
         ,.rdy_o             (creg_req_rdy)
         ,.val_i             (creg_req_vld)
         ,.data_i            ({
-            creg_req_we
+            &creg_req_strb
             , creg_req_addr
             , creg_req_data
         })

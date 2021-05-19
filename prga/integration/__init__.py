@@ -1,4 +1,4 @@
-from .common import SystemIntf, ProgIntf, FabricIntf
+from .common import SystemIntf, FabricIntf
 from .integration import Integration
 
-__all__ = ["SystemIntf", "ProgIntf", "FabricIntf", "Integration"]
+__all__ = ["SystemIntf", "FabricIntf", "Integration"]

@@ -9,6 +9,7 @@ from ...passes.base import AbstractPass
 from ...passes.translation import SwitchDelegate
 from ...renderer.lib import BuiltinCellLibrary
 from ...integration import Integration
+from ...integration.rxi_yami import IntegrationRXIYAMI
 from ...exception import PRGAInternalError
 from ...tools.ioplan import IOPlanner
 from ...util import uno, Object, Enum
@@ -443,6 +444,34 @@ class Pktchain(Scanchain):
             mis(mod, db[mvl, "pktchain_frame_disassemble"], "ofifo")
             db[mvl, "pktchain_gatherer"] = mod
 
+        # register generic programming controller
+        if True:
+            mod = Module("pktchain_ctrl",
+                    is_cell = True,
+                    view = mvl,
+                    module_class = ModuleClass.aux,
+                    verilog_template = "pktchain_ctrl.v",
+                    verilog_dep_headers = ("pktchain_system.vh", ))
+            # create ports
+            Integration._create_intf_ports_syscon(mod, True)
+            ModuleUtils.create_port(mod, "frame_i_rd", 1, "output")
+            ModuleUtils.create_port(mod, "frame_i_empty", 1, "input")
+            ModuleUtils.create_port(mod, "frame_i", 32, "input")
+            ModuleUtils.create_port(mod, "err_resp_inval", 1, "output")
+            ModuleUtils.create_port(mod, "err_bitstream_corrupted", 1, "output")
+            ModuleUtils.create_port(mod, "err_bitstream_incomplete", 1, "output")
+            ModuleUtils.create_port(mod, "err_bitstream_redundant", 1, "output")
+            ModuleUtils.create_port(mod, "prog_rst", 1, PortDirection.output)
+            ModuleUtils.create_port(mod, "prog_done", 1, PortDirection.output)
+            cls._get_or_create_pktchain_fifo_nets(mod, phit_width)
+
+            # sub-instances (hierarchy-only)
+            mis(mod, db[mvl, "prga_ram_1r1w_byp"], "prga_ram_1r1w_byp")
+            mis(mod, db[mvl, "pktchain_frame_disassemble"], "pktchain_frame_disassemble")
+            mis(mod, db[mvl, "pktchain_frame_assemble"], "pktchain_frame_assemble")
+
+            db[mvl, mod.name] = mod
+
         # register pktchain programming controller backend
         if True:
             mod = Module("prga_be_prog_pktchain",
@@ -706,7 +735,9 @@ class Pktchain(Scanchain):
             self.fabric_wrapper = fabric_wrapper
             self.prog_be_in_wrapper = prog_be_in_wrapper
             
-        def run(self, context, renderer = None):
+        def run(self, context):
+            renderer = context.renderer
+
             # build system
             Integration.build_system_piton_vanilla(context,
                     name = self.name, fabric_wrapper = self.fabric_wrapper)
@@ -807,3 +838,163 @@ class Pktchain(Scanchain):
         @property
         def passes_after_self(self):
             return ("rtl", )
+
+    class BuildSystemRXIYAMI(AbstractPass):
+        """Create a system for SoC integration, using RXI/YAMI interfaces."""
+
+        __slots__ = ["io_constraints_f", "name", "fabric_wrapper", "prog_be_in_wrapper",
+                "rxi_addr_width", "rxi_data_bytes_log2", "num_yami",
+                "yami_fmc_addr_width", "yami_fmc_data_bytes_log2",
+                "yami_mfc_addr_width", "yami_mfc_data_bytes_log2",
+                "yami_cacheline_bytes_log2"]
+
+        def __init__(self, io_constraints_f = "io.pads", *,
+                name = "prga_system", fabric_wrapper = None, prog_be_in_wrapper = False,
+                rxi_addr_width = 12, rxi_data_bytes_log2 = 3, num_yami = 1,
+                yami_fmc_addr_width = 40, yami_fmc_data_bytes_log2 = 3,
+                yami_mfc_addr_width = 16, yami_mfc_data_bytes_log2 = 4,
+                yami_cacheline_bytes_log2 = 4):
+
+            if prog_be_in_wrapper and fabric_wrapper is None:
+                raise PRGAAPIError("`fabric_wrapper` must be set when `prog_be_in_wrapper` is set")
+
+            self.io_constraints_f = io_constraints_f
+            self.name = name
+            self.fabric_wrapper = fabric_wrapper
+            self.prog_be_in_wrapper = prog_be_in_wrapper
+            self.rxi_addr_width = rxi_addr_width
+            self.rxi_data_bytes_log2 = rxi_data_bytes_log2
+            self.num_yami = num_yami
+            self.yami_fmc_addr_width = yami_fmc_addr_width
+            self.yami_fmc_data_bytes_log2 = yami_fmc_data_bytes_log2
+            self.yami_mfc_addr_width = yami_mfc_addr_width
+            self.yami_mfc_data_bytes_log2 = yami_mfc_data_bytes_log2
+            self.yami_cacheline_bytes_log2 = yami_cacheline_bytes_log2
+
+        @property
+        def key(self):
+            return "system.pktchain.rxi_yami"
+
+        @property
+        def passes_after_self(self):
+            return ("rtl", )
+
+        def run(self, context):
+            renderer = context.renderer
+
+            # build system
+            IntegrationRXIYAMI.build_system(context,
+                    rxi_addr_width              = self.rxi_addr_width,
+                    rxi_data_bytes_log2         = self.rxi_data_bytes_log2,
+                    num_yami                    = self.num_yami,
+                    yami_fmc_addr_width         = self.yami_fmc_addr_width,
+                    yami_fmc_data_bytes_log2    = self.yami_fmc_data_bytes_log2,
+                    yami_mfc_addr_width         = self.yami_mfc_addr_width,
+                    yami_mfc_data_bytes_log2    = self.yami_mfc_data_bytes_log2,
+                    yami_cacheline_bytes_log2   = self.yami_cacheline_bytes_log2,
+                    name                        = self.name,
+                    fabric_wrapper              = self.fabric_wrapper,
+                    )
+
+            # get system top module
+            system = context.system_top
+
+            # register prog_be header and module
+            context.add_verilog_header("prga_rxi_pktchain.vh", "rxi/include/prga_rxi_pktchain.vh",
+                    "prga_rxi.vh", "pktchain.vh")
+            # create module
+            m_be = context._add_module(Module("prga_rxi_be_prog_pktchain",
+                is_cell = True,
+                view = ModuleView.design,
+                module_class = ModuleClass.aux,
+                verilog_template = "rxi/prga_rxi_be_prog_pktchain.tmpl.v",
+                verilog_dep_headers = ("prga_rxi.vh", "prga_rxi_pktchain.vh")))
+            # create ports
+            IntegrationRXIYAMI._create_ports_syscon(m_be, slave = True)
+            IntegrationRXIYAMI._create_ports_rxi(m_be, slave = True, prog = True, fabric = True,
+                    prefix = "prog_", addr_width = 4, data_bytes_log2 = self.rxi_data_bytes_log2)
+            cls._get_or_create_pktchain_fifo_nets(m_be, context.summary.pktchain["fabric"]["phit_width"])
+            # instantiate sub-instances
+            for sub in ("prga_valrdy_buf", "prga_fifo", "prga_fifo_resizer", "pktchain_ctrl"):
+                ModuleUtils.instantiate(m_be, context.database[ModuleView.design, sub], sub)
+
+            rxi_slave = None
+            prog_master, prog_slave = None, None
+
+            # instantiate and connect
+            if self.fabric_wrapper and self.prog_be_in_wrapper:
+                core = rxi_slave = system.instances["i_core"]               # fabric wrapper
+                fabric = prog_slave = core.model.instances["i_fabric"]      # fabric instance
+                i_be = prog_master = ModuleUtils.instantiate(core.model, m_be, "i_be")
+
+                # create programming ports in the wrapper
+                core_ports = IntegrationRXIYAMI._create_ports_syscon(core.model, slave = True)
+                core_ports.update(IntegrationRXIYAMI._create_ports_rxi(core.model, prefix = "prog_", prog = True,
+                    addr_width = 4, data_bytes_log2 = self.rxi_data_bytes_log2))
+
+                # connect
+                for name, port in core_ports.items():
+                    if name in ("clk", "rst_n"):
+                        NetUtils.connect(port, i_be.pins[name])
+                    elif port.direction.is_input:
+                        NetUtils.connect(port, i_be.pins["prog_" + name])
+                    else:
+                        NetUtils.connect(i_be.pins["prog_" + name], port)
+
+                # ... and more connect!
+                NetUtils.connect(system.ports["clk"], core.pins["clk"])
+                NetUtils.connect(core_ports["clk"], fabric.pins["prog_clk"])
+
+            elif self.fabric_wrapper:
+                # instantiate backend
+                i_be = rxi_slave = prog_master = ModuleUtils.instantiate(system, m_be, "i_be")
+                core = prog_slave = system.instances["i_core"]
+                fabric = core.model.instances["i_fabric"]
+
+                # create pktchain ports
+                ModuleUtils.create_port(core.model, "prog_clk",  1, "input", is_clock = True)
+                ModuleUtils.create_port(core.model, "prog_rst",  1, "input")
+                ModuleUtils.create_port(core.model, "prog_done", 1, "output")
+                core_ports = cls._get_or_create_pktchain_fifo_nets(core.model, context.summary.pktchain["fabric"]["phit_width"])
+
+                # connect
+                NetUtils.connect(core.model.ports["prog_clk"],  fabric.pins["prog_clk"])
+                NetUtils.connect(core.model.ports["prog_rst"],  fabric.pins["prog_rst"])
+                NetUtils.connect(core.model.ports["prog_done"], fabric.pins["prog_done"])
+                for name, port in core_ports.items():
+                    if port.direction.is_input:
+                        NetUtils.connect(port, fabric.pins["phit_" + name])
+                    else:
+                        NetUtils.connect(fabric.pins["phit_" + name], port)
+
+                # ... and more connect!
+                NetUtils.connect(system.ports["clk"], i_be.pins["clk"])
+                NetUtils.connect(system.ports["clk"], core.pins["prog_clk"])
+
+            else:
+                rxi_slave = prog_master = ModuleUtils.instantiate(system, m_be, "i_be")
+                prog_slave = system.instances["i_fabric"]
+
+                # connect clocks
+                NetUtils.connect(system.ports["clk"], rxi_slave.pins["clk"])
+                NetUtils.connect(system.ports["clk"], prog_slave.pins["prog_clk"])
+
+            # connect rxi master to rxi slave
+            i_rxi = system.instances["i_rxi"]
+            NetUtils.connect(i_rxi.pins["prog_rst_n"],          rxi_slave.pins["rst_n"])
+            for name, pin in i_rxi.pins.items():
+                if name.startswith("prog_") and name != "prog_rst_n":
+                    if pin.model.direction.is_input:
+                        NetUtils.connect(rxi_slave.pins[name], pin)
+                    else:
+                        NetUtils.connect(pin, rxi_slave.pins[name])
+
+            # connect prog master to prog slave
+            for name in ("prog_rst", "prog_done", "phit_o_wr", "phit_o", "phit_i_full"):
+                NetUtils.connect(prog_master.pins[name], prog_slave.pins[name])
+
+            for name in ("phit_o_full", "phit_i_wr", "phit_i"):
+                NetUtils.connect(prog_slave.pins[name], prog_master.pins[name])
+
+            # print IO constraints
+            IOPlanner.print_io_constraints(context.summary.integration["app_intf"], self.io_constraints_f)

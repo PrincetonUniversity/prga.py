@@ -8,8 +8,7 @@
 `default_nettype none
 
 module prga_rxi #(
-    parameter   NUM_YAMI                = 1
-    , parameter DEFAULT_TIMEOUT         = `PRGA_RXI_DATA_WIDTH'd1000
+    parameter DEFAULT_TIMEOUT           = `PRGA_RXI_DATA_WIDTH'd1000
     , parameter HSR_FIFO_DEPTH_LOG2     = 3
     , parameter ASYNC_FIFO_DEPTH_LOG2   = 6
 ) (
@@ -49,9 +48,9 @@ module prga_rxi #(
     , input wire [`PRGA_RXI_DATA_WIDTH-1:0]             prog_resp_data
 
     // -- Application Interface ----------------------------------------------
-    , input wire [NUM_YAMI-1:0]                         yami_err_i
+    , input wire [`PRGA_RXI_NUM_YAMI-1:0]               yami_err_i
     , output reg                                        yami_deactivate_o
-    , output reg [NUM_YAMI-1:0]                         yami_activate_o
+    , output reg [`PRGA_RXI_NUM_YAMI-1:0]               yami_activate_o
 
     // -- Application Control ------------------------------------------------
     , output reg                                        app_rst_n
@@ -190,15 +189,15 @@ module prga_rxi #(
         );
 
     // -- buffer application control signals --
-    reg [NUM_YAMI-1:0]  yami_err_if;
-    wire                yami_deactivate_op, app_rst_np;
-    wire [NUM_YAMI-1:0] yami_activate_op;
+    reg [`PRGA_RXI_NUM_YAMI-1:0]    yami_err_if;
+    wire                            yami_deactivate_op, app_rst_np;
+    wire [`PRGA_RXI_NUM_YAMI-1:0]   yami_activate_op;
 
     always @(posedge aclk) begin
         if (~arst_n) begin
-            yami_err_if <= { NUM_YAMI {1'b0} };
+            yami_err_if <= { `PRGA_RXI_NUM_YAMI {1'b0} };
             yami_deactivate_o <= 1'b0;
-            yami_activate_o <= { NUM_YAMI {1'b0} };
+            yami_activate_o <= { `PRGA_RXI_NUM_YAMI {1'b0} };
             app_rst_n <= 1'b0;
         end else begin
             yami_err_if <= yami_err_i;
@@ -418,8 +417,7 @@ module prga_rxi #(
 
     // -- RXI backend --
     prga_rxi_be #(
-        .NUM_YAMI           (NUM_YAMI)
-        ,.DEFAULT_TIMEOUT   (DEFAULT_TIMEOUT)
+        .DEFAULT_TIMEOUT   (DEFAULT_TIMEOUT)
     ) i_be (
         .clk                (aclk)
         ,.rst_n             (arst_n)

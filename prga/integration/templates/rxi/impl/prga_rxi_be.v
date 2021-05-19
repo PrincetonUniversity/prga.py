@@ -8,15 +8,14 @@
 `default_nettype none
 
 module prga_rxi_fe #(
-    parameter   NUM_YAMI                = 1
-    , parameter DEFAULT_TIMEOUT         = `PRGA_RXI_DATA_WIDTH'd1000
+    parameter DEFAULT_TIMEOUT           = `PRGA_RXI_DATA_WIDTH'd1000
 ) (
     // -- Interface Ctrl -----------------------------------------------------
     input wire                                          clk
     , input wire                                        rst_n
-    , input wire [NUM_YAMI-1:0]                         yami_err_i
+    , input wire [`PRGA_RXI_NUM_YAMI-1:0]               yami_err_i
     , output wire                                       yami_deactivate_o
-    , output wire [NUM_YAMI-1:0]                        yami_activate_o
+    , output wire [`PRGA_RXI_NUM_YAMI-1:0]              yami_activate_o
 
     // -- FE -> BE Async FIFO ------------------------------------------------
     , output reg                                        f2b_rd
@@ -131,17 +130,17 @@ module prga_rxi_fe #(
     end
 
     // -- YAMI enable --
-    reg [NUM_YAMI-1:0]          yami_enable, yami_enable_next;
+    reg [`PRGA_RXI_NUM_YAMI-1:0]    yami_enable, yami_enable_next;
 
     always @(posedge clk) begin
         if (~rst_n) begin
-            yami_enable     <= { NUM_YAMI {1'b0} };
+            yami_enable     <= { `PRGA_RXI_NUM_YAMI {1'b0} };
         end else begin
             yami_enable     <= yami_enable_next;
         end
     end
 
-    assign yami_activate_o = { NUM_YAMI {rxi_active} } & yami_enable;
+    assign yami_activate_o = { `PRGA_RXI_NUM_YAMI {rxi_active} } & yami_enable;
 
     // =======================================================================
     // -- Application - RXI Channel ------------------------------------------ 
@@ -307,7 +306,7 @@ module prga_rxi_fe #(
 
                 // update YAMI enable state as soon as we see this
                 `PRGA_RXI_NSRID_ENABLE_YAMI: if (!f2b_empty) begin
-                        yami_enable_next = f2b_data[0 +: NUM_YAMI];
+                        yami_enable_next = f2b_data[0 +: `PRGA_RXI_NUM_YAMI];
                 end
             endcase
         end

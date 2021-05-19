@@ -1,6 +1,6 @@
 # -*- encoding: ascii -*-
 
-from .common import SystemIntf, FabricIntf, ProgIntf, FabricIntfECCType
+from .common import SystemIntf, FabricIntf, FabricIntfECCType
 from ..core.common import ModuleView, ModuleClass, IOType
 from ..netlist import Module, PortDirection, ModuleUtils, NetUtils
 from ..tools.util import AppIntf

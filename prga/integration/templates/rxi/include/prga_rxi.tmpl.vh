@@ -144,6 +144,7 @@
 // -- parameterized macros --------------------------------------------------- 
 `define PRGA_RXI_DATA_BYTES_LOG2        {{ intf.data_bytes_log2 }} // 2 or 3 (4B or 8B)
 `define PRGA_RXI_ADDR_WIDTH             {{ intf.addr_width }} // at least 7 + DATA_BYTES_LOG2
+`define PRGA_RXI_NUM_YAMI               {{ intf.num_yami }}
 
 // -- Derived Macros ---------------------------------------------------------
 `define PRGA_RXI_DATA_BYTES             (1 << `PRGA_RXI_DATA_BYTES_LOG2)
@@ -179,7 +180,8 @@
 `define PRGA_RXI_ERRCODE_RESP_TIMEOUT   `PRGA_RXI_ERRCODE_WIDTH'h01_000001
 `define PRGA_RXI_ERRCODE_RESP_PARITY    `PRGA_RXI_ERRCODE_WIDTH'h01_000002
 `define PRGA_RXI_ERRCODE_RESP_NOREQ     `PRGA_RXI_ERRCODE_WIDTH'h01_000003
-`define PRGA_RXI_ERRCODE_YAMI           `PRGA_RXI_ERRCODE_WIDTH'h10_000000  // add erroneous YAMI IDs
+`define PRGA_RXI_ERRCODE_YAMI           `PRGA_RXI_ERRCODE_WIDTH'h08_000000  // add erroneous YAMI IDs
+// error codes larger than 0x10_000000 are reserved for programming backend
 
 // #2: clock divider
 `define PRGA_RXI_NSRID_CLKDIV           2

@@ -1283,7 +1283,9 @@ class BuiltinCellLibrary(object):
 
         # register auxiliary designs
         for d in ("prga_ram_1r1w", "prga_ram_1r1w_byp", "prga_fifo", "prga_fifo_resizer", "prga_fifo_lookahead_buffer",
-                "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo", "prga_valrdy_buf"):
+                "prga_fifo_adapter", "prga_byteaddressable_reg", "prga_tokenfifo", "prga_valrdy_buf",
+                "prga_bitreverse", "prga_fifo_rdbuf", "prga_fifo_wrbuf",
+                "prga_arb_robinfair", "prga_onehot_decoder", "prga_tzc"):
             context._add_module(Module(d,
                     is_cell = True,
                     view = ModuleView.design,
@@ -1306,32 +1308,31 @@ class BuiltinCellLibrary(object):
                     verilog_template = "cdclib/{}.v2.v".format(d)))
 
         # module dependencies
-        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_ram_1r1w_byp"],
-                context.database[ModuleView.design, "prga_ram_1r1w"], "i_ram")
-        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fifo"],
-                context.database[ModuleView.design, "prga_ram_1r1w"], "ram")
-        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fifo"],
-                context.database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
-        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fifo_resizer"],
-                context.database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
-        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_fifo_adapter"],
-                context.database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
-        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_async_fifo"],
-                context.database[ModuleView.design, "prga_ram_1r1w_dc"], "ram")
-        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_async_fifo"],
-                context.database[ModuleView.design, "prga_fifo_lookahead_buffer"], "buffer")
-        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_async_fifo_ptr"],
-                context.database[ModuleView.design, "prga_sync_basic"], "prga_sync_basic")
-        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_async_fifo:v2"],
-                context.database[ModuleView.design, "prga_ram_1r1w_dc"], "prga_ram_1r1w_dc")
-        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_async_fifo:v2"],
-                context.database[ModuleView.design, "prga_async_fifo_ptr"], "prga_async_fifo_ptr")
-        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_async_fifo:v2"],
-                context.database[ModuleView.design, "prga_fifo_lookahead_buffer"], "prga_fifo_lookahead_buffer")
-        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_valrdy_cdc"],
-                context.database[ModuleView.design, "prga_async_fifo:v2"], "prga_async_fifo")
-        ModuleUtils.instantiate(context.database[ModuleView.design, "prga_valrdy_cdc"],
-                context.database[ModuleView.design, "prga_fifo_resizer"], "prga_fifo_resizer")
+        deps = {
+                "prga_ram_1r1w_byp":    ("prga_ram_1r1w", ),
+                "prga_fifo":            ("prga_ram_1r1w", "prga_fifo_lookahead_buffer"),
+                "prga_fifo_resizer":    ("prga_fifo_lookahead_buffer", ),
+                "prga_fifo_adapter":    ("prga_fifo_lookahead_buffer", ),
+                "prga_async_fifo":      ("prga_ram_1r1w_dc", "prga_fifo_lookahead_buffer"),
+                "prga_async_fifo_ptr":  ("prga_sync_basic", ),
+                "prga_async_fifo:v2":   ("prga_async_fifo_ptr", "prga_ram_1r1w_dc", "prga_fifo_lookahead_buffer"),
+                "prga_valrdy_cdc":      ("prga_async_fifo:v2", "prga_fifo_resizer"),
+                "prga_arb_robinfair":   ("prga_tzc", ),
+                "prga_fifo_rdbuf":      ("prga_fifo_lookahead_buffer", "prga_valrdy_buf"),
+                "prga_fifo_wrbuf":      ("prga_valrdy_buf", ),
+                "prga_tzc":             ("prga_onehot_decoder", ),
+                }
+
+        for d, subs in deps.items():
+            for sub in subs:
+                ModuleUtils.instantiate(
+                        context.database[ModuleView.design, d],
+                        context.database[ModuleView.design, sub],
+                        sub)
 
         # header dependencies
-        context.database[ModuleView.design, "prga_fifo_resizer"].verilog_dep_headers = ("prga_utils.vh", )
+        deps = {
+                "prga_fifo_resizer":    ("prga_utils.vh", ),
+                }
+        for d, hdrs in deps.items():
+            context.database[ModuleView.design, d].verilog_dep_headers = hdrs

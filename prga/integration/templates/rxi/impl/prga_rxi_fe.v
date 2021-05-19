@@ -103,12 +103,14 @@ module prga_rxi_fe #(
     always @(posedge clk) begin
         if (~rst_n) begin
             errcode <= `PRGA_RXI_ERRCODE_NONE;
-        end else if (event_activate) begin
+        end else if (~prog_rst_n || event_activate) begin
             errcode <= `PRGA_RXI_ERRCODE_NONE;
-        end else if (prog_resp_err && prog_resp_vld && prog_resp_rdy) begin
-            errcode <= prog_resp_data;
-        end else if (event_app_error) begin
-            errcode <= b2f_data[`PRGA_RXI_B2F_DATA_INDEX];
+        end else if (errcode == `PRGA_RXI_ERRCODE_NONE) begin
+            if (prog_resp_err && prog_resp_vld && prog_resp_rdy) begin
+                errcode <= prog_resp_data;
+            end else if (event_app_error) begin
+                errcode <= b2f_data[`PRGA_RXI_B2F_DATA_INDEX];
+            end
         end
     end
 
