@@ -7,7 +7,6 @@ from ...core.common import ModuleClass, ModuleView, NetClass, Orientation, Corne
 from ...netlist import PortDirection, Const, Module, NetUtils, ModuleUtils
 from ...passes.base import AbstractPass
 from ...passes.translation import SwitchDelegate
-from ...renderer.lib import BuiltinCellLibrary
 from ...integration import Integration
 from ...integration.rxi_yami import IntegrationRXIYAMI
 from ...exception import PRGAInternalError

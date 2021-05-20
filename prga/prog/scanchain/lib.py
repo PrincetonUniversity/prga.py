@@ -4,7 +4,7 @@ from ..common import AbstractProgCircuitryEntry, ProgDataBitmap
 from ...core.common import NetClass, ModuleClass, ModuleView
 from ...passes.translation import SwitchDelegate
 from ...netlist import Module, ModuleUtils, PortDirection, NetUtils
-from ...renderer.lib import BuiltinCellLibrary
+from ...renderer import BuiltinCellLibrary, OnDemandCellLibrary
 from ...util import uno
 from ...exception import PRGAInternalError
 
@@ -27,6 +27,7 @@ class Scanchain(AbstractProgCircuitryEntry):
 
         BuiltinCellLibrary.install_stdlib(ctx)
         BuiltinCellLibrary.install_design(ctx)
+        OnDemandCellLibrary.install_design(ctx)
 
         ctx.template_search_paths.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'))
         ctx.renderer = None

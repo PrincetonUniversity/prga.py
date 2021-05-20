@@ -8,8 +8,7 @@ from .builder.box import ConnectionBoxBuilder, SwitchBoxBuilder
 from .builder.array.tile import TileBuilder
 from .builder.array.array import ArrayBuilder
 from ..netlist import TimingArcType, PortDirection, Module, ModuleUtils, NetUtils
-from ..renderer.renderer import FileRenderer
-from ..renderer.lib import BuiltinCellLibrary
+from ..renderer import FileRenderer, BuiltinCellLibrary, OnDemandCellLibrary
 from ..passes.vpr.delegate import FASMDelegate
 from ..util import Object, ReadonlyMappingProxy, uno
 from ..exception import PRGAAPIError, PRGAInternalError
@@ -362,7 +361,7 @@ class Context(Object):
         Returns:
             `Module`:
         """
-        return BuiltinCellLibrary.create_memory(self, addr_width, data_width,
+        return OnDemandCellLibrary.create_memory(self, addr_width, data_width,
                 name = name, vpr_model = vpr_model, memory_type = memory_type, **kwargs)
 
     def create_multimode_memory(self, core_addr_width, data_width, *,
@@ -398,7 +397,7 @@ class Context(Object):
             ``512x72b``, ``1K36b``, ``2K18b``, ``4K9b``, ``8K4b``, ``16K2b``, ``32K1b``. Note that instead of a
             ``9K4b``, we got a ``8K4b``.
         """
-        return BuiltinCellLibrary.create_multimode_memory(self, core_addr_width, data_width,
+        return OnDemandCellLibrary.create_multimode_memory(self, core_addr_width, data_width,
                 addr_width = addr_width, name = name, memory_type = memory_type, **kwargs)
 
     def create_multiplier(self, width_a, width_b = None, *, name = None):
@@ -414,7 +413,7 @@ class Context(Object):
         Returns:
             `Module`: User view of the multiplier
         """
-        return BuiltinCellLibrary.create_multiplier(self, width_a, width_b, name = name)
+        return OnDemandCellLibrary.create_multiplier(self, width_a, width_b, name = name)
 
     # -- Slices --------------------------------------------------------------
     @property

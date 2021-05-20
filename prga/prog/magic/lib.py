@@ -4,7 +4,7 @@ from ..common import AbstractProgCircuitryEntry
 from ...core.common import ModuleClass, ModuleView
 from ...netlist import NetUtils, Const
 from ...passes.translation import SwitchDelegate
-from ...renderer.lib import BuiltinCellLibrary
+from ...renderer import BuiltinCellLibrary, OnDemandCellLibrary
 from ...util import Object, uno, Enum
 from ...exception import PRGAInternalError
 
@@ -26,6 +26,7 @@ class Magic(AbstractProgCircuitryEntry):
 
         BuiltinCellLibrary.install_stdlib(ctx)
         BuiltinCellLibrary.install_design(ctx)
+        OnDemandCellLibrary.install_design(ctx)
 
         return ctx
 
