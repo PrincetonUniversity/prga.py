@@ -52,8 +52,7 @@
 * Notes
 * -----
 *
-*   1. `req_addr` must be aligned to DATA_BYTES. [app-master] interface may save
-*      the last few bits that are constant zero due to alignment
+*   1. `req_addr` specifies the register, not the byte
 *   2. Use `req_strb` for subword accesses (must be supported by the
 *      corresponding register, or a subword access will fail)
 *   3. RXI only allows natually-aligned, single-unit store with `req_strb`.
@@ -68,13 +67,13 @@
 *
 *   The register address space is divided up into the following major regions:
 *
-*     - register  0-31: address 0x00 - 0x080/0x100 (DATA_BYTES=4B/8B)
+*     - register  0-31:
 *       control registers, not available to the application
 *
-*     - register 32-63: address 0x80/0x100 - 0x100/0x200
+*     - register 32-63:
 *       hardware-sync'ed registers
 *
-*     - register 64+: address 0x100/0x200 - max
+*     - register 64+:
 *       custom soft registers
 *
 *   Control registers may be implemented in the system clock domain, the
@@ -143,14 +142,14 @@
 
 // -- parameterized macros --------------------------------------------------- 
 `define PRGA_RXI_DATA_BYTES_LOG2        {{ intf.data_bytes_log2 }} // 2 or 3 (4B or 8B)
-`define PRGA_RXI_ADDR_WIDTH             {{ intf.addr_width }} // at least 7 + DATA_BYTES_LOG2
+`define PRGA_RXI_ADDR_WIDTH             {{ intf.addr_width - intf.data_bytes_log2 }} // at least 7
 `define PRGA_RXI_NUM_YAMI               {{ intf.num_yami }}
 
 // -- Derived Macros ---------------------------------------------------------
 `define PRGA_RXI_DATA_BYTES             (1 << `PRGA_RXI_DATA_BYTES_LOG2)
 `define PRGA_RXI_DATA_WIDTH             (8 << `PRGA_RXI_DATA_BYTES_LOG2)
 
-`define PRGA_RXI_REGID_WIDTH            (`PRGA_RXI_ADDR_WIDTH - `PRGA_RXI_DATA_BYTES_LOG2)
+`define PRGA_RXI_REGID_WIDTH            `PRGA_RXI_ADDR_WIDTH
 
 // -- Non-Soft Registers -----------------------------------------------------
 // non-soft register ID width
@@ -215,22 +214,22 @@
 */
 `define PRGA_RXI_NSRID_ENABLE_YAMI      6
 
-// #7: reserved
+// #7 - #15: reserved
 
-/* #8 - #15: scratchpads (8x registers)
+/* #16 - #23: scratchpads (8x registers)
 *
 *   Software-managed hard registers
 */
-`define PRGA_RXI_NSRID_SCRATCHPAD       8
+`define PRGA_RXI_NSRID_SCRATCHPAD       16
 `define PRGA_RXI_SCRATCHPAD_ID_WIDTH    3
 `define PRGA_RXI_NUM_SCRATCHPADS        (1 << `PRGA_RXI_SCRATCHPAD_ID_WIDTH)
 
-/* #16 - #31: programming registers (16x registers)
+/* #24 - #31: programming registers (8x registers)
 * 
 *   Implemented in the programming backend
 */
-`define PRGA_RXI_NSRID_PROG             16
-`define PRGA_RXI_PROG_REG_ID_WIDTH      4
+`define PRGA_RXI_NSRID_PROG             24
+`define PRGA_RXI_PROG_REG_ID_WIDTH      3
 `define PRGA_RXI_NUM_PROG_REGS          (1 << `PRGA_RXI_PROG_REG_ID_WIDTH)
 
 // -- Hardware-Sync'ed Registers ---------------------------------------------
@@ -254,7 +253,7 @@
 `define PRGA_RXI_HSRID_TQ               8
 `define PRGA_RXI_HSRID_TQ_NB            12
 
-// #48 - #63: plain sync'ed registers
+// #48 - #63: plain sync'ed registers (16)
 `define PRGA_RXI_HSR_PLAIN_ID_WIDTH     4
 `define PRGA_RXI_NUM_HSR_PLAINS         (1 << `PRGA_RXI_HSR_PLAIN_ID_WIDTH)
 `define PRGA_RXI_HSRID_PLAIN            16

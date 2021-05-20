@@ -86,8 +86,8 @@ module prga_yami_be #(
     assign creg_data = fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_CREG_DATA_INDEX];
 
     // -- status --
-    assign creg_activate   = creg_we && creg_addr == `PRGA_YAMI_CREG_ADDR_STATUS && |creg_data;
-    assign creg_deactivate = creg_we && creg_addr == `PRGA_YAMI_CREG_ADDR_STATUS && ~|creg_data;
+    assign creg_activate   = creg_we && creg_addr == `PRGA_YAMI_CREG_ADDR_STATUS &&  creg_data[0];
+    assign creg_deactivate = creg_we && creg_addr == `PRGA_YAMI_CREG_ADDR_STATUS && ~creg_data[0];
 
     // -- features --
     reg [`PRGA_YAMI_CREG_FEATURE_WIDTH-1:0] creg_features;

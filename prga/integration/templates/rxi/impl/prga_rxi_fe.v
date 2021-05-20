@@ -350,25 +350,21 @@ module prga_rxi_fe #(
     // =======================================================================
 
     // -- decode request address --
-    wire [`PRGA_RXI_REGID_WIDTH-1:0]        s_req_id;
     wire [`PRGA_RXI_HSRID_WIDTH-1:0]        hsr_id;
     wire [`PRGA_RXI_HSR_OQ_ID_WIDTH-1:0]    oq_id;
     wire [`PRGA_RXI_HSR_TQ_ID_WIDTH-1:0]    tq_id;
-    wire                                    s_req_addr_unaligned;
 
-    assign s_req_id = s_req_addr[`PRGA_RXI_ADDR_WIDTH-1:`PRGA_RXI_DATA_BYTES_LOG2];
-    assign hsr_id = s_req_id[0+:`PRGA_RXI_HSRID_WIDTH];
-    assign s_req_addr_unaligned = |s_req_addr[0+:`PRGA_RXI_DATA_BYTES_LOG2];
+    assign hsr_id = s_req_addr[0+:`PRGA_RXI_HSRID_WIDTH];
 
-    assign prog_req_addr = s_req_id[0+:`PRGA_RXI_PROG_REG_ID_WIDTH];
+    assign prog_req_addr = s_req_addr[0+:`PRGA_RXI_PROG_REG_ID_WIDTH];
     assign prog_req_strb = s_req_strb;
     assign prog_req_data = s_req_data;
 
-    assign scratchpad_id = s_req_id[0+:`PRGA_RXI_SCRATCHPAD_ID_WIDTH];
-    assign iq_id = s_req_id[0+:`PRGA_RXI_HSR_IQ_ID_WIDTH];
-    assign oq_id = s_req_id[0+:`PRGA_RXI_HSR_OQ_ID_WIDTH];
-    assign tq_id = s_req_id[0+:`PRGA_RXI_HSR_TQ_ID_WIDTH];
-    assign phsr_id = s_req_id[0+:`PRGA_RXI_HSR_PLAIN_ID_WIDTH];
+    assign scratchpad_id = s_req_addr[0+:`PRGA_RXI_SCRATCHPAD_ID_WIDTH];
+    assign iq_id = s_req_addr[0+:`PRGA_RXI_HSR_IQ_ID_WIDTH];
+    assign oq_id = s_req_addr[0+:`PRGA_RXI_HSR_OQ_ID_WIDTH];
+    assign tq_id = s_req_addr[0+:`PRGA_RXI_HSR_TQ_ID_WIDTH];
+    assign phsr_id = s_req_addr[0+:`PRGA_RXI_HSR_PLAIN_ID_WIDTH];
 
     // -- tasks --
     task automatic forward_f2b;
@@ -376,7 +372,7 @@ module prga_rxi_fe #(
             s_req_rdy = !f2b_full && !prq_full;
             f2b_wr = s_req_vld && !prq_full;
             f2b_data[`PRGA_RXI_F2B_STRB_INDEX] = s_req_strb;
-            f2b_data[`PRGA_RXI_F2B_REGID_INDEX] = s_req_id;
+            f2b_data[`PRGA_RXI_F2B_REGID_INDEX] = s_req_addr;
             f2b_data[`PRGA_RXI_F2B_DATA_INDEX] = s_req_data;
             prq_wr = s_req_vld && !f2b_full;
             prq_din = PRQ_TOKEN_B2F;
@@ -426,12 +422,9 @@ module prga_rxi_fe #(
         rb_wr = 1'b0;
         rb_din = { `PRGA_RXI_DATA_WIDTH {1'b0} };
 
-        // ignore unaligned errors (assume the hardware is always right)
-        // if (s_req_addr_unaligned) ...
-
         // -- status --
         // ------------
-        if (s_req_id == `PRGA_RXI_NSRID_STATUS) begin
+        if (s_req_addr == `PRGA_RXI_NSRID_STATUS) begin
 
             // store needs to be forwarded into the application clock domain
             if (&s_req_strb) begin
@@ -466,7 +459,7 @@ module prga_rxi_fe #(
 
         // -- error code --
         // ----------------
-        else if (s_req_id == `PRGA_RXI_NSRID_ERRCODE) begin
+        else if (s_req_addr == `PRGA_RXI_NSRID_ERRCODE) begin
 
             // store is ignored
             if (|s_req_strb)
@@ -480,7 +473,7 @@ module prga_rxi_fe #(
 
         // -- clkdiv --
         // ------------
-        else if (s_req_id == `PRGA_RXI_NSRID_CLKDIV) begin
+        else if (s_req_addr == `PRGA_RXI_NSRID_CLKDIV) begin
 
             // store is processed only in the system clock domain
             if (&s_req_strb) begin
@@ -496,7 +489,7 @@ module prga_rxi_fe #(
 
         // -- soft register timer --
         // -------------------------
-        else if (s_req_id == `PRGA_RXI_NSRID_SOFTREG_TIMEOUT) begin
+        else if (s_req_addr == `PRGA_RXI_NSRID_SOFTREG_TIMEOUT) begin
 
             // store needs to be forwarded into the application clock domain
             if (&s_req_strb) begin
@@ -511,7 +504,7 @@ module prga_rxi_fe #(
 
         // -- application reset countdown --
         // ---------------------------------
-        else if (s_req_id == `PRGA_RXI_NSRID_APP_RST) begin
+        else if (s_req_addr == `PRGA_RXI_NSRID_APP_RST) begin
 
             // store needs to be forwarded into the application clock domain
             if (&s_req_strb)
@@ -524,7 +517,7 @@ module prga_rxi_fe #(
 
         // -- programming reset --
         // -----------------------
-        else if (s_req_id == `PRGA_RXI_NSRID_PROG_RST) begin
+        else if (s_req_addr == `PRGA_RXI_NSRID_PROG_RST) begin
 
             // Notes:
             //
@@ -539,7 +532,7 @@ module prga_rxi_fe #(
 
         // -- YAMI enable --
         // -----------------
-        else if (s_req_id == `PRGA_RXI_NSRID_ENABLE_YAMI) begin
+        else if (s_req_addr == `PRGA_RXI_NSRID_ENABLE_YAMI) begin
 
             // store needs to be forwarded into the application clock domain
             if (&s_req_strb) begin
@@ -554,7 +547,7 @@ module prga_rxi_fe #(
 
         // -- reserved control register space --
         // -------------------------------------
-        else if (s_req_id < `PRGA_RXI_NSRID_SCRATCHPAD) begin
+        else if (s_req_addr < `PRGA_RXI_NSRID_SCRATCHPAD) begin
             
             // do nothing and return bogus data
             buffer_bogus;
@@ -562,7 +555,7 @@ module prga_rxi_fe #(
 
         // -- scratchpad registers --
         // --------------------------
-        else if (s_req_id < `PRGA_RXI_NSRID_PROG) begin
+        else if (s_req_addr < `PRGA_RXI_NSRID_PROG) begin
 
             if (|s_req_strb) begin
                 buffer_bogus;
@@ -578,7 +571,7 @@ module prga_rxi_fe #(
 
         // -- programming registers --
         // ---------------------------
-        else if (s_req_id < `PRGA_RXI_NSRID_HSR) begin
+        else if (s_req_addr < `PRGA_RXI_NSRID_HSR) begin
 
             // send to programming backend
             s_req_rdy = prog_req_rdy && !prq_full;
@@ -589,7 +582,7 @@ module prga_rxi_fe #(
 
         // -- hardware-sync'ed registers --
         // --------------------------------
-        else if (s_req_id < `PRGA_RXI_SRID_BASE) begin
+        else if (s_req_addr < `PRGA_RXI_SRID_BASE) begin
 
             // -- HSR: input FIFO --
             // ---------------------
@@ -649,7 +642,7 @@ module prga_rxi_fe #(
                     buffer_response(errcode);
 
                 else if (tq_empty[tq_id])
-                    buffer_response(`PRGA_RXI_ERRCODE_NOTOKEN;
+                    buffer_response(`PRGA_RXI_ERRCODE_NOTOKEN);
 
                 else begin
                     buffer_bogus;
@@ -702,7 +695,7 @@ module prga_rxi_fe #(
 
         // -- custom soft registers --
         // ---------------------------
-        if (!f2b_wr && s_req_id >= `PRGA_RXI_SRID_BASE) begin
+        if (!f2b_wr && s_req_addr >= `PRGA_RXI_SRID_BASE) begin
             // active?
             if (rxi_active)
                 forward_f2b;
