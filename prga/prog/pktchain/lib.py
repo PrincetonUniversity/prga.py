@@ -451,7 +451,7 @@ class Pktchain(Scanchain):
                     view = mvl,
                     module_class = ModuleClass.aux,
                     verilog_template = "pktchain_ctrl.v",
-                    verilog_dep_headers = ("pktchain_system.vh", ))
+                    verilog_dep_headers = ("pktchain.vh", ))
             # create ports
             Integration._create_intf_ports_syscon(mod, True)
             ModuleUtils.create_port(mod, "frame_i_rd", 1, "output")
@@ -913,7 +913,7 @@ class Pktchain(Scanchain):
             IntegrationRXIYAMI._create_ports_syscon(m_be, slave = True)
             IntegrationRXIYAMI._create_ports_rxi(m_be, slave = True, prog = True, fabric = True,
                     prefix = "prog_", addr_width = 4, data_bytes_log2 = self.rxi_data_bytes_log2)
-            cls._get_or_create_pktchain_fifo_nets(m_be, context.summary.pktchain["fabric"]["phit_width"])
+            Pktchain._get_or_create_pktchain_fifo_nets(m_be, context.summary.pktchain["fabric"]["phit_width"])
             # instantiate sub-instances
             for sub in ("prga_valrdy_buf", "prga_fifo", "prga_fifo_resizer", "pktchain_ctrl"):
                 ModuleUtils.instantiate(m_be, context.database[ModuleView.design, sub], sub)
@@ -929,8 +929,8 @@ class Pktchain(Scanchain):
 
                 # create programming ports in the wrapper
                 core_ports = IntegrationRXIYAMI._create_ports_syscon(core.model, slave = True)
-                core_ports.update(IntegrationRXIYAMI._create_ports_rxi(core.model, prefix = "prog_", prog = True,
-                    addr_width = 4, data_bytes_log2 = self.rxi_data_bytes_log2))
+                core_ports.update(IntegrationRXIYAMI._create_ports_rxi(core.model, slave = True, prog = True,
+                    prefix = "prog_", addr_width = 4, data_bytes_log2 = self.rxi_data_bytes_log2))
 
                 # connect
                 for name, port in core_ports.items():
@@ -955,7 +955,8 @@ class Pktchain(Scanchain):
                 ModuleUtils.create_port(core.model, "prog_clk",  1, "input", is_clock = True)
                 ModuleUtils.create_port(core.model, "prog_rst",  1, "input")
                 ModuleUtils.create_port(core.model, "prog_done", 1, "output")
-                core_ports = cls._get_or_create_pktchain_fifo_nets(core.model, context.summary.pktchain["fabric"]["phit_width"])
+                core_ports = Pktchain._get_or_create_pktchain_fifo_nets(core.model,
+                        context.summary.pktchain["fabric"]["phit_width"])
 
                 # connect
                 NetUtils.connect(core.model.ports["prog_clk"],  fabric.pins["prog_clk"])
@@ -990,11 +991,14 @@ class Pktchain(Scanchain):
                         NetUtils.connect(pin, rxi_slave.pins[name])
 
             # connect prog master to prog slave
-            for name in ("prog_rst", "prog_done", "phit_o_wr", "phit_o", "phit_i_full"):
-                NetUtils.connect(prog_master.pins[name], prog_slave.pins[name])
-
-            for name in ("phit_o_full", "phit_i_wr", "phit_i"):
-                NetUtils.connect(prog_slave.pins[name], prog_master.pins[name])
+            NetUtils.connect(prog_master.pins["prog_rst"],      prog_slave.pins["prog_rst"])
+            NetUtils.connect(prog_master.pins["prog_done"],     prog_slave.pins["prog_done"])
+            NetUtils.connect(prog_slave.pins["phit_o_wr"],      prog_master.pins["phit_i_wr"])
+            NetUtils.connect(prog_slave.pins["phit_o"],         prog_master.pins["phit_i"])
+            NetUtils.connect(prog_slave.pins["phit_i_full"],    prog_master.pins["phit_o_full"])
+            NetUtils.connect(prog_master.pins["phit_o_wr"],     prog_slave.pins["phit_i_wr"])
+            NetUtils.connect(prog_master.pins["phit_o"],        prog_slave.pins["phit_i"])
+            NetUtils.connect(prog_master.pins["phit_i_full"],   prog_slave.pins["phit_o_full"])
 
             # print IO constraints
             IOPlanner.print_io_constraints(context.summary.integration["app_intf"], self.io_constraints_f)

@@ -4,5 +4,5 @@
         {%- for k, v in instance.verilog_parameters.items() %}
         {{ comma() }}.{{ k }} ({{ v }})
         {%- endfor %}
-    ){% endif %}{{ instance.name }}
+    ) {% endif %}{{ instance.name }}
 {%- endmacro %}

@@ -598,6 +598,8 @@ class Integration(object):
                 case it is converted to ``{name}_core``\), an extra layer of wrapper is created around the fabric
                 and instantiated in the top-level module
         """
+        cls._register_cells(context)
+
         system_intfs = set([SystemIntf.syscon,
             SystemIntf.reg_piton("reg"),
             SystemIntf.memory_piton("ccm"),

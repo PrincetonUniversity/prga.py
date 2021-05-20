@@ -126,7 +126,7 @@ class SystemIntf(Object):
                         .format(data_bytes_log2))
             elif addr_width - data_bytes_log2 < 6:
                 raise PRGAAPIError("Addr width ({}) less than `data_bytes_log2 + 6` ({})"
-                        .format(addr_width, data_bytes_log2 + 6)):
+                        .format(addr_width, data_bytes_log2 + 6))
 
             super().__init__(id_)
             self.addr_width = addr_width

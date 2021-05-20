@@ -2,7 +2,7 @@
 
 from .common import SystemIntf, FabricIntf
 from ..core.common import ModuleView, ModuleClass, IOType
-from ..netlist import Module, PortDirection
+from ..netlist import Module, PortDirection, ModuleUtils, NetUtils
 from ..tools.util import AppIntf
 from ..tools.ioplan import IOPlanner
 
@@ -10,10 +10,6 @@ import logging
 _logger = logging.getLogger(__name__)
 
 __all__ = []
-
-_so, _mo = ((PortDirection.output, PortDirection.input_) if slave else
-                (PortDirection.input_, PortDirection.output))
-_mcp = ModuleUtils.create_port
 
 # ----------------------------------------------------------------------------
 # -- Integration module for RXI/YAMI interfaces ------------------------------
@@ -24,17 +20,23 @@ class IntegrationRXIYAMI(object):
 
     @classmethod
     def _create_ports_syscon(cls, module, *, slave = False, prefix = ""):
+        _so, _mo = ((PortDirection.output, PortDirection.input_) if slave else
+                (PortDirection.input_, PortDirection.output))
+        _mcp = ModuleUtils.create_port
         ports = [
                 _mcp(module, prefix + "clk",   1, _mo, is_clock = True),
                 _mcp(module, prefix + "rst_n", 1, _mo),
                 ]
 
-        return {port.name.lstrip(prefix): port for port in ports}
+        return {port.name[len(prefix):]: port for port in ports}
 
     @classmethod
     def _create_ports_rxi(cls, module, *, slave = False, prefix = "",
             addr_width = 12, data_bytes_log2 = 2, fabric = False, prog = False):
 
+        _so, _mo = ((PortDirection.output, PortDirection.input_) if slave else
+                (PortDirection.input_, PortDirection.output))
+        _mcp = ModuleUtils.create_port
         ports = [
                 _mcp(module, prefix + "req_rdy",   1,                    _so),
                 _mcp(module, prefix + "req_vld",   1,                    _mo),
@@ -66,10 +68,13 @@ class IntegrationRXIYAMI(object):
                 _mcp(module, prefix + "resp_parity",   1, _so),
                 ])
 
-        return {port.name.lstrip(prefix): port for port in ports}
+        return {port.name[len(prefix):]: port for port in ports}
 
     @classmethod
     def _create_ports_yami(cls, module, intf, *, slave = False, prefix = "", fabric = False):
+        _so, _mo = ((PortDirection.output, PortDirection.input_) if slave else
+                (PortDirection.input_, PortDirection.output))
+        _mcp = ModuleUtils.create_port
         ports = [
                 _mcp(module, prefix + "fmc_rdy",  1,                             _mo),
                 _mcp(module, prefix + "fmc_vld",  1,                             _so),
@@ -80,7 +85,7 @@ class IntegrationRXIYAMI(object):
                 _mcp(module, prefix + "mfc_rdy",  1,                             _so),
                 _mcp(module, prefix + "mfc_vld",  1,                             _mo),
                 _mcp(module, prefix + "mfc_type", 4,                             _mo),
-                _mcp(module, prefix + "mfc_type", intf.mfc_addr_width,           _mo),
+                _mcp(module, prefix + "mfc_addr", intf.mfc_addr_width,           _mo),
                 _mcp(module, prefix + "mfc_data", 8 << intf.mfc_data_bytes_log2, _mo),
                 ]
 
@@ -88,7 +93,7 @@ class IntegrationRXIYAMI(object):
             # fabric interface, add parity check
             ports.append(_mcp(module, prefix + "fmc_parity",    1, _so))
 
-        return {port.name.lstrip(prefix): port for port in ports}
+        return {port.name[len(prefix):]: port for port in ports}
 
     @classmethod
     def _register_cells(cls, context, rxi, yami):
@@ -156,16 +161,16 @@ class IntegrationRXIYAMI(object):
             cls._create_ports_syscon(m, slave = True)
             cls._create_ports_syscon(m, prefix = "a")
             cls._create_ports_rxi(m, slave = True, prefix = "s_",
-                    addr_width = rxi.addr_width, data_bytes = rxi.data_bytes_log2)
+                    addr_width = rxi.addr_width, data_bytes_log2 = rxi.data_bytes_log2)
             cls._create_ports_rxi(m, prefix = "prog_", prog = True,
-                    addr_width = 4, data_bytes = rxi.data_bytes_log2)
-            ModuleUtils.create_port(m, "prog_rst_n",        ,             "output")
+                    addr_width = 4, data_bytes_log2 = rxi.data_bytes_log2)
+            ModuleUtils.create_port(m, "prog_rst_n",        1,            "output")
             ModuleUtils.create_port(m, "yami_err_i",        rxi.num_yami, "input")
             ModuleUtils.create_port(m, "yami_deactivate_o", 1,            "output")
             ModuleUtils.create_port(m, "yami_activate_o",   rxi.num_yami, "output")
             ModuleUtils.create_port(m, "app_rst_n",         1,            "output")
             cls._create_ports_rxi(m, prefix = "m_", fabric = True,
-                    addr_width = rxi.addr_width, data_bytes = rxi.data_bytes_log2)
+                    addr_width = rxi.addr_width, data_bytes_log2 = rxi.data_bytes_log2)
 
         if True:
             # prga YAMI interface
@@ -296,7 +301,7 @@ class IntegrationRXIYAMI(object):
             app.add_port("rxi_resp_sync",       "output", 1)
             app.add_port("rxi_resp_syncaddr",   "output", 5)    # 32 HSRs
             app.add_port("rxi_resp_data",       "output", 8 << rxi_data_bytes_log2)
-            app.add_port("rxi_resp_pariry",     "output", 1)
+            app.add_port("rxi_resp_parity",     "output", 1)
 
             # add YAMI ports
             for i in range(num_yami):
@@ -440,6 +445,6 @@ class IntegrationRXIYAMI(object):
             for name, pin in yami_ctrl.pins.items():
                 if name.startswith("amfc") or name.startswith("afmc"):
                     if pin.model.direction.is_input:
-                        NetUtils.connect(nets["yami_i{}_" + name[1:]], pin)
+                        NetUtils.connect(nets["yami_i{}_".format(i) + name[1:]], pin)
                     else:
-                        NetUtils.connect(pin, nets["yami_i{}_" + name[1:]])
+                        NetUtils.connect(pin, nets["yami_i{}_".format(i) + name[1:]])
