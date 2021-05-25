@@ -212,7 +212,7 @@ module prga_yami_tri_transducer (
             reg [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]     mfc_elem;
             wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]    mfc_elems   [0:MFC_DATA_PER_CACHELINE-1];
 
-            integer gv_mfc_elem;
+            genvar gv_mfc_elem;
             for (gv_mfc_elem = 0; gv_mfc_elem < MFC_DATA_PER_CACHELINE; gv_mfc_elem = gv_mfc_elem + 1) begin: g_mfc_elem
                 assign mfc_elems[gv_mfc_elem] = l15_transducer_data_f[gv_mfc_elem * `PRGA_YAMI_MFC_DATA_WIDTH +: `PRGA_YAMI_MFC_DATA_WIDTH];
             end

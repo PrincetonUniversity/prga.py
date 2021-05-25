@@ -51,7 +51,7 @@ module prga_rxi_fe #(
     , output reg [`PRGA_RXI_F2B_ELEM_WIDTH-1:0]         f2b_data
 
     // -- BE -> FE Async FIFO ------------------------------------------------
-    , output wire                                       b2f_rd
+    , output reg                                        b2f_rd
     , input wire                                        b2f_empty
     , input wire [`PRGA_RXI_B2F_ELEM_WIDTH-1:0]         b2f_data
     );
@@ -299,7 +299,7 @@ module prga_rxi_fe #(
     // =======================================================================
     // -- Pending Reponses Queue ---------------------------------------------
     // =======================================================================
-    localparam  PRQ_TOKEN_WIDTH 2;
+    localparam  PRQ_TOKEN_WIDTH = 2;
     localparam  PRQ_TOKEN_PROG  = 2'd0,     // pending response from the programming interface
                 PRQ_TOKEN_B2F   = 2'd1,     // pending response from the backend
                 PRQ_TOKEN_BOGUS = 2'd2,     // pending response with bogus data
@@ -448,7 +448,7 @@ module prga_rxi_fe #(
             end
 
             // subword store is ignored
-            else (|s_req_strb)
+            else if (|s_req_strb)
                 buffer_bogus;
 
             // buffer load response

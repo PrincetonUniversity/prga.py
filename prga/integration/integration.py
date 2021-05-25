@@ -282,7 +282,7 @@ class Integration(object):
             context._database[ModuleView.design, d] = Module(d,
                     view = ModuleView.design,
                     module_class = ModuleClass.aux,
-                    verilog_template = "axi4lite/{}.tmpl.v".format(d),
+                    verilog_template = "piton_v0/axi4/{}.tmpl.v".format(d),
                     verilog_dep_headers = ("prga_system.vh", ))
         ModuleUtils.instantiate(context.database[ModuleView.design, "prga_ctrl"],
                 context.database[ModuleView.design, "prga_clkdiv"], "i_clkdiv")

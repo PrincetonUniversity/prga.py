@@ -8,9 +8,9 @@
 `default_nettype none
 
 module prga_rxi #(
-    parameter DEFAULT_TIMEOUT           = `PRGA_RXI_DATA_WIDTH'd1000
-    , parameter HSR_FIFO_DEPTH_LOG2     = 3
-    , parameter ASYNC_FIFO_DEPTH_LOG2   = 6
+    parameter [`PRGA_RXI_DATA_WIDTH - 1:0]  DEFAULT_TIMEOUT         = 1000
+    , parameter                             HSR_FIFO_DEPTH_LOG2     = 3
+    , parameter                             ASYNC_FIFO_DEPTH_LOG2   = 6
 ) (
     // -- Interface Ctrl -----------------------------------------------------
     input wire                                          clk
@@ -285,13 +285,14 @@ module prga_rxi #(
         ,.DATA_WIDTH    (`PRGA_RXI_F2B_ELEM_WIDTH)
         ,.LOOKAHEAD     (1)
     ) i_fifo_f2b (
-        .wclk           (clk)
-        ,.wrst          (~rst_n)
+        .rst_n          (rst_n)
+        ,.wclk          (clk)
+        ,.rclk          (aclk)
+
         ,.full          (fifo_f2b_full_p)
         ,.wr            (fifo_f2b_wr_f)
         ,.din           (fifo_f2b_din_f)
-        ,.rclk          (aclk)
-        ,.rrst          (~arst_n)
+
         ,.empty         (fifo_f2b_empty_p)
         ,.rd            (fifo_f2b_rd_f)
         ,.dout          (fifo_f2b_dout_p)
@@ -338,13 +339,14 @@ module prga_rxi #(
         ,.DATA_WIDTH    (`PRGA_RXI_B2F_ELEM_WIDTH)
         ,.LOOKAHEAD     (1)
     ) i_fifo_b2f (
-        .wclk           (aclk)
-        ,.wrst          (~arst_n)
+        .rst_n          (arst_n)
+        ,.wclk          (aclk)
+        ,.rclk          (clk)
+
         ,.full          (fifo_b2f_full_p)
         ,.wr            (fifo_b2f_wr_f)
         ,.din           (fifo_b2f_din_f)
-        ,.rclk          (clk)
-        ,.rrst          (~rst_n)
+
         ,.empty         (fifo_b2f_empty_p)
         ,.rd            (fifo_b2f_rd_f)
         ,.dout          (fifo_b2f_dout_p)

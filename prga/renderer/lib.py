@@ -887,13 +887,27 @@ class BuiltinCellLibrary(object):
                     module_class = ModuleClass.aux,
                     verilog_template = "cdclib/{}.v".format(d)))
         # CDC v2
-        for d in ("prga_async_fifo", ):
+        context._add_module(Module("prga_async_fifo",
+                is_cell = True,
+                key = "prga_async_fifo:v2",
+                view = ModuleView.design,
+                module_class = ModuleClass.aux,
+                verilog_template = "cdclib/prga_async_fifo.v2.v"))
+
+        # more modules
+        for d in ("prga_axi4lite_sri_transducer", ):
             context._add_module(Module(d,
                     is_cell = True,
-                    key = "prga_async_fifo:v2",
                     view = ModuleView.design,
                     module_class = ModuleClass.aux,
-                    verilog_template = "cdclib/{}.v2.v".format(d)))
+                    verilog_template = "axi4/{}.tmpl.v".format(d)))
+
+        for d in ("prga_sri_demux", ):
+            context._add_module(Module(d,
+                    is_cell = True,
+                    view = ModuleView.design,
+                    module_class = ModuleClass.aux,
+                    verilog_template = "sri/{}.tmpl.v".format(d)))
 
         # module dependencies
         deps = {
@@ -909,6 +923,8 @@ class BuiltinCellLibrary(object):
                 "prga_fifo_rdbuf":      ("prga_fifo_lookahead_buffer", "prga_valrdy_buf"),
                 "prga_fifo_wrbuf":      ("prga_valrdy_buf", ),
                 "prga_tzc":             ("prga_onehot_decoder", ),
+                "prga_axi4lite_sri_transducer":     ("prga_arb_robinfair", "prga_fifo"),
+                "prga_sri_demux":       ("prga_fifo", ),
                 }
 
         for d, subs in deps.items():
@@ -921,6 +937,7 @@ class BuiltinCellLibrary(object):
         # header dependencies
         deps = {
                 "prga_fifo_resizer":    ("prga_utils.vh", ),
+                "prga_axi4lite_sri_transducer":     ("prga_axi4.vh", ),
                 }
         for d, hdrs in deps.items():
             context.database[ModuleView.design, d].verilog_dep_headers = hdrs

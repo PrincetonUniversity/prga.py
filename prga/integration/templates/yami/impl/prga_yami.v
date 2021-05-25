@@ -45,7 +45,7 @@ module prga_yami #(
 
     // == Application Clock Domain ===========================================
     // -- Interface Ctrl -----------------------------------------------------
-    input wire                                          aclk
+    , input wire                                        aclk
     , input wire                                        arst_n
     , output reg                                        err_o       // error signal out
     , input wire                                        deactivate_i    // deactivation from RXI
@@ -280,13 +280,14 @@ module prga_yami #(
         ,.DATA_WIDTH    (`PRGA_YAMI_FMC_FIFO_ELEM_WIDTH)
         ,.LOOKAHEAD     (1)
     ) i_fifo_fmc (
-        .wclk           (aclk)
-        ,.wrst          (~arst_n)
+        .rst_n          (arst_n)
+        ,.wclk          (aclk)
+        ,.rclk          (clk)
+
         ,.full          (fifo_fmc_full_p)
         ,.wr            (fifo_fmc_wr_f)
         ,.din           (fifo_fmc_din_f)
-        ,.rclk          (clk)
-        ,.rrst          (~rst_n)
+
         ,.empty         (fifo_fmc_empty_p)
         ,.rd            (fifo_fmc_rd_f)
         ,.dout          (fifo_fmc_dout_p)
@@ -333,13 +334,14 @@ module prga_yami #(
         ,.DATA_WIDTH    (`PRGA_YAMI_MFC_FIFO_ELEM_WIDTH)
         ,.LOOKAHEAD     (1)
     ) i_fifo_mfc (
-        .wclk           (clk)
-        ,.wrst          (~rst_n)
+        .rst_n          (rst_n)
+        ,.wclk          (clk)
+        ,.rclk          (aclk)
+
         ,.full          (fifo_mfc_full_p)
         ,.wr            (fifo_mfc_wr_f)
         ,.din           (fifo_mfc_din_f)
-        ,.rclk          (aclk)
-        ,.rrst          (~arst_n)
+
         ,.empty         (fifo_mfc_empty_p)
         ,.rd            (fifo_mfc_rd_f)
         ,.dout          (fifo_mfc_dout_p)

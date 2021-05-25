@@ -54,7 +54,7 @@ module prga_yami_be #(
 
     always @(posedge clk) begin
         if (~rst_n)
-            status          <= `PRGA_YAMI_CREG_STATUS_RESET
+            status          <= `PRGA_YAMI_CREG_STATUS_RESET;
 
         else 
             case (status)
@@ -268,9 +268,7 @@ module prga_yami_be #(
             `PRGA_YAMI_REQTYPE_AMO_MAX,
             `PRGA_YAMI_REQTYPE_AMO_MAXU,
             `PRGA_YAMI_REQTYPE_AMO_MIN,
-            `PRGA_YAMI_REQTYPE_AMO_MINU,
-            `PRGA_YAMI_REQTYPE_AMO_CAS1,
-            `PRGA_YAMI_REQTYPE_AMO_CAS2:
+            `PRGA_YAMI_REQTYPE_AMO_MINU:
                 missing_features = missing_features
                                     | `PRGA_YAMI_CREG_FEATURE_LOAD
                                     | `PRGA_YAMI_CREG_FEATURE_STORE
@@ -348,7 +346,7 @@ module prga_yami_be #(
 
         if (fmc_creg_vld) begin
             fifo_fmc_wr = 1'b1;
-            fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_REQTYPE_INDEX] = `PRGA_YAMI_REQTYPE_CREG_ACK];
+            fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_REQTYPE_INDEX] = `PRGA_YAMI_REQTYPE_CREG_ACK;
             fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_DATA_INDEX] = fmc_creg_data;
         end else if (yami_active) begin
             fmc_rdy = !fifo_fmc_full;

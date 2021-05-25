@@ -77,13 +77,13 @@ module prga_yami_fe (
             `PRGA_YAMI_REQTYPE_STORE_NC,
             `PRGA_YAMI_REQTYPE_AMO_LR,
             `PRGA_YAMI_REQTYPE_AMO_SC,
-            `PRGA_YAMI_REQTYPE_AMO_SWAP
+            `PRGA_YAMI_REQTYPE_AMO_SWAP,
             `PRGA_YAMI_REQTYPE_AMO_ADD,
             `PRGA_YAMI_REQTYPE_AMO_AND,
             `PRGA_YAMI_REQTYPE_AMO_OR,
             `PRGA_YAMI_REQTYPE_AMO_XOR,
             `PRGA_YAMI_REQTYPE_AMO_MAX,
-            `PRGA_YAMI_REQTYPE_AMO_MAXU
+            `PRGA_YAMI_REQTYPE_AMO_MAXU,
             `PRGA_YAMI_REQTYPE_AMO_MIN,
             `PRGA_YAMI_REQTYPE_AMO_MINU: begin
                 fifo_fmc_rd = fmc_rdy;

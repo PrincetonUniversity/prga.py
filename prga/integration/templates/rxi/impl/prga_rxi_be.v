@@ -7,8 +7,8 @@
 `include "prga_rxi.vh"
 `default_nettype none
 
-module prga_rxi_fe #(
-    parameter DEFAULT_TIMEOUT           = `PRGA_RXI_DATA_WIDTH'd1000
+module prga_rxi_be #(
+    parameter [`PRGA_RXI_DATA_WIDTH - 1:0]  DEFAULT_TIMEOUT = 1000
 ) (
     // -- Interface Ctrl -----------------------------------------------------
     input wire                                          clk
@@ -207,7 +207,7 @@ module prga_rxi_fe #(
             m_resp_timer    <= { `PRGA_RXI_DATA_WIDTH {1'b0} };
         end else if (!rxi_active || m_resp_timeout || (m_resp_vld && !m_resp_sync)) begin
             m_resp_timer    <= { `PRGA_RXI_DATA_WIDTH {1'b0} };
-        end else if (m_resp_rdy && irc) begin
+        end else if (m_resp_rdy && !prq_empty) begin
             m_resp_timer    <= m_resp_timer + 1;
         end
     end
@@ -256,10 +256,10 @@ module prga_rxi_fe #(
         end
 
         // hardware-sync'ed or custom soft registers
-        else if (f2b_regid >= PRGA_RXI_NSRID_HSR) begin
+        else if (f2b_regid >= `PRGA_RXI_NSRID_HSR) begin
             
             prq_wr = !f2b_empty;
-            prq_din = (f2b_regid < PRGA_RXI_SRID_BASE) ? PRQ_TOKEN_DROP : PRQ_TOKEN_FWD;
+            prq_din = (f2b_regid < `PRGA_RXI_SRID_BASE) ? PRQ_TOKEN_DROP : PRQ_TOKEN_FWD;
 
             // inactive interface
             if (!rxi_active || event_error) begin
@@ -381,7 +381,7 @@ module prga_rxi_fe #(
 
             // try accepting response
             else begin
-                m_resp_rdy = !b2f_full || prq_empty || prq_dout = PRQ_TOKEN_DROP;
+                m_resp_rdy = !b2f_full || prq_empty || prq_dout == PRQ_TOKEN_DROP;
 
                 // valid response (or sync)?
                 if (m_resp_vld) begin

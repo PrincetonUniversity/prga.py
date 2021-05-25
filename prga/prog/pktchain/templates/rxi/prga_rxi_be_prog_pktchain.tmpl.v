@@ -54,7 +54,7 @@ module prga_rxi_be_prog_pktchain (
         .clk                (clk)
         ,.rst               (~rst_n)
         ,.rdy_o             (prog_req_rdy)
-        ,.val_i             (req_val)
+        ,.val_i             (prog_req_vld)
         ,.data_i            ({
             prog_req_addr
             , prog_req_strb
@@ -189,14 +189,14 @@ module prga_rxi_be_prog_pktchain (
             end else if (frame_i_empty_f || frame_i_rd) begin
                 if (~resizer_empty && (&frame_tmp_mask)) begin
                     frame_i_empty_f <= 1'b0;
-                    frame_i <= frame_tmp;
+                    frame_if <= frame_tmp;
                 end else begin
                     frame_i_empty_f <= 1'b1;
                 end
             end
         end
 
-        assign resizer_rd = ~( (&frame_tmp_mask) && frame_i_val && frame_i_stall );
+        assign resizer_rd = frame_i_empty_f || frame_i_rd;
         assign frame_i = frame_if;
         assign frame_i_empty = frame_i_empty_f;
 
@@ -289,9 +289,9 @@ module prga_rxi_be_prog_pktchain (
     pktchain_ctrl i_ctrl (
         .clk                        (clk)
         ,.rst_n                     (rst_n)
-        ,.frame_i_val               (frame_i_val)
+        ,.frame_i_rd                (frame_i_rd)
+        ,.frame_i_empty             (frame_i_empty)
         ,.frame_i                   (frame_i)
-        ,.frame_i_stall             (frame_i_stall)
         ,.err_resp_inval            (err_resp_inval)
         ,.err_bitstream_corrupted   (err_bitstream_corrupted)
         ,.err_bitstream_incomplete  (err_bitstream_incomplete)

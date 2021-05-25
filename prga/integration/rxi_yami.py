@@ -170,7 +170,12 @@ class IntegrationRXIYAMI(object):
             ModuleUtils.create_port(m, "yami_activate_o",   rxi.num_yami, "output")
             ModuleUtils.create_port(m, "app_rst_n",         1,            "output")
             cls._create_ports_rxi(m, prefix = "m_", fabric = True,
-                    addr_width = rxi.addr_width, data_bytes_log2 = rxi.data_bytes_log2)
+                    addr_width = rxi.addr_width - rxi.data_bytes_log2,  # reduced address width after aligning
+                    data_bytes_log2 = rxi.data_bytes_log2)
+
+            for sub in ("prga_valrdy_buf", "prga_async_fifo:v2", "prga_fifo_wrbuf", "prga_fifo_rdbuf",
+                    "prga_rxi_fe", "prga_rxi_be", ):
+                ModuleUtils.instantiate(m, context.database[ModuleView.design, sub], sub)
 
         if True:
             # prga YAMI interface
@@ -186,15 +191,19 @@ class IntegrationRXIYAMI(object):
             ModuleUtils.create_port(m, "deactivate_i",  1, "input")
             ModuleUtils.create_port(m, "activate_i",    1, "input")
             cls._create_ports_rxi(m, slave = True, prefix = "creg_",
-                    addr_width = 8, data_bytes_log2 = yami.fmc_data_bytes_log2)
+                    addr_width = 2, data_bytes_log2 = yami.fmc_data_bytes_log2)
             cls._create_ports_yami(m, yami, slave = True, prefix = "s")
             cls._create_ports_yami(m, yami, fabric = True, prefix = "a")
+
+            for sub in ("prga_valrdy_buf", "prga_async_fifo:v2", "prga_fifo_wrbuf", "prga_fifo_rdbuf",
+                    "prga_yami_fe", "prga_yami_be", ):
+                ModuleUtils.instantiate(m, context.database[ModuleView.design, sub], sub)
 
     @classmethod
     def build_system(cls, context, *,
 
             # RXI configuration
-            rxi_addr_width = 12,
+            rxi_addr_width = 12,            # of bytes, not register ID
             rxi_data_bytes_log2 = 2,
 
             # YAMI configuration
@@ -215,7 +224,7 @@ class IntegrationRXIYAMI(object):
             context (`Context`):
 
         Keyword Args:
-            rxi_addr_width (:obj:`int`):
+            rxi_addr_width (:obj:`int`): address of bytes, not registers
             rxi_data_bytes_log2 (:obj:`int`): 2 for 4B, 3 for 8B
             num_yami (:obj:`int`): Number of YAMI interfaces
             yami_fmc_addr_width (:obj:`int`):
@@ -293,7 +302,7 @@ class IntegrationRXIYAMI(object):
             # add RXI ports
             app.add_port("rxi_req_rdy",         "output", 1)
             app.add_port("rxi_req_vld",         "input",  1)
-            app.add_port("rxi_req_addr",        "input",  rxi_addr_width)
+            app.add_port("rxi_req_addr",        "input",  rxi_addr_width - rxi_data_bytes_log2)
             app.add_port("rxi_req_strb",        "input",  1 << rxi_data_bytes_log2)
             app.add_port("rxi_req_data",        "input",  8 << rxi_data_bytes_log2)
             app.add_port("rxi_resp_rdy",        "input",  1)
@@ -336,7 +345,8 @@ class IntegrationRXIYAMI(object):
             # create ports in fabric wrapper
             cls._create_ports_syscon(core, slave = True, prefix = "app_")
             cls._create_ports_rxi(core, slave = True, prefix = "rxi_", fabric = True,
-                    addr_width = rxi_addr_width, data_bytes_log2 = rxi_data_bytes_log2)
+                    addr_width = rxi_addr_width - rxi_data_bytes_log2,
+                    data_bytes_log2 = rxi_data_bytes_log2)
             for i in range(num_yami):
                 cls._create_ports_yami(core, yami, slave = True, prefix = "yami_i{}_".format(i), fabric = True)
 
@@ -392,7 +402,8 @@ class IntegrationRXIYAMI(object):
 
         # add RXI instance/ports/connections
         rxi_ports = cls._create_ports_rxi(system, slave = True, prefix = "rxi_",
-                addr_width = rxi_addr_width, data_bytes_log2 = rxi_data_bytes_log2)
+                addr_width = rxi_addr_width - rxi_data_bytes_log2,
+                data_bytes_log2 = rxi_data_bytes_log2)
         rxi_ctrl = ModuleUtils.instantiate(system, context.database[ModuleView.design, "prga_rxi"], "i_rxi")
 
         NetUtils.connect(syscon_ports["clk"],   rxi_ctrl.pins["clk"])
@@ -417,7 +428,7 @@ class IntegrationRXIYAMI(object):
         # add YAMI instances/ports/connections
         for i in range(num_yami):
             yami_creg_ports = cls._create_ports_rxi(system, slave = True, prefix = "yami_i{}_creg_".format(i),
-                    addr_width = 8, data_bytes_log2 = yami_fmc_data_bytes_log2)
+                    addr_width = 2, data_bytes_log2 = yami_fmc_data_bytes_log2)
             yami_ports = cls._create_ports_yami(system, yami, slave = True, prefix = "yami_i{}_".format(i))
             yami_ctrl = ModuleUtils.instantiate(system, context.database[ModuleView.design, "prga_yami"],
                     "i_yami_i{}".format(i))

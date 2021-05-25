@@ -2,12 +2,11 @@
 
 `include "prga_axi4.vh"
 `default_nettype none
-{%- set data_bytes_log2 = (module.ports.a4l_wstrb|length - 1).bit_length() %}
 
-module {{ module.name }} #(
+module prga_axi4lite_sri_transducer #(
     parameter   PRQ_DEPTH_LOG2  = 6
-    , parameter ADDR_WIDTH      = {{ module.ports.a4l_awaddr|length }}
-    , parameter DATA_BYTES_LOG2 = {{ data_bytes_log2 }}
+    , parameter ADDR_WIDTH      = 12
+    , parameter DATA_BYTES_LOG2 = 3
 ) (
     input wire                                          clk
     , input wire                                        rst_n

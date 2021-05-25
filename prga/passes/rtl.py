@@ -27,7 +27,7 @@ class VerilogCollection(AbstractPass):
             ``context.summary.rtl["sources"]`` will not be overwritten
     """
 
-    __slots__ = ['renderer', 'src_output_dir', 'header_output_dir', 'view',
+    __slots__ = ['src_output_dir', 'header_output_dir', 'view',
             'visited_modules', 'added_headers', 'incremental']
     def __init__(self, src_output_dir = ".", header_output_dir = None, view = ModuleView.design,
             incremental = False):
@@ -47,7 +47,7 @@ class VerilogCollection(AbstractPass):
                         .format(h, requirer))
             for hh in deps:
                 self._process_header(context, hh, h)
-            self.renderer.add_generic(os.path.join(self.header_output_dir, f), template,
+            context.renderer.add_generic(os.path.join(self.header_output_dir, f), template,
                     context = context, **parameters)
             self.added_headers.add(h)
 
@@ -58,7 +58,7 @@ class VerilogCollection(AbstractPass):
         self.visited_modules[module.key] = f
 
         if getattr(module, "do_generate_verilog", not os.path.isabs(f)):
-            self.renderer.add_verilog(f, module, getattr(module, "verilog_template", "generic/module.tmpl.v"))
+            context.renderer.add_verilog(f, module, getattr(module, "verilog_template", "generic/module.tmpl.v"))
         for instance in module.instances.values():
             self._process_module(context, instance.model)
 
@@ -78,7 +78,6 @@ class VerilogCollection(AbstractPass):
         return True
 
     def run(self, context):
-        self.renderer = context.renderer
         if (top := context.system_top) is None:
             raise PRGAAPIError("System top module is not set")
 
