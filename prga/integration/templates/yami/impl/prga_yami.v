@@ -187,9 +187,9 @@ module prga_yami #(
         ,.rdy_i             (smfc_rdy_p)
         ,.val_o             (smfc_vld_f)
         ,.data_o            ({
-            smfc_type
-            , smfc_addr
-            , smfc_data
+            smfc_type_f
+            , smfc_addr_f
+            , smfc_data_f
         })
         );
 
@@ -369,12 +369,12 @@ module prga_yami #(
     ) i_fifo_mfc_rdbuf (
         .clk            (aclk)
         ,.rst_n         (arst_n)
-        ,.rd_o          (fifo_fmc_rd_f)
-        ,.empty_i       (fifo_fmc_empty_p)
-        ,.data_i        (fifo_fmc_dout_p)
-        ,.rd_i          (fifo_fmc_rd)
-        ,.empty_o       (fifo_fmc_empty)
-        ,.data_o        (fifo_fmc_dout)
+        ,.rd_o          (fifo_mfc_rd_f)
+        ,.empty_i       (fifo_mfc_empty_p)
+        ,.data_i        (fifo_mfc_dout_p)
+        ,.rd_i          (fifo_mfc_rd)
+        ,.empty_o       (fifo_mfc_empty)
+        ,.data_o        (fifo_mfc_dout)
         );
 
     // -- YAMI frontend --

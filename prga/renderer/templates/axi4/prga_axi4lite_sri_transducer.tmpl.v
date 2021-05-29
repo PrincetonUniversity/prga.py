@@ -62,7 +62,7 @@ module prga_axi4lite_sri_transducer #(
         .clk                (clk)
         ,.rst_n             (rst_n)
         ,.ce                (arb_ar_awn ? a4l_arready : (a4l_awready && a4l_wready))
-        ,.candidates        ({(a4l_awvalid & a4l_wvalid), a4l_arvalid})
+        ,.candidates        ({a4l_arvalid, (a4l_awvalid & a4l_wvalid)})
         ,.current           (arb_ar_awn)
         );
 

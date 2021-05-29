@@ -30,7 +30,6 @@ module prga_rxi_fe #(
     , output reg [`PRGA_RXI_DATA_WIDTH-1:0]             s_resp_data
 
     // -- Programming Master Interface ---------------------------------------
-    // status
     , output reg                                        prog_rst_n
     , input wire                                        prog_done
 
@@ -141,43 +140,58 @@ module prga_rxi_fe #(
 
     // -- soft register timeout --
     reg                             timeout_limit_we;
-    reg [`PRGA_RXI_DATA_WIDTH-1:0]  timeout_limit;
+    wire [`PRGA_RXI_DATA_WIDTH-1:0] timeout_limit;
 
-    always @(posedge clk) begin
-        if (~rst_n) begin
-            timeout_limit <= { `PRGA_RXI_DATA_WIDTH {1'b0} };
-        end else if (timeout_limit_we) begin
-            timeout_limit <= s_req_data;
-        end
-    end
+    prga_byteaddressable_reg #(
+        .NUM_BYTES  (`PRGA_RXI_DATA_BYTES)
+    ) i_timeout_limit (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.wr                (timeout_limit_we)
+        ,.mask              (s_req_strb)
+        ,.din               (s_req_data)
+        ,.dout              (timeout_limit)
+        );
 
     // -- YAMI enable state --
     reg                             yami_enable_we;
-    reg [`PRGA_RXI_DATA_WIDTH-1:0]  yami_enable;
+    wire [`PRGA_RXI_DATA_WIDTH-1:0] yami_enable;
 
-    always @(posedge clk) begin
-        if (~rst_n) begin
-            yami_enable <= { `PRGA_RXI_DATA_WIDTH {1'b0} };
-        end else if (yami_enable_we) begin
-            yami_enable <= s_req_data;
-        end
-    end
+    prga_byteaddressable_reg #(
+        .NUM_BYTES  (`PRGA_RXI_DATA_BYTES)
+    ) i_yami_enable (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.wr                (yami_enable_we)
+        ,.mask              (s_req_strb)
+        ,.din               (s_req_data)
+        ,.dout              (yami_enable)
+        );
 
     // -- prog reset --
     reg                             prog_rst_countdown_rst;
-    reg [`PRGA_RXI_DATA_WIDTH-1:0]  prog_rst_countdown;
+    wire [`PRGA_RXI_DATA_WIDTH-1:0] prog_rst_countdown;
+
+    prga_byteaddressable_reg #(
+        .NUM_BYTES  (`PRGA_RXI_DATA_BYTES)
+    ) i_prog_rst (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.wr                (prog_rst_countdown_rst || prog_rst_countdown > 0)
+        ,.mask              (prog_rst_countdown_rst ? s_req_strb :
+                                                      {`PRGA_RXI_DATA_BYTES {1'b1} })
+        ,.din               (prog_rst_countdown_rst ? s_req_data :
+                                                      (prog_rst_countdown - 1))
+        ,.dout              (prog_rst_countdown)
+        );
 
     always @(posedge clk) begin
         if (~rst_n) begin
             prog_rst_n           <= 1'b0;
-            prog_rst_countdown   <= {`PRGA_RXI_DATA_WIDTH {1'b0} };
         end else if (prog_rst_countdown_rst) begin
             prog_rst_n           <= 1'b0;
-            prog_rst_countdown   <= s_req_data;
         end else if (prog_rst_countdown == 0) begin
             prog_rst_n           <= 1'b1;
-        end else begin
-            prog_rst_countdown   <= prog_rst_countdown - 1;
         end
     end
 
@@ -361,7 +375,6 @@ module prga_rxi_fe #(
     assign prog_req_data = s_req_data;
 
     assign scratchpad_id = s_req_addr[0+:`PRGA_RXI_SCRATCHPAD_ID_WIDTH];
-    assign iq_id = s_req_addr[0+:`PRGA_RXI_HSR_IQ_ID_WIDTH];
     assign oq_id = s_req_addr[0+:`PRGA_RXI_HSR_OQ_ID_WIDTH];
     assign tq_id = s_req_addr[0+:`PRGA_RXI_HSR_TQ_ID_WIDTH];
     assign phsr_id = s_req_addr[0+:`PRGA_RXI_HSR_PLAIN_ID_WIDTH];
@@ -427,7 +440,7 @@ module prga_rxi_fe #(
         if (s_req_addr == `PRGA_RXI_NSRID_STATUS) begin
 
             // store needs to be forwarded into the application clock domain
-            if (&s_req_strb) begin
+            if (s_req_strb[0]) begin
                 forward_f2b;
 
                 // Notes:
@@ -446,10 +459,6 @@ module prga_rxi_fe #(
                     event_deactivate = ~s_req_data[0];
                 end
             end
-
-            // subword store is ignored
-            else if (|s_req_strb)
-                buffer_bogus;
 
             // buffer load response
             else
@@ -476,7 +485,7 @@ module prga_rxi_fe #(
         else if (s_req_addr == `PRGA_RXI_NSRID_CLKDIV) begin
 
             // store is processed only in the system clock domain
-            if (&s_req_strb) begin
+            if (s_req_strb[0]) begin
                 buffer_bogus;
                 clkdiv_factor_we = s_req_vld && !prq_full;
             end
@@ -492,7 +501,7 @@ module prga_rxi_fe #(
         else if (s_req_addr == `PRGA_RXI_NSRID_SOFTREG_TIMEOUT) begin
 
             // store needs to be forwarded into the application clock domain
-            if (&s_req_strb) begin
+            if (|s_req_strb) begin
                 forward_f2b;
                 timeout_limit_we = s_req_vld && !f2b_full && !prq_full;
             end
@@ -507,7 +516,7 @@ module prga_rxi_fe #(
         else if (s_req_addr == `PRGA_RXI_NSRID_APP_RST) begin
 
             // store needs to be forwarded into the application clock domain
-            if (&s_req_strb)
+            if (|s_req_strb)
                 forward_f2b;
 
             // buffer bogus response
@@ -527,7 +536,7 @@ module prga_rxi_fe #(
             // store and load are both processed only in the system clock domain
             // load does nothing and returns bogus data
             buffer_bogus;
-            prog_rst_countdown_rst = s_req_vld && !prq_full && &s_req_strb;
+            prog_rst_countdown_rst = s_req_vld && !prq_full && |s_req_strb;
         end
 
         // -- YAMI enable --
@@ -535,7 +544,7 @@ module prga_rxi_fe #(
         else if (s_req_addr == `PRGA_RXI_NSRID_ENABLE_YAMI) begin
 
             // store needs to be forwarded into the application clock domain
-            if (&s_req_strb) begin
+            if (|s_req_strb) begin
                 forward_f2b;
                 yami_enable_we = s_req_vld && !f2b_full && !prq_full;
             end

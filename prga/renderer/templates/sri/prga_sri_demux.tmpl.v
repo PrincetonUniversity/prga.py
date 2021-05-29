@@ -52,6 +52,7 @@ module prga_sri_demux #(
     prga_fifo #(
         .DEPTH_LOG2     (PRQ_DEPTH_LOG2)
         ,.DATA_WIDTH    (1)
+        ,.LOOKAHEAD     (1)
     ) i_prq (
         .clk                (clk)
         ,.rst               (~rst_n)
@@ -76,9 +77,9 @@ module prga_sri_demux #(
 
     // -- response muxing --
     assign s_resp_vld = !prq_empty && (prq_resp_src ? m1_resp_vld : m0_resp_vld);
-    assign s_resp_data = prq_resp_src ? m0_resp_data : m1_resp_data;
+    assign s_resp_data = prq_resp_src ? m1_resp_data : m0_resp_data;
     assign m0_resp_rdy = !prq_empty && ~prq_resp_src && s_resp_rdy;
-    assign m0_resp_rdy = !prq_empty &&  prq_resp_src && s_resp_rdy;
+    assign m1_resp_rdy = !prq_empty &&  prq_resp_src && s_resp_rdy;
     assign prq_rd = s_resp_rdy && (prq_resp_src ? m1_resp_vld : m0_resp_vld);
 
 endmodule

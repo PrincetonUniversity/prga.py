@@ -98,6 +98,20 @@ module prga_yami_tri_transducer (
     reg [63:0]                      transducer_l15_data_next;
     reg [`L15_AMO_OP_WIDTH-1:0]     transducer_l15_amo_op_next;
 
+    // swap byte endianness of transducer_l15_data_next
+    wire [63:0]                     transducer_l15_data_next_endianswapped;
+    assign transducer_l15_data_next_endianswapped = {
+        transducer_l15_data_next[ 0+:8],
+        transducer_l15_data_next[ 8+:8],
+        transducer_l15_data_next[16+:8],
+        transducer_l15_data_next[24+:8],
+        transducer_l15_data_next[32+:8],
+        transducer_l15_data_next[40+:8],
+        transducer_l15_data_next[48+:8],
+        transducer_l15_data_next[56+:8]
+    };
+
+    // Sequential logic
     always @(posedge clk) begin
         if (~rst_n) begin
             l15_transducer_ack_pending  <= 1'b0;
@@ -118,7 +132,7 @@ module prga_yami_tri_transducer (
             transducer_l15_nc           <= transducer_l15_nc_next;
             transducer_l15_size         <= transducer_l15_size_next;
             transducer_l15_address      <= transducer_l15_address_next;
-            transducer_l15_data         <= transducer_l15_data_next;
+            transducer_l15_data         <= transducer_l15_data_next_endianswapped;
             transducer_l15_amo_op       <= transducer_l15_amo_op_next;
 
         end else begin
@@ -178,6 +192,30 @@ module prga_yami_tri_transducer (
 
     assign transducer_l15_req_ack = l15_transducer_val && ~l15_transducer_stall;
 
+    // swap byte endianness of l15_transducer_data_f at 8B boundaries
+    wire [127:0]                    l15_transducer_data_f_endianswapped;
+    assign l15_transducer_data_f_endianswapped = {
+        // high-address 8B
+        l15_transducer_data_f[ 64+:8],
+        l15_transducer_data_f[ 72+:8],
+        l15_transducer_data_f[ 80+:8],
+        l15_transducer_data_f[ 88+:8],
+        l15_transducer_data_f[ 96+:8],
+        l15_transducer_data_f[104+:8],
+        l15_transducer_data_f[112+:8],
+        l15_transducer_data_f[120+:8],
+
+        // low-address 8B
+        l15_transducer_data_f[  0+:8],
+        l15_transducer_data_f[  8+:8],
+        l15_transducer_data_f[ 16+:8],
+        l15_transducer_data_f[ 24+:8],
+        l15_transducer_data_f[ 32+:8],
+        l15_transducer_data_f[ 40+:8],
+        l15_transducer_data_f[ 48+:8],
+        l15_transducer_data_f[ 56+:8]
+    };
+
     // =======================================================================
     // == L15 -> MFC Cacheline Load Processor ================================
     // =======================================================================
@@ -201,7 +239,7 @@ module prga_yami_tri_transducer (
 
     generate
         if (MFC_DATA_PER_CACHELINE == 1) begin
-            assign mfc_data = l15_transducer_data_f;
+            assign mfc_data = l15_transducer_data_f_endianswapped;
             assign mfc_elem_last = 1'b1;
 
         end else begin
@@ -214,7 +252,7 @@ module prga_yami_tri_transducer (
 
             genvar gv_mfc_elem;
             for (gv_mfc_elem = 0; gv_mfc_elem < MFC_DATA_PER_CACHELINE; gv_mfc_elem = gv_mfc_elem + 1) begin: g_mfc_elem
-                assign mfc_elems[gv_mfc_elem] = l15_transducer_data_f[gv_mfc_elem * `PRGA_YAMI_MFC_DATA_WIDTH +: `PRGA_YAMI_MFC_DATA_WIDTH];
+                assign mfc_elems[gv_mfc_elem] = l15_transducer_data_f_endianswapped[gv_mfc_elem * `PRGA_YAMI_MFC_DATA_WIDTH +: `PRGA_YAMI_MFC_DATA_WIDTH];
             end
 
             always @(posedge clk) begin
@@ -307,11 +345,11 @@ module prga_yami_tri_transducer (
         endcase
 
         case (fmc_size)
-            `PRGA_YAMI_SIZE_1B:  transducer_l15_size_next = `PCX_SIZE_WIDTH'b001;
-            `PRGA_YAMI_SIZE_2B:  transducer_l15_size_next = `PCX_SIZE_WIDTH'b010;
-            `PRGA_YAMI_SIZE_4B:  transducer_l15_size_next = `PCX_SIZE_WIDTH'b011;
-            `PRGA_YAMI_SIZE_16B: transducer_l15_size_next = `PCX_SIZE_WIDTH'b111;
-            default:             transducer_l15_size_next = `PCX_SIZE_WIDTH'b100;
+            `PRGA_YAMI_SIZE_1B:  transducer_l15_size_next = `MSG_DATA_SIZE_1B;
+            `PRGA_YAMI_SIZE_2B:  transducer_l15_size_next = `MSG_DATA_SIZE_2B;
+            `PRGA_YAMI_SIZE_4B:  transducer_l15_size_next = `MSG_DATA_SIZE_4B;
+            `PRGA_YAMI_SIZE_16B: transducer_l15_size_next = `MSG_DATA_SIZE_16B;
+            default:             transducer_l15_size_next = `MSG_DATA_SIZE_8B;
         endcase
 
         transducer_l15_address_next[0 +: `PRGA_YAMI_FMC_ADDR_WIDTH] = fmc_addr;

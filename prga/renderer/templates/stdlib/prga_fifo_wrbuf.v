@@ -33,6 +33,6 @@ module prga_fifo_wrbuf #(
         ,.data_o        (data_o)
         );
 
-    assign full_i = ~buf_rdy_o;
+    assign full_o = ~buf_rdy_o;
 
 endmodule

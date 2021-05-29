@@ -114,7 +114,7 @@ class IntegrationRXIYAMI(object):
                 "prga_rxi_fe_phsr": ("prga_byteaddressable_reg", "prga_arb_robinfair"),
                 "prga_rxi_fe":      ("prga_clkdiv", "prga_sync_basic", "prga_byteaddressable_reg", "prga_rxi_fe_iq",
                     "prga_fifo", "prga_tokenfifo", "prga_rxi_fe_phsr"),
-                "prga_rxi_be":      ("prga_fifo", ),
+                "prga_rxi_be":      ("prga_fifo", "prga_byteaddressable_reg"),
                 }
 
         for d, subs in deps.items():

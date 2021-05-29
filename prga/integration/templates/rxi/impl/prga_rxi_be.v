@@ -46,6 +46,23 @@ module prga_rxi_be #(
     );
 
     // =======================================================================
+    // -- FE -> BE FIFO ------------------------------------------------------
+    // =======================================================================
+
+    // -- decode fifo element ------------------------------------------------
+    wire [`PRGA_RXI_DATA_BYTES-1:0]     f2b_strb;
+    wire [`PRGA_RXI_REGID_WIDTH-1:0]    f2b_regid;
+    wire [`PRGA_RXI_DATA_WIDTH-1:0]     f2b_data;
+
+    assign f2b_strb = f2b_elem[`PRGA_RXI_F2B_STRB_INDEX];
+    assign f2b_regid = f2b_elem[`PRGA_RXI_F2B_REGID_INDEX];
+    assign f2b_data = f2b_elem[`PRGA_RXI_F2B_DATA_INDEX];
+
+    assign m_req_addr = f2b_regid;
+    assign m_req_strb = f2b_strb;
+    assign m_req_data = f2b_data;
+
+    // =======================================================================
     // -- Ctrl Registers -----------------------------------------------------
     // =======================================================================
 
@@ -78,38 +95,50 @@ module prga_rxi_be #(
 
     // -- app reset --
     reg                             app_rst_countdown_rst;
-    reg [`PRGA_RXI_DATA_WIDTH-1:0]  app_rst_countdown;
-    wire [`PRGA_RXI_DATA_WIDTH-1:0] app_rst_countdown_rstvalue;
+    wire [`PRGA_RXI_DATA_WIDTH-1:0] app_rst_countdown;
+
+    prga_byteaddressable_reg #(
+        .NUM_BYTES  (`PRGA_RXI_DATA_BYTES)
+    ) i_app_rst (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.wr                (app_rst_countdown_rst || app_rst_countdown > 0)
+        ,.mask              (app_rst_countdown_rst ? f2b_strb :
+                                                     {`PRGA_RXI_DATA_BYTES {1'b1} })
+        ,.din               (app_rst_countdown_rst ? f2b_data :
+                                                     (app_rst_countdown - 1))
+        ,.dout              (app_rst_countdown)
+        );
 
     always @(posedge clk) begin
         if (~rst_n) begin
             // system reset locks application in reset state until explicitly de-reset
             app_rst_n           <= 1'b0;
-            app_rst_countdown   <= {`PRGA_RXI_DATA_WIDTH {1'b0} };
         end else if (!rxi_active) begin
             app_rst_n           <= 1'b0;
-            app_rst_countdown   <= {`PRGA_RXI_DATA_WIDTH {1'b0} };
         end else if (app_rst_countdown_rst) begin
             app_rst_n           <= 1'b0;
-            app_rst_countdown   <= app_rst_countdown_rstvalue;
-        end else if (app_rst_countdown) begin
-            app_rst_countdown   <= app_rst_countdown - 1;
-
+        end else if (app_rst_countdown == 1) begin
             // prevent auto-releasing app_rst_n
-            app_rst_n           <= app_rst_countdown == 1;
+            app_rst_n           <= 1'b1;
         end
     end
 
     // -- timeout --
-    reg [`PRGA_RXI_DATA_WIDTH-1:0]  timeout_limit, timeout_limit_next;
+    reg                             timeout_limit_we;
+    wire [`PRGA_RXI_DATA_WIDTH-1:0] timeout_limit;
 
-    always @(posedge clk) begin
-        if (~rst_n) begin
-            timeout_limit   <= DEFAULT_TIMEOUT;
-        end else begin
-            timeout_limit   <= timeout_limit_next;
-        end
-    end
+    prga_byteaddressable_reg #(
+        .NUM_BYTES  (`PRGA_RXI_DATA_BYTES)
+        ,.RST_VALUE (DEFAULT_TIMEOUT)
+    ) i_timeout_limit (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.wr                (timeout_limit_we)
+        ,.mask              (f2b_strb)
+        ,.din               (f2b_data)
+        ,.dout              (timeout_limit)
+        );
 
     // -- errcode --
     reg                                 b2f_errcode_unsynced;
@@ -130,17 +159,23 @@ module prga_rxi_be #(
     end
 
     // -- YAMI enable --
-    reg [`PRGA_RXI_NUM_YAMI-1:0]    yami_enable, yami_enable_next;
+    reg                             yami_enable_we;
+    wire [`PRGA_RXI_DATA_WIDTH-1:0] yami_enable;
 
-    always @(posedge clk) begin
-        if (~rst_n) begin
-            yami_enable     <= { `PRGA_RXI_NUM_YAMI {1'b0} };
-        end else begin
-            yami_enable     <= yami_enable_next;
-        end
-    end
+    prga_byteaddressable_reg #(
+        .NUM_BYTES  (`PRGA_RXI_DATA_BYTES)
+    ) i_yami_enable (
+        .clk                (clk)
+        ,.rst               (~rst_n)
+        ,.wr                (1'b1)
+        ,.mask              (yami_enable_we ? f2b_strb :
+                                              {`PRGA_RXI_DATA_BYTES {1'b1} })
+        ,.din               (yami_enable_we ? f2b_data :
+                                              {`PRGA_RXI_DATA_WIDTH {1'b0} })
+        ,.dout              (yami_enable)
+        );
 
-    assign yami_activate_o = { `PRGA_RXI_NUM_YAMI {rxi_active} } & yami_enable;
+    assign yami_activate_o = { `PRGA_RXI_NUM_YAMI {rxi_active} } & yami_enable[0+:`PRGA_RXI_NUM_YAMI];
 
     // =======================================================================
     // -- Application - RXI Channel ------------------------------------------ 
@@ -213,24 +248,6 @@ module prga_rxi_be #(
     end
 
     // =======================================================================
-    // -- FE -> BE FIFO ------------------------------------------------------
-    // =======================================================================
-
-    // -- decode fifo element ------------------------------------------------
-    wire [`PRGA_RXI_DATA_BYTES-1:0]     f2b_strb;
-    wire [`PRGA_RXI_REGID_WIDTH-1:0]    f2b_regid;
-    wire [`PRGA_RXI_DATA_WIDTH-1:0]     f2b_data;
-
-    assign f2b_strb = f2b_elem[`PRGA_RXI_F2B_STRB_INDEX];
-    assign f2b_regid = f2b_elem[`PRGA_RXI_F2B_REGID_INDEX];
-    assign f2b_data = f2b_elem[`PRGA_RXI_F2B_DATA_INDEX];
-
-    assign m_req_addr = f2b_regid;
-    assign m_req_strb = f2b_strb;
-    assign m_req_data = f2b_data;
-    assign app_rst_countdown_rstvalue = f2b_data;
-
-    // =======================================================================
     // -- RXI - Application Channel ------------------------------------------ 
     // =======================================================================
 
@@ -243,8 +260,8 @@ module prga_rxi_be #(
         event_activate = 1'b0;
         event_deactivate = 1'b0;
         app_rst_countdown_rst = 1'b0;
-        timeout_limit_next = timeout_limit;
-        yami_enable_next = yami_enable;
+        timeout_limit_we = 1'b0;
+        yami_enable_we = 1'b0;
 
         prq_din = PRQ_TOKEN_FWD;
         prq_wr = 1'b0;
@@ -300,14 +317,13 @@ module prga_rxi_be #(
 
                 // update soft register timeout limit as soon as we see this
                 // request
-                `PRGA_RXI_NSRID_SOFTREG_TIMEOUT: if (!f2b_empty) begin
-                    timeout_limit_next = f2b_data;
-                end
+                `PRGA_RXI_NSRID_SOFTREG_TIMEOUT:
+                    timeout_limit_we = !f2b_empty;
 
                 // update YAMI enable state as soon as we see this
-                `PRGA_RXI_NSRID_ENABLE_YAMI: if (!f2b_empty) begin
-                        yami_enable_next = f2b_data[0 +: `PRGA_RXI_NUM_YAMI];
-                end
+                `PRGA_RXI_NSRID_ENABLE_YAMI:
+                    yami_enable_we = !f2b_empty;
+
             endcase
         end
     end

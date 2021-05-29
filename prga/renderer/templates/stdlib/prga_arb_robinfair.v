@@ -47,6 +47,6 @@ module prga_arb_robinfair (clk, rst_n, ce, candidates, current, next);
         ,.all_zero_o    (tzc_invld)
         );
 
-    assign next = tzc_invld ? current : (current + tzc + 1);
+    assign next = (current + 1) + (tzc_invld ? 0 : tzc);
 
 endmodule
