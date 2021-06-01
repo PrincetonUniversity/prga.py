@@ -21,8 +21,10 @@ module prga_app_axi4ldshim #(
     , input wire                                    rst_n
 
     // == Control (Soft Registers) ===========================================
+    //  XXX: Control values are assumed to be constant throughout a full burst
+    //  (from the first AW/W request to the last B response)
     , input wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]    cfg_addr_offset
-    // TODO: NC?
+    , input wire                                    cfg_nc
 
     // == Kernel-side AXI4 Interface ==========================================
     , output wire                                   awready
@@ -46,8 +48,7 @@ module prga_app_axi4ldshim #(
     // -- FMC (fabric-memory channel) ----------------------------------------
     , input wire                                    fmc_rdy
     , output wire                                   fmc_vld
-    // load shim, fixed request type
-    // , output wire [`PRGA_YAMI_REQTYPE_WIDTH-1:0]    fmc_type
+    , output reg [`PRGA_YAMI_REQTYPE_WIDTH-1:0]     fmc_type
     , output reg [`PRGA_YAMI_SIZE_WIDTH-1:0]        fmc_size
     , output reg [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]    fmc_addr
     , output reg [`PRGA_YAMI_FMC_DATA_WIDTH-1:0]    fmc_data
@@ -68,7 +69,13 @@ module prga_app_axi4ldshim #(
     reg [`PRGA_AXI4_AXBURST_WIDTH-1:0]  awburst_f;
     reg [`PRGA_AXI4_AXLEN_WIDTH-1:0]    wlen;
 
-    // assign fmc_type = `PRGA_YAMI_REQTYPE_STORE;
+    always @(posedge clk) begin
+        if (~rst_n) begin
+            fmc_type <= `PRGA_YAMI_REQTYPE_STORE;
+        end else begin
+            fmc_type <= cfg_nc ? `PRGA_YAMI_REQTYPE_STORE_NC : `PRGA_YAMI_REQTYPE_STORE;
+        end
+    end
 
     always @(posedge clk) begin
         if (~rst_n) begin

@@ -53,6 +53,11 @@ class _BaseIntf(Object):
         raise AttributeError(attr)
 
     @property
+    def type_(self):
+        """:obj:`str`: Type of this interface."""
+        return type(self).__name__[1:]  # remove leading '_'
+
+    @property
     def id_(self):
         """:obj:`str`: Identifier of this interface.
         

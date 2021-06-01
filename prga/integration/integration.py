@@ -583,6 +583,13 @@ class Integration(object):
         raise NotImplementedError("Unsupported fabric interface: {}".format(intfs))
 
     @classmethod
+    def _aggregate_fabric_intfs(cls, intfs):
+        g = {}
+        for intf in intfs:
+            g.setdefault(intf.type_, {})[intf.id_] = intf
+        return g
+
+    @classmethod
     def build_system_piton_vanilla(cls, context, fabric_axi4 = True, *,
             name = "prga_system", fabric_wrapper = None):
         """Create the system top wrapping the reconfigurable fabric. This method is implemented specifically for
@@ -607,13 +614,15 @@ class Integration(object):
 
         fabric_intfs = None
         if fabric_axi4:
-            fabric_intfs = set([FabricIntf.syscon("app"),
+            fabric_intfs = cls._aggregate_fabric_intfs([
+                FabricIntf.syscon("app"),
                 FabricIntf.softreg("ureg", strb = True),
                 FabricIntf.memory_piton_axi4r(),
                 FabricIntf.memory_piton_axi4w(),
                 ])
         else:
-            fabric_intfs = set([FabricIntf.syscon("app"),
+            fabric_intfs = cls._aggregate_fabric_intfs([
+                FabricIntf.syscon("app"),
                 FabricIntf.softreg("ureg", strb = True),
                 FabricIntf.memory_piton("uccm"),
                 ])

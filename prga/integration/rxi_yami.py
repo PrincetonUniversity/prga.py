@@ -200,6 +200,13 @@ class IntegrationRXIYAMI(object):
                 ModuleUtils.instantiate(m, context.database[ModuleView.design, sub], sub)
 
     @classmethod
+    def _aggregate_fabric_intfs(cls, intfs):
+        g = {}
+        for intf in intfs:
+            g.setdefault(intf.type_, {})[intf.id_] = intf
+        return g
+
+    @classmethod
     def build_system(cls, context, *,
 
             # RXI configuration
@@ -256,7 +263,7 @@ class IntegrationRXIYAMI(object):
                         yami_cacheline_bytes_log2)
                     for i in range(num_yami)
                     ])
-        fabric_intfs = set(
+        fabric_intfs = cls._aggregate_fabric_intfs(
                 [
                     FabricIntf.syscon,
                     FabricIntf.rxi(
