@@ -1,11 +1,14 @@
 # -*- encoding: ascii -*-
 
+from .util import AppUtils
 from ..netlist import Module, ModuleUtils
 from ..util import Object, Enum
 from ..exception import PRGATypeError, PRGAAPIError
 
 from collections import namedtuple
-import os
+import os, logging
+
+_logger = logging.getLogger(__name__)
 
 __all__ = ['SoftRegSpace']
 
@@ -263,6 +266,9 @@ class SoftRegSpace(Object):
                             addr = self._allocate_rxi(promoted_type)
 
                             if addr is not None:
+                                _logger.info("Soft register '{}' promoted from type '{}' to '{}'"
+                                        .format(name, type_.name, promoted_type.name))
+                                type_ = promoted_type
                                 break
 
                     # use user-specified type
@@ -353,11 +359,14 @@ class SoftRegSpace(Object):
         # create module
         m = context.add_module(Module("prga_app_softregs",
                 softregs = self,
+                portgroups = {},
                 verilog_template = verilog_template,
                 verilog_dep_headers = ("prga_app_softregs.vh", )))
 
         # create ports
         if self.intf.is_softreg:
+            raise NotImplementedError("(Temporarily) Unsupported interface type: {}".format(repr(self.intf)))
+
             ModuleUtils.create_port(m, "clk",               1,                    "input" , is_clock = True)
             ModuleUtils.create_port(m, "rst_n",             1,                    "input")
             ModuleUtils.create_port(m, "softreg_req_rdy",   1,                    "output")
@@ -373,20 +382,10 @@ class SoftRegSpace(Object):
             ModuleUtils.create_port(m, "softreg_resp_data", 8 << self.intf.data_bytes_log2, "output")
 
         elif self.intf.is_rxi:
-            ModuleUtils.create_port(m, "clk",               1,                              "input" ,
-                    is_clock = True)
-            ModuleUtils.create_port(m, "rst_n",             1,                              "input")
-            ModuleUtils.create_port(m, "rxi_req_rdy",       1,                              "output")
-            ModuleUtils.create_port(m, "rxi_req_vld",       1,                              "input")
-            ModuleUtils.create_port(m, "rxi_req_addr",      self.intf.addr_width - self.intf.data_bytes_log2,
-                    "input")
-            ModuleUtils.create_port(m, "rxi_req_strb",      1 << self.intf.data_bytes_log2, "input")
-            ModuleUtils.create_port(m, "rxi_req_data",      8 << self.intf.data_bytes_log2, "input")
-            ModuleUtils.create_port(m, "rxi_resp_rdy",      1,                              "input")
-            ModuleUtils.create_port(m, "rxi_resp_vld",      1,                              "output")
-            ModuleUtils.create_port(m, "rxi_resp_sync",     1,                              "output")
-            ModuleUtils.create_port(m, "rxi_resp_syncaddr", 5,                              "output")
-            ModuleUtils.create_port(m, "rxi_resp_data",     8 << self.intf.data_bytes_log2, "output")
+
+            m.portgroups.setdefault("syscon", {})[None] = AppUtils.create_syscon_ports(m, slave = True)
+            m.portgroups.setdefault("rxi", {})[None] = AppUtils.create_rxi_ports(m, self.intf,
+                    slave = True, prefix = "rxi_", omit_ports = ("resp_parity"))
 
         else:
             raise NotImplementedError("Unsupported interface type: {}".format(repr(self.intf)))
@@ -462,3 +461,16 @@ class SoftRegSpace(Object):
 
         # return the module
         return m
+
+    def log_summary(self, lvl = logging.INFO):
+        """Print a summary to log."""
+
+        _logger.log(lvl, "*****************************")
+        _logger.log(lvl, "** Summary: Soft Registers **")
+        _logger.log(lvl, "*****************************")
+        for r in sorted(self.regs.values(), key = lambda r: r.addr):
+            _logger.log(lvl, " - name: {}".format(r.name))
+            _logger.log(lvl, "   type: {}".format(r.type_.name))
+            _logger.log(lvl, "   addr: 0x{:04x}".format(r.addr))
+            _logger.log(lvl, "   width: {}".format(r.width))
+            _logger.log(lvl, "   bytewidth: {}".format(r.bytewidth))

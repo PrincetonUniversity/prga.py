@@ -12,9 +12,10 @@
 *       - Break burst access into YAMI transactions
 */
 
-module prga_app_axi4ldshim #(
-    parameter   KERNEL_ADDR_WIDTH = 32
-    , parameter KERNEL_DATA_BYTES_LOG2 = 4
+module {{ module.name }} #(
+    parameter   KERNEL_ADDR_WIDTH = {{ module.ports.araddr|length }}
+    , parameter KERNEL_DATA_BYTES_LOG2 = {{ ((module.ports.rdata|length) / 8 - 1).bit_length() }}
+    , parameter PRQ_DEPTH_LOG2 = 3
     , parameter OPT_THRUPUT = 1     // optimize throughput (use feedthrough control)
 ) (
     input wire                                      clk
@@ -131,7 +132,7 @@ module prga_app_axi4ldshim #(
 
     prga_fifo #(
         .DATA_WIDTH     (`PRGA_AXI4_AXLEN_WIDTH)
-        ,.DEPTH_LOG2    (2)
+        ,.DEPTH_LOG2    (PRQ_DEPTH_LOG2)
         ,.LOOKAHEAD     (1)
     ) i_prq (
         .clk            (clk)

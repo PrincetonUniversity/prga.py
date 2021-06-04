@@ -1,7 +1,13 @@
 # -*- encoding: ascii -*-
 
+from .util import AppUtils
+from .common import AppCommonMixin
+from .mem import AppMemMixin
 from .softregs import SoftRegSpace
-from ..util import Object, ReadonlyMappingProxy
+from .kernel import KernelBuilder
+from ..netlist import Module, ModuleUtils
+from ..renderer import FileRenderer
+from ..util import Object, ReadonlyMappingProxy, uno
 from ..exception import PRGAAPIError
 
 import os
@@ -11,7 +17,7 @@ __all__ = ['AppContext']
 # ----------------------------------------------------------------------------
 # -- App Context -------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class AppContext(Object):
+class AppContext(Object, AppMemMixin, AppCommonMixin):
     """The context for application wrapping.
 
     Args:
@@ -28,16 +34,15 @@ class AppContext(Object):
             '_verilog_headers',         # Verilog header rendering tasks
             '_modules',                 # name to module mapping
             '_top',                     # top-level module
-            '_used_intfs',              # used interfaces
             '_softregs',                # soft register space
             'template_search_paths',    # File renderer template search paths
             ]
 
     def __init__(self, intfs, template_search_paths = None):
         self._intfs = intfs
+        self._verilog_headers = {}
         self._modules = {}
         self._top = None
-        self._used_intfs = set()
         self._softregs = None
 
         if template_search_paths is None:
@@ -53,6 +58,25 @@ class AppContext(Object):
 
         SoftRegSpace._register_cells(self)
 
+    @classmethod
+    def construct_from_arch_context(cls, context, template_search_paths = None):
+        """Create an `AppContext` from a `Context`.
+
+        Args:
+            context (`Context`):
+            template_search_paths (:obj:`str` or :obj:`Container` [:obj:`str` ]): Additional search paths other than
+                the default ones
+
+        Returns:
+            `AppContext`:
+        """
+
+        intfs = {}
+        for intf in context.summary.integration["fabric_intfs"]:
+            intfs.setdefault(intf.type_, {})[intf.id_] = intf
+
+        return cls(intfs, template_search_paths)
+
     @property
     def modules(self):
         """:obj:`dict` [:obj:`str`, `Module`]: Mapping from module names to modules."""
@@ -62,6 +86,30 @@ class AppContext(Object):
     def top(self):
         """:obj:`Module`: Top-level, i.e. wrapped, application."""
         return self._top
+
+    def get_intf(self, type_, id_ = None):
+        """Get the specified interface.
+
+        Args:
+            type_ (:obj:`str`): Interface type. "rxi", "yami", "syscon", etc.
+            id_ (:obj:`str`): Explicitly specify one of the interfaces of the same type. Use ``None`` as a wildcard
+
+        Returns:
+            `FabricIntf`:
+        """
+
+        if (intfs := self._intfs.get(type_)) is None:
+            return None
+
+        if intf := intfs.get(id_):
+            return intf
+        elif id_ is not None:
+            return None
+        else:
+            try:
+                return next(iter(intfs.values()))
+            except StopIteration:
+                return None
 
     def add_module(self, module):
         """Add ``module`` into this context.
@@ -109,34 +157,75 @@ class AppContext(Object):
             raise PRGAAPIError("Soft register space already initialized")
 
         # find the proper fabric interface for this
-        candidates = None
+        intf = None
         if type_ is not None:
-            if candidates := self._intfs.get(type_):
+            if intf := self.get_intf(type_, id_):
                 pass
             else:
                 raise PRGAAPIError("Interface of type '{}' not found".format(type_))
+
         else:
-            if candidates := self._intfs.get("rxi"):
+            if intf := self.get_intf("rxi", id_):
                 pass
-            elif candidates := self._intfs.get("softreg"):
+            elif intf := self.get_intf("softreg", id_):
                 pass
             else:
-                raise PRGAAPIError("Interface not found that supports soft registers")
-
-        intf = None
-        if id_ is not None:
-            if intf := candidates.get(id_):
-                pass
-            else:
-                raise PRGAAPIError("Interface of ID '{}' not found".format(id_))
-        elif len(candidates) == 0:
-            raise PRGAAPIError("Interface not found that supports soft registers")
-        else:
-            intf = next(iter(candidates.values()))
-
-        if intf.id_ in self._used_intfs:
-            raise PRGAAPIError("Interface '{}' is aleady in use".format(repr(intf))
-        self._used_intfs.add(intf.id_)
+                raise PRGAAPIError("No interface found supporting soft registers")
 
         # initialize softregspace
         s = self._softregs = SoftRegSpace(intf)
+        return s
+
+    def build_kernel(self, name, verilog_src, **kwargs):
+        """Build a kernel module for the accelerator.
+
+        Args:
+            name (:obj:`str`): Name of the kernel
+            verilog_src (:obj:`str`): Source file of the kernel
+
+        Returns:
+            `KernelBuilder`:
+        """
+        return KernelBuilder(self,
+                self.add_module(KernelBuilder.new(name, verilog_src, **kwargs)))
+        
+    def create_top(self, name = "app_top", **kwargs):
+        """Create the top-level module for the accelerator.
+
+        Args:
+            name (:obj:`str`): Name of the top-level module.
+
+        Keyword Args:
+            **kwargs: Custom key-value arguments. These attributes are added to ``__dict__`` of the top-level module
+                and accessible as dynamic attributes
+        """
+        m = self._top = self.add_module(Module(name,
+            portgroups = {},
+            **kwargs))
+
+        # short aliases
+        u = lambda x: "" if x is None else (x + "_")
+        mcp = lambda n, w, d: ModuleUtils.create_port(m, n, w, d)
+
+        # create ports that match the interfaces
+        for type_, intfs in self._intfs.items():
+            for id_, intf in intfs.items():
+
+                if intf.is_syscon:
+                    d = {}
+                    d["clk"] = ModuleUtils.create_port(m, u(id_) + "clk", 1, "input", is_clock = True)
+                    d["rst_n"] = mcp(u(id_) + "rst_n", 1, "input")
+                    m.portgroups.setdefault("syscon", {})[id_] = d
+
+                elif intf.is_rxi:
+                    m.portgroups.setdefault("rxi", {})[id_] = AppUtils.create_rxi_ports(
+                            m, intf, slave = True, prefix = "rxi_" + u(id_)) 
+
+                elif intf.is_yami:
+                    m.portgroups.setdefault("yami", {})[id_] = AppUtils.create_yami_ports(
+                            m, intf, slave = False, prefix = "yami_" + u(id_))
+
+                else:
+                    raise NotImplementedError("Unsupported interface: {}".format(repr(intf)))
+                
+        return m

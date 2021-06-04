@@ -12,9 +12,10 @@
 *       - Break burst access into YAMI transactions
 */
 
-module prga_app_axi4ldshim #(
-    parameter   KERNEL_ADDR_WIDTH = 32
-    , parameter KERNEL_DATA_BYTES_LOG2 = 2
+module {{ module.name }} #(
+    parameter   KERNEL_ADDR_WIDTH = {{ module.ports.araddr|length }}
+    , parameter KERNEL_DATA_BYTES_LOG2 = {{ ((module.ports.rdata|length) / 8 - 1).bit_length() }}
+    , parameter PRQ_DEPTH_LOG2 = 3
     , parameter OPT_THRUPUT = 1     // optimize throughput (use feedthrough control)
 ) (
     input wire                                      clk
@@ -77,7 +78,13 @@ module prga_app_axi4ldshim #(
             arburst_f <= `PRGA_AXI4_AXBURST_FIXED;
             arlen_f <= { `PRGA_AXI4_AXLEN_WIDTH {1'b0} };
             fmc_vld <= 1'b0;
-            fmc_size <= `PRGA_YAMI_SIZE_FULL;
+            fmc_size <= KERNEL_DATA_BYTES_LOG2 == 0 ? `PRGA_YAMI_SIZE_1B :
+                        KERNEL_DATA_BYTES_LOG2 == 1 ? `PRGA_YAMI_SIZE_2B :
+                        KERNEL_DATA_BYTES_LOG2 == 2 ? `PRGA_YAMI_SIZE_4B :
+                        KERNEL_DATA_BYTES_LOG2 == 3 ? `PRGA_YAMI_SIZE_8B :
+                        KERNEL_DATA_BYTES_LOG2 == 4 ? `PRGA_YAMI_SIZE_16B :
+                        KERNEL_DATA_BYTES_LOG2 == 5 ? `PRGA_YAMI_SIZE_32B :
+                                                      `PRGA_YAMI_SIZE_FULL;
             fmc_addr <= { `PRGA_YAMI_FMC_ADDR_WIDTH {1'b0} };
         end else if (arready && arvalid) begin
             arburst_f <= arburst;
@@ -127,7 +134,7 @@ module prga_app_axi4ldshim #(
 
     prga_fifo #(
         .DATA_WIDTH     (`PRGA_AXI4_AXLEN_WIDTH)
-        ,.DEPTH_LOG2    (2)
+        ,.DEPTH_LOG2    (PRQ_DEPTH_LOG2)
         ,.LOOKAHEAD     (1)
     ) i_prq (
         .clk            (clk)
