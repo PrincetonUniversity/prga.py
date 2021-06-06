@@ -681,7 +681,7 @@ module prga_rxi_fe #(
         // -- sync plain registers first --
         // --------------------------------
         if (!f2b_wr) begin
-            f2b_wr = phsr_vld;
+            f2b_wr = phsr_f2b_vld;
             f2b_data[`PRGA_RXI_F2B_STRB_INDEX] = { `PRGA_RXI_DATA_BYTES {1'b1} };
             f2b_data[`PRGA_RXI_F2B_REGID_INDEX] = `PRGA_RXI_NSRID_HSR
                                                   + `PRGA_RXI_HSRID_PLAIN

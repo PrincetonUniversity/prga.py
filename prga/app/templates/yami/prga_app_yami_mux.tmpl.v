@@ -61,7 +61,7 @@ module {{ module.name }} #(
         ,.LOOKAHEAD     (1)
     ) i_prq (
         .clk            (clk)
-        ,.rst_n         (~rst_n)
+        ,.rst           (~rst_n)
         ,.full          (prq_full)
         ,.wr            (prq_wr)
         ,.din           (req_srcid)
@@ -74,15 +74,13 @@ module {{ module.name }} #(
     // -- function: trailing zero count (no all-zero detection) --
     function automatic [SRCID_WIDTH - 1:0] tzc;
         input [NUM_SRC - 1:0] arg;
+        begin
+            integer i;
 
-        tzc = 0;
-
-        integer i;
-        for (i = 1; i < NUM_SRC; i = i + 1) begin
-            if (arg[i]) begin
-                tzc = i;
-                break;
-            end
+            tzc = 0;
+            for (i = NUM_SRC - 1; i > 0; i = i - 1)
+                if (arg[i])
+                    tzc = i;
         end
     endfunction
 
@@ -93,7 +91,7 @@ module {{ module.name }} #(
 
     always @(posedge clk) begin
         if (~rst_n) begin
-            req_srcid <= { DSTID_WIDTH {1'b0} };
+            req_srcid <= { SRCID_WIDTH {1'b0} };
         end else if (!dst_fmc_vld || dst_fmc_rdy) begin
             req_srcid <= req_srcid + tzc({fmc_src_vld, fmc_src_vld} >> req_srcid);
         end

@@ -5,6 +5,7 @@ from .common import AppCommonMixin
 from .mem import AppMemMixin
 from .softregs import SoftRegSpace
 from .kernel import KernelBuilder
+from .rtl import AppRTLMixin
 from ..netlist import Module, ModuleUtils
 from ..renderer import FileRenderer
 from ..util import Object, ReadonlyMappingProxy, uno
@@ -17,7 +18,7 @@ __all__ = ['AppContext']
 # ----------------------------------------------------------------------------
 # -- App Context -------------------------------------------------------------
 # ----------------------------------------------------------------------------
-class AppContext(Object, AppMemMixin, AppCommonMixin):
+class AppContext(Object, AppMemMixin, AppCommonMixin, AppRTLMixin):
     """The context for application wrapping.
 
     Args:
@@ -35,6 +36,7 @@ class AppContext(Object, AppMemMixin, AppCommonMixin):
             '_modules',                 # name to module mapping
             '_top',                     # top-level module
             '_softregs',                # soft register space
+            '_renderer',                # File renderer. Created on demand
             'template_search_paths',    # File renderer template search paths
             ]
 
@@ -58,6 +60,25 @@ class AppContext(Object, AppMemMixin, AppCommonMixin):
 
         SoftRegSpace._register_cells(self)
 
+    @property
+    def renderer(self):
+        """`FileRenderer`: File renderer of the current context."""
+        try:
+            return self._renderer
+        except AttributeError:
+            r = self._renderer = FileRenderer(*self.template_search_paths)
+            return r
+
+    @renderer.setter
+    def renderer(self, r):
+        if r is None:
+            try:
+                del self._renderer
+            except AttributeError:
+                pass
+        else:
+            self._renderer = r
+
     @classmethod
     def construct_from_arch_context(cls, context, template_search_paths = None):
         """Create an `AppContext` from a `Context`.
@@ -71,11 +92,7 @@ class AppContext(Object, AppMemMixin, AppCommonMixin):
             `AppContext`:
         """
 
-        intfs = {}
-        for intf in context.summary.integration["fabric_intfs"]:
-            intfs.setdefault(intf.type_, {})[intf.id_] = intf
-
-        return cls(intfs, template_search_paths)
+        return cls(context.summary.integration["fabric_intfs"], template_search_paths)
 
     @property
     def modules(self):

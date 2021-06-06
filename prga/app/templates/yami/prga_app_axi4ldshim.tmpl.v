@@ -14,7 +14,7 @@
 
 module {{ module.name }} #(
     parameter   KERNEL_ADDR_WIDTH = {{ module.ports.araddr|length }}
-    , parameter KERNEL_DATA_BYTES_LOG2 = {{ ((module.ports.rdata|length) / 8 - 1).bit_length() }}
+    , parameter KERNEL_DATA_BYTES_LOG2 = {{ ((module.ports.rdata|length) // 8 - 1).bit_length() }}
     , parameter PRQ_DEPTH_LOG2 = 3
     , parameter OPT_THRUPUT = 1     // optimize throughput (use feedthrough control)
 ) (
@@ -69,7 +69,7 @@ module {{ module.name }} #(
         if (~rst_n) begin
             fmc_type <= `PRGA_YAMI_REQTYPE_LOAD;
         end else begin
-            fmc_type <= cfg_nc ? `PRGA_YAMI_REQTYPE_LOAD_NC ? `PRGA_YAMI_REQTYPE_LOAD;
+            fmc_type <= cfg_nc ? `PRGA_YAMI_REQTYPE_LOAD_NC : `PRGA_YAMI_REQTYPE_LOAD;
         end
     end
 
@@ -90,13 +90,13 @@ module {{ module.name }} #(
             arburst_f <= arburst;
             arlen_f <= arlen;
             fmc_vld <= 1'b1;
-            fmc_size <= arsize == `PRGA_AXI4_AXSIZE_1B ? `PRGA_YAMI_SIZE_1B :
-                        `PRGA_AXI4_AXSIZE_2B  ? `PRGA_YAMI_SIZE_2B :
-                        `PRGA_AXI4_AXSIZE_4B  ? `PRGA_YAMI_SIZE_4B :
-                        `PRGA_AXI4_AXSIZE_8B  ? `PRGA_YAMI_SIZE_8B :
-                        `PRGA_AXI4_AXSIZE_16B ? `PRGA_YAMI_SIZE_16B :
-                        `PRGA_AXI4_AXSIZE_32B ? `PRGA_YAMI_SIZE_32B :
-                                                `PRGA_YAMI_SIZE_FULL;
+            fmc_size <= arsize == `PRGA_AXI4_AXSIZE_1B  ? `PRGA_YAMI_SIZE_1B :
+                        arsize == `PRGA_AXI4_AXSIZE_2B  ? `PRGA_YAMI_SIZE_2B :
+                        arsize == `PRGA_AXI4_AXSIZE_4B  ? `PRGA_YAMI_SIZE_4B :
+                        arsize == `PRGA_AXI4_AXSIZE_8B  ? `PRGA_YAMI_SIZE_8B :
+                        arsize == `PRGA_AXI4_AXSIZE_16B ? `PRGA_YAMI_SIZE_16B :
+                        arsize == `PRGA_AXI4_AXSIZE_32B ? `PRGA_YAMI_SIZE_32B :
+                                                          `PRGA_YAMI_SIZE_FULL;
             fmc_addr <= cfg_addr_offset + araddr;
         end else if (fmc_vld && fmc_rdy) begin
             if (arlen_f == 0) begin     // last request sent

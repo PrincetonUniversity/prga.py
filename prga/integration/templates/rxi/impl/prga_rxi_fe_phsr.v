@@ -10,7 +10,7 @@
 module prga_rxi_fe_phsr (
     // -- System Ctrl --------------------------------------------------------
     input wire                                          clk
-    , input wire                                        rst
+    , input wire                                        rst_n
 
     // -- System-side Interface ----------------------------------------------
     //  always ready :)
@@ -40,7 +40,7 @@ module prga_rxi_fe_phsr (
         for (gv_reg = 0; gv_reg < `PRGA_RXI_NUM_HSR_PLAINS; gv_reg = gv_reg + 1) begin: g_reg
 
             always @(posedge clk) begin
-                if (rst) begin
+                if (~rst_n) begin
                     unsynced[gv_reg]    <= 1'b0;
                 end else if (m_vld && m_rdy && m_id == gv_reg) begin
                     unsynced[gv_reg]    <= 1'b0;
@@ -64,7 +64,7 @@ module prga_rxi_fe_phsr (
                 .NUM_BYTES  (`PRGA_RXI_DATA_BYTES)
             ) i_reg (
                 .clk        (clk)
-                ,.rst       (rst)
+                ,.rst       (~rst_n)
                 ,.wr        (wr)
                 ,.mask      (mask)
                 ,.din       (din)
@@ -78,7 +78,7 @@ module prga_rxi_fe_phsr (
         .INDEX_WIDTH    (`PRGA_RXI_HSR_PLAIN_ID_WIDTH)
     ) i_arb (
         .clk            (clk)
-        ,.rst_n         (~rst)
+        ,.rst_n         (rst_n)
         ,.ce            (m_rdy && m_vld)
         ,.candidates    (unsynced)
         ,.current       (m_id)

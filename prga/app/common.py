@@ -1,7 +1,7 @@
 # -*- encoding: ascii -*-
 
 from .util import AppUtils
-from ..netlist import Module, ModuleUtils, NetUtils
+from ..netlist import Module, ModuleUtils, NetUtils, Const
 
 __all__ = []
 
@@ -50,12 +50,16 @@ class AppCommonMixin(object):
 
     def __gconnect(self, mpg, spg, mnets, snets, reqnames, respnames = tuple()):
         for name in reqnames:
-            if (mp := mpg.get(name)) and (sp := spg.get(name)):
-                NetUtils.connect( mnets[mp.key],    snets[sp.key] )
+            if (sp := spg.get(name)) and (mp := mpg.get(name)):
+                NetUtils.connect( mnets[mp.key],        snets[sp.key] )
+            elif sp:
+                NetUtils.connect( Const(0, len(sp)),    snets[sp.key] )
 
         for name in respnames:
             if (mp := mpg.get(name)) and (sp := spg.get(name)):
-                NetUtils.connect( snets[sp.key],    mnets[mp.key] )
+                NetUtils.connect( snets[sp.key],        mnets[mp.key] )
+            elif mp:
+                NetUtils.connect( Const(0, len(mp)),    mnets[mp.key] )
 
     def connect_portgroup(self, type_, master, slave, master_id = None, slave_id = None):
         """Connect port group, and insert valid/ready buffer bettern the groups.
@@ -134,17 +138,21 @@ class AppCommonMixin(object):
 
         mbus, sbus = [], []
         for name in portnames:
-            if name in mpg and name in spg:
+            if (sp := spg.get(name)) and (mp := mpg.get(name)):
                 mbus.append( mnets[mpg[name].key] )
                 sbus.append( snets[spg[name].key] )
+            elif sp:
+                NetUtils.connect( Const(0, len(sp)), snets[spg[name].key] )
 
         buf_width = sum(len(n) for n in mbus)
         ibuf = ModuleUtils.instantiate(module,
                 self.get_or_create_vldrdy_buf(buf_width, parity),
                 bufname)
 
-        NetUtils.connect(module.ports["clk"],       ibuf.pins["clk"])
-        NetUtils.connect(module.ports["rst_n"],     ibuf.pins["rst_n"])
+        syscon = next(iter(module.portgroups["syscon"].values()))
+
+        NetUtils.connect(syscon["clk"],             ibuf.pins["clk"])
+        NetUtils.connect(syscon["rst_n"],           ibuf.pins["rst_n"])
 
         NetUtils.connect(ibuf.pins["rdy_o"],        mnets[mpg[rdyname].key])
         NetUtils.connect(mnets[mpg[vldname].key],   ibuf.pins["vld_i"])
@@ -218,7 +226,7 @@ class AppCommonMixin(object):
 
             # buffer W channel
             self.__bgconnect( module, mpg, spg, mnets, snets, "i_buf_axi4w" + buffer_suffix,
-                    ("wlast", "wdata", "wuser", "wid"),
+                    ("wlast", "wdata", "wstrb", "wuser", "wid"),
                     "wvalid", "wready" )
 
             # buffer B channel

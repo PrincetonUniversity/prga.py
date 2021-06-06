@@ -192,6 +192,31 @@ class SoftRegSpace(Object):
             else:
                 return addr
 
+    def _filter_registers(self, include_types = None, exclude_types = None):
+        """Filter registers (for Jinja2 rendering).
+
+        Args:
+            include_types (:obj:`Container` [`SoftRegType` or :obj:`str` ]):
+            exclude_types (:obj:`Container` [`SoftRegType` or :obj:`str` ]):
+
+        Returns:
+            `Container` [`SoftReg`]:
+        """
+        if include_types is not None:
+            include_types = set( SoftRegType.construct( t ) for t in include_types )
+
+        if exclude_types is not None:
+            exclude_types = set( SoftRegType.construct( t ) for t in exclude_types )
+
+        l = []
+        for r in self.regs.values():
+            if include_types is not None and r.type_ not in include_types:
+                continue
+            elif exclude_types is not None and r.type_ in exclude_types:
+                continue
+            l.append( r )
+        return l
+
     def create_softreg(self, type_, name, rstval = 0, *,
             addr = None, width = None, dont_promote = False):
         """Create one soft register in the group.
@@ -385,7 +410,7 @@ class SoftRegSpace(Object):
 
             m.portgroups.setdefault("syscon", {})[None] = AppUtils.create_syscon_ports(m, slave = True)
             m.portgroups.setdefault("rxi", {})[None] = AppUtils.create_rxi_ports(m, self.intf,
-                    slave = True, prefix = "rxi_", omit_ports = ("resp_parity"))
+                    slave = True, prefix = "rxi_", omit_ports = ("resp_parity", ))
 
         else:
             raise NotImplementedError("Unsupported interface type: {}".format(repr(self.intf)))

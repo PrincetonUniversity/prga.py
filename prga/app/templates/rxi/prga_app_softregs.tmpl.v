@@ -5,7 +5,9 @@
 {%- macro rstval(name) -%} `PRGA_APP_SOFTREG_VAR_{{ name | upper }}_RSTVAL {%- endmacro %}
 {%- macro addr(name) -%} `PRGA_APP_SOFTREG_VAR_{{ name | upper }}_ADDR {%- endmacro %}
 
-module prga_app_softregs (
+module prga_app_softregs #(
+    parameter   PRQ_DEPTH_LOG2 = 3
+) (
     input wire                                      clk
     , input wire                                    rst_n
 
@@ -105,8 +107,7 @@ module prga_app_softregs (
 
     // -----------------------------------------------------------------------
     // -- assign internal IDs to the registers --
-    {%- set all_regs = softregs.regs.values()|rejectattr("is_reserved") %}
-    {%- set regular_regs = all_regs|rejectattr("is_hsr_ofifo")|rejectattr("is_hsr_tfifo")|rejectattr("is_hsr_kernel") %}
+    {%- set regular_regs = module.softregs._filter_registers( exclude_types = ["reserved", "hsr_ofifo", "hsr_tfifo", "hsr_kernel"] ) %}
     {%- set num_regular_regs = regular_regs|length %}
     localparam  NUM_REGS        = {{ num_regular_regs }};
     localparam  G_REGID_WIDTH   = {{ num_regular_regs.bit_length() or 1 }};
@@ -125,7 +126,7 @@ module prga_app_softregs (
     assign resp_data[G_REGID_NONE]  = {`PRGA_APP_SOFTREG_DATA_WIDTH{1'b0}};
 
     // -- assign internal IDs to the HSRs --
-    {%- set hsrs = (all_regs|selectattr("is_hsr_ofifo")|list) + (all_regs|selectattr("is_hsr_tfifo")|list) + (all_regs|selectattr("is_hsr_kernel")|list) %}
+    {%- set hsrs = module.softregs._filter_registers( include_types = ["hsr_ofifo", "hsr_tfifo", "hsr_kernel"] ) %}
     {%- set num_hsrs = hsrs|length %}
     localparam  NUM_HSRS        = {{ num_hsrs }};
     localparam  G_HSRID_WIDTH   = {{ num_hsrs.bit_length() or 1 }};
@@ -211,7 +212,7 @@ module prga_app_softregs (
         {%- endif %}
         );
 
-    {% if r.width < 8 * (2 ** softregs.intf.data_bytes_log2) %}
+    {% if r.width < 8 * (2 ** module.softregs.intf.data_bytes_log2) %}
     assign resp_data[REGID_{{ r.name|upper }}][`PRGA_APP_SOFTREG_DATA_WIDTH-1:{{ dwidth(r.name) }}] =
         { (`PRGA_APP_SOFTREG_DATA_WIDTH - {{ dwidth(r.name) }}) {1'b0} };
     {%- endif %}
@@ -229,7 +230,7 @@ module prga_app_softregs (
         ,.sync_vld      (sync_vld[HSRID_{{ r.name|upper }}])
         ,.sync_rdy      (sync_rdy[HSRID_{{ r.name|upper }}])
         ,.sync_data     (sync_data[HSRID_{{ r.name|upper }}][0+:{{ dwidth(r.name) }}])
-        {%- elif r.type_.is_hsr_kernel %}
+        {%- if r.type_.is_hsr_kernel %}
         ,.var_i         (var_{{ r.name }}_i)
 
         {%- elif r.type_.is_hsr_ofifo %}
@@ -244,8 +245,8 @@ module prga_app_softregs (
         {%- endif %}
         );
 
-    {% if r.width < 8 * (2 ** softregs.intf.data_bytes_log2) %}
-    assign sync_data[HSRID_{{ r.name|upper }}][`PRGA_APP_SOFTREG_DATA_WIDTH-1:{{ dwidth(r.name) }}]
+    {% if r.width < 8 * (2 ** module.softregs.intf.data_bytes_log2) %}
+    assign sync_data[HSRID_{{ r.name|upper }}][`PRGA_APP_SOFTREG_DATA_WIDTH-1:{{ dwidth(r.name) }}] = 
         { (`PRGA_APP_SOFTREG_DATA_WIDTH - {{ dwidth(r.name) }}) {1'b0} };
     {%- endif %}
 
@@ -263,15 +264,15 @@ module prga_app_softregs (
         if (~rst_n) begin
             wptr <= { (PRQ_DEPTH_LOG2+1) {1'b0} };
             rptr <= { (PRQ_DEPTH_LOG2+1) {1'b0} };
-            resp_regid <= { (REGID_WIDTH+1) {1'b0} };
+            resp_regid <= { (G_REGID_WIDTH+1) {1'b0} };
         end else begin
             if (prq_rd && !prq_empty) begin
                 rptr <= rptr + 1;
-                resp_regid <= prq[rptr];
+                resp_regid <= prq[rptr[0+:PRQ_DEPTH_LOG2]];
             end
 
             if (rxi_req_rdy && rxi_req_vld && !prq_full) begin
-                prq[wptr] <= req_regid;
+                prq[wptr[0+:PRQ_DEPTH_LOG2]] <= req_regid;
                 wptr <= wptr + 1;
             end
         end

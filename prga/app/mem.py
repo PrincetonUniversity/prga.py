@@ -99,15 +99,16 @@ class AppMemMixin(object):
 
         m = self.add_module(Module(name,
             portgroups = {},
+            num_srcs = num_srcs,
             verilog_template = "yami/prga_app_yami_mux.tmpl.v"))
 
         m.portgroups.setdefault("syscon", {})[None] = AppUtils.create_syscon_ports(m, slave = True)
 
         for i in range(num_srcs):
             m.portgroups.setdefault("yami", {})[i] = AppUtils.create_yami_ports(m, yami,
-                    slave = True, prefix = "src{}_".format(i), omit_ports = ("fmc_parity"))
+                    slave = True, prefix = "src{}_".format(i), omit_ports = ("fmc_parity", ))
 
         m.portgroups.setdefault("yami", {})[None] = AppUtils.create_yami_ports(m, yami,
-                slave = False, prefix = "dst_")
+                slave = False, prefix = "dst_", omit_ports = ("fmc_parity", ))
 
         return m

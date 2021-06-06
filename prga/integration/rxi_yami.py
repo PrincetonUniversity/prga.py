@@ -265,7 +265,7 @@ class IntegrationRXIYAMI(object):
                     ])
         fabric_intfs = cls._aggregate_fabric_intfs(
                 [
-                    FabricIntf.syscon,
+                    FabricIntf.syscon("app"),
                     FabricIntf.rxi(
                         None,
                         rxi_addr_width,
@@ -295,8 +295,8 @@ class IntegrationRXIYAMI(object):
         # fill the application interface object
         if True:
             # add syscon first
-            clk     = app.add_port("clk", PortDirection.input_)
-            rst_n   = app.add_port("rst_n", PortDirection.input_)
+            clk     = app.add_port("app_clk", PortDirection.input_)
+            rst_n   = app.add_port("app_rst_n", PortDirection.input_)
 
             # needs special handling of clock
             for g in context.globals_.values():
@@ -363,11 +363,7 @@ class IntegrationRXIYAMI(object):
 
             # connect fabric pins to core ports
             for name, port in app.ports.items():
-                if name == "clk":
-                    NetUtils.connect(core.ports["app_clk"],   fabric.pins[(IOType.ipin, ) + port.get_io_constraint()])
-                elif name == "rst_n":
-                    NetUtils.connect(core.ports["app_rst_n"], fabric.pins[(IOType.ipin, ) + port.get_io_constraint()])
-                elif port.direction.is_input:
+                if port.direction.is_input:
                     for i, (idx, io) in enumerate(port.iter_io_constraints()):
                         if idx is None:
                             NetUtils.connect(core.ports[name],    fabric.pins[(IOType.ipin, ) + io])
@@ -392,16 +388,11 @@ class IntegrationRXIYAMI(object):
             # collect fabric pins
             nets = {}
             for name, port in app.ports.items():
-                if name == "clk":
-                    nets["app_clk"]     = fabric.pins[(IOType.ipin, ) + port.get_io_constraint()]
-                elif name == "rst_n":
-                    nets["app_rst_n"]   = fabric.pins[(IOType.ipin, ) + port.get_io_constraint()]
-                else:
-                    bits = []
-                    for i, (idx, io) in enumerate(port.iter_io_constraints()):
-                        if idx is None:
-                            bits.append(fabric.pins[(port.direction.case(IOType.ipin, IOType.opin), ) + io])
-                    nets[name] = NetUtils.concat(bits)
+                bits = []
+                for i, (idx, io) in enumerate(port.iter_io_constraints()):
+                    if idx is None:
+                        bits.append(fabric.pins[(port.direction.case(IOType.ipin, IOType.opin), ) + io])
+                nets[name] = NetUtils.concat(bits)
 
         # create ports in system, instantiate correspoding controller, and connect them
         # add syscon
