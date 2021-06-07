@@ -496,6 +496,7 @@ class SoftRegSpace(Object):
         for r in sorted(self.regs.values(), key = lambda r: r.addr):
             _logger.log(lvl, " - name: {}".format(r.name))
             _logger.log(lvl, "   type: {}".format(r.type_.name))
-            _logger.log(lvl, "   addr: 0x{:04x}".format(r.addr))
+            _logger.log(lvl, "   addr: 0x{:04x}".format(
+                r.addr << (self.intf.data_bytes_log2 if self.intf.is_rxi else 0)))
             _logger.log(lvl, "   width: {}".format(r.width))
             _logger.log(lvl, "   bytewidth: {}".format(r.bytewidth))
