@@ -106,9 +106,11 @@ class AppMemMixin(object):
 
         for i in range(num_srcs):
             m.portgroups.setdefault("yami", {})[i] = AppUtils.create_yami_ports(m, yami,
-                    slave = True, prefix = "src{}_".format(i), omit_ports = ("fmc_parity", ))
+                    slave = True, prefix = "src{}_".format(i),
+                    omit_ports = ("fmc_parity", "mfc_addr"))
 
         m.portgroups.setdefault("yami", {})[None] = AppUtils.create_yami_ports(m, yami,
-                slave = False, prefix = "dst_", omit_ports = ("fmc_parity", ))
+                slave = False, prefix = "dst_",
+                omit_ports = ("fmc_parity", "mfc_addr"))
 
         return m

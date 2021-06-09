@@ -24,7 +24,7 @@ module {{ module.name }} #(
     , input wire                                    src_mfc_rdy
     , output reg                                    src_mfc_vld
     , output reg [`PRGA_YAMI_RESPTYPE_WIDTH-1:0]    src_mfc_type
-    , output reg [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]    src_mfc_addr
+    // , output reg [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]    src_mfc_addr
     , output reg [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]    src_mfc_data
 
     // == Destinations =======================================================
@@ -39,7 +39,7 @@ module {{ module.name }} #(
     , output reg                                    dst{{ i }}_mfc_rdy
     , input wire                                    dst{{ i }}_mfc_vld
     , input wire [`PRGA_YAMI_RESPTYPE_WIDTH-1:0]    dst{{ i }}_mfc_type
-    , input wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]    dst{{ i }}_mfc_addr
+    // , input wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]    dst{{ i }}_mfc_addr
     , input wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]    dst{{ i }}_mfc_data
 
     {% endfor %}
@@ -104,7 +104,7 @@ module {{ module.name }} #(
     always @* begin
         src_mfc_vld = 1'b0;
         src_mfc_type = `PRGA_YAMI_RESPTYPE_NONE;
-        src_mfc_addr = { `PRGA_YAMI_MFC_ADDR_WIDTH {1'b0} };
+        // src_mfc_addr = { `PRGA_YAMI_MFC_ADDR_WIDTH {1'b0} };
         src_mfc_data = { `PRGA_YAMI_MFC_DATA_WIDTH {1'b0} };
         prq_rd = 1'b0;
         {% for i in range(module.num_dsts) %}
@@ -117,7 +117,7 @@ module {{ module.name }} #(
                 {{ (module.num_dsts - 1).bit_length() }}'d{{ i }}: begin
                     src_mfc_vld = dst{{ i }}_mfc_vld;
                     src_mfc_type = dst{{ i }}_mfc_type;
-                    src_mfc_addr = dst{{ i }}_mfc_addr;
+                    // src_mfc_addr = dst{{ i }}_mfc_addr;
                     src_mfc_data = dst{{ i }}_mfc_data;
                     dst{{ i }}_mfc_rdy = src_mfc_rdy;
                     prq_rd = dst{{ i }}_mfc_vld && src_mfc_rdy;

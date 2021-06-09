@@ -62,8 +62,8 @@ module {{ module.name }} #(
     );
 
     // == AR -> FMC ==========================================================
-    reg [`PRGA_AXI4_AXBURST_WIDTH-1:0]  arburst_f;
-    reg [`PRGA_AXI4_AXLEN_WIDTH-1:0]    arlen_f;
+    reg [`PRGA_AXI4_AXBURST_WIDTH-1:0]          arburst_f;
+    reg [`PRGA_AXI4_AXLEN_WIDTH-1:0]            arlen_f;
 
     always @(posedge clk) begin
         if (~rst_n) begin
@@ -129,11 +129,19 @@ module {{ module.name }} #(
 
 
     // == Pending Response Queue =============================================
-    wire                                prq_rd, prq_full, prq_empty;
-    wire [`PRGA_AXI4_AXLEN_WIDTH-1:0]   prq_dout;
+    wire                                        prq_rd, prq_full, prq_empty;
+    wire [`PRGA_AXI4_AXBURST_WIDTH-1:0]         rburst_next;
+    wire [`PRGA_AXI4_AXSIZE_WIDTH-1:0]          rsize_next;
+    wire [`PRGA_AXI4_AXLEN_WIDTH-1:0]           rlen_next;
+    wire [`PRGA_YAMI_MFC_DATA_BYTES_LOG2-1:0]   roffset_next;
 
     prga_fifo #(
-        .DATA_WIDTH     (`PRGA_AXI4_AXLEN_WIDTH)
+        .DATA_WIDTH     (
+            `PRGA_AXI4_AXBURST_WIDTH
+            + `PRGA_AXI4_AXSIZE_WIDTH
+            + `PRGA_AXI4_AXLEN_WIDTH
+            + `PRGA_YAMI_MFC_DATA_BYTES_LOG2
+        )
         ,.DEPTH_LOG2    (PRQ_DEPTH_LOG2)
         ,.LOOKAHEAD     (1)
     ) i_prq (
@@ -141,30 +149,57 @@ module {{ module.name }} #(
         ,.rst           (~rst_n)
         ,.full          (prq_full)
         ,.wr            (arvalid && !rstall)
-        ,.din           (arlen)
+        ,.din           ({
+            arburst
+            , arsize
+            , arlen
+            , araddr[0+:`PRGA_YAMI_MFC_DATA_BYTES_LOG2]
+        })
         ,.empty         (prq_empty)
         ,.rd            (prq_rd)
-        ,.dout          (prq_dout)
+        ,.dout          ({
+            rburst_next
+            , rsize_next
+            , rlen_next
+            , roffset_next
+        })
         );
 
     assign arready = !prq_full && !rstall;
 
     // == MFC -> R ===========================================================
-    reg                                 rvld;
-    reg [`PRGA_AXI4_AXLEN_WIDTH-1:0]    rlen;
+    reg                                         rvld;
+    reg [`PRGA_AXI4_AXBURST_WIDTH-1:0]          rburst;
+    reg [`PRGA_AXI4_AXSIZE_WIDTH-1:0]           rsize;
+    reg [`PRGA_AXI4_AXLEN_WIDTH-1:0]            rlen;
+    reg [`PRGA_YAMI_MFC_DATA_BYTES_LOG2-1:0]    roffset;
 
     always @(posedge clk) begin
         if (~rst_n) begin
             rvld <= 1'b0;
             rlen <= { `PRGA_AXI4_AXLEN_WIDTH {1'b0} };
+            rsize <= { `PRGA_AXI4_AXSIZE_WIDTH {1'b0} };
+            roffset <= { `PRGA_YAMI_MFC_DATA_BYTES_LOG2 {1'b0} };
         end else if (!prq_empty && prq_rd) begin
             rvld <= 1'b1;
-            rlen <= prq_dout;
+            rlen <= rlen_next;
+            rsize <= rsize_next;
+            roffset <= roffset_next;
         end else if (rready && rvalid) begin
             if (rlen == 0) begin
                 rvld <= 1'b0;
             end else begin
                 rlen <= rlen - 1;
+
+                // XXX: WRAP rule ignored
+                roffset <= roffset + (rburst == `PRGA_AXI4_AXBURST_FIXED ? 0 :
+                           rsize == `PRGA_AXI4_AXSIZE_1B  ? 1 :
+                           rsize == `PRGA_AXI4_AXSIZE_2B  ? 2 :
+                           rsize == `PRGA_AXI4_AXSIZE_4B  ? 4 :
+                           rsize == `PRGA_AXI4_AXSIZE_8B  ? 8 :
+                           rsize == `PRGA_AXI4_AXSIZE_16B ? 16 :
+                           rsize == `PRGA_AXI4_AXSIZE_32B ? 32 :
+                                                            `PRGA_YAMI_MFC_DATA_BYTES);
             end
         end
     end
@@ -172,8 +207,27 @@ module {{ module.name }} #(
     assign rvalid = rvld && mfc_vld;
     assign rlast = rlen == 0;
     assign rresp = `PRGA_AXI4_XRESP_OKAY;
-    assign rdata = mfc_data[0 +: (8<<KERNEL_DATA_BYTES_LOG2)];
     assign mfc_rdy = rvld && rready;
+
+    generate
+        if (KERNEL_DATA_BYTES_LOG2 == 0) begin              // 1B AXI4
+            assign rdata = mfc_data[{roffset, 3'h0}+:8];
+        end else if (KERNEL_DATA_BYTES_LOG2 == 1) begin     // 2B AXI4
+            assign rdata = rsize == `PRGA_AXI4_AXSIZE_1B ? {2 {mfc_data[{roffset, 3'h0}+: 8]} } :
+                                                           {1 {mfc_data[{roffset, 3'h0}+:16]} };
+        end else if (KERNEL_DATA_BYTES_LOG2 == 2) begin     // 4B AXI4
+            assign rdata = rsize == `PRGA_AXI4_AXSIZE_1B ? {4 {mfc_data[{roffset, 3'h0}+: 8]} } :
+                           rsize == `PRGA_AXI4_AXSIZE_2B ? {2 {mfc_data[{roffset, 3'h0}+:16]} } :
+                                                           {1 {mfc_data[{roffset, 3'h0}+:32]} };
+        end else if (KERNEL_DATA_BYTES_LOG2 == 3) begin     // 8B AXI4, this is the widest possible setting
+            assign rdata = rsize == `PRGA_AXI4_AXSIZE_1B ? {8 {mfc_data[{roffset, 3'h0}+: 8]} } :
+                           rsize == `PRGA_AXI4_AXSIZE_2B ? {4 {mfc_data[{roffset, 3'h0}+:16]} } :
+                           rsize == `PRGA_AXI4_AXSIZE_4B ? {2 {mfc_data[{roffset, 3'h0}+:32]} } :
+                                                           {1 {mfc_data[{roffset, 3'h0}+:64]} };
+        end else begin
+            __PRGA_PARAMETERIZATION_ERROR__ __error__();
+        end
+    endgenerate
 
     generate
         if (OPT_THRUPUT) begin

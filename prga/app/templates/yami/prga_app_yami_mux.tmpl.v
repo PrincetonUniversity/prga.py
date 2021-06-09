@@ -25,7 +25,7 @@ module {{ module.name }} #(
     , input wire                                    src{{ i }}_mfc_rdy
     , output reg                                    src{{ i }}_mfc_vld
     , output wire [`PRGA_YAMI_RESPTYPE_WIDTH-1:0]   src{{ i }}_mfc_type
-    , output wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]   src{{ i }}_mfc_addr
+    // , output wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]   src{{ i }}_mfc_addr
     , output wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]   src{{ i }}_mfc_data
 
     {% endfor %}
@@ -40,13 +40,14 @@ module {{ module.name }} #(
     , output reg                                    dst_mfc_rdy
     , input wire                                    dst_mfc_vld
     , input wire [`PRGA_YAMI_RESPTYPE_WIDTH-1:0]    dst_mfc_type
-    , input wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]    dst_mfc_addr
+    // , input wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]    dst_mfc_addr
     , input wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]    dst_mfc_data
 
     );
 
     localparam  NUM_SRC         = {{ module.num_srcs }};
     localparam  SRCID_WIDTH     = {{ (module.num_srcs - 1).bit_length() }};
+    localparam  NUM_SRC_ALIGNED = 1 << SRCID_WIDTH;
 
     reg [SRCID_WIDTH-1:0]   req_srcid;
     wire [SRCID_WIDTH-1:0]  resp_srcid;
@@ -73,20 +74,24 @@ module {{ module.name }} #(
     // == Request Arbitration ================================================
     // -- function: trailing zero count (no all-zero detection) --
     function automatic [SRCID_WIDTH - 1:0] tzc;
-        input [NUM_SRC - 1:0] arg;
+        input [NUM_SRC_ALIGNED - 1:0] arg;
         begin
             integer i;
 
             tzc = 0;
-            for (i = NUM_SRC - 1; i > 0; i = i - 1)
+            for (i = NUM_SRC_ALIGNED - 1; i > 0; i = i - 1)
                 if (arg[i])
                     tzc = i;
         end
     endfunction
 
-    wire [NUM_SRC - 1:0] fmc_src_vld;
-    {%- for i in range(module.num_srcs) %}
+    wire [NUM_SRC_ALIGNED - 1:0] fmc_src_vld;
+    {%- for i in range( 2 ** (module.num_srcs-1).bit_length() ) %}
+        {%- if i < module.num_srcs %}
     assign fmc_src_vld[{{ i }}] = src{{ i }}_fmc_vld;
+        {%- else %}
+    assign fmc_src_vld[{{ i }}] = 1'b0;
+        {%- endif %}
     {%- endfor %}
 
     always @(posedge clk) begin
@@ -127,7 +132,7 @@ module {{ module.name }} #(
     // == Response Distribution ==============================================
     {%- for i in range(module.num_srcs) %}
     assign src{{ i }}_mfc_type = dst_mfc_type;
-    assign src{{ i }}_mfc_addr = dst_mfc_addr;
+    // assign src{{ i }}_mfc_addr = dst_mfc_addr;
     assign src{{ i }}_mfc_data = dst_mfc_data;
     {% endfor %}
 
