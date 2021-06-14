@@ -65,6 +65,9 @@ module {{ module.name }} #(
     reg [`PRGA_AXI4_AXBURST_WIDTH-1:0]          arburst_f;
     reg [`PRGA_AXI4_AXLEN_WIDTH-1:0]            arlen_f;
 
+    wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]        fmc_addr_next;
+    assign fmc_addr_next = cfg_addr_offset + araddr;
+
     always @(posedge clk) begin
         if (~rst_n) begin
             fmc_type <= `PRGA_YAMI_REQTYPE_LOAD;
@@ -97,7 +100,7 @@ module {{ module.name }} #(
                         arsize == `PRGA_AXI4_AXSIZE_16B ? `PRGA_YAMI_SIZE_16B :
                         arsize == `PRGA_AXI4_AXSIZE_32B ? `PRGA_YAMI_SIZE_32B :
                                                           `PRGA_YAMI_SIZE_FULL;
-            fmc_addr <= cfg_addr_offset + araddr;
+            fmc_addr <= fmc_addr_next;
         end else if (fmc_vld && fmc_rdy) begin
             if (arlen_f == 0) begin     // last request sent
                 fmc_vld <= 1'b0;
@@ -153,7 +156,7 @@ module {{ module.name }} #(
             arburst
             , arsize
             , arlen
-            , araddr[0+:`PRGA_YAMI_MFC_DATA_BYTES_LOG2]
+            , fmc_addr_next[0+:`PRGA_YAMI_MFC_DATA_BYTES_LOG2]
         })
         ,.empty         (prq_empty)
         ,.rd            (prq_rd)

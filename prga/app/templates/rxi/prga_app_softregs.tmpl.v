@@ -317,7 +317,10 @@ module prga_app_softregs #(
         if (~rst_n) begin
             sync_arb <= G_HSRID_NONE;
         end else if (!sync_vld[sync_arb] || sync_rdy[sync_arb]) begin
-            sync_arb <= sync_arb + 1;
+            if (sync_arb == NUM_HSRS)
+                sync_arb <= 0;
+            else
+                sync_arb <= sync_arb + 1;
         end
     end
 
