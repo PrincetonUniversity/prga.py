@@ -93,6 +93,11 @@ class IntegrationRXIYAMI(object):
             # fabric interface, add parity check
             ports.append(_mcp(module, prefix + "fmc_parity",    1, _so))
 
+        if intf.is_yami_piton:
+            ports.append(_mcp(module, prefix + "fmc_l1rplway",  2, _so))
+            ports.append(_mcp(module, prefix + "mfc_l1invall",  1, _mo))
+            ports.append(_mcp(module, prefix + "mfc_l1invway",  2, _mo))
+
         return {port.name[len(prefix):]: port for port in ports}
 
     @classmethod
@@ -106,7 +111,11 @@ class IntegrationRXIYAMI(object):
         """
         # 1. add RXI/YAMI headers
         context.add_verilog_header("prga_rxi.vh", "rxi/include/prga_rxi.tmpl.vh", intf = rxi)
-        context.add_verilog_header("prga_yami.vh", "yami/include/prga_yami.tmpl.vh", intf = yami)
+
+        if yami.is_yami_piton:
+            context.add_verilog_header("prga_yami.vh", "yami/piton/include/prga_yami.tmpl.vh", intf = yami)
+        else:
+            context.add_verilog_header("prga_yami.vh", "yami/include/prga_yami.tmpl.vh", intf = yami)
 
         # 2. register modules that we don't need to know the ports
         deps = {
@@ -139,7 +148,7 @@ class IntegrationRXIYAMI(object):
                 is_cell = True,
                 view = ModuleView.design,
                 module_class = ModuleClass.aux,
-                verilog_template = "yami/impl/{}.v".format(d),
+                verilog_template = ("yami/piton/impl/{}.v" if yami.is_yami_piton else "yami/impl/{}.v").format(d),
                 verilog_dep_headers = ("prga_utils.vh", "prga_yami.vh")))
 
         context._add_module(Module("prga_yami_tri_transducer",
@@ -183,7 +192,7 @@ class IntegrationRXIYAMI(object):
                 is_cell = True,
                 view = ModuleView.design,
                 module_class = ModuleClass.aux,
-                verilog_template = "yami/impl/prga_yami.v",
+                verilog_template = "yami/piton/impl/prga_yami.v" if yami.is_yami_piton else "yami/impl/prga_yami.v",
                 verilog_dep_headers = ("prga_yami.vh", )))
             cls._create_ports_syscon(m, slave = True)
             cls._create_ports_syscon(m, slave = True, prefix = "a")
@@ -207,80 +216,55 @@ class IntegrationRXIYAMI(object):
         return g
 
     @classmethod
-    def build_system(cls, context, *,
-
-            # RXI configuration
-            rxi_addr_width = 12,            # of bytes, not register ID
-            rxi_data_bytes_log2 = 2,
-
-            # YAMI configuration
-            num_yami = 1,
-            yami_fmc_addr_width = 40,
-            yami_fmc_data_bytes_log2 = 3,
-            yami_mfc_addr_width = 16,   
-            yami_mfc_data_bytes_log2 = 4,
-            yami_cacheline_bytes_log2 = 4,
+    def build_system(cls, context, rxi, yami, *,
 
             # other configuration
             name = "prga_system",
-            fabric_wrapper = None):
+            fabric_wrapper = None,
+            ):
 
         """Create the system top wrapping the reconfigurable fabric, implementing RXI/YAMI interface.
 
         Args:
             context (`Context`):
+            rxi (`SystemIntf`):
+            yami (`SystemIntf`):
 
         Keyword Args:
-            rxi_addr_width (:obj:`int`): address of bytes, not registers
-            rxi_data_bytes_log2 (:obj:`int`): 2 for 4B, 3 for 8B
-            num_yami (:obj:`int`): Number of YAMI interfaces
-            yami_fmc_addr_width (:obj:`int`):
-            yami_fmc_data_bytes_log2 (:obj:`int`):
-            yami_mfc_addr_width (:obj:`int`):
-            yami_mfc_data_bytes_log2 (:obj:`int`):
-            yami_cacheline_bytes_log2 (:obj:`int`):
             name (:obj:`str`): Name of the system top module
             fabric_wrapper (:obj:`str` or :obj:`bool`): If set to a :obj:`str`, or set to ``True`` \(in which
                 case it is converted to ``{name}_core``\), an extra layer of wrapper is created around the fabric
                 and instantiated in the top-level module
         """
 
-        rxi = SystemIntf.rxi(None, rxi_addr_width, rxi_data_bytes_log2, num_yami)
-        yami = SystemIntf.yami(None, yami_fmc_addr_width, yami_fmc_data_bytes_log2,
-                yami_mfc_addr_width, yami_mfc_data_bytes_log2, yami_cacheline_bytes_log2)
-
         cls._register_cells(context, rxi, yami)
 
         system_intfs = set(
                 [SystemIntf.syscon, rxi] +
-                [
-                    SystemIntf.yami(
-                        "i{}".format(i),
-                        yami_fmc_addr_width,
-                        yami_fmc_data_bytes_log2,
-                        yami_mfc_addr_width,
-                        yami_mfc_data_bytes_log2,
-                        yami_cacheline_bytes_log2)
-                    for i in range(num_yami)
-                    ])
+                [yami("i{}".format(i)) for i in range(rxi.num_yami)]
+                )
         fabric_intfs = cls._aggregate_fabric_intfs(
                 [
                     FabricIntf.syscon("app"),
                     FabricIntf.rxi(
                         None,
-                        rxi_addr_width,
-                        rxi_data_bytes_log2,
-                        num_yami),
+                        rxi.addr_width,
+                        rxi.data_bytes_log2,
+                        rxi.num_yami),
                     ] +
                 [
+                    FabricIntf.yami_piton(
+                        "i{}".format(i),
+                        )
+                    if yami.is_yami_piton else
                     FabricIntf.yami(
                         "i{}".format(i),
-                        yami_fmc_addr_width,
-                        yami_fmc_data_bytes_log2,
-                        yami_mfc_addr_width,
-                        yami_mfc_data_bytes_log2,
-                        yami_cacheline_bytes_log2)
-                    for i in range(num_yami)
+                        yami.fmc_addr_width,
+                        yami.fmc_data_bytes_log2,
+                        yami.mfc_addr_width,
+                        yami.mfc_data_bytes_log2,
+                        yami.cacheline_bytes_log2)
+                    for i in range(rxi.num_yami)
                     ])
 
         if fabric_wrapper is True:
@@ -309,30 +293,35 @@ class IntegrationRXIYAMI(object):
             # add RXI ports
             app.add_port("rxi_req_rdy",         "output", 1)
             app.add_port("rxi_req_vld",         "input",  1)
-            app.add_port("rxi_req_addr",        "input",  rxi_addr_width - rxi_data_bytes_log2)
-            app.add_port("rxi_req_strb",        "input",  1 << rxi_data_bytes_log2)
-            app.add_port("rxi_req_data",        "input",  8 << rxi_data_bytes_log2)
+            app.add_port("rxi_req_addr",        "input",  rxi.addr_width - rxi.data_bytes_log2)
+            app.add_port("rxi_req_strb",        "input",  1 << rxi.data_bytes_log2)
+            app.add_port("rxi_req_data",        "input",  8 << rxi.data_bytes_log2)
             app.add_port("rxi_resp_rdy",        "input",  1)
             app.add_port("rxi_resp_vld",        "output", 1)
             app.add_port("rxi_resp_sync",       "output", 1)
             app.add_port("rxi_resp_syncaddr",   "output", 5)    # 32 HSRs
-            app.add_port("rxi_resp_data",       "output", 8 << rxi_data_bytes_log2)
+            app.add_port("rxi_resp_data",       "output", 8 << rxi.data_bytes_log2)
             app.add_port("rxi_resp_parity",     "output", 1)
 
             # add YAMI ports
-            for i in range(num_yami):
+            for i in range(rxi.num_yami):
                 app.add_port("yami_i{}_fmc_rdy".format(i),      "input",  1)
                 app.add_port("yami_i{}_fmc_vld".format(i),      "output", 1)
                 app.add_port("yami_i{}_fmc_type".format(i),     "output", 5)
                 app.add_port("yami_i{}_fmc_size".format(i),     "output", 3)
-                app.add_port("yami_i{}_fmc_addr".format(i),     "output", yami_fmc_addr_width)
-                app.add_port("yami_i{}_fmc_data".format(i),     "output", 8 << yami_fmc_data_bytes_log2)
+                app.add_port("yami_i{}_fmc_addr".format(i),     "output", yami.fmc_addr_width)
+                app.add_port("yami_i{}_fmc_data".format(i),     "output", 8 << yami.fmc_data_bytes_log2)
                 app.add_port("yami_i{}_fmc_parity".format(i),   "output", 1)
                 app.add_port("yami_i{}_mfc_rdy".format(i),      "output", 1)
                 app.add_port("yami_i{}_mfc_vld".format(i),      "input",  1)
                 app.add_port("yami_i{}_mfc_type".format(i),     "input",  4)
-                app.add_port("yami_i{}_mfc_addr".format(i),     "input",  yami_mfc_addr_width)
-                app.add_port("yami_i{}_mfc_data".format(i),     "input",  8 << yami_mfc_data_bytes_log2)
+                app.add_port("yami_i{}_mfc_addr".format(i),     "input",  yami.mfc_addr_width)
+                app.add_port("yami_i{}_mfc_data".format(i),     "input",  8 << yami.mfc_data_bytes_log2)
+
+                if yami.is_yami_piton:
+                    app.add_port("yami_i{}_fmc_l1rplway".format(i), "output", 2)
+                    app.add_port("yami_i{}_mfc_l1invall".format(i), "input", 1)
+                    app.add_port("yami_i{}_mfc_l1invway".format(i), "input", 2)
 
         # plan IO
         IOPlanner.autoplan(context, app)
@@ -352,9 +341,9 @@ class IntegrationRXIYAMI(object):
             # create ports in fabric wrapper
             cls._create_ports_syscon(core, slave = True, prefix = "app_")
             cls._create_ports_rxi(core, slave = True, prefix = "rxi_", fabric = True,
-                    addr_width = rxi_addr_width - rxi_data_bytes_log2,
-                    data_bytes_log2 = rxi_data_bytes_log2)
-            for i in range(num_yami):
+                    addr_width = rxi.addr_width - rxi.data_bytes_log2,
+                    data_bytes_log2 = rxi.data_bytes_log2)
+            for i in range(rxi.num_yami):
                 cls._create_ports_yami(core, yami, slave = True, prefix = "yami_i{}_".format(i), fabric = True)
 
             # instantiate fabric within fabric wrapper
@@ -400,8 +389,8 @@ class IntegrationRXIYAMI(object):
 
         # add RXI instance/ports/connections
         rxi_ports = cls._create_ports_rxi(system, slave = True, prefix = "rxi_",
-                addr_width = rxi_addr_width - rxi_data_bytes_log2,
-                data_bytes_log2 = rxi_data_bytes_log2)
+                addr_width = rxi.addr_width - rxi.data_bytes_log2,
+                data_bytes_log2 = rxi.data_bytes_log2)
         rxi_ctrl = ModuleUtils.instantiate(system, context.database[ModuleView.design, "prga_rxi"], "i_rxi")
 
         NetUtils.connect(syscon_ports["clk"],   rxi_ctrl.pins["clk"])
@@ -424,11 +413,12 @@ class IntegrationRXIYAMI(object):
                     NetUtils.connect(pin, nets["rxi_" + name[2:]])
 
         # add YAMI instances/ports/connections
-        for i in range(num_yami):
+        for i in range(rxi.num_yami):
             yami_creg_ports = cls._create_ports_rxi(system, slave = True, prefix = "yami_i{}_creg_".format(i),
-                    addr_width = 2, data_bytes_log2 = yami_fmc_data_bytes_log2)
+                    addr_width = 2, data_bytes_log2 = yami.fmc_data_bytes_log2)
             yami_ports = cls._create_ports_yami(system, yami, slave = True, prefix = "yami_i{}_".format(i))
-            yami_ctrl = ModuleUtils.instantiate(system, context.database[ModuleView.design, "prga_yami"],
+            yami_ctrl = ModuleUtils.instantiate(system,
+                    context.database[ModuleView.design, "prga_yami"],
                     "i_yami_i{}".format(i))
 
             NetUtils.connect(syscon_ports["clk"],                   yami_ctrl.pins["clk"])

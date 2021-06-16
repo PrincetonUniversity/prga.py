@@ -4,8 +4,8 @@
 `include "prga_yami.vh"
 
     // 4-way associative
-`define PRGA_YAMI_CACHE_NUM_WAYS_LOG2   2
-`define PRGA_YAMI_CACHE_NUM_WAYS        (1 << `PRGA_YAMI_CACHE_NUM_WAYS_LOG2)
+// `define PRGA_YAMI_CACHE_NUM_WAYS_LOG2   2
+// `define PRGA_YAMI_CACHE_NUM_WAYS        (1 << `PRGA_YAMI_CACHE_NUM_WAYS_LOG2)
 
     // 7-bit index (8KB = 128 x 4(#ways) x 16B(cacheline size))
 `define PRGA_YAMI_CACHE_INDEX_LOW       `PRGA_YAMI_CACHELINE_BYTES_LOG2 // 16B cacheline
@@ -21,7 +21,7 @@
 // ===========================================================================
 // == Response ReOrder Buffer ================================================
 // ===========================================================================
-`define PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2    3
+`define PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2    3   // 8 in-flight transactions
 
 // ===========================================================================
 // == State Array ============================================================

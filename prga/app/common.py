@@ -126,8 +126,8 @@ class AppCommonMixin(object):
         elif type_ == "yami":
 
             self.__gconnect( mpg, spg, mnets, snets,
-                    ("fmc_vld", "mfc_rdy", "fmc_type", "fmc_size", "fmc_addr", "fmc_data", "fmc_parity"),
-                    ("mfc_vld", "fmc_rdy", "mfc_type", "mfc_data", "mfc_addr") )
+                    ("fmc_vld", "mfc_rdy", "fmc_type", "fmc_size", "fmc_addr", "fmc_data", "fmc_l1rplway", "fmc_parity"),
+                    ("mfc_vld", "fmc_rdy", "mfc_type", "mfc_data", "mfc_addr", "mfc_l1invall", "mfc_l1invway") )
 
         else:
             raise NotImplementedError("Unsupported type: {}".format(type_))
@@ -250,12 +250,12 @@ class AppCommonMixin(object):
 
             # buffer FMC channel
             self.__bgconnect( module, mpg, spg, mnets, snets, "i_buf_yami_fmc" + buffer_suffix,
-                    ("fmc_type", "fmc_size", "fmc_addr", "fmc_data"),
+                    ("fmc_type", "fmc_size", "fmc_addr", "fmc_data", "fmc_l1rplway"),
                     "fmc_vld", "fmc_rdy", "fmc_parity" )
 
             # buffer MFC channel
             self.__bgconnect( module, spg, mpg, snets, mnets, "i_buf_yami_mfc" + buffer_suffix,
-                    ("mfc_type", "mfc_data", "mfc_addr"),
+                    ("mfc_type", "mfc_data", "mfc_addr", "mfc_l1invall", "mfc_l1invway"),
                     "mfc_vld", "mfc_rdy" )
 
         else:

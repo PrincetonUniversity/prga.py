@@ -39,7 +39,8 @@ class AppMemMixin(object):
                 omit_ports = ("arprot", "arqos", "arcache", "arlock"))
 
         m.portgroups.setdefault("yami", {})[None] = AppUtils.create_yami_ports(m, yami,
-                omit_ports = ("fmc_data", "fmc_parity", "mfc_type", "mfc_addr"))
+                omit_ports = ("fmc_data", "fmc_l1rplway", "fmc_parity",
+                    "mfc_type", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
 
         ModuleUtils.create_port(m, "cfg_addr_offset",   yami.fmc_addr_width,    "input")
         ModuleUtils.create_port(m, "cfg_nc",            1,                      "input")
@@ -74,7 +75,8 @@ class AppMemMixin(object):
                 omit_ports = ("awprot", "awqos", "awcache", "awlock"))
 
         m.portgroups.setdefault("yami", {})[None] = AppUtils.create_yami_ports(m, yami,
-                omit_ports = ("fmc_parity", "mfc_type", "mfc_data", "mfc_addr"))
+                omit_ports = ("fmc_l1rplway", "fmc_parity",
+                    "mfc_type", "mfc_data", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
 
         ModuleUtils.create_port(m, "cfg_addr_offset",   yami.fmc_addr_width,    "input")
         ModuleUtils.create_port(m, "cfg_nc",            1,                      "input")
@@ -107,10 +109,12 @@ class AppMemMixin(object):
         for i in range(num_srcs):
             m.portgroups.setdefault("yami", {})[i] = AppUtils.create_yami_ports(m, yami,
                     slave = True, prefix = "src{}_".format(i),
-                    omit_ports = ("fmc_parity", "mfc_addr"))
+                    omit_ports = ("fmc_l1rplway", "fmc_parity",
+                        "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
 
         m.portgroups.setdefault("yami", {})[None] = AppUtils.create_yami_ports(m, yami,
                 slave = False, prefix = "dst_",
-                omit_ports = ("fmc_parity", "mfc_addr"))
+                omit_ports = ("fmc_l1rplway", "fmc_parity",
+                        "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
 
         return m

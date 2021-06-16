@@ -142,10 +142,39 @@ class SystemIntf(Object):
             return "SystemIntf[RXI](id={}, aw={}, dw={}B, {} YAMIs)".format(
                     repr(self.id_), self.addr_width, 2 ** self.data_bytes_log2, self.num_yami)
 
+    class _yami_piton(_BaseIntf):
+
+        def __repr__(self):
+            return ("SystemIntf[YAMI/Piton](id={}, FMC(aw={}, dw={}B), MFC(aw={}, dw={}B), Cache(line={}B, #ways={}))"
+                    .format(self.id_, 40, 8, 7, 16, 16, 4))
+
+        @property
+        def fmc_addr_width(self):
+            return 40
+
+        @property
+        def fmc_data_bytes_log2(self):
+            return 3
+
+        @property
+        def mfc_addr_width(self):
+            return 7
+
+        @property
+        def mfc_data_bytes_log2(self):
+            return 4
+
+        @property
+        def cacheline_bytes_log2(self):
+            return 4
+
     class _yami(_BaseIntf):
 
-        __slots__ = ['fmc_addr_width', 'fmc_data_bytes_log2',
-                'mfc_addr_width', 'mfc_data_bytes_log2',
+        __slots__ = [
+                'fmc_addr_width',
+                'fmc_data_bytes_log2',
+                'mfc_addr_width',
+                'mfc_data_bytes_log2',
                 'cacheline_bytes_log2']
 
         def __init__(self, id_ = None,
@@ -196,6 +225,7 @@ SystemIntf.reg_piton = SystemIntf._reg_piton()
 SystemIntf.memory_piton = SystemIntf._memory_piton()
 SystemIntf.rxi = SystemIntf._rxi()
 SystemIntf.yami = SystemIntf._yami()
+SystemIntf.yami_piton = SystemIntf._yami_piton()
 
 # ----------------------------------------------------------------------------
 # -- Fabric Interfaces Collection --------------------------------------------
@@ -283,9 +313,15 @@ class FabricIntf(Object):
     class _yami(SystemIntf._yami, _ECCMixin):
 
         def __repr__(self):
-            return "SystemIntf[YAMI](id={}, FMC(aw={}, dw={}B), MFC(aw={}, dw={}B), $={}B)".format(
+            return "FabricIntf[YAMI](id={}, FMC(aw={}, dw={}B), MFC(aw={}, dw={}B), $={}B)".format(
                     self.id_, self.fmc_addr_width, 2 ** self.fmc_data_bytes_log2,
                     self.mfc_addr_width, 2 ** self.mfc_data_bytes_log2, self.cacheline_bytes_log2)
+
+    class _yami_piton(SystemIntf._yami_piton, _ECCMixin):
+
+        def __repr__(self):
+            return ("FabricIntf[YAMI/Piton](id={}, FMC(aw={}, dw={}B), MFC(aw={}, dw={}B), Cache(line={}B, #ways={}))"
+                    .format(self.id_, 40, 8, 7, 16, 16, 4))
 
 FabricIntf.syscon = FabricIntf._syscon()
 FabricIntf.softreg = FabricIntf._softreg()
@@ -294,3 +330,4 @@ FabricIntf.memory_piton_axi4r = FabricIntf._memory_piton_axi4r()
 FabricIntf.memory_piton_axi4w = FabricIntf._memory_piton_axi4w()
 FabricIntf.rxi = FabricIntf._rxi()
 FabricIntf.yami = FabricIntf._yami()
+FabricIntf.yami_piton = FabricIntf._yami_piton()

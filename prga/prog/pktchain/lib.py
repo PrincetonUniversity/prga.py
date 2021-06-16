@@ -8,6 +8,7 @@ from ...netlist import PortDirection, Const, Module, NetUtils, ModuleUtils
 from ...passes.base import AbstractPass
 from ...passes.translation import SwitchDelegate
 from ...integration import Integration
+from ...integration.common import SystemIntf
 from ...integration.rxi_yami import IntegrationRXIYAMI
 from ...exception import PRGAInternalError
 from ...tools.ioplan import IOPlanner
@@ -841,15 +842,14 @@ class Pktchain(Scanchain):
     class BuildSystemRXIYAMI(AbstractPass):
         """Create a system for SoC integration, using RXI/YAMI interfaces."""
 
-        __slots__ = ["io_constraints_f", "name", "fabric_wrapper", "prog_be_in_wrapper",
-                "rxi_addr_width", "rxi_data_bytes_log2", "num_yami",
-                "yami_fmc_addr_width", "yami_fmc_data_bytes_log2",
-                "yami_mfc_addr_width", "yami_mfc_data_bytes_log2",
-                "yami_cacheline_bytes_log2"]
+        __slots__ = ["io_constraints_f", "name", "fabric_wrapper", "prog_be_in_wrapper", "rxi", "yami"]
 
         def __init__(self, io_constraints_f = "io.pads", *,
-                name = "prga_system", fabric_wrapper = None, prog_be_in_wrapper = False,
+                name = "prga_system", piton = False,
+                fabric_wrapper = None, prog_be_in_wrapper = False,
+
                 rxi_addr_width = 12, rxi_data_bytes_log2 = 3, num_yami = 1,
+
                 yami_fmc_addr_width = 40, yami_fmc_data_bytes_log2 = 3,
                 yami_mfc_addr_width = 16, yami_mfc_data_bytes_log2 = 4,
                 yami_cacheline_bytes_log2 = 4):
@@ -861,14 +861,18 @@ class Pktchain(Scanchain):
             self.name = name
             self.fabric_wrapper = fabric_wrapper
             self.prog_be_in_wrapper = prog_be_in_wrapper
-            self.rxi_addr_width = rxi_addr_width
-            self.rxi_data_bytes_log2 = rxi_data_bytes_log2
-            self.num_yami = num_yami
-            self.yami_fmc_addr_width = yami_fmc_addr_width
-            self.yami_fmc_data_bytes_log2 = yami_fmc_data_bytes_log2
-            self.yami_mfc_addr_width = yami_mfc_addr_width
-            self.yami_mfc_data_bytes_log2 = yami_mfc_data_bytes_log2
-            self.yami_cacheline_bytes_log2 = yami_cacheline_bytes_log2
+
+            self.rxi = SystemIntf.rxi(None, rxi_addr_width, rxi_data_bytes_log2, num_yami)
+
+            if piton:
+                self.yami = SystemIntf.yami_piton
+            else:
+                self.yami = SystemIntf.yami(None,
+                        yami_fmc_addr_width,
+                        yami_fmc_data_bytes_log2,
+                        yami_mfc_addr_width,
+                        yami_mfc_data_bytes_log2,
+                        yami_cacheline_bytes_log2)
 
         @property
         def key(self):
@@ -882,15 +886,7 @@ class Pktchain(Scanchain):
             renderer = context.renderer
 
             # build system
-            IntegrationRXIYAMI.build_system(context,
-                    rxi_addr_width              = self.rxi_addr_width,
-                    rxi_data_bytes_log2         = self.rxi_data_bytes_log2,
-                    num_yami                    = self.num_yami,
-                    yami_fmc_addr_width         = self.yami_fmc_addr_width,
-                    yami_fmc_data_bytes_log2    = self.yami_fmc_data_bytes_log2,
-                    yami_mfc_addr_width         = self.yami_mfc_addr_width,
-                    yami_mfc_data_bytes_log2    = self.yami_mfc_data_bytes_log2,
-                    yami_cacheline_bytes_log2   = self.yami_cacheline_bytes_log2,
+            IntegrationRXIYAMI.build_system(context, self.rxi, self.yami,
                     name                        = self.name,
                     fabric_wrapper              = self.fabric_wrapper,
                     )
@@ -901,6 +897,7 @@ class Pktchain(Scanchain):
             # register prog_be header and module
             context.add_verilog_header("prga_rxi_pktchain.vh", "rxi/include/prga_rxi_pktchain.vh",
                     "prga_rxi.vh", "pktchain.vh")
+
             # create module
             m_be = context._add_module(Module("prga_rxi_be_prog_pktchain",
                 is_cell = True,
@@ -908,11 +905,13 @@ class Pktchain(Scanchain):
                 module_class = ModuleClass.aux,
                 verilog_template = "rxi/prga_rxi_be_prog_pktchain.tmpl.v",
                 verilog_dep_headers = ("prga_rxi.vh", "prga_rxi_pktchain.vh")))
+
             # create ports
             IntegrationRXIYAMI._create_ports_syscon(m_be, slave = True)
             IntegrationRXIYAMI._create_ports_rxi(m_be, slave = True, prog = True, fabric = True,
-                    prefix = "prog_", addr_width = 4, data_bytes_log2 = self.rxi_data_bytes_log2)
+                    prefix = "prog_", addr_width = 4, data_bytes_log2 = self.rxi.data_bytes_log2)
             Pktchain._get_or_create_pktchain_fifo_nets(m_be, context.summary.pktchain["fabric"]["phit_width"])
+
             # instantiate sub-instances
             for sub in ("prga_valrdy_buf", "prga_fifo", "prga_fifo_resizer", "pktchain_ctrl"):
                 ModuleUtils.instantiate(m_be, context.database[ModuleView.design, sub], sub)
@@ -929,7 +928,7 @@ class Pktchain(Scanchain):
                 # create programming ports in the wrapper
                 core_ports = IntegrationRXIYAMI._create_ports_syscon(core.model, slave = True)
                 core_ports.update(IntegrationRXIYAMI._create_ports_rxi(core.model, slave = True, prog = True,
-                    prefix = "prog_", addr_width = 4, data_bytes_log2 = self.rxi_data_bytes_log2))
+                    prefix = "prog_", addr_width = 4, data_bytes_log2 = self.rxi.data_bytes_log2))
 
                 # connect
                 for name, port in core_ports.items():

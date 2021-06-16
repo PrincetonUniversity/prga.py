@@ -295,6 +295,12 @@ class AppUtils(object):
         mi("mfc_data",      8 << intf.mfc_data_bytes_log2)
         mi("mfc_addr",      intf.mfc_addr_width)
 
+        # piton-specific
+        if intf.is_yami_piton:
+            mo("fmc_l1rplway", 2)
+            mi("mfc_l1invall", 1)
+            mi("mfc_l1invway", 2)
+
         return d
 
     @classmethod

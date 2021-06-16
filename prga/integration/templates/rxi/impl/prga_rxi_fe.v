@@ -295,7 +295,7 @@ module prga_rxi_fe #(
 
     prga_rxi_fe_phsr i_phsr (
         .clk                    (clk)
-        ,.rst                   (~rst_n || ~rxi_active)
+        ,.rst_n                 (rst_n && rxi_active)
         ,.s_req_vld             (phsr_vld)
         ,.s_req_id              (phsr_id)
         ,.s_req_strb            (s_req_strb)

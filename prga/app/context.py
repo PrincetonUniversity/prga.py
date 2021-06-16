@@ -242,7 +242,11 @@ class AppContext(Object, AppMemMixin, AppCommonMixin, AppRTLMixin):
                     m.portgroups.setdefault("yami", {})[id_] = AppUtils.create_yami_ports(
                             m, intf, slave = False, prefix = "yami_" + u(id_))
 
+                elif intf.is_yami_piton:
+                    m.portgroups.setdefault("yami", {})[id_] = AppUtils.create_yami_ports(
+                            m, intf, slave = False, prefix = "yami_" + u(id_))
+
                 else:
                     raise NotImplementedError("Unsupported interface: {}".format(repr(intf)))
-                
+               
         return m
