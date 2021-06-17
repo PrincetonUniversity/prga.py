@@ -21,7 +21,7 @@ module prga_yami_pitoncache_pipeline_s3 (
     , input wire [`PRGA_YAMI_SIZE_WIDTH-1:0]            size_s3_next
     , input wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]        addr_s3_next
     , input wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]        data_s3_next
-    , input wire [`PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2-1:0]    rob_entry_s3_next;
+    , input wire [`PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2-1:0]    rob_entry_s3_next
 
     // -- To Arrays, etc. ----------------------------------------------------
     , output reg [`PRGA_YAMI_CACHE_NUM_WAYS_LOG2-1:0]   way_s3
@@ -30,7 +30,7 @@ module prga_yami_pitoncache_pipeline_s3 (
     , output reg                                        data_array_wr_s3
     , output wire [`PRGA_YAMI_MFC_DATA_BYTES-1:0]       data_array_wstrb_s3
     , output wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]       data_array_wdata_s3
-    , output reg [`PRGA_YAMI_CACHE_S2OP_SA_WIDTH-1:0]   state_array_op_s3
+    , output reg [`PRGA_YAMI_CACHE_S3OP_SA_WIDTH-1:0]   state_array_op_s3
     , output wire [`PRGA_YAMI_CACHE_TAG_WIDTH-1:0]      tag_s3
     , output reg                                                rob_fill_s3
     , output reg [`PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2-1:0]    rob_fill_entry_s3

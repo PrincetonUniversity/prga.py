@@ -3,6 +3,8 @@
 from .util import AppUtils
 from ..netlist import Module, ModuleUtils
 
+import os
+
 __all__ = []
 
 # ----------------------------------------------------------------------------
@@ -116,5 +118,63 @@ class AppMemMixin(object):
                 slave = False, prefix = "dst_",
                 omit_ports = ("fmc_l1rplway", "fmc_parity",
                         "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+
+        return m
+
+    def get_or_create_yami_pitoncache(self, yami):
+        """Get or create a YAMI L1 Cache.
+
+        Args:
+            yami (`FabricIntf`):
+
+        Returns:
+            `Module`:
+        """
+
+        name = "prga_yami_pitoncache"
+
+        if m := self.modules.get(name):
+            return m
+
+        # add search paths
+        self.template_search_paths.append(
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'integration', 'templates')
+                )
+
+        # add header
+        self.add_verilog_header("prga_yami_pitoncache.vh",
+                "yami/piton/cache_v0/include/prga_yami_pitoncache.vh")
+
+        # add top-level cache module
+        m = self.add_module(Module("prga_yami_pitoncache",
+                portgroups = {},
+                verilog_template = "yami/piton/cache_v0/prga_yami_pitoncache.v",
+                verilog_dep_headers = ("prga_yami_pitoncache.vh", )))
+
+        # create port groups
+        m.portgroups.setdefault("syscon", {})[None] = AppUtils.create_syscon_ports(m, slave = True)
+        m.portgroups.setdefault("yami", {})["kernel"] = AppUtils.create_yami_ports(m, yami,
+                slave = True, prefix = "a_",
+                omit_ports = ("fmc_l1rplway", "fmc_parity", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+        m.portgroups.setdefault("yami", {})["memory"] = AppUtils.create_yami_ports(m, yami,
+                slave = False, prefix = "m_",
+                omit_ports = ("fmc_parity", ))
+
+        # add and instantiate sub-modules
+        for d in (
+                "prga_yami_pitoncache_data_array",
+                "prga_yami_pitoncache_lru_array",
+                "prga_yami_pitoncache_state_array",
+                "prga_yami_pitoncache_tag_array",
+                "prga_yami_pitoncache_rob",
+                "prga_yami_pitoncache_rpb",
+                "prga_yami_pitoncache_way_logic",
+                "prga_yami_pitoncache_pipeline_s1",
+                "prga_yami_pitoncache_pipeline_s2",
+                "prga_yami_pitoncache_pipeline_s3",
+                ):
+            sub = self.add_module(Module(d,
+                verilog_template = "yami/piton/cache_v0/{}.v".format(d)))
+            ModuleUtils.instantiate(m, sub, d)
 
         return m

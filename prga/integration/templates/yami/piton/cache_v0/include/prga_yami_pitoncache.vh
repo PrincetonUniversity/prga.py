@@ -1,5 +1,5 @@
 `ifndef PRGA_YAMI_PITONCACHE_VH
-`define /* `ifndef PRGA_YAMI_PITONCACHE_VH */
+`define PRGA_YAMI_PITONCACHE_VH
 
 `include "prga_yami.vh"
 
@@ -28,9 +28,9 @@
 // ===========================================================================
     // cacheline state
 `define PRGA_YAMI_CACHE_STATE_WIDTH     2
-`define PRGA_YAMI_CACHE_STATE_I         `PRGA_YAMI_CLSTATE_WIDTH'b00    // invalid
-`define PRGA_YAMI_CACHE_STATE_V         `PRGA_YAMI_CLSTATE_WIDTH'b01    // valid
-`define PRGA_YAMI_CACHE_STATE_IV        `PRGA_YAMI_CLSTATE_WIDTH'b10    // un-ack'ed cache fill
+`define PRGA_YAMI_CACHE_STATE_I         `PRGA_YAMI_CACHE_STATE_WIDTH'b00    // invalid
+`define PRGA_YAMI_CACHE_STATE_V         `PRGA_YAMI_CACHE_STATE_WIDTH'b01    // valid
+`define PRGA_YAMI_CACHE_STATE_IV        `PRGA_YAMI_CACHE_STATE_WIDTH'b10    // un-ack'ed cache fill
 
     // State Array Operation: Stage III
 `define PRGA_YAMI_CACHE_S3OP_SA_WIDTH               3

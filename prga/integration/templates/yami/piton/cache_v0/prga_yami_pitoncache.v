@@ -38,7 +38,7 @@ module prga_yami_pitoncache #(
     , output wire [`PRGA_YAMI_SIZE_WIDTH-1:0]           m_fmc_size
     , output wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]       m_fmc_addr
     , output wire [`PRGA_YAMI_FMC_DATA_WIDTH-1:0]       m_fmc_data
-    , output wire [`PRGA_YAMI_CACHE_NUM_WAYS_LOG2-1:0]  m_fmc_rpl_way   // this is specific to OpenPiton
+    , output wire [`PRGA_YAMI_CACHE_NUM_WAYS_LOG2-1:0]  m_fmc_l1rplway  // this is specific to OpenPiton
 
     // -- Receive MFC Responses from Memory ----------------------------------
     , output wire                                       m_mfc_rdy
@@ -46,8 +46,8 @@ module prga_yami_pitoncache #(
     , input wire [`PRGA_YAMI_RESPTYPE_WIDTH-1:0]        m_mfc_type
     , input wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]        m_mfc_addr
     , input wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]        m_mfc_data
-    , input wire [`PRGA_YAMI_CACHE_NUM_WAYS_LOG2-1:0]   m_mfc_inval_way // this is specific to OpenPiton
-    , input wire                                        m_mfc_inval_all // this is specific to OpenPiton
+    , input wire [`PRGA_YAMI_CACHE_NUM_WAYS_LOG2-1:0]   m_mfc_l1invway  // this is specific to OpenPiton
+    , input wire                                        m_mfc_l1invall  // this is specific to OpenPiton
     );
 
     wire [`PRGA_YAMI_CACHE_INDEX_WIDTH-1:0]     index_s2;
@@ -64,7 +64,7 @@ module prga_yami_pitoncache #(
     wire [`PRGA_YAMI_CACHE_NUM_WAYS-1:0] lru_array_inc_mask_s3, lru_array_clr_mask_s3;
 
     wire [`PRGA_YAMI_CACHE_NUM_WAYS * `PRGA_YAMI_CACHE_STATE_WIDTH-1:0] state_array_rdata_s3;
-    wire [`PRGA_YAMI_CACHE_S2OP_SA_WIDTH-1:0] state_array_op_s3;
+    wire [`PRGA_YAMI_CACHE_S3OP_SA_WIDTH-1:0] state_array_op_s3;
 
     wire [`PRGA_YAMI_CACHE_NUM_WAYS * `PRGA_YAMI_CACHE_TAG_WIDTH-1:0]   tag_array_rdata_s3;
     wire [`PRGA_YAMI_CACHE_TAG_WIDTH-1:0] tag_s3;
@@ -79,7 +79,7 @@ module prga_yami_pitoncache #(
     wire rpb_vld_s2, enqueue_rpb_s3, validate_rpb_s2, dequeue_rpb_s1, rpb_empty_s1, rpb_vld_s1, rpb_rob_entry_vld_s1;
     wire [`PRGA_YAMI_REQTYPE_WIDTH-1:0] rpb_reqtype_s1, rpb_reqtype_s2, rpb_reqtype_s3;
     wire [`PRGA_YAMI_SIZE_WIDTH-1:0] rpb_size_s1, rpb_size_s2, rpb_size_s3;
-    wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0] rpb_size_s1, rpb_size_s2, rpb_size_s3;
+    wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0] rpb_addr_s1, rpb_addr_s2, rpb_addr_s3;
     wire [`PRGA_YAMI_FMC_DATA_WIDTH-1:0] rpb_data_s1, rpb_data_s2, rpb_data_s3;
     wire [`PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2-1:0] rpb_rob_entry_s1, rpb_rob_entry_s3;
 
@@ -101,21 +101,21 @@ module prga_yami_pitoncache #(
     wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0] data_s3_next;
     wire [`PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2-1:0] rob_entry_s3_next;
 
-    wire ilq_nc_s2, ilq_nc_s3, ilq_full_s1;
+    wire ilq_full_s1, ilq_rd_s2, ilq_nc_s2, ilq_wr_s3, ilq_nc_s3;
     wire [`PRGA_YAMI_CACHE_INDEX_WIDTH-1:0] ilq_index_s2, ilq_index_s3;
     wire [`PRGA_YAMI_CACHE_NUM_WAYS_LOG2-1:0] ilq_way_s2, ilq_way_s3;
     wire [`PRGA_YAMI_CACHE_INDEX_LOW-1:0] ilq_offset_s2, ilq_offset_s3;
     wire [`PRGA_YAMI_SIZE_WIDTH-1:0] ilq_size_s2, ilq_size_s3;
-    wire [`PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2-10] ilq_rob_entry_s2, ilq_rob_entry_s3;
+    wire [`PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2-1:0] ilq_rob_entry_s2, ilq_rob_entry_s3;
 
-    wire isq_nc_s2, isq_nc_s3, isq_full_s1;
-    wire [`PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2-10] isq_rob_entry_s2, isq_rob_entry_s3;
+    wire isq_full_s1, isq_rd_s2, isq_nc_s2, isq_wr_s3, isq_nc_s3;
+    wire [`PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2-1:0] isq_rob_entry_s2, isq_rob_entry_s3;
     wire [`PRGA_YAMI_CACHE_INDEX_LOW-1:0] isq_offset_s2, isq_offset_s3;
 
-    wire imq_full_s1;
+    wire imq_full_s1, imq_rd_s2, imq_wr_s3;
     wire [`PRGA_YAMI_CACHE_INDEX_LOW-1:0] imq_offset_s2, imq_offset_s3;
     wire [`PRGA_YAMI_SIZE_WIDTH-1:0] imq_size_s2, imq_size_s3;
-    wire [`PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2-10] imq_rob_entry_s2, imq_rob_entry_s3;
+    wire [`PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2-1:0] imq_rob_entry_s2, imq_rob_entry_s3;
 
     prga_yami_pitoncache_data_array i_data_array (
         .clk                    (clk)
@@ -217,8 +217,8 @@ module prga_yami_pitoncache #(
         ,.m_mfc_type            (m_mfc_type)
         ,.m_mfc_addr            (m_mfc_addr)
         ,.m_mfc_data            (m_mfc_data)
-        ,.m_mfc_inval_way       (m_mfc_inval_way)
-        ,.m_mfc_inval_all       (m_mfc_inval_all)
+        ,.m_mfc_inval_way       (m_mfc_l1invway)
+        ,.m_mfc_inval_all       (m_mfc_l1invall)
         ,.stall_s2              (stall_s2)
         ,.op_s2_next            (op_s2_next)
         ,.inv_way_s2_next       (inv_way_s2_next)
@@ -348,7 +348,7 @@ module prga_yami_pitoncache #(
         ,.m_fmc_size            (m_fmc_size)
         ,.m_fmc_addr            (m_fmc_addr)
         ,.m_fmc_data            (m_fmc_data)
-        ,.m_fmc_rpl_way         (m_fmc_rpl_way)
+        ,.m_fmc_rpl_way         (m_fmc_l1rplway)
         );
 
     prga_fifo #(

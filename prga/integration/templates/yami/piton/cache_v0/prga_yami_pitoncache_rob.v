@@ -60,8 +60,8 @@ module prga_yami_pitoncache_rob (
             end
 
             if (fill_s3) begin
-                entries[update_entry_s3][ENTRY_FILLED]                                   <= 1'b1;
-                entries[update_entry_s3][ENTRY_DATA_BASE+:`PRGA_YAMI_MFC_DATA_WIDTH]     <= fill_data_s3;
+                entries[fill_entry_s3][ENTRY_FILLED]                                <= 1'b1;
+                entries[fill_entry_s3][ENTRY_DATA_BASE+:`PRGA_YAMI_MFC_DATA_WIDTH]  <= fill_data_s3;
             end
 
             if (mfc_rdy && mfc_vld) begin

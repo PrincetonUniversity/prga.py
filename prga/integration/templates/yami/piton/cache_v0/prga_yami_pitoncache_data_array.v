@@ -41,11 +41,11 @@ module prga_yami_pitoncache_data_array (
     end
 
     always @(posedge clk) begin
-        if (~rst_n)
+        if (~rst_n) begin
             waddr   <= { `PRGA_YAMI_CACHE_INDEX_WIDTH {1'b0} };
             dout    <= { LINE_WIDTH {1'b0} };
-        else if (rd_s2) begin
-            waddr   <= raddr;
+        end else if (rd_s2) begin
+            waddr   <= index_s2;
             if (wr_s3 && waddr == index_s2)
                 dout    <= din;
             else

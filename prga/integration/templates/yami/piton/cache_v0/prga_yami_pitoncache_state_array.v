@@ -24,7 +24,7 @@ module prga_yami_pitoncache_state_array #(
     // -- Stage II -----------------------------------------------------------
     , output reg [`PRGA_YAMI_CACHE_NUM_WAYS * `PRGA_YAMI_CACHE_STATE_WIDTH-1:0] rdata_s3
 
-    , input wire [`PRGA_YAMI_CACHE_S2OP_SA_WIDTH-1:0]   op_s3
+    , input wire [`PRGA_YAMI_CACHE_S3OP_SA_WIDTH-1:0]   op_s3
     , input wire [`PRGA_YAMI_CACHE_NUM_WAYS_LOG2-1:0]   way_s3
     );
 
@@ -131,10 +131,10 @@ module prga_yami_pitoncache_state_array #(
             waddr = raddr_f;
 
             case (op_s3)
-                `PRGA_YAMI_CACHE_S2OP_SA_TRANSITION_TO_IV,
-                `PRGA_YAMI_CACHE_S2OP_SA_TRANSITION_TO_V,
-                `PRGA_YAMI_CACHE_S2OP_SA_INVAL_WAY,
-                `PRGA_YAMI_CACHE_S2OP_SA_INVAL_ALL:
+                `PRGA_YAMI_CACHE_S3OP_SA_TRANSITION_TO_IV,
+                `PRGA_YAMI_CACHE_S3OP_SA_TRANSITION_TO_V,
+                `PRGA_YAMI_CACHE_S3OP_SA_INVAL_WAY,
+                `PRGA_YAMI_CACHE_S3OP_SA_INVAL_ALL:
                     we = 1'b1;
                 default:
                     we = 1'b0;
@@ -155,16 +155,16 @@ module prga_yami_pitoncache_state_array #(
 
                 end else begin
                     case (op_s3)
-                        `PRGA_YAMI_CACHE_S2OP_SA_TRANSITION_TO_IV:
+                        `PRGA_YAMI_CACHE_S3OP_SA_TRANSITION_TO_IV:
                             if (gv_way == way_s3)
                                 din_tmp = `PRGA_YAMI_CACHE_STATE_IV;
-                        `PRGA_YAMI_CACHE_S2OP_SA_TRANSITION_TO_V:
+                        `PRGA_YAMI_CACHE_S3OP_SA_TRANSITION_TO_V:
                             if (gv_way == way_s3)
                                 din_tmp = `PRGA_YAMI_CACHE_STATE_V;
-                        `PRGA_YAMI_CACHE_S2OP_SA_INVAL_WAY:
+                        `PRGA_YAMI_CACHE_S3OP_SA_INVAL_WAY:
                             if (gv_way == way_s3)
                                 din_tmp = `PRGA_YAMI_CACHE_STATE_I;
-                        `PRGA_YAMI_CACHE_S2OP_SA_INVAL_ALL:
+                        `PRGA_YAMI_CACHE_S3OP_SA_INVAL_ALL:
                             din_tmp = `PRGA_YAMI_CACHE_STATE_I;
                     endcase
 

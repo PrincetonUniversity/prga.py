@@ -47,11 +47,11 @@ module prga_yami_pitoncache_tag_array #(
     end
 
     always @(posedge clk) begin
-        if (~rst_n)
+        if (~rst_n) begin
             raddr_s3 <= { `PRGA_YAMI_CACHE_INDEX_WIDTH {1'b0} };
             rdata_s3 <= { LINE_WIDTH {1'b0} };
-        else if (rd_s2) begin
-            raddr_s3 <= raddr;
+        end else if (rd_s2) begin
+            raddr_s3 <= index_s2;
             if (we && waddr == index_s2)
                 rdata_s3 <= din;
             else
@@ -70,7 +70,7 @@ module prga_yami_pitoncache_tag_array #(
             integer lv_init;
             initial begin
                 for (lv_init = 0; lv_init < LINE_COUNT; lv_init = lv_init + 1) begin
-                    data[lv_init] = { `PRGA_YAMI_CACHE_NUM_WAYS { `PRGA_YAMI_CACHE_TAG_WIDTH {1'b0} } };
+                    data[lv_init] = { `PRGA_YAMI_CACHE_NUM_WAYS * `PRGA_YAMI_CACHE_TAG_WIDTH {1'b0} };
                 end
             end
 

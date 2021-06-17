@@ -21,7 +21,7 @@ module prga_yami_pitoncache_way_logic (
 
     , output wire [`PRGA_YAMI_CACHE_NUM_WAYS-1:0]       lru_inc_mask_s3
     , output wire [`PRGA_YAMI_CACHE_NUM_WAYS-1:0]       lru_clr_mask_s3
-)
+    );
 
     generate
         if (`PRGA_YAMI_CACHE_NUM_WAYS != 4) begin
