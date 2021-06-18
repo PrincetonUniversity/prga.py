@@ -124,12 +124,12 @@ module prga_yami_pitoncache_pipeline_s1 (
 
                 case (a_fmc_type)
                     `PRGA_YAMI_REQTYPE_LOAD,
-                    `PRGA_YAMI_REQTYPE_LOAD_NC: if (!ilq_full_s1) begin
+                    `PRGA_YAMI_REQTYPE_LOAD_NC: if (a_fmc_vld && !ilq_full_s1) begin
                         op_s2_next = `PRGA_YAMI_CACHE_S2OP_APP_REQ;
                     end
 
                     `PRGA_YAMI_REQTYPE_STORE,
-                    `PRGA_YAMI_REQTYPE_STORE_NC: if (!isq_full_s1) begin
+                    `PRGA_YAMI_REQTYPE_STORE_NC: if (a_fmc_vld && !isq_full_s1) begin
                         op_s2_next = `PRGA_YAMI_CACHE_S2OP_APP_REQ;
                     end
 
@@ -143,7 +143,7 @@ module prga_yami_pitoncache_pipeline_s1 (
                     `PRGA_YAMI_REQTYPE_AMO_MAX,
                     `PRGA_YAMI_REQTYPE_AMO_MAXU,
                     `PRGA_YAMI_REQTYPE_AMO_MIN,
-                    `PRGA_YAMI_REQTYPE_AMO_MINU: if (!imq_full_s1) begin
+                    `PRGA_YAMI_REQTYPE_AMO_MINU: if (a_fmc_vld && !imq_full_s1) begin
                         op_s2_next = `PRGA_YAMI_CACHE_S2OP_APP_REQ;
                     end
 

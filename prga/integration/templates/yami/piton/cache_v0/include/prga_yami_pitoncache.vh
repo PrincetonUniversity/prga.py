@@ -9,14 +9,14 @@
 
     // 7-bit index (8KB = 128 x 4(#ways) x 16B(cacheline size))
 `define PRGA_YAMI_CACHE_INDEX_LOW       `PRGA_YAMI_CACHELINE_BYTES_LOG2 // 16B cacheline
-`define PRGA_YAMI_CACHE_INDEX_WIDTH     7
+`define PRGA_YAMI_CACHE_INDEX_WIDTH     `PRGA_YAMI_MFC_ADDR_WIDTH
 
     // LRU counter: 0 (youngest) -> 3 (oldest) 
 `define PRGA_YAMI_CACHE_LRU_WIDTH       2
 
     // tag
 `define PRGA_YAMI_CACHE_TAG_LOW         (`PRGA_YAMI_CACHE_INDEX_LOW + `PRGA_YAMI_CACHE_INDEX_WIDTH)
-`define PRGA_YAMI_CACHE_TAG_WIDTH       (`PRGA_YAMI_FMC_ADDR_WIDTH - `PRGA_YAMI_CACHE_TAG_LOW + 1)
+`define PRGA_YAMI_CACHE_TAG_WIDTH       (`PRGA_YAMI_FMC_ADDR_WIDTH - `PRGA_YAMI_CACHE_TAG_LOW)
 
 // ===========================================================================
 // == Response ReOrder Buffer ================================================

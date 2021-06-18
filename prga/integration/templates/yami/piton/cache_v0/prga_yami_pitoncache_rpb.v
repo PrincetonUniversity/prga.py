@@ -74,7 +74,7 @@ module prga_yami_pitoncache_rpb (
             s2buf_data      <= { `PRGA_YAMI_FMC_DATA_WIDTH {1'b0} };
         end else if (state == ST_S2_BUFFERED && dequeue_rpb_s1) begin
             s2buf_vld       <= 1'b0;
-        end else if (rpb_vld_s2) begin
+        end else if (enqueue_rpb_s3 && rpb_vld_s2) begin
             s2buf_vld       <= 1'b1;
             s2buf_reqtype   <= rpb_reqtype_s2;
             s2buf_size      <= rpb_size_s2;
@@ -137,7 +137,7 @@ module prga_yami_pitoncache_rpb (
         endcase
     end
 
-    assign rpb_empty_s1 = state == ST_EMPTY;
+    assign rpb_empty_s1 = state != ST_S2_BUFFERED && state != ST_S3_BUFFERED;
     assign rpb_vld_s1 = state == ST_S3_BUFFERED ? s3buf_vld :
                         state == ST_S2_BUFFERED ? s2buf_vld : 1'b0;
     assign rpb_reqtype_s1 = state == ST_S2_BUFFERED ? s2buf_reqtype : s3buf_reqtype;

@@ -201,6 +201,30 @@ module prga_yami_pitoncache #(
         );
 
     prga_yami_pitoncache_rpb i_rpb (
+        .clk                    (clk)
+        ,.rst_n                 (rst_n)
+        ,.rpb_vld_s2            (rpb_vld_s2)
+        ,.rpb_reqtype_s2        (rpb_reqtype_s2)
+        ,.rpb_size_s2           (rpb_size_s2)
+        ,.rpb_addr_s2           (rpb_addr_s2)
+        ,.rpb_data_s2           (rpb_data_s2)
+        ,.enqueue_rpb_s3        (enqueue_rpb_s3)
+        ,.rpb_reqtype_s3        (rpb_reqtype_s3)
+        ,.rpb_size_s3           (rpb_size_s3)
+        ,.rpb_addr_s3           (rpb_addr_s3)
+        ,.rpb_data_s3           (rpb_data_s3)
+        ,.rpb_rob_entry_s3      (rpb_rob_entry_s3)
+        ,.validate_rpb_s2       (validate_rpb_s2)
+        ,.index_s2              (index_s2)
+        ,.dequeue_rpb_s1        (dequeue_rpb_s1)
+        ,.rpb_empty_s1          (rpb_empty_s1)
+        ,.rpb_vld_s1            (rpb_vld_s1)
+        ,.rpb_reqtype_s1        (rpb_reqtype_s1)
+        ,.rpb_size_s1           (rpb_size_s1)
+        ,.rpb_addr_s1           (rpb_addr_s1)
+        ,.rpb_data_s1           (rpb_data_s1)
+        ,.rpb_rob_entry_vld_s1  (rpb_rob_entry_vld_s1)
+        ,.rpb_rob_entry_s1      (rpb_rob_entry_s1)
         );
 
     prga_yami_pitoncache_pipeline_s1 i_s1 (
@@ -298,7 +322,7 @@ module prga_yami_pitoncache #(
 
     prga_yami_pitoncache_pipeline_s3 i_s3 (
         .clk                    (clk)
-        ,.rst_n                 (~rst_n)
+        ,.rst_n                 (rst_n)
         ,.stall_s3              (stall_s3)
         ,.op_s3_next            (op_s3_next)
         ,.inv_ilq_way_s3_next   (inv_ilq_way_s3_next)

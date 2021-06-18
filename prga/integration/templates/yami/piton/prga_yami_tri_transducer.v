@@ -388,7 +388,7 @@ module prga_yami_tri_transducer (
     // == L15 -> MFC =========================================================
     // =======================================================================
 
-    assign mfc_addr = l15_transducer_inval_address_15_4[0 +: `PRGA_YAMI_MFC_ADDR_WIDTH];
+    assign mfc_addr = l15_transducer_inval_address_15_4_f[4 +: `PRGA_YAMI_MFC_ADDR_WIDTH];
     assign mfc_l1invall = l15_transducer_inval_dcache_all_way_f;
     assign mfc_l1invway = l15_transducer_inval_way_f;
 
