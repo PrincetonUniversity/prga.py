@@ -64,7 +64,7 @@ module {{ module.name }} #(
         ,.LOOKAHEAD     (1)
     ) i_prq (
         .clk            (clk)
-        ,.rst_n         (~rst_n)
+        ,.rst           (~rst_n)
         ,.full          (prq_full)
         ,.wr            (prq_wr)
         ,.din           (req_dstid)
@@ -82,6 +82,7 @@ module {{ module.name }} #(
         case (src_fmc_addr[DEMUX_ADDR_HIGH : DEMUX_ADDR_LOW])
             {%- for i in range(2 ** (module.demux_addr_high - module.demux_addr_low + 1)) %}
             {{ module.demux_addr_high - module.demux_addr_low + 1 }}'d{{ i }}: req_dstid = {{ i % module.num_dsts }};
+            {%- endfor %}
         endcase
     end
 

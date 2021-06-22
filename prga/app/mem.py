@@ -2,6 +2,7 @@
 
 from .util import AppUtils
 from ..netlist import Module, ModuleUtils
+from ..util import uno
 
 import os
 
@@ -117,6 +118,51 @@ class AppMemMixin(object):
         m.portgroups.setdefault("yami", {})[None] = AppUtils.create_yami_ports(m, yami,
                 slave = False, prefix = "dst_",
                 omit_ports = ("fmc_l1rplway", "fmc_parity",
+                        "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+
+        return m
+
+    def get_or_create_yami_demux(self, yami, num_dsts, *,
+            demux_addr_low = None, demux_addr_high = None):
+        """Get or create a YAMI demux based on address.
+
+        Args:
+            yami (`FabricIntf`): YAMI interface
+            num_dsts (:obj:`int`): Number of destinations.
+
+        Keyword Args:
+            demux_addr_low (:obj:`int`): ``demux_addr_high - (num_dsts-1).bit_length()`` if not set
+            demux_addr_high (:obj:`int`): ``yami.fmc_addr_width-1`` if not set
+
+        Returns:
+            `Module`:
+        """
+
+        name = "prga_app_yami_demux{}".format(num_dsts)
+
+        if m := self.modules.get(name):
+            return m
+
+        demux_addr_high = uno(demux_addr_high, yami.fmc_addr_width - 1)
+        demux_addr_low  = uno(demux_addr_low,  demux_addr_high - (num_dsts - 1).bit_length())
+
+        m = self.add_module(Module(name,
+            portgroups = {},
+            num_dsts = num_dsts,
+            demux_addr_low = demux_addr_low,
+            demux_addr_high = demux_addr_high,
+            verilog_template = "yami/prga_app_yami_demux.tmpl.v"))
+
+        m.portgroups.setdefault("syscon", {})[None] = AppUtils.create_syscon_ports(m, slave = True)
+        m.portgroups.setdefault("yami", {})[None] = AppUtils.create_yami_ports(m, yami,
+                slave = True, prefix = "src_",
+                omit_ports = ("fmc_l1rplway", "fmc_parity",
+                    "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+
+        for i in range(num_dsts):
+            m.portgroups.setdefault("yami", {})[i] = AppUtils.create_yami_ports(m, yami,
+                    slave = False, prefix = "dst{}_".format(i),
+                    omit_ports = ("fmc_l1rplway", "fmc_parity",
                         "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
 
         return m
