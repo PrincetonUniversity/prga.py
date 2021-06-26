@@ -48,6 +48,11 @@ module prga_app_softregs #(
     , input wire var_{{ name }}_ack
     , input wire var_{{ name }}_done
 
+        {%- elif r.type_.is_vldrdy_rd %}
+    , input wire [{{ dwidth(name) }} - 1:0] var_{{ name }}_i
+    , input wire var_{{ name }}_vld
+    , output wire var_{{ name }}_rdy
+
         {%- elif r.type_.is_basic %}
     , output wire [{{ dwidth(name) }} - 1:0] var_{{ name }}_o
 
@@ -67,10 +72,20 @@ module prga_app_softregs #(
     , output wire var_{{ name }}_wr
     , input wire var_{{ name }}_full
 
+        {%- elif r.type_.is_vldrdy_wr %}
+    , output wire [{{ dwidth(name) }} - 1:0] var_{{ name }}_o
+    , output wire var_{{ name }}_vld
+    , input wire var_{{ name }}_rdy
+
         {%- elif r.type_.is_hsr_ififo %}
     , output wire [{{ dwidth(name) }} - 1:0] var_{{ name }}_o
     , output wire var_{{ name }}_wr
     , input wire var_{{ name }}_full
+
+        {%- elif r.type_.is_hsr_ififo_vldrdy %}
+    , output wire [{{ dwidth(name) }} - 1:0] var_{{ name }}_o
+    , output wire var_{{ name }}_vld
+    , input wire var_{{ name }}_rdy
 
         {%- elif r.type_.is_hsr_ofifo %}
     , input wire [{{ dwidth(name) }} - 1:0] var_{{ name }}_i
@@ -182,6 +197,11 @@ module prga_app_softregs #(
         ,.var_ack       (var_{{ r.name }}_ack)
         ,.var_done      (var_{{ r.name }}_done)
 
+        {%- elif r.type_.is_vldrdy_rd %}
+        ,.var_i         (var_{{ r.name }}_i)
+        ,.var_vld       (var_{{ r.name }}_vld)
+        ,.var_rdy       (var_{{ r.name }}_rdy)
+
         {%- elif r.type_.is_basic %}
         ,.var_o         (var_{{ r.name }}_o)
 
@@ -201,10 +221,20 @@ module prga_app_softregs #(
         ,.var_wr        (var_{{ r.name }}_wr)
         ,.var_full      (var_{{ r.name }}_full)
 
+        {%- elif r.type_.is_vldrdy_wr %}
+        ,.var_o         (var_{{ r.name }}_o)
+        ,.var_vld       (var_{{ r.name }}_vld)
+        ,.var_rdy       (var_{{ r.name }}_rdy)
+
         {%- elif r.type_.is_hsr_ififo %}
         ,.var_o         (var_{{ r.name }}_o)
         ,.var_wr        (var_{{ r.name }}_wr)
         ,.var_full      (var_{{ r.name }}_full)
+
+        {%- elif r.type_.is_hsr_ififo_vldrdy %}
+        ,.var_o         (var_{{ r.name }}_o)
+        ,.var_vld       (var_{{ r.name }}_vld)
+        ,.var_rdy       (var_{{ r.name }}_rdy)
 
         {%- elif r.type_.is_hsr_basic %}
         ,.var_o         (var_{{ r.name }}_o)

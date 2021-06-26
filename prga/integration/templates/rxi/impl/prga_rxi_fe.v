@@ -596,9 +596,9 @@ module prga_rxi_fe #(
             // -- HSR: input FIFO --
             // ---------------------
             if (hsr_id < `PRGA_RXI_HSRID_OQ) begin
-                s_req_rdy = !prq_full && (!iq_full[iq_id] || ~&s_req_strb);
-                iq_wr[iq_id] = s_req_vld && &s_req_strb && !prq_full;
-                prq_wr = s_req_vld && (!iq_full[iq_id] || ~&s_req_strb);
+                s_req_rdy = !prq_full && (!iq_full[hsr_id[0 +: `PRGA_RXI_HSR_IQ_ID_WIDTH]] || ~&s_req_strb);
+                iq_wr[hsr_id[0 +: `PRGA_RXI_HSR_IQ_ID_WIDTH]] = s_req_vld && |s_req_strb && !prq_full;
+                prq_wr = s_req_vld && (!iq_full[hsr_id[0 +: `PRGA_RXI_HSR_IQ_ID_WIDTH]] || ~&s_req_strb);
                 prq_din = PRQ_TOKEN_BOGUS;
             end
 

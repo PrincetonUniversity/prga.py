@@ -44,7 +44,7 @@ module prga_rxi_fe_phsr (
                     unsynced[gv_reg]    <= 1'b0;
                 end else if (m_vld && m_rdy && m_id == gv_reg) begin
                     unsynced[gv_reg]    <= 1'b0;
-                end else if (s_req_vld && s_req_strb && s_req_id == gv_reg) begin
+                end else if (s_req_vld && |s_req_strb && s_req_id == gv_reg) begin
                     unsynced[gv_reg]    <= 1'b1;
                 end
             end

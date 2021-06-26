@@ -27,6 +27,7 @@ class SoftRegType(Enum):
     # bar         = 4   #: burnt-after-read (deprecated)
     # cbl         = 5   #: call-by-load. assert output until ack'ed (deprecated)
     cbl_2stage  = 6     #: call-by-load. 2-stage ack (output ack, then done signal)
+    vldrdy_rd   = 7     #: valid-ready (similar to rdempty_la: vld = ~empty, rdy = rd)
 
     basic       = 100   #: read-write registers that hold the value once written
     pulse       = 101   #: read-write registers that auto-reset after one cycle (read always return rstval)
@@ -36,11 +37,13 @@ class SoftRegType(Enum):
                         # (deprecated)
 
     wrfull      = 200   #: write-only registers inside the kernel with FIFO-like hand-shake. read returns full bit
+    vldrdy_wr   = 201   #: valid-ready (similar to wrfull: vld = wr, rdy = ~full)
 
     hsr_ififo       = 300   #: hardware-sync'ed input FIFO
     hsr_ofifo       = 301   #: hardware-sync'ed output FIFO
     hsr_tfifo       = 302   #: hardware-sync'ed output token FIFO
     # hsr_plain       = 303   #: hardware-sync'ed plain registers
+    hsr_ififo_vldrdy    = 304   #: hardware-sync'ed input FIFO (vldrdy_wr interface at the kernel side)
 
     hsr_kernel      = 320   #: hardware-sync'ed kernel register         (use one plain HSR)
     hsr_basic       = 321   #: hardware-sync'ed basic register          (use one plain HSR)
@@ -81,11 +84,13 @@ class SoftRegSpace(Object):
                 SoftRegType.rdempty,
                 SoftRegType.rdempty_la,
                 SoftRegType.cbl_2stage,
+                SoftRegType.vldrdy_rd,
                 SoftRegType.basic,
                 SoftRegType.pulse,
                 SoftRegType.pulse_ack,
                 SoftRegType.decoupled,
                 SoftRegType.wrfull,
+                SoftRegType.vldrdy_wr,
                 ]),
 
             "rxi": set([
@@ -94,14 +99,17 @@ class SoftRegSpace(Object):
                 SoftRegType.rdempty,
                 SoftRegType.rdempty_la,
                 SoftRegType.cbl_2stage,
+                SoftRegType.vldrdy_rd,
                 SoftRegType.basic,
                 SoftRegType.pulse,
                 SoftRegType.pulse_ack,
                 SoftRegType.decoupled,
                 SoftRegType.wrfull,
+                SoftRegType.vldrdy_wr,
                 SoftRegType.hsr_ififo,
                 SoftRegType.hsr_ofifo,
                 SoftRegType.hsr_tfifo,
+                SoftRegType.hsr_ififo_vldrdy,
                 # SoftRegType.hsr_plain,
                 SoftRegType.hsr_kernel,
                 SoftRegType.hsr_basic,
@@ -143,11 +151,13 @@ class SoftRegSpace(Object):
                 SoftRegType.rdempty,
                 SoftRegType.rdempty_la,
                 SoftRegType.cbl_2stage,
+                SoftRegType.vldrdy_rd,
                 SoftRegType.basic,
                 SoftRegType.pulse,
                 SoftRegType.pulse_ack,
                 SoftRegType.decoupled,
                 SoftRegType.wrfull,
+                SoftRegType.vldrdy_wr,
                 ):
 
             name = "prga_app_softreg_" + type_.name
@@ -161,6 +171,7 @@ class SoftRegSpace(Object):
                 SoftRegType.hsr_tfifo,
                 SoftRegType.hsr_kernel,
                 SoftRegType.hsr_basic,
+                SoftRegType.hsr_ififo_vldrdy,
                 ):
 
             name = "prga_app_softreg_" + type_.name
@@ -176,6 +187,7 @@ class SoftRegSpace(Object):
                 # hsr_plain   = (48, 64),
                 hsr_kernel  = (48, 64),
                 hsr_basic   = (48, 64),
+                hsr_ififo_vldrdy    = (32, 36),
                 default     = None,
                 )
 
@@ -285,6 +297,7 @@ class SoftRegSpace(Object):
                                 kernel = SoftRegType.hsr_kernel,
                                 basic = SoftRegType.hsr_basic,
                                 wrfull = SoftRegType.hsr_ififo,
+                                vldrdy_wr = SoftRegType.hsr_ififo_vldrdy,
                                 default = None)
 
                         if promoted_type is not None:
@@ -322,6 +335,7 @@ class SoftRegSpace(Object):
                         # hsr_plain   = (48, 64),
                         hsr_kernel  = (48, 64),
                         hsr_basic   = (48, 64),
+                        hsr_ififo_vldrdy    = (32, 36),
                         default     = None,
                         )
 
@@ -418,18 +432,13 @@ class SoftRegSpace(Object):
         # create register variable ports
         for name, r in self.regs.items():
 
-            if r.type_.is_const:
+            if r.type_.is_const or r.type_.is_basic or r.type_.is_pulse or r.type_.is_hsr_basic:
                 ModuleUtils.create_port(m, "var_{}_o".format(name),     r.width, "output")
 
-            elif r.type_.is_kernel:
+            elif r.type_.is_kernel or r.type_.is_hsr_kernel:
                 ModuleUtils.create_port(m, "var_{}_i".format(name),     r.width, "input")
 
-            elif r.type_.is_rdempty:
-                ModuleUtils.create_port(m, "var_{}_empty".format(name), 1,       "input")
-                ModuleUtils.create_port(m, "var_{}_i".format(name),     r.width, "input")
-                ModuleUtils.create_port(m, "var_{}_rd".format(name),    1,       "output")
-
-            elif r.type_.is_rdempty_la:
+            elif r.type_.is_rdempty or r.type_.is_rdempty_la:
                 ModuleUtils.create_port(m, "var_{}_empty".format(name), 1,       "input")
                 ModuleUtils.create_port(m, "var_{}_i".format(name),     r.width, "input")
                 ModuleUtils.create_port(m, "var_{}_rd".format(name),    1,       "output")
@@ -439,11 +448,10 @@ class SoftRegSpace(Object):
                 ModuleUtils.create_port(m, "var_{}_ack".format(name),   1,       "input")
                 ModuleUtils.create_port(m, "var_{}_done".format(name),  1,       "input")
 
-            elif r.type_.is_basic:
-                ModuleUtils.create_port(m, "var_{}_o".format(name),     r.width, "output")
-
-            elif r.type_.is_pulse:
-                ModuleUtils.create_port(m, "var_{}_o".format(name),     r.width, "output")
+            elif r.type_.is_vldrdy_rd:
+                ModuleUtils.create_port(m, "var_{}_vld".format(name),   1,       "input")
+                ModuleUtils.create_port(m, "var_{}_i".format(name),     r.width, "input")
+                ModuleUtils.create_port(m, "var_{}_rdy".format(name),   1,       "output")
 
             elif r.type_.is_pulse_ack:
                 ModuleUtils.create_port(m, "var_{}_o".format(name),     r.width, "output")
@@ -453,15 +461,15 @@ class SoftRegSpace(Object):
                 ModuleUtils.create_port(m, "var_{}_i".format(name),     r.width, "input")
                 ModuleUtils.create_port(m, "var_{}_o".format(name),     r.width, "output")
 
-            elif r.type_.is_wrfull:
+            elif r.type_.is_wrfull or r.type_.is_hsr_ififo:
                 ModuleUtils.create_port(m, "var_{}_full".format(name),  1,       "input")
                 ModuleUtils.create_port(m, "var_{}_o".format(name),     r.width, "output")
                 ModuleUtils.create_port(m, "var_{}_wr".format(name),    1,       "output")
 
-            elif r.type_.is_hsr_ififo:
-                ModuleUtils.create_port(m, "var_{}_full".format(name),  1,       "input")
+            elif r.type_.is_vldrdy_wr or r.type_.is_hsr_ififo_vldrdy:
+                ModuleUtils.create_port(m, "var_{}_rdy".format(name),   1,       "input")
                 ModuleUtils.create_port(m, "var_{}_o".format(name),     r.width, "output")
-                ModuleUtils.create_port(m, "var_{}_wr".format(name),    1,       "output")
+                ModuleUtils.create_port(m, "var_{}_vld".format(name),   1,       "output")
 
             elif r.type_.is_hsr_ofifo:
                 ModuleUtils.create_port(m, "var_{}_full".format(name),  1,       "output")
@@ -471,12 +479,6 @@ class SoftRegSpace(Object):
             elif r.type_.is_hsr_tfifo:
                 ModuleUtils.create_port(m, "var_{}_full".format(name),  1,       "output")
                 ModuleUtils.create_port(m, "var_{}_wr".format(name),    1,       "input")
-
-            elif r.type_.is_hsr_kernel:
-                ModuleUtils.create_port(m, "var_{}_i".format(name),     r.width, "input")
-
-            elif r.type_.is_hsr_basic:
-                ModuleUtils.create_port(m, "var_{}_o".format(name),     r.width, "output")
 
             else:
                 raise PRGAAPIError("Unsupported soft register type: {}".format(repr(r.type_)))
