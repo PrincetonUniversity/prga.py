@@ -379,37 +379,48 @@ module prga_rxi_fe #(
     assign tq_id = s_req_addr[0+:`PRGA_RXI_HSR_TQ_ID_WIDTH];
     assign phsr_id = s_req_addr[0+:`PRGA_RXI_HSR_PLAIN_ID_WIDTH];
 
-    // -- tasks --
-    task automatic forward_f2b;
+    // -- functions --
+    function automatic forward_f2b;
+        input                               _f2b_full;      // shadow input
+        input                               _prq_full;      // shadow input
+        input                               _s_req_vld;     // shadow input
+        input [`PRGA_RXI_DATA_BYTES-1:0]    _s_req_strb;    // shadow input
+        input [`PRGA_RXI_ADDR_WIDTH-1:0]    _s_req_addr;    // shadow input
+        input [`PRGA_RXI_DATA_WIDTH-1:0]    _s_req_data;    // shadow input
         begin
-            s_req_rdy = !f2b_full && !prq_full;
-            f2b_wr = s_req_vld && !prq_full;
-            f2b_data[`PRGA_RXI_F2B_STRB_INDEX] = s_req_strb;
-            f2b_data[`PRGA_RXI_F2B_REGID_INDEX] = s_req_addr;
-            f2b_data[`PRGA_RXI_F2B_DATA_INDEX] = s_req_data;
-            prq_wr = s_req_vld && !f2b_full;
+            s_req_rdy = !_f2b_full && !_prq_full;
+            f2b_wr = _s_req_vld && !_prq_full;
+            f2b_data[`PRGA_RXI_F2B_STRB_INDEX] = _s_req_strb;
+            f2b_data[`PRGA_RXI_F2B_REGID_INDEX] = _s_req_addr;
+            f2b_data[`PRGA_RXI_F2B_DATA_INDEX] = _s_req_data;
+            prq_wr = _s_req_vld && !_f2b_full;
             prq_din = PRQ_TOKEN_B2F;
         end
-    endtask
+    endfunction
 
-    task automatic buffer_bogus;
+    function automatic buffer_bogus;
+        input _prq_full;    // shadow input
+        input _s_req_vld;   // shadow input
         begin
-            s_req_rdy = !prq_full;
-            prq_wr = s_req_vld;
+            s_req_rdy = !_prq_full;
+            prq_wr = _s_req_vld;
             prq_din = PRQ_TOKEN_BOGUS;
         end
-    endtask
+    endfunction
 
-    task automatic buffer_response;
+    function automatic buffer_response;
         input [`PRGA_RXI_DATA_WIDTH-1:0] resp;
+        input _prq_full;    // shadow input
+        input _rb_full;     // shadow input
+        input _s_req_vld;   // shadow input
         begin
-            s_req_rdy = !prq_full && !rb_full;
-            prq_wr = s_req_vld;
+            s_req_rdy = !_prq_full && !_rb_full;
+            prq_wr = _s_req_vld;
             prq_din = PRQ_TOKEN_RB;
-            rb_wr = s_req_vld;
+            rb_wr = _s_req_vld;
             rb_din = resp;
         end
-    endtask
+    endfunction
 
     // -- main process --
     always @* begin
@@ -441,7 +452,14 @@ module prga_rxi_fe #(
 
             // store needs to be forwarded into the application clock domain
             if (s_req_strb[0]) begin
-                forward_f2b;
+                forward_f2b(
+                    f2b_full
+                    , prq_full
+                    , s_req_vld
+                    , s_req_strb
+                    , s_req_addr
+                    , s_req_data
+                    );
 
                 // Notes:
                 //
@@ -462,7 +480,7 @@ module prga_rxi_fe #(
 
             // buffer load response
             else
-                buffer_response(status);
+                buffer_response(status, prq_full, rb_full, s_req_vld);
 
         end
 
@@ -472,11 +490,11 @@ module prga_rxi_fe #(
 
             // store is ignored
             if (|s_req_strb)
-                buffer_bogus;
+                buffer_bogus( prq_full, s_req_vld );
 
             // buffer load response
             else
-                buffer_response(errcode);
+                buffer_response(errcode, prq_full, rb_full, s_req_vld);
 
         end
 
@@ -486,13 +504,13 @@ module prga_rxi_fe #(
 
             // store is processed only in the system clock domain
             if (s_req_strb[0]) begin
-                buffer_bogus;
+                buffer_bogus( prq_full, s_req_vld );
                 clkdiv_factor_we = s_req_vld && !prq_full;
             end
 
             // buffer load response
             else
-                buffer_response(clkdiv_factor);
+                buffer_response(clkdiv_factor, prq_full, rb_full, s_req_vld);
 
         end
 
@@ -502,13 +520,20 @@ module prga_rxi_fe #(
 
             // store needs to be forwarded into the application clock domain
             if (|s_req_strb) begin
-                forward_f2b;
+                forward_f2b(
+                    f2b_full
+                    , prq_full
+                    , s_req_vld
+                    , s_req_strb
+                    , s_req_addr
+                    , s_req_data
+                    );
                 timeout_limit_we = s_req_vld && !f2b_full && !prq_full;
             end
 
             // buffer load response
             else
-                buffer_response(timeout_limit);
+                buffer_response(timeout_limit, prq_full, rb_full, s_req_vld);
         end
 
         // -- application reset countdown --
@@ -517,11 +542,18 @@ module prga_rxi_fe #(
 
             // store needs to be forwarded into the application clock domain
             if (|s_req_strb)
-                forward_f2b;
+                forward_f2b(
+                    f2b_full
+                    , prq_full
+                    , s_req_vld
+                    , s_req_strb
+                    , s_req_addr
+                    , s_req_data
+                    );
 
             // buffer bogus response
             else
-                buffer_bogus;
+                buffer_bogus( prq_full, s_req_vld );
         end
 
         // -- programming reset --
@@ -535,7 +567,7 @@ module prga_rxi_fe #(
             //
             // store and load are both processed only in the system clock domain
             // load does nothing and returns bogus data
-            buffer_bogus;
+            buffer_bogus( prq_full, s_req_vld );
             prog_rst_countdown_rst = s_req_vld && !prq_full && |s_req_strb;
         end
 
@@ -545,13 +577,20 @@ module prga_rxi_fe #(
 
             // store needs to be forwarded into the application clock domain
             if (|s_req_strb) begin
-                forward_f2b;
+                forward_f2b(
+                    f2b_full
+                    , prq_full
+                    , s_req_vld
+                    , s_req_strb
+                    , s_req_addr
+                    , s_req_data
+                    );
                 yami_enable_we = s_req_vld && !f2b_full && !prq_full;
             end
 
             // buffer load response
             else
-                buffer_response(yami_enable);
+                buffer_response(yami_enable, prq_full, rb_full, s_req_vld);
         end
 
         // -- reserved control register space --
@@ -559,7 +598,7 @@ module prga_rxi_fe #(
         else if (s_req_addr < `PRGA_RXI_NSRID_SCRATCHPAD) begin
             
             // do nothing and return bogus data
-            buffer_bogus;
+            buffer_bogus( prq_full, s_req_vld );
         end
 
         // -- scratchpad registers --
@@ -567,14 +606,14 @@ module prga_rxi_fe #(
         else if (s_req_addr < `PRGA_RXI_NSRID_PROG) begin
 
             if (|s_req_strb) begin
-                buffer_bogus;
+                buffer_bogus( prq_full, s_req_vld );
                 if (s_req_vld && !prq_full)
                     scratchpad_strb = s_req_strb;
             end
 
             // buffer load response
             else
-                buffer_response(scratchpads[scratchpad_id]);
+                buffer_response(scratchpads[scratchpad_id], prq_full, rb_full, s_req_vld);
 
         end
 
@@ -608,14 +647,14 @@ module prga_rxi_fe #(
 
                 // ignore stores
                 if (|s_req_strb)
-                    buffer_bogus;
+                    buffer_bogus( prq_full, s_req_vld );
 
                 // blocking load, but be aware of errors
                 else if (errcode != `PRGA_RXI_ERRCODE_NONE)
-                    buffer_response(errcode);
+                    buffer_response(errcode, prq_full, rb_full, s_req_vld);
 
                 else if (!oq_empty[oq_id]) begin
-                    buffer_response(oq_dout[oq_id]);
+                    buffer_response(oq_dout[oq_id], prq_full, rb_full, s_req_vld);
                     oq_rd[oq_id] = s_req_vld && !prq_full && !rb_full;
                 end
             end
@@ -626,14 +665,14 @@ module prga_rxi_fe #(
 
                 // ignore stores
                 if (|s_req_strb)
-                    buffer_bogus;
+                    buffer_bogus( prq_full, s_req_vld );
 
                 // block load, but be aware of errors
                 else if (errcode != `PRGA_RXI_ERRCODE_NONE)
-                    buffer_response(errcode);
+                    buffer_response(errcode, prq_full, rb_full, s_req_vld);
 
                 else if (!tq_empty[tq_id]) begin
-                    buffer_bogus;
+                    buffer_bogus( prq_full, s_req_vld );
                     tq_rd[tq_id] = s_req_vld && !prq_full;
                 end
             end
@@ -644,17 +683,17 @@ module prga_rxi_fe #(
 
                 // ignore stores
                 if (|s_req_strb)
-                    buffer_bogus;
+                    buffer_bogus( prq_full, s_req_vld );
 
                 // non-blocking load!
                 else if (errcode != `PRGA_RXI_ERRCODE_NONE)
-                    buffer_response(errcode);
+                    buffer_response(errcode, prq_full, rb_full, s_req_vld);
 
                 else if (tq_empty[tq_id])
-                    buffer_response(`PRGA_RXI_ERRCODE_NOTOKEN);
+                    buffer_response(`PRGA_RXI_ERRCODE_NOTOKEN, prq_full, rb_full, s_req_vld);
 
                 else begin
-                    buffer_bogus;
+                    buffer_bogus( prq_full, s_req_vld );
                     tq_rd[tq_id] = s_req_vld && !prq_full;
                 end
             end
@@ -666,11 +705,11 @@ module prga_rxi_fe #(
 
                 // stores always succeed
                 if (|s_req_strb)
-                    buffer_bogus;
+                    buffer_bogus( prq_full, s_req_vld );
 
                 // buffer load response
                 else
-                    buffer_response(phsr_dout);
+                    buffer_response(phsr_dout, prq_full, rb_full, s_req_vld);
 
             end
         end
@@ -707,11 +746,18 @@ module prga_rxi_fe #(
         if (!f2b_wr && s_req_addr >= `PRGA_RXI_SRID_BASE) begin
             // active?
             if (rxi_active)
-                forward_f2b;
+                forward_f2b(
+                    f2b_full
+                    , prq_full
+                    , s_req_vld
+                    , s_req_strb
+                    , s_req_addr
+                    , s_req_data
+                    );
 
             // return bogus for inactive interface
             else
-                buffer_bogus;
+                buffer_bogus( prq_full, s_req_vld );
         end
 
     end

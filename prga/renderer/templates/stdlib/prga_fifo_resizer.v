@@ -5,7 +5,8 @@ module prga_fifo_resizer #(
     parameter INPUT_MULTIPLIER = 1,
     parameter OUTPUT_MULTIPLIER = 1,
     parameter INPUT_LOOKAHEAD = 0,
-    parameter OUTPUT_LOOKAHEAD = 0
+    parameter OUTPUT_LOOKAHEAD = 0,
+    parameter LITTLE_ENDIAN = 0
 ) (
     input wire [0:0] clk,
     input wire [0:0] rst,
@@ -76,25 +77,49 @@ module prga_fifo_resizer #(
         reg [BUF_WIDTH - 1:0] pipebuf;
         reg [COUNTER_WIDTH:0] counter;
 
-        always @(posedge clk) begin
-            if (rst) begin
-                pipebuf <= {BUF_WIDTH{1'b0}};
-                counter <= 'b0;
-            end else begin
-                case ({~empty_i_internal && rd_i_internal, ~empty && rd})
-                    2'b01: begin
-                        pipebuf <= pipebuf << (DATA_WIDTH * OUTPUT_MULTIPLIER);
-                        counter <= counter - OUTPUT_MULTIPLIER;
-                    end
-                    2'b10: begin
-                        pipebuf <= {pipebuf, dout_i_internal};
-                        counter <= counter + INPUT_MULTIPLIER;
-                    end
-                    2'b11: begin
-                        pipebuf <= {pipebuf, dout_i_internal};
-                        counter <= counter + INPUT_MULTIPLIER - OUTPUT_MULTIPLIER;
-                    end
-                endcase
+        if (LITTLE_ENDIAN) begin
+            always @(posedge clk) begin
+                if (rst) begin
+                    pipebuf <= {BUF_WIDTH{1'b0}};
+                    counter <= 'b0;
+                end else begin
+                    case ({~empty_i_internal && rd_i_internal, ~empty && rd})
+                        2'b01: begin
+                            pipebuf <= pipebuf >> (DATA_WIDTH * OUTPUT_MULTIPLIER);
+                            counter <= counter - OUTPUT_MULTIPLIER;
+                        end
+                        2'b10: begin
+                            pipebuf <= {dout_i_internal, pipebuf} >> (DATA_WIDTH * INPUT_MULTIPLIER);
+                            counter <= counter + INPUT_MULTIPLIER;
+                        end
+                        2'b11: begin
+                            pipebuf <= {dout_i_internal, pipebuf} >> (DATA_WIDTH * INPUT_MULTIPLIER);
+                            counter <= counter + INPUT_MULTIPLIER - OUTPUT_MULTIPLIER;
+                        end
+                    endcase
+                end
+            end
+        end else begin
+            always @(posedge clk) begin
+                if (rst) begin
+                    pipebuf <= {BUF_WIDTH{1'b0}};
+                    counter <= 'b0;
+                end else begin
+                    case ({~empty_i_internal && rd_i_internal, ~empty && rd})
+                        2'b01: begin
+                            pipebuf <= pipebuf << (DATA_WIDTH * OUTPUT_MULTIPLIER);
+                            counter <= counter - OUTPUT_MULTIPLIER;
+                        end
+                        2'b10: begin
+                            pipebuf <= {pipebuf, dout_i_internal};
+                            counter <= counter + INPUT_MULTIPLIER;
+                        end
+                        2'b11: begin
+                            pipebuf <= {pipebuf, dout_i_internal};
+                            counter <= counter + INPUT_MULTIPLIER - OUTPUT_MULTIPLIER;
+                        end
+                    endcase
+                end
             end
         end
 
@@ -102,12 +127,22 @@ module prga_fifo_resizer #(
         assign rd_i_internal = counter < OUTPUT_MULTIPLIER || (counter == OUTPUT_MULTIPLIER && rd);
 
         if (OUTPUT_LOOKAHEAD) begin
-            assign dout = pipebuf[DATA_WIDTH * (INPUT_MULTIPLIER + OUTPUT_MULTIPLIER - 1) - 1 -: DATA_WIDTH * OUTPUT_MULTIPLIER];
+            if (LITTLE_ENDIAN) begin
+                assign dout = pipebuf[0 +: DATA_WIDTH * OUTPUT_MULTIPLIER];
+            end else begin
+                assign dout = pipebuf[DATA_WIDTH * (INPUT_MULTIPLIER + OUTPUT_MULTIPLIER - 1) - 1 -: DATA_WIDTH * OUTPUT_MULTIPLIER];
+            end
         end else begin
             reg [DATA_WIDTH * OUTPUT_MULTIPLIER - 1:0] dout_f;
 
-            always @(posedge clk) begin
-                dout_f <= pipebuf[DATA_WIDTH * (INPUT_MULTIPLIER + OUTPUT_MULTIPLIER - 1) - 1 -: DATA_WIDTH * OUTPUT_MULTIPLIER];
+            if (LITTLE_ENDIAN) begin
+                always @(posedge clk) begin
+                    dout_f <= pipebuf[0 +: DATA_WIDTH * OUTPUT_MULTIPLIER];
+                end
+            end else begin
+                always @(posedge clk) begin
+                    dout_f <= pipebuf[DATA_WIDTH * (INPUT_MULTIPLIER + OUTPUT_MULTIPLIER - 1) - 1 -: DATA_WIDTH * OUTPUT_MULTIPLIER];
+                end
             end
 
             assign dout = dout_f;

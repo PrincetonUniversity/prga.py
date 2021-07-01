@@ -17,6 +17,7 @@ module {{ module.name }} #(
     , parameter KERNEL_DATA_BYTES_LOG2 = {{ ((module.ports.rdata|length) // 8 - 1).bit_length() }}
     , parameter PRQ_DEPTH_LOG2 = 3
     , parameter OPT_THRUPUT = 1     // optimize throughput (use feedthrough control)
+    , parameter SWAP_ENDIANNESS = 0
 ) (
     input wire                                      clk
     , input wire                                    rst_n
@@ -212,21 +213,66 @@ module {{ module.name }} #(
     assign rresp = `PRGA_AXI4_XRESP_OKAY;
     assign mfc_rdy = rvld && rready;
 
+    wire [ 7:0] bytes  [`PRGA_YAMI_MFC_DATA_BYTES-1:0];
+    wire [15:0] words  [`PRGA_YAMI_MFC_DATA_BYTES/2-1:0];
+    wire [31:0] dwords [`PRGA_YAMI_MFC_DATA_BYTES/4-1:0];
+    wire [63:0] qwords [`PRGA_YAMI_MFC_DATA_BYTES/8-1:0];
+
+    genvar gv_byte;
+    generate
+        for (gv_byte = 0; gv_byte < `PRGA_YAMI_MFC_DATA_BYTES; gv_byte = gv_byte + 1) begin: g_byte
+            assign bytes[gv_byte] = mfc_data[gv_byte * 8 +: 8];
+        end
+    endgenerate
+
+    genvar gv_word;
+    generate
+        for (gv_word = 0; gv_word < `PRGA_YAMI_MFC_DATA_BYTES/2; gv_word = gv_word + 1) begin: g_word
+            if (SWAP_ENDIANNESS) begin
+                assign words[gv_word] = {bytes[gv_word * 2], bytes[gv_word * 2 + 1]};
+            end else begin
+                assign words[gv_word] = {bytes[gv_word * 2 + 1], bytes[gv_word * 2]};
+            end
+        end
+    endgenerate
+
+    genvar gv_dword;
+    generate
+        for (gv_dword = 0; gv_dword < `PRGA_YAMI_MFC_DATA_BYTES/4; gv_dword = gv_dword + 1) begin: g_dword
+            if (SWAP_ENDIANNESS) begin
+                assign dwords[gv_dword] = {words[gv_dword * 2], words[gv_dword * 2 + 1]};
+            end else begin
+                assign dwords[gv_dword] = {words[gv_dword * 2 + 1], words[gv_dword * 2]};
+            end
+        end
+    endgenerate
+
+    genvar gv_qword;
+    generate
+        for (gv_qword = 0; gv_qword < `PRGA_YAMI_MFC_DATA_BYTES/8; gv_qword = gv_qword + 1) begin: g_qword
+            if (SWAP_ENDIANNESS) begin
+                assign qwords[gv_qword] = {dwords[gv_qword * 2], dwords[gv_qword * 2 + 1]};
+            end else begin
+                assign qwords[gv_qword] = {dwords[gv_qword * 2 + 1], dwords[gv_qword * 2]};
+            end
+        end
+    endgenerate
+
     generate
         if (KERNEL_DATA_BYTES_LOG2 == 0) begin              // 1B AXI4
-            assign rdata = mfc_data[{roffset, 3'h0}+:8];
+            assign rdata = bytes[roffset];
         end else if (KERNEL_DATA_BYTES_LOG2 == 1) begin     // 2B AXI4
-            assign rdata = rsize == `PRGA_AXI4_AXSIZE_1B ? {2 {mfc_data[{roffset, 3'h0}+: 8]} } :
-                                                           {1 {mfc_data[{roffset, 3'h0}+:16]} };
+            assign rdata = rsize == `PRGA_AXI4_AXSIZE_1B ? {2 {bytes [roffset]} } :
+                                                           {1 {words [roffset >> 1]} };
         end else if (KERNEL_DATA_BYTES_LOG2 == 2) begin     // 4B AXI4
-            assign rdata = rsize == `PRGA_AXI4_AXSIZE_1B ? {4 {mfc_data[{roffset, 3'h0}+: 8]} } :
-                           rsize == `PRGA_AXI4_AXSIZE_2B ? {2 {mfc_data[{roffset, 3'h0}+:16]} } :
-                                                           {1 {mfc_data[{roffset, 3'h0}+:32]} };
+            assign rdata = rsize == `PRGA_AXI4_AXSIZE_1B ? {4 {bytes [roffset]} } :
+                           rsize == `PRGA_AXI4_AXSIZE_2B ? {2 {words [roffset >> 1]} } :
+                                                           {1 {dwords[roffset >> 2]} };
         end else if (KERNEL_DATA_BYTES_LOG2 == 3) begin     // 8B AXI4, this is the widest possible setting
-            assign rdata = rsize == `PRGA_AXI4_AXSIZE_1B ? {8 {mfc_data[{roffset, 3'h0}+: 8]} } :
-                           rsize == `PRGA_AXI4_AXSIZE_2B ? {4 {mfc_data[{roffset, 3'h0}+:16]} } :
-                           rsize == `PRGA_AXI4_AXSIZE_4B ? {2 {mfc_data[{roffset, 3'h0}+:32]} } :
-                                                           {1 {mfc_data[{roffset, 3'h0}+:64]} };
+            assign rdata = rsize == `PRGA_AXI4_AXSIZE_1B ? {8 {bytes [roffset]} } :
+                           rsize == `PRGA_AXI4_AXSIZE_2B ? {4 {words [roffset >> 1]} } :
+                           rsize == `PRGA_AXI4_AXSIZE_4B ? {2 {dwords[roffset >> 2]} } :
+                                                           {1 {qwords[roffset >> 3]} };
         end else begin
             __PRGA_PARAMETERIZATION_ERROR__ __error__();
         end

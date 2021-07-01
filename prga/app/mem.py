@@ -224,3 +224,72 @@ class AppMemMixin(object):
             ModuleUtils.instantiate(m, sub, d)
 
         return m
+
+    def get_or_create_pipeldshim_yami(self, yami, data_bytes_log2):
+        """Get or create a valid-ready to YAMI load shim.
+
+        Args:
+            yami (`FabricIntf`): YAMI interface
+            data_bytes_log2 (:obj:`int`): Log 2 of the number of bytes of the data bus.
+
+        Returns:
+            `Module`:
+        """
+
+        name = "prga_app_pipeldshim_yami_d{}".format(8 << data_bytes_log2)
+
+        if m := self.modules.get(name):
+            return m
+
+        m = self.add_module(Module(name,
+            portgroups = {},
+            verilog_template = "yami/prga_app_pipeldshim.tmpl.v"))
+
+        m.portgroups.setdefault("syscon", {})[None] = AppUtils.create_syscon_ports(m, slave = True)
+        m.portgroups.setdefault("vldrdy", {})[None] = AppUtils.create_vldrdy_ports(m, 
+                {"data": 8 << data_bytes_log2}, prefix = "k")
+        m.portgroups.setdefault("yami", {})[None] = AppUtils.create_yami_ports(m, yami,
+                omit_ports = ("fmc_data", "fmc_l1rplway", "fmc_parity",
+                    "mfc_type", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+
+        ModuleUtils.create_port(m, "cfg_addr",  yami.fmc_addr_width, "input")
+        ModuleUtils.create_port(m, "cfg_len",   32,                  "input")
+        ModuleUtils.create_port(m, "cfg_start", 1,                   "input")
+        ModuleUtils.create_port(m, "cfg_idle",  1,                   "output")
+
+        return m
+
+    def get_or_create_pipestshim_yami(self, yami, data_bytes_log2):
+        """Get or create a valid-ready to YAMI store shim.
+
+        Args:
+            yami (`FabricIntf`): YAMI interface
+            data_bytes_log2 (:obj:`int`): Log 2 of the number of bytes of the data bus.
+
+        Returns:
+            `Module`:
+        """
+
+        name = "prga_app_pipestshim_yami_d{}".format(8 << data_bytes_log2)
+
+        if m := self.modules.get(name):
+            return m
+
+        m = self.add_module(Module(name,
+            portgroups = {},
+            verilog_template = "yami/prga_app_pipestshim.tmpl.v"))
+
+        m.portgroups.setdefault("syscon", {})[None] = AppUtils.create_syscon_ports(m, slave = True)
+        m.portgroups.setdefault("vldrdy", {})[None] = AppUtils.create_vldrdy_ports(m,
+                {"data": 8 << data_bytes_log2}, slave = True, prefix = "k")
+        m.portgroups.setdefault("yami", {})[None] = AppUtils.create_yami_ports(m, yami,
+                omit_ports = ("fmc_l1rplway", "fmc_parity",
+                    "mfc_type", "mfc_data", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+
+        ModuleUtils.create_port(m, "cfg_addr",  yami.fmc_addr_width, "input")
+        ModuleUtils.create_port(m, "cfg_len",   32,                  "input")
+        ModuleUtils.create_port(m, "cfg_start", 1,                   "input")
+        ModuleUtils.create_port(m, "cfg_idle",  1,                   "output")
+
+        return m
+

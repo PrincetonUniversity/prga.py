@@ -155,14 +155,17 @@ module prga_yami_be #(
     reg                                     fmc_creg_vld;
     reg [`PRGA_YAMI_CREG_DATA_WIDTH-1:0]    fmc_creg_data;
 
-    // tasks
-    task automatic process_mfc;
+    // functions
+    function automatic process_mfc;
         input feature;
+        input _yami_active;     // shadow input
+        input _mfc_rdy;         // shadow input
+        input _fifo_mfc_empty;  // shadow input
         begin
-            fifo_mfc_rd = !yami_active || !feature || mfc_rdy;
-            mfc_vld = yami_active && feature && !fifo_mfc_empty;
+            fifo_mfc_rd = !feature || !_yami_active || _mfc_rdy;
+            mfc_vld = feature && _yami_active && !_fifo_mfc_empty;
         end
-    endtask
+    endfunction
 
     always @* begin
         fifo_mfc_rd = 1'b0;
@@ -196,17 +199,26 @@ module prga_yami_be #(
             `PRGA_YAMI_RESPTYPE_LOAD_ACK:
                 process_mfc(
                     creg_features[`PRGA_YAMI_CREG_FEATURE_BIT_LOAD]
+                    , yami_active
+                    , mfc_rdy
+                    , fifo_mfc_empty
                     );
 
             `PRGA_YAMI_RESPTYPE_STORE_ACK:
                 process_mfc(
                     creg_features[`PRGA_YAMI_CREG_FEATURE_BIT_STORE]
+                    , yami_active
+                    , mfc_rdy
+                    , fifo_mfc_empty
                     );
 
             `PRGA_YAMI_RESPTYPE_CACHE_INV:
                 process_mfc(
                     creg_features[`PRGA_YAMI_CREG_FEATURE_BIT_LOAD]
                     && creg_features[`PRGA_YAMI_CREG_FEATURE_BIT_L1CACHE]
+                    , yami_active
+                    , mfc_rdy
+                    , fifo_mfc_empty
                     );
 
             `PRGA_YAMI_RESPTYPE_AMO_ACK:
@@ -215,6 +227,9 @@ module prga_yami_be #(
                     && creg_features[`PRGA_YAMI_CREG_FEATURE_BIT_STORE]
                     && creg_features[`PRGA_YAMI_CREG_FEATURE_BIT_NC]
                     && creg_features[`PRGA_YAMI_CREG_FEATURE_BIT_AMO]
+                    , yami_active
+                    , mfc_rdy
+                    , fifo_mfc_empty
                     );
         endcase
     end
@@ -311,31 +326,33 @@ module prga_yami_be #(
     localparam  AMO_SIZE_FULL   = `PRGA_MIN2(STORE_SIZE_FULL, LOAD_SIZE_FULL);
 
     // -- Core Logic ---------------------------------------------------------
-    // tasks
-    task automatic process_fmc;
+    // functions
+    function automatic process_fmc;
         input [`PRGA_YAMI_SIZE_WIDTH-1:0] full_size;
         input cacheline_size_ok;
+        input [`PRGA_YAMI_SIZE_WIDTH-1:0] _fmc_size;    // shadow input
+        input _fmc_vld;                                 // shadow input
         begin
-            if (fmc_size == `PRGA_YAMI_SIZE_CACHELINE) begin
+            if (_fmc_size == `PRGA_YAMI_SIZE_CACHELINE) begin
                 if (cacheline_size_ok) begin
                     fifo_fmc_wr = 1'b1;
                     fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_SIZE_INDEX] = CACHELINE_SIZE;
                 end else begin
                     creg_errcode_next = `PRGA_YAMI_CREG_ERRCODE_SIZE_OUT_OF_RANGE;
-                    event_error = fmc_vld;
+                    event_error = _fmc_vld;
                 end
-            end else if (fmc_size > full_size) begin
+            end else if (_fmc_size > full_size) begin
                 creg_errcode_next = `PRGA_YAMI_CREG_ERRCODE_SIZE_OUT_OF_RANGE;
-                event_error = fmc_vld;
-            end else if (fmc_size == `PRGA_YAMI_SIZE_FULL) begin
-                fifo_fmc_wr = fmc_vld;
+                event_error = _fmc_vld;
+            end else if (_fmc_size == `PRGA_YAMI_SIZE_FULL) begin
+                fifo_fmc_wr = _fmc_vld;
                 fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_SIZE_INDEX] = full_size;
             end else begin
-                fifo_fmc_wr = fmc_vld;
-                fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_SIZE_INDEX] = fmc_size;
+                fifo_fmc_wr = _fmc_vld;
+                fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_SIZE_INDEX] = _fmc_size;
             end
         end
-    endtask
+    endfunction
 
     always @* begin
         fifo_fmc_wr = 1'b0;
@@ -363,14 +380,14 @@ module prga_yami_be #(
             end else begin
                 case (fmc_type)
                     `PRGA_YAMI_REQTYPE_LOAD:
-                        process_fmc(LOAD_SIZE_FULL, 1'b1);
+                        process_fmc(LOAD_SIZE_FULL, 1'b1, fmc_size, fmc_vld);
 
                     `PRGA_YAMI_REQTYPE_LOAD_NC:
-                        process_fmc(LOAD_SIZE_FULL, 1'b0);
+                        process_fmc(LOAD_SIZE_FULL, 1'b0, fmc_size, fmc_vld);
 
                     `PRGA_YAMI_REQTYPE_STORE,
                     `PRGA_YAMI_REQTYPE_STORE_NC:
-                        process_fmc(STORE_SIZE_FULL, 1'b0);
+                        process_fmc(STORE_SIZE_FULL, 1'b0, fmc_size, fmc_vld);
 
                     `PRGA_YAMI_REQTYPE_AMO_LR,
                     `PRGA_YAMI_REQTYPE_AMO_SC,
@@ -383,7 +400,7 @@ module prga_yami_be #(
                     `PRGA_YAMI_REQTYPE_AMO_MAXU,
                     `PRGA_YAMI_REQTYPE_AMO_MIN,
                     `PRGA_YAMI_REQTYPE_AMO_MINU:
-                        process_fmc(AMO_SIZE_FULL, 1'b0);
+                        process_fmc(AMO_SIZE_FULL, 1'b0, fmc_size, fmc_vld);
 
                 endcase
             end

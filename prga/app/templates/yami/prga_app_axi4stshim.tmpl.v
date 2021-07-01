@@ -17,6 +17,7 @@ module {{ module.name }} #(
     , parameter KERNEL_DATA_BYTES_LOG2 = {{ ((module.ports.wdata|length) // 8 - 1).bit_length() }}
     , parameter PRQ_DEPTH_LOG2 = 3
     , parameter OPT_THRUPUT = 1     // optimize throughput (use feedthrough control)
+    , parameter SWAP_ENDIANNESS = 0
 ) (
     input wire                                      clk
     , input wire                                    rst_n
@@ -151,49 +152,59 @@ module {{ module.name }} #(
     assign wready = wvld && fmc_rdy;
     assign fmc_vld = wvld && wvalid;
 
+    wire [(8<<KERNEL_DATA_BYTES_LOG2)-1:0]  wdata_swapped;
+
+    genvar gv_byte;
+    generate
+        for (gv_byte = 0; gv_byte < 1 << KERNEL_DATA_BYTES_LOG2; gv_byte = gv_byte + 1) begin: g_byte
+            assign wdata_swapped[gv_byte * 8 +: 8] = SWAP_ENDIANNESS ? wdata[((1 << KERNEL_DATA_BYTES_LOG2) - gv_byte - 1) * 8 +: 8]
+                                                                       : wdata[gv_byte * 8 +: 8];
+        end
+    endgenerate
+
     generate
         if (KERNEL_DATA_BYTES_LOG2 == 0) begin     // 1B AXI4
             always @* begin
-                fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES {wdata} };
+                fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES {wdata_swapped} };
             end
         end else if (KERNEL_DATA_BYTES_LOG2 == 1) begin     // 2B AXI4
             always @* begin
                 case (wstrb)
-                    2'b01:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[ 0+: 8]} };
-                    2'b10:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[ 8+: 8]} };
-                    default: fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata} };
+                    2'b01:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[ 0+: 8]} };
+                    2'b10:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[ 8+: 8]} };
+                    default: fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata_swapped} };
                 endcase
             end
         end else if (KERNEL_DATA_BYTES_LOG2 == 2) begin     // 4B AXI4
             always @* begin
                 case (wstrb)
-                    4'b0001: fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[ 0+: 8]} };
-                    4'b0010: fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[ 8+: 8]} };
-                    4'b0100: fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[16+: 8]} };
-                    4'b1000: fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[24+: 8]} };
-                    4'b0011: fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata[ 0+:16]} };
-                    4'b1100: fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata[16+:16]} };
-                    default: fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/4) {wdata} };
+                    4'b0001: fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[ 0+: 8]} };
+                    4'b0010: fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[ 8+: 8]} };
+                    4'b0100: fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[16+: 8]} };
+                    4'b1000: fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[24+: 8]} };
+                    4'b0011: fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata_swapped[ 0+:16]} };
+                    4'b1100: fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata_swapped[16+:16]} };
+                    default: fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/4) {wdata_swapped} };
                 endcase
             end
         end else if (KERNEL_DATA_BYTES_LOG2 == 3) begin     // 8B AXI4, this is the widest possible setting
             always @* begin
                 case (wstrb)
-                    8'h01:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[ 0+: 8]} };
-                    8'h02:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[ 8+: 8]} };
-                    8'h04:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[16+: 8]} };
-                    8'h08:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[24+: 8]} };
-                    8'h10:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[32+: 8]} };
-                    8'h20:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[40+: 8]} };
-                    8'h40:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[48+: 8]} };
-                    8'h80:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata[56+: 8]} };
-                    8'h03:   fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata[ 0+:16]} };
-                    8'h0c:   fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata[16+:16]} };
-                    8'h30:   fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata[32+:16]} };
-                    8'hc0:   fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata[48+:16]} };
-                    8'h0f:   fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/4) {wdata[ 0+:32]} };
-                    8'hf0:   fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/4) {wdata[32+:32]} };
-                    default: fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/8) {wdata} };
+                    8'h01:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[ 0+: 8]} };
+                    8'h02:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[ 8+: 8]} };
+                    8'h04:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[16+: 8]} };
+                    8'h08:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[24+: 8]} };
+                    8'h10:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[32+: 8]} };
+                    8'h20:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[40+: 8]} };
+                    8'h40:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[48+: 8]} };
+                    8'h80:   fmc_data = { `PRGA_YAMI_FMC_DATA_BYTES     {wdata_swapped[56+: 8]} };
+                    8'h03:   fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata_swapped[ 0+:16]} };
+                    8'h0c:   fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata_swapped[16+:16]} };
+                    8'h30:   fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata_swapped[32+:16]} };
+                    8'hc0:   fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/2) {wdata_swapped[48+:16]} };
+                    8'h0f:   fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/4) {wdata_swapped[ 0+:32]} };
+                    8'hf0:   fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/4) {wdata_swapped[32+:32]} };
+                    default: fmc_data = { (`PRGA_YAMI_FMC_DATA_BYTES/8) {wdata_swapped} };
                 endcase
             end
         end else begin

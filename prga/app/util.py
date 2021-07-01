@@ -365,3 +365,57 @@ class AppUtils(object):
         mi("resp_parity",   1)
 
         return d
+
+    @classmethod
+    def create_vldrdy_ports(cls, module, payloads, slave = False,
+            prefix = '', suffix = '', uppercase = False,
+            omit_ports = tuple()):
+        """Create simple valid-ready interface in ``module``.
+
+        Args:
+            module (`Module`):
+            payloads (:obj:`dict` [:obj:`str`, :obj:`int`]): A mapping from port names to widths
+            slave (:obj:`bool`): If set, create slave interface
+
+        Keyword Args:
+            prefix (:obj:`str`): Prefix to be added before the standard port names, e.g. "{prefix}req_rdy"
+            suffix (:obj:`str`): Suffix to be added after the standard port names, e.g. "req_rdy{suffix}"
+            uppercase (:obj:`bool`): If set, RXI port names are converted to uppercase. Does not affect ``prefix`` or
+                ``suffix``.
+            omit_ports (:obj:`Container` [:obj:`str` ]): Exclude the specified ports from creation. Ports are named by
+                standard port names only, case-insensitive
+
+        Returns:
+            :obj:`dict` [:obj:`str`, `Port` ]: Mapping from standard port names (lowercase) to ports
+        """
+
+        # omit ports
+        omit_ports = set( s.lower() for s in omit_ports )
+
+        # return values
+        d = {}
+
+        # short aliases
+        def mi(n, w, **kwargs):
+            if n not in omit_ports:
+                d[n] = ModuleUtils.create_port(module,
+                        prefix + (n.upper() if uppercase else n) + suffix,
+                        w,
+                        "output" if slave else "input",
+                        **kwargs)
+
+        def mo(n, w, **kwargs):
+            if n not in omit_ports:
+                d[n] = ModuleUtils.create_port(module,
+                        prefix + (n.upper() if uppercase else n) + suffix,
+                        w,
+                        "input" if slave else "output",
+                        **kwargs)
+
+        # ports
+        mi("rdy",   1)
+        mo("vld",   1)
+        for k, v in payloads.items():
+            mo(k,   v)
+
+        return d

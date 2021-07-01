@@ -117,12 +117,12 @@ module {{ module.name }} #(
         case (req_srcid)
             {%- for i in range(module.num_srcs) %}
             {{ (module.num_srcs - 1).bit_length() }}'d{{ i }}: begin
-                dst_fmc_vld = src{{ i }}_fmc_vld;
+                dst_fmc_vld = src{{ i }}_fmc_vld && !prq_full;
                 dst_fmc_type = src{{ i }}_fmc_type;
                 dst_fmc_size = src{{ i }}_fmc_size;
                 dst_fmc_addr = src{{ i }}_fmc_addr;
                 dst_fmc_data = src{{ i }}_fmc_data;
-                src{{ i }}_fmc_rdy = dst_fmc_rdy;
+                src{{ i }}_fmc_rdy = dst_fmc_rdy && !prq_full;
                 prq_wr = src{{ i }}_fmc_vld && dst_fmc_rdy;
             end
             {%- endfor %}

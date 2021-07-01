@@ -342,7 +342,7 @@ module prga_rxi_be #(
     *
     */
 
-    task automatic sync_errcode;
+    function automatic sync_errcode;
         input [`PRGA_RXI_ERRCODE_WIDTH-1:0] errcode;
         begin
             b2f_wr = 1'b1;
@@ -351,7 +351,7 @@ module prga_rxi_be #(
             b2f_elem[`PRGA_RXI_B2F_DATA_BASE+:`PRGA_RXI_ERRCODE_WIDTH] = errcode;
             b2f_errcode = errcode;
         end
-    endtask
+    endfunction
 
     always @* begin
         b2f_wr = 1'b0;

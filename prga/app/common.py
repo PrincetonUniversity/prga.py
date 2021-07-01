@@ -129,6 +129,10 @@ class AppCommonMixin(object):
                     ("fmc_vld", "mfc_rdy", "fmc_type", "fmc_size", "fmc_addr", "fmc_data", "fmc_l1rplway", "fmc_parity"),
                     ("mfc_vld", "fmc_rdy", "mfc_type", "mfc_data", "mfc_addr", "mfc_l1invall", "mfc_l1invway") )
 
+        elif type_ == "vldrdy":
+
+            self.__gconnect( mpg, spg, mnets, snets, set(mpg) & set(spg) - set(["rdy"]), ("rdy", ))
+
         else:
             raise NotImplementedError("Unsupported type: {}".format(type_))
 
@@ -145,25 +149,34 @@ class AppCommonMixin(object):
                 NetUtils.connect( Const(0, len(sp)), snets[spg[name].key] )
 
         buf_width = sum(len(n) for n in mbus)
-        ibuf = ModuleUtils.instantiate(module,
-                self.get_or_create_vldrdy_buf(buf_width, parity),
-                bufname)
 
-        syscon = next(iter(module.portgroups["syscon"].values()))
+        if buf_width > 0:
+            ibuf = ModuleUtils.instantiate(module,
+                    self.get_or_create_vldrdy_buf(buf_width, parity),
+                    bufname)
 
-        NetUtils.connect(syscon["clk"],             ibuf.pins["clk"])
-        NetUtils.connect(syscon["rst_n"],           ibuf.pins["rst_n"])
+            syscon = next(iter(module.portgroups["syscon"].values()))
 
-        NetUtils.connect(ibuf.pins["rdy_o"],        mnets[mpg[rdyname].key])
-        NetUtils.connect(mnets[mpg[vldname].key],   ibuf.pins["vld_i"])
-        NetUtils.connect(mbus,                      ibuf.pins["data_i"])
+            NetUtils.connect(syscon["clk"],             ibuf.pins["clk"])
+            NetUtils.connect(syscon["rst_n"],           ibuf.pins["rst_n"])
 
-        NetUtils.connect(snets[spg[rdyname].key],   ibuf.pins["rdy_i"])
-        NetUtils.connect(ibuf.pins["vld_o"],        snets[spg[vldname].key])
-        NetUtils.connect(ibuf.pins["data_o"],       sbus)
+            NetUtils.connect(ibuf.pins["rdy_o"],        mnets[mpg[rdyname].key])
+            NetUtils.connect(mnets[mpg[vldname].key],   ibuf.pins["vld_i"])
+            NetUtils.connect(mbus,                      ibuf.pins["data_i"])
 
-        if parity:
-            NetUtils.connect(ibuf.pins["parity_o"], snets[spg[parityname].key])
+            NetUtils.connect(snets[spg[rdyname].key],   ibuf.pins["rdy_i"])
+            NetUtils.connect(ibuf.pins["vld_o"],        snets[spg[vldname].key])
+            NetUtils.connect(ibuf.pins["data_o"],       sbus)
+
+            if parity:
+                NetUtils.connect(ibuf.pins["parity_o"], snets[spg[parityname].key])
+
+        else:
+            NetUtils.connect(snets[spg[rdyname].key],   mnets[mpg[rdyname].key])
+            NetUtils.connect(mnets[mpg[vldname].key],   snets[spg[vldname].key])
+
+            if parity:
+                NetUtils.connect(Const(0, 1), snets[spg[parityname].key])
 
     def connect_portgroup_buf(self, type_, master, slave, master_id = None, slave_id = None, *,
             buffer_suffix = ''):

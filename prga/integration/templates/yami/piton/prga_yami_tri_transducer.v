@@ -8,7 +8,9 @@
 `include "prga_yami.vh"
 `default_nettype none
 
-module prga_yami_tri_transducer (
+module prga_yami_tri_transducer #(
+    parameter   SWAP_ENDIANNESS     = 1
+) (
     input wire                                  clk
     , input wire                                rst_n
 
@@ -103,16 +105,18 @@ module prga_yami_tri_transducer (
 
     // swap byte endianness of transducer_l15_data_next
     wire [63:0]                     transducer_l15_data_next_endianswapped;
-    assign transducer_l15_data_next_endianswapped = {
-        transducer_l15_data_next[ 0+:8],
-        transducer_l15_data_next[ 8+:8],
-        transducer_l15_data_next[16+:8],
-        transducer_l15_data_next[24+:8],
-        transducer_l15_data_next[32+:8],
-        transducer_l15_data_next[40+:8],
-        transducer_l15_data_next[48+:8],
-        transducer_l15_data_next[56+:8]
-    };
+    assign transducer_l15_data_next_endianswapped = SWAP_ENDIANNESS
+                                                    ? {
+                                                        transducer_l15_data_next[ 0+:8],
+                                                        transducer_l15_data_next[ 8+:8],
+                                                        transducer_l15_data_next[16+:8],
+                                                        transducer_l15_data_next[24+:8],
+                                                        transducer_l15_data_next[32+:8],
+                                                        transducer_l15_data_next[40+:8],
+                                                        transducer_l15_data_next[48+:8],
+                                                        transducer_l15_data_next[56+:8]
+                                                    }
+                                                    : transducer_l15_data_next;
 
     // Sequential logic
     always @(posedge clk) begin
@@ -201,27 +205,29 @@ module prga_yami_tri_transducer (
 
     // swap byte endianness of l15_transducer_data_f at 8B boundaries
     wire [127:0]                    l15_transducer_data_f_endianswapped;
-    assign l15_transducer_data_f_endianswapped = {
-        // high-address 8B
-        l15_transducer_data_f[ 64+:8],
-        l15_transducer_data_f[ 72+:8],
-        l15_transducer_data_f[ 80+:8],
-        l15_transducer_data_f[ 88+:8],
-        l15_transducer_data_f[ 96+:8],
-        l15_transducer_data_f[104+:8],
-        l15_transducer_data_f[112+:8],
-        l15_transducer_data_f[120+:8],
+    assign l15_transducer_data_f_endianswapped = SWAP_ENDIANNESS
+                                                 ? {
+                                                     // high-address 8B
+                                                     l15_transducer_data_f[ 64+:8],
+                                                     l15_transducer_data_f[ 72+:8],
+                                                     l15_transducer_data_f[ 80+:8],
+                                                     l15_transducer_data_f[ 88+:8],
+                                                     l15_transducer_data_f[ 96+:8],
+                                                     l15_transducer_data_f[104+:8],
+                                                     l15_transducer_data_f[112+:8],
+                                                     l15_transducer_data_f[120+:8],
 
-        // low-address 8B
-        l15_transducer_data_f[  0+:8],
-        l15_transducer_data_f[  8+:8],
-        l15_transducer_data_f[ 16+:8],
-        l15_transducer_data_f[ 24+:8],
-        l15_transducer_data_f[ 32+:8],
-        l15_transducer_data_f[ 40+:8],
-        l15_transducer_data_f[ 48+:8],
-        l15_transducer_data_f[ 56+:8]
-    };
+                                                     // low-address 8B
+                                                     l15_transducer_data_f[  0+:8],
+                                                     l15_transducer_data_f[  8+:8],
+                                                     l15_transducer_data_f[ 16+:8],
+                                                     l15_transducer_data_f[ 24+:8],
+                                                     l15_transducer_data_f[ 32+:8],
+                                                     l15_transducer_data_f[ 40+:8],
+                                                     l15_transducer_data_f[ 48+:8],
+                                                     l15_transducer_data_f[ 56+:8]
+                                                 }
+                                                 : l15_transducer_data_f;
 
     // =======================================================================
     // == L15 -> MFC Cacheline Load Processor ================================
