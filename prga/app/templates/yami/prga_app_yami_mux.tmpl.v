@@ -49,7 +49,7 @@ module {{ module.name }} #(
     localparam  SRCID_WIDTH     = {{ (module.num_srcs - 1).bit_length() }};
     localparam  NUM_SRC_ALIGNED = 1 << SRCID_WIDTH;
 
-    reg [SRCID_WIDTH-1:0]   req_srcid;
+    reg [SRCID_WIDTH-1:0]   req_srcid, req_srcid_next;
     wire [SRCID_WIDTH-1:0]  resp_srcid;
 
     // == Pending Response Queue =============================================
@@ -72,20 +72,7 @@ module {{ module.name }} #(
         );
 
     // == Request Arbitration ================================================
-    // -- function: trailing zero count (no all-zero detection) --
-    function automatic [SRCID_WIDTH - 1:0] tzc;
-        input [NUM_SRC_ALIGNED - 1:0] arg;
-        begin
-            integer i;
-
-            tzc = 0;
-            for (i = NUM_SRC_ALIGNED - 1; i > 0; i = i - 1)
-                if (arg[i])
-                    tzc = i;
-        end
-    endfunction
-
-    wire [NUM_SRC_ALIGNED - 1:0] fmc_src_vld;
+    wire [NUM_SRC_ALIGNED - 1:0] fmc_src_vld, fmc_src_vld_shifted;
     {%- for i in range( 2 ** (module.num_srcs-1).bit_length() ) %}
         {%- if i < module.num_srcs %}
     assign fmc_src_vld[{{ i }}] = src{{ i }}_fmc_vld;
@@ -93,12 +80,23 @@ module {{ module.name }} #(
     assign fmc_src_vld[{{ i }}] = 1'b0;
         {%- endif %}
     {%- endfor %}
+    assign fmc_src_vld_shifted = {fmc_src_vld, fmc_src_vld} >> req_srcid;
+
+    always @* begin
+        req_srcid_next = req_srcid;
+        {%- set ifjoiner = joiner("end else ") %}
+        {% for i in range( 1, 2 ** (module.num_srcs-1).bit_length() ) %}
+        {{ ifjoiner() }}if (fmc_src_vld_shifted[{{ i }}]) begin
+            req_srcid_next = req_srcid + {{ i }};
+        {%- endfor %}
+        end
+    end
 
     always @(posedge clk) begin
         if (~rst_n) begin
             req_srcid <= { SRCID_WIDTH {1'b0} };
         end else if (!dst_fmc_vld || dst_fmc_rdy) begin
-            req_srcid <= req_srcid + tzc({fmc_src_vld, fmc_src_vld} >> req_srcid);
+            req_srcid <= req_srcid_next;
         end
     end
 
