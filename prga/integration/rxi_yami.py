@@ -123,15 +123,18 @@ class IntegrationRXIYAMI(object):
                 "prga_rxi_fe_phsr": ("prga_byteaddressable_reg", "prga_arb_robinfair"),
                 "prga_rxi_fe":      ("prga_clkdiv", "prga_sync_basic", "prga_byteaddressable_reg", "prga_rxi_fe_iq",
                     "prga_fifo", "prga_tokenfifo", "prga_rxi_fe_phsr"),
+                "prga_rxi_fe:clkgen":   ("prga_fake_clkgen", "prga_sync_basic", "prga_byteaddressable_reg",
+                    "prga_rxi_fe_iq", "prga_fifo", "prga_tokenfifo", "prga_rxi_fe_phsr"),
                 "prga_rxi_be":      ("prga_fifo", "prga_byteaddressable_reg"),
                 }
 
         for d, subs in deps.items():
-            m = context._add_module(Module(d,
+            m = context._add_module(Module(d.split(":")[0],
                 is_cell = True,
                 view = ModuleView.design,
                 module_class = ModuleClass.aux,
-                verilog_template = "rxi/impl/{}.v".format(d),
+                key = d,
+                verilog_template = "rxi/impl/{}.v".format(d.replace(":", ".")),
                 verilog_dep_headers = ("prga_rxi.vh", )))
             for sub in subs:
                 ModuleUtils.instantiate(m, context.database[ModuleView.design, sub], sub)
@@ -143,11 +146,12 @@ class IntegrationRXIYAMI(object):
             verilog_template = "rxi/axi4lite/prga_rxi_axi4lite_transducer.v",
             verilog_dep_headers = ("prga_rxi.vh", "prga_axi4.vh")))
 
-        for d in ("prga_yami_be", "prga_yami_fe"):
-            context._add_module(Module(d,
+        for d in ("prga_yami_be", "prga_yami_fe", "prga_yami_fe:clkgen"):
+            context._add_module(Module(d.split(":")[0],
                 is_cell = True,
                 view = ModuleView.design,
                 module_class = ModuleClass.aux,
+                key = d,
                 verilog_template = ("yami/piton/impl/{}.v" if yami.is_yami_piton else "yami/impl/{}.v").format(d),
                 verilog_dep_headers = ("prga_utils.vh", "prga_yami.vh")))
 
@@ -159,12 +163,13 @@ class IntegrationRXIYAMI(object):
             verilog_dep_headers = ("prga_yami.vh", )))
 
         # 3. register modules that we need to know about the ports
-        if True:
+        for d in ("prga_rxi", "prga_rxi:clkgen"):
             # prga RXI interface
-            m = context._add_module(Module("prga_rxi",
+            m = context._add_module(Module(d.split(":")[0],
                 is_cell = True,
                 view = ModuleView.design,
                 module_class = ModuleClass.aux,
+                key = d,
                 verilog_template = "rxi/impl/prga_rxi.v",
                 verilog_dep_headers = ("prga_rxi.vh", )))
             cls._create_ports_syscon(m, slave = True)
@@ -183,8 +188,13 @@ class IntegrationRXIYAMI(object):
                     data_bytes_log2 = rxi.data_bytes_log2)
 
             for sub in ("prga_valrdy_buf", "prga_async_fifo:v2", "prga_fifo_wrbuf", "prga_fifo_rdbuf",
-                    "prga_rxi_fe", "prga_rxi_be", ):
+                    "prga_rxi_be", ):
                 ModuleUtils.instantiate(m, context.database[ModuleView.design, sub], sub)
+
+            if "clkgen" in d:
+                ModuleUtils.instantiate(m, context.database[ModuleView.design, "prga_rxi_fe:clkgen"], "prga_rxi_fe")
+            else:
+                ModuleUtils.instantiate(m, context.database[ModuleView.design, "prga_rxi_fe"],        "prga_rxi_fe")
 
         if True:
             # prga YAMI interface
@@ -221,6 +231,7 @@ class IntegrationRXIYAMI(object):
             # other configuration
             name = "prga_system",
             fabric_wrapper = None,
+            use_fake_clkgen = False,
             ):
 
         """Create the system top wrapping the reconfigurable fabric, implementing RXI/YAMI interface.
@@ -235,6 +246,8 @@ class IntegrationRXIYAMI(object):
             fabric_wrapper (:obj:`str` or :obj:`bool`): If set to a :obj:`str`, or set to ``True`` \(in which
                 case it is converted to ``{name}_core``\), an extra layer of wrapper is created around the fabric
                 and instantiated in the top-level module
+            use_fake_clkgen (:obj:`bool`): If set, use simulation-only clock generator. It generates a independent
+                clock whose period is multiples of 100ps
         """
 
         cls._register_cells(context, rxi, yami)
@@ -391,7 +404,9 @@ class IntegrationRXIYAMI(object):
         rxi_ports = cls._create_ports_rxi(system, slave = True, prefix = "rxi_",
                 addr_width = rxi.addr_width - rxi.data_bytes_log2,
                 data_bytes_log2 = rxi.data_bytes_log2)
-        rxi_ctrl = ModuleUtils.instantiate(system, context.database[ModuleView.design, "prga_rxi"], "i_rxi")
+        rxi_ctrl = ModuleUtils.instantiate(system,
+                context.database[ModuleView.design, "prga_rxi:clkgen" if use_fake_clkgen else "prga_rxi"],
+                "i_rxi")
 
         NetUtils.connect(syscon_ports["clk"],   rxi_ctrl.pins["clk"])
         NetUtils.connect(syscon_ports["rst_n"], rxi_ctrl.pins["rst_n"])

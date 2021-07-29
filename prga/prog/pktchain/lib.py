@@ -842,7 +842,8 @@ class Pktchain(Scanchain):
     class BuildSystemRXIYAMI(AbstractPass):
         """Create a system for SoC integration, using RXI/YAMI interfaces."""
 
-        __slots__ = ["io_constraints_f", "name", "fabric_wrapper", "prog_be_in_wrapper", "rxi", "yami"]
+        __slots__ = ["io_constraints_f", "name", "fabric_wrapper", "prog_be_in_wrapper",
+                "rxi", "yami", "use_fake_clkgen"]
 
         def __init__(self, io_constraints_f = "io.pads", *,
                 name = "prga_system", piton = False,
@@ -852,7 +853,10 @@ class Pktchain(Scanchain):
 
                 yami_fmc_addr_width = 40, yami_fmc_data_bytes_log2 = 3,
                 yami_mfc_addr_width = 16, yami_mfc_data_bytes_log2 = 4,
-                yami_cacheline_bytes_log2 = 4):
+                yami_cacheline_bytes_log2 = 4,
+                
+                use_fake_clkgen = False,
+                ):
 
             if prog_be_in_wrapper and fabric_wrapper is None:
                 raise PRGAAPIError("`fabric_wrapper` must be set when `prog_be_in_wrapper` is set")
@@ -874,6 +878,8 @@ class Pktchain(Scanchain):
                         yami_mfc_data_bytes_log2,
                         yami_cacheline_bytes_log2)
 
+            self.use_fake_clkgen = use_fake_clkgen
+
         @property
         def key(self):
             return "system.pktchain.rxi_yami"
@@ -889,6 +895,7 @@ class Pktchain(Scanchain):
             IntegrationRXIYAMI.build_system(context, self.rxi, self.yami,
                     name                        = self.name,
                     fabric_wrapper              = self.fabric_wrapper,
+                    use_fake_clkgen             = self.use_fake_clkgen,
                     )
 
             # get system top module

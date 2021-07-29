@@ -880,7 +880,7 @@ class BuiltinCellLibrary(object):
 
         # clock-domain-crossing designs
         for d in ("prga_ram_1r1w_dc", "prga_async_fifo", "prga_async_tokenfifo", "prga_clkdiv",
-                "prga_valrdy_cdc", "prga_sync_basic", "prga_async_fifo_ptr"):
+                "prga_valrdy_cdc", "prga_sync_basic", "prga_async_fifo_ptr", "prga_fake_clkgen"):
             context._add_module(Module(d,
                     is_cell = True,
                     view = ModuleView.design,

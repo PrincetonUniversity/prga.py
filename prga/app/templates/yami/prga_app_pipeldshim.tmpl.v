@@ -74,7 +74,7 @@ module {{ module.name }} #(
     wire [`PRGA_YAMI_MFC_DATA_BYTES_LOG2-1:0]                           req_addr_offset, req_valid_words;
 
     assign {req_addr_full, req_addr_offset} = req_addr;
-    assign req_valid_words = (`PRGA_YAMI_MFC_DATA_BYTES - req_addr_offset) >> KERNEL_DATA_BYTES_LOG2;
+    assign req_valid_words = ((`PRGA_YAMI_MFC_DATA_BYTES - req_addr_offset) >> KERNEL_DATA_BYTES_LOG2) - 1;
 
     always @(posedge clk) begin
         if (~rst_n) begin
@@ -112,11 +112,11 @@ module {{ module.name }} #(
                 fmc_vld     = 1'b1;
 
                 if (fmc_rdy) begin
-                    if (req_valid_words >= req_len) begin
+                    if (req_valid_words + 1 >= req_len) begin
                         req_state_next  = QST_IDLE;
                     end else begin
                         req_addr_next   = (req_addr_full + 1) << `PRGA_YAMI_MFC_DATA_BYTES_LOG2;
-                        req_len_next    = req_len - req_valid_words;
+                        req_len_next    = req_len - req_valid_words - 1;
                     end
                 end
             end
