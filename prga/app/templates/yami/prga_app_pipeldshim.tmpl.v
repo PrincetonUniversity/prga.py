@@ -134,7 +134,7 @@ module {{ module.name }} #(
     reg [31:0]                                  resp_len,    resp_len_next;
 
     wire [`PRGA_YAMI_MFC_DATA_BYTES_LOG2-1:0]   resp_valid_words;
-    assign resp_valid_words = (`PRGA_YAMI_MFC_DATA_BYTES - resp_offset) >> KERNEL_DATA_BYTES_LOG2;
+    assign resp_valid_words = ((`PRGA_YAMI_MFC_DATA_BYTES - resp_offset) >> KERNEL_DATA_BYTES_LOG2) - 1;
 
     always @(posedge clk) begin
         if (~rst_n) begin
@@ -164,11 +164,11 @@ module {{ module.name }} #(
             end
             RST_BUSY: begin
                 if (mfc_vld && mfc_rdy) begin
-                    if (resp_valid_words >= resp_len) begin
+                    if (resp_valid_words + 1 >= resp_len) begin
                         resp_state_next = QST_IDLE;
                     end else begin
                         resp_offset_next    = { `PRGA_YAMI_MFC_DATA_BYTES_LOG2 {1'b0} };
-                        resp_len_next       = resp_len - resp_valid_words;
+                        resp_len_next       = resp_len - resp_valid_words - 1;
                     end
                 end
             end
@@ -203,7 +203,7 @@ module {{ module.name }} #(
         ,.rd_i      (resizer_rd_i)
         ,.dout_i    (resizer_dout_i)
         ,.empty     (resizer_empty)
-        ,.rd        (resizer_rd)
+        ,.rd        (resizer_rd || ~resizer_vld)
         ,.dout      ({resizer_vld, kdata})
         );
 
