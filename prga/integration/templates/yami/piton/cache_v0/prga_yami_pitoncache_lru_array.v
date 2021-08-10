@@ -23,7 +23,7 @@ module prga_yami_pitoncache_lru_array #(
     , input wire [`PRGA_YAMI_CACHE_INDEX_WIDTH-1:0]     index_s2
 
     // -- Stage II -----------------------------------------------------------
-    , output reg [`PRGA_YAMI_CACHE_LRU_WIDTH * `PRGA_YAMI_CACHE_NUM_WAYS - 1:0] rdata_s3
+    , output wire [`PRGA_YAMI_CACHE_LRU_WIDTH * `PRGA_YAMI_CACHE_NUM_WAYS - 1:0] rdata_s3
 
     , input wire                                        wr_s3
     , input wire [`PRGA_YAMI_CACHE_NUM_WAYS-1:0]        inc_mask_s3
@@ -35,13 +35,19 @@ module prga_yami_pitoncache_lru_array #(
 
     // -- Tag Array Memory --
     wire                                    we;
+    reg                                     read_after_write;
     wire [`PRGA_YAMI_CACHE_INDEX_WIDTH-1:0] waddr;
     wire [LINE_WIDTH-1:0]                   din;
 
     reg [`PRGA_YAMI_CACHE_INDEX_WIDTH-1:0]  raddr_s3;
+    reg [LINE_WIDTH-1:0]                    din_f, dout;
     reg [LINE_WIDTH-1:0]                    data [0:LINE_COUNT-1];
 
+    assign rdata_s3 = read_after_write ? din_f : dout;
+
     always @(posedge clk) begin
+        dout <= data[index_s2];
+        din_f <= din;
         if (we)
             data[waddr] <= din;
     end
@@ -49,13 +55,12 @@ module prga_yami_pitoncache_lru_array #(
     always @(posedge clk) begin
         if (~rst_n) begin
             raddr_s3 <= { `PRGA_YAMI_CACHE_INDEX_WIDTH {1'b0} };
-            rdata_s3 <= { LINE_WIDTH {1'b0} };
+            read_after_write <= 1'b0;
         end else if (rd_s2) begin
             raddr_s3 <= index_s2;
-            if (we && waddr == index_s2)
-                rdata_s3 <= din;
-            else
-                rdata_s3 <= data[index_s2];
+            read_after_write <= we && waddr == index_s2;
+        end else begin
+            read_after_write <= 1'b0;
         end
     end
 

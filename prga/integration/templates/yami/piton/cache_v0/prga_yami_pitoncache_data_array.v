@@ -31,25 +31,29 @@ module prga_yami_pitoncache_data_array (
 
     // -- Tag Array Memory --
     reg [`PRGA_YAMI_CACHE_INDEX_WIDTH-1:0]  waddr;
-    wire [LINE_WIDTH-1:0]                   din;
-    reg [LINE_WIDTH-1:0]                    dout;
+    reg                                     read_after_write;
+    wire [LINE_WIDTH-1:0]                   din, dout_muxed;
+    reg [LINE_WIDTH-1:0]                    din_f, dout;
     reg [LINE_WIDTH-1:0]                    data [0:LINE_COUNT-1];
 
+    assign dout_muxed = read_after_write ? din_f : dout;
+
     always @(posedge clk) begin
+        dout <= data[index_s2];
+        din_f <= din;
         if (wr_s3)
             data[waddr] <= din;
     end
 
     always @(posedge clk) begin
         if (~rst_n) begin
-            waddr   <= { `PRGA_YAMI_CACHE_INDEX_WIDTH {1'b0} };
-            dout    <= { LINE_WIDTH {1'b0} };
+            waddr               <= { `PRGA_YAMI_CACHE_INDEX_WIDTH {1'b0} };
+            read_after_write    <= 1'b0;
         end else if (rd_s2) begin
-            waddr   <= index_s2;
-            if (wr_s3 && waddr == index_s2)
-                dout    <= din;
-            else
-                dout    <= data[index_s2];
+            waddr               <= index_s2;
+            read_after_write    <= wr_s3 && waddr == index_s2;
+        end else begin
+            read_after_write    <= 1'b0;
         end
     end
 
@@ -60,7 +64,7 @@ module prga_yami_pitoncache_data_array (
         for (gv_way = 0; gv_way < `PRGA_YAMI_CACHE_NUM_WAYS; gv_way = gv_way + 1) begin: g_way
             wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]    din_tmp;
             
-            assign dout_ways[gv_way] = dout[`PRGA_YAMI_MFC_DATA_WIDTH * gv_way +: `PRGA_YAMI_MFC_DATA_WIDTH];
+            assign dout_ways[gv_way] = dout_muxed[`PRGA_YAMI_MFC_DATA_WIDTH * gv_way +: `PRGA_YAMI_MFC_DATA_WIDTH];
             assign din[`PRGA_YAMI_MFC_DATA_WIDTH * gv_way +: `PRGA_YAMI_MFC_DATA_WIDTH] = din_tmp;
 
             for (gv_byte = 0; gv_byte < `PRGA_YAMI_MFC_DATA_BYTES; gv_byte = gv_byte + 1) begin: g_byte
@@ -75,4 +79,3 @@ module prga_yami_pitoncache_data_array (
     end
 
 endmodule
-

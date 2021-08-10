@@ -335,7 +335,7 @@ module prga_yami_be #(
         begin
             if (_fmc_size == `PRGA_YAMI_SIZE_CACHELINE) begin
                 if (cacheline_size_ok) begin
-                    fifo_fmc_wr = 1'b1;
+                    fifo_fmc_wr = _fmc_vld;
                     fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_SIZE_INDEX] = CACHELINE_SIZE;
                 end else begin
                     creg_errcode_next = `PRGA_YAMI_CREG_ERRCODE_SIZE_OUT_OF_RANGE;

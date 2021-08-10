@@ -112,7 +112,6 @@ module prga_async_fifo_ptr #(
             if (rd && !empty)
                 b_rptr_rclk <= b_rptr_rclk + 1;
             b_wptr_rclk <= b_wptr_rclk_next;
-            b_rptr_wclk <= b_rptr_wclk_next; 
         end
     end
 

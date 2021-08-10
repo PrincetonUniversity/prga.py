@@ -397,7 +397,7 @@ module prga_rxi_be #(
 
             // try accepting response
             else begin
-                m_resp_rdy = !b2f_full || prq_empty || prq_dout == PRQ_TOKEN_DROP;
+                m_resp_rdy = (!prq_empty && prq_dout == PRQ_TOKEN_DROP) || !b2f_full;
 
                 // valid response (or sync)?
                 if (m_resp_vld) begin

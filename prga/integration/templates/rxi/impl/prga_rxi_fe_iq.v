@@ -8,7 +8,7 @@
 `default_nettype none
 
 module prga_rxi_fe_iq #(
-    parameter   FIFO_DEPTH_LOG2
+    parameter   FIFO_DEPTH_LOG2 = 3
 ) (
     // -- System Ctrl --------------------------------------------------------
     input wire                                          clk
