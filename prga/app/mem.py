@@ -167,15 +167,19 @@ class AppMemMixin(object):
 
         return m
 
-    def get_or_create_yami_pitoncache(self, yami):
+    def get_or_create_yami_pitoncache(self, yami, version = "cache_v1"):
         """Get or create a YAMI L1 Cache.
 
         Args:
             yami (`FabricIntf`):
+            version (:obj:`str`): piton cache version. currently "cache_v0" and "cache_v1"
 
         Returns:
             `Module`:
         """
+
+        if version not in ("cache_v0", "cache_v1"):
+            raise TypeError ("Unsupported yami/piton cache version: {}".format(version))
 
         name = "prga_yami_pitoncache"
 
@@ -189,12 +193,12 @@ class AppMemMixin(object):
 
         # add header
         self.add_verilog_header("prga_yami_pitoncache.vh",
-                "yami/piton/cache_v0/include/prga_yami_pitoncache.vh")
+                "yami/piton/{}/include/prga_yami_pitoncache.vh".format (version) )
 
         # add top-level cache module
         m = self.add_module(Module("prga_yami_pitoncache",
                 portgroups = {},
-                verilog_template = "yami/piton/cache_v0/prga_yami_pitoncache.v",
+                verilog_template = "yami/piton/{}/prga_yami_pitoncache.v".format(version),
                 verilog_dep_headers = ("prga_yami_pitoncache.vh", )))
 
         # create port groups
@@ -220,8 +224,17 @@ class AppMemMixin(object):
                 "prga_yami_pitoncache_pipeline_s3",
                 ):
             sub = self.add_module(Module(d,
-                verilog_template = "yami/piton/cache_v0/{}.v".format(d)))
+                verilog_template = "yami/piton/{}/{}.v".format(version, d)))
             ModuleUtils.instantiate(m, sub, d)
+
+        if version == "cache_v1":
+            for d in (
+                    "prga_yami_pitoncache_fifo",
+                    "prga_yami_pitoncache_ram_raw",
+                    ):
+                sub = self.add_module(Module(d,
+                    verilog_template = "yami/piton/cache_v1/{}.v".format(d)))
+                ModuleUtils.instantiate(m, sub, d)
 
         return m
 
