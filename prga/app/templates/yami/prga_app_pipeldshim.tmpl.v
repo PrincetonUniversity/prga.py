@@ -8,7 +8,7 @@
 
 module {{ module.name }} #(
     parameter   KERNEL_DATA_BYTES_LOG2  = {{ ((module.ports.kdata|length) // 8 - 1).bit_length() }}
-    , parameter MAX_INFLIGHT_LOADS      = 31
+    , parameter MAX_INFLIGHT_LOADS_LOG2 = 3
 ) (
     input wire                                      clk
     , input wire                                    rst_n
@@ -44,18 +44,37 @@ module {{ module.name }} #(
     // , input wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]    mfc_addr
     );
 
-    localparam  INFLIGHT_LOAD_COUNTER_WIDTH = `PRGA_CLOG2(MAX_INFLIGHT_LOADS + 1);
-    reg [INFLIGHT_LOAD_COUNTER_WIDTH-1:0]   ifl_cnt;
+    // == Buffering Responses from MFC ==
+    wire i_resp_fifo_full, i_resp_fifo_empty, i_resp_fifo_rd;
+    wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0] i_resp_fifo_dout;
+
+    prga_fifo #(
+        .DEPTH_LOG2     (MAX_INFLIGHT_LOADS_LOG2)
+        ,.DATA_WIDTH    (`PRGA_YAMI_MFC_DATA_WIDTH)
+        ,.LOOKAHEAD     (1)
+    ) i_resp_fifo (
+        .clk            (clk)
+        ,.rst           (~rst_n)
+        ,.full          (i_resp_fifo_full)
+        ,.wr            (mfc_vld)
+        ,.din           (mfc_data)
+        ,.empty         (i_resp_fifo_empty)
+        ,.rd            (i_resp_fifo_rd)
+        ,.dout          (i_resp_fifo_dout)
+        );
+
+    // == Pre-allocate Space before Sending Requests ==
+    reg [MAX_INFLIGHT_LOADS_LOG2:0]     occupancy;
 
     always @(posedge clk) begin
         if (~rst_n) begin
-            ifl_cnt     <= { INFLIGHT_LOAD_COUNTER_WIDTH {1'b0} };
+            occupancy     <= { (MAX_INFLIGHT_LOADS_LOG2 + 1) {1'b0} };
         end else if (cfg_start && cfg_idle) begin
-            ifl_cnt     <= { INFLIGHT_LOAD_COUNTER_WIDTH {1'b0} };
+            occupancy     <= { (MAX_INFLIGHT_LOADS_LOG2 + 1) {1'b0} };
         end else begin
-            case ({fmc_vld && fmc_rdy, mfc_vld && mfc_rdy})
-                2'b01:  ifl_cnt <= ifl_cnt - 1;
-                2'b10:  ifl_cnt <= ifl_cnt + 1;
+            case ({fmc_vld && fmc_rdy, ~i_resp_fifo_empty && i_resp_fifo_rd})
+                2'b01:  occupancy <= occupancy - 1;
+                2'b10:  occupancy <= occupancy + 1;
             endcase
         end
     end
@@ -108,7 +127,7 @@ module {{ module.name }} #(
                     req_len_next    = cfg_len;
                 end
             end
-            QST_BUSY: if (ifl_cnt < MAX_INFLIGHT_LOADS) begin
+            QST_BUSY: if (~occupancy[MAX_INFLIGHT_LOADS_LOG2]) begin
                 fmc_vld     = 1'b1;
 
                 if (fmc_rdy) begin
@@ -163,7 +182,7 @@ module {{ module.name }} #(
                 end
             end
             RST_BUSY: begin
-                if (mfc_vld && mfc_rdy) begin
+                if (!i_resp_fifo_empty && i_resp_fifo_rd) begin
                     if (resp_valid_words + 1 >= resp_len) begin
                         resp_state_next = QST_IDLE;
                     end else begin
@@ -186,7 +205,7 @@ module {{ module.name }} #(
     generate
         for (gv = 0; gv < KERNEL_WORDS_PER_MFC_DATA; gv = gv + 1) begin: g_dout
             assign resizer_dout_i[gv * (KERNEL_DATA_WIDTH + 1) +: (KERNEL_DATA_WIDTH + 1)] =
-                {(gv << KERNEL_DATA_BYTES_LOG2) >= resp_offset && gv < resp_len, mfc_data[gv * KERNEL_DATA_WIDTH +: KERNEL_DATA_WIDTH]};
+                {(gv << KERNEL_DATA_BYTES_LOG2) >= resp_offset && gv < resp_len, i_resp_fifo_dout[gv * KERNEL_DATA_WIDTH +: KERNEL_DATA_WIDTH]};
         end
     endgenerate
 
@@ -207,8 +226,9 @@ module {{ module.name }} #(
         ,.dout      ({resizer_vld, kdata})
         );
 
-    assign resizer_empty_i = resp_state != RST_BUSY || !mfc_vld;
-    assign mfc_rdy = resp_state == RST_BUSY && resizer_rd_i;
+    assign resizer_empty_i  = resp_state != RST_BUSY || i_resp_fifo_empty;
+    assign i_resp_fifo_rd   = resp_state != RST_BUSY || resizer_rd_i;
+    assign mfc_rdy          = resp_state == RST_BUSY && !i_resp_fifo_full;
 
     assign cfg_idle = req_state == QST_IDLE && resp_state == RST_IDLE;
     assign kvld = !resizer_empty && resizer_vld;

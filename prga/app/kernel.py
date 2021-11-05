@@ -111,5 +111,16 @@ class KernelBuilder(Object):
             self._module.portgroups["axi4w"][id_] = AppUtils.create_axi4w_ports(self._module,
                     addr_width, data_bytes_log2, **kwargs)
 
+        elif type_ == "yami":
+
+            if id_ in self._module.portgroups.setdefault("yami", {}):
+                raise PRGAAPIError("Port group (yami) with ID ({}) already exists".format(repr(id_)))
+
+            if (intf := kwargs.pop("intf", None)) is None:
+                raise PRGAAPIError("Missing required argument for port group (yami): intf")
+
+            self._module.portgroups["yami"][id_] = AppUtils.create_yami_ports(self._module,
+                    intf, **kwargs)
+
         else:
             raise NotImplementedError("Unsupported type: {}".format(type_))

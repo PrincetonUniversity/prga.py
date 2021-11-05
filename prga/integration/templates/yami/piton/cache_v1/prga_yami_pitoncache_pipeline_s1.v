@@ -196,6 +196,9 @@ module prga_yami_pitoncache_pipeline_s1 (
                 data_s2_next    = {2{rpb_data_s1}};
                 rob_entry_s2_next   = rpb_rob_entry_s1;
                 may_conflict_s2_next = rpb_vld_s1;
+                lru_array_rd_s1     = 1'b1;
+                tag_array_rd_s1     = 1'b1;
+                state_array_rd_s1   = 1'b1;
             end
 
             // a_fmc
