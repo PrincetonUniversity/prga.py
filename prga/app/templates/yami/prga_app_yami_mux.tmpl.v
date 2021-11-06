@@ -50,25 +50,40 @@ module {{ module.name }} #(
     localparam  NUM_SRC_ALIGNED = 1 << SRCID_WIDTH;
 
     reg [SRCID_WIDTH-1:0]   req_srcid, req_srcid_next;
-    wire [SRCID_WIDTH-1:0]  resp_srcid;
+    wire [SRCID_WIDTH-1:0]  resp_st_srcid, resp_ld_srcid;
 
     // == Pending Response Queue =============================================
-    wire                    prq_full, prq_empty;
-    reg                     prq_rd, prq_wr;
+    wire                    prq_st_full, prq_st_empty, prq_ld_full, prq_ld_empty;
+    reg                     prq_st_rd, prq_st_wr, prq_ld_rd, prq_ld_wr;
 
     prga_fifo #(
         .DATA_WIDTH     (SRCID_WIDTH)
         ,.DEPTH_LOG2    (PRQ_DEPTH_LOG2)
         ,.LOOKAHEAD     (1)
-    ) i_prq (
+    ) i_prq_st (
         .clk            (clk)
         ,.rst           (~rst_n)
-        ,.full          (prq_full)
-        ,.wr            (prq_wr)
+        ,.full          (prq_st_full)
+        ,.wr            (prq_st_wr)
         ,.din           (req_srcid)
-        ,.empty         (prq_empty)
-        ,.rd            (prq_rd)
-        ,.dout          (resp_srcid)
+        ,.empty         (prq_st_empty)
+        ,.rd            (prq_st_rd)
+        ,.dout          (resp_st_srcid)
+        );
+
+    prga_fifo #(
+        .DATA_WIDTH     (SRCID_WIDTH)
+        ,.DEPTH_LOG2    (PRQ_DEPTH_LOG2)
+        ,.LOOKAHEAD     (1)
+    ) i_prq_ld (
+        .clk            (clk)
+        ,.rst           (~rst_n)
+        ,.full          (prq_ld_full)
+        ,.wr            (prq_ld_wr)
+        ,.din           (req_srcid)
+        ,.empty         (prq_ld_empty)
+        ,.rd            (prq_ld_rd)
+        ,.dout          (resp_ld_srcid)
         );
 
     // == Request Arbitration ================================================
@@ -110,18 +125,28 @@ module {{ module.name }} #(
         {%- for i in range(module.num_srcs) %}
         src{{ i }}_fmc_rdy = 1'b0;
         {%- endfor %}
-        prq_wr = 1'b0;
+        prq_st_wr = 1'b0;
+        prq_ld_wr = 1'b0;
 
         case (req_srcid)
             {%- for i in range(module.num_srcs) %}
             {{ (module.num_srcs - 1).bit_length() }}'d{{ i }}: begin
-                dst_fmc_vld = src{{ i }}_fmc_vld && !prq_full;
                 dst_fmc_type = src{{ i }}_fmc_type;
                 dst_fmc_size = src{{ i }}_fmc_size;
                 dst_fmc_addr = src{{ i }}_fmc_addr;
                 dst_fmc_data = src{{ i }}_fmc_data;
-                src{{ i }}_fmc_rdy = dst_fmc_rdy && !prq_full;
-                prq_wr = src{{ i }}_fmc_vld && dst_fmc_rdy;
+
+                if (src{{ i }}_fmc_type == `PRGA_YAMI_REQTYPE_LOAD
+                    || src{{ i }}_fmc_type == `PRGA_YAMI_REQTYPE_LOAD_NC)
+                begin
+                    dst_fmc_vld = src{{ i }}_fmc_vld && !prq_ld_full;
+                    src{{ i }}_fmc_rdy = dst_fmc_rdy && !prq_ld_full;
+                    prq_ld_wr = src{{ i }}_fmc_vld && dst_fmc_rdy;
+                end else begin
+                    dst_fmc_vld = src{{ i }}_fmc_vld && !prq_st_full;
+                    src{{ i }}_fmc_rdy = dst_fmc_rdy && !prq_st_full;
+                    prq_st_wr = src{{ i }}_fmc_vld && dst_fmc_rdy;
+                end
             end
             {%- endfor %}
         endcase
@@ -139,15 +164,28 @@ module {{ module.name }} #(
         src{{ i }}_mfc_vld = 1'b0;
         {%- endfor %}
         dst_mfc_rdy = 1'b0;
-        prq_rd = 1'b0;
+        prq_st_rd = 1'b0;
+        prq_ld_rd = 1'b0;
 
-        if (!prq_empty) begin
-            case (resp_srcid)
+        if (!prq_st_empty && dst_mfc_type == `PRGA_YAMI_RESPTYPE_STORE_ACK) begin
+            case (resp_st_srcid)
                 {%- for i in range(module.num_srcs) %}
                 {{ (module.num_srcs - 1).bit_length() }}'d{{ i }}: begin
                     src{{ i }}_mfc_vld = dst_mfc_vld;
                     dst_mfc_rdy = src{{ i }}_mfc_rdy;
-                    prq_rd = dst_mfc_vld && src{{ i }}_mfc_rdy;
+                    prq_st_rd = dst_mfc_vld && src{{ i }}_mfc_rdy;
+                end
+                {%- endfor %}
+            endcase
+        end
+
+        if (!prq_ld_empty && dst_mfc_type == `PRGA_YAMI_RESPTYPE_LOAD_ACK) begin
+            case (resp_ld_srcid)
+                {%- for i in range(module.num_srcs) %}
+                {{ (module.num_srcs - 1).bit_length() }}'d{{ i }}: begin
+                    src{{ i }}_mfc_vld = dst_mfc_vld;
+                    dst_mfc_rdy = src{{ i }}_mfc_rdy;
+                    prq_ld_rd = dst_mfc_vld && src{{ i }}_mfc_rdy;
                 end
                 {%- endfor %}
             endcase
