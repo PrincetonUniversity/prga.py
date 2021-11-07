@@ -39,6 +39,9 @@
 * Parameterization
 * ----------------
 *
+*   * MTHREAD_ID_WIDTH: memory thread ID width
+*   * NUM_MTHREADS: number of memory threads
+*
 *   * FMC_ADDR_WIDTH: address width (increment in bytes)
 *   * FMC_DATA_BYTES: #Bytes of the FMC data bus. Valid values: 4, 8
 *
@@ -108,6 +111,7 @@
 *           replicated and filled. e.g. 1B write over an 8B interface:
 *               data = {8{byte}}
 *         * only needed if store/amo requests are supported
+*     - output [MTHREAD_ID_WIDTH-1:0]   fmc_thread_id: thread ID
 *
 * MFC channel
 * -----------
@@ -129,12 +133,16 @@
 *               data = {8{byte}}
 *         * if cacheline size is larger than MFC_DATA_WIDTH, multi-flit response
 *           is possible (multiple LOAD_ACKs)
+*     - input [MTHREAD_ID_WIDTH-1:0]    mfc_thread_id: thread ID
 *
 */
 `ifndef PRGA_YAMI_VH
 `define PRGA_YAMI_VH
 
 // -- Parameterized Macros ---------------------------------------------------
+`define PRGA_YAMI_MTHREAD_ID_WIDTH          1
+`define PRGA_YAMI_NUM_MTHREADS              2
+
 `define PRGA_YAMI_FMC_ADDR_WIDTH            40
 `define PRGA_YAMI_FMC_DATA_BYTES_LOG2       3   // 8B
 
@@ -242,39 +250,42 @@
 // -- Async FIFO Elements ----------------------------------------------------
     /*  FMC FIFO Element
     *
-    *           |<- 5bits ->|<- 3bits ->|<- FMC_ADDR_WIDTH ->|<- FMC_DATA_WIDTH ->|<-   2  ->|
-    *           +-----------+-----------+--------------------+--------------------+----------+
-    *           |  reqtype  |    size   |    mem/creg addr   |    mem/creg data   | l1rplway |
-    *           +-----------+-----------+--------------------+--------------------+----------+
+    *           |<- MTHREAD_ID_WIDTH ->|<- 5bits ->|<- 3bits ->|<- FMC_ADDR_WIDTH ->|<- FMC_DATA_WIDTH ->|<-   2  ->|
+    *           +----------------------+-----------+-----------+--------------------+--------------------+----------+
+    *           |     memory thread    |  reqtype  |    size   |    mem/creg addr   |    mem/creg data   | l1rplway |
+    *           +----------------------+-----------+-----------+--------------------+--------------------+----------+
     *
     *   MFC FIFO Element
     *
-    *           |<- 4bits ->|<- MFC_ADDR_WIDTH ->|<- MFC_DATA_WIDTH ->|<-   1  ->|<-   2  ->|
-    *           +-----------+--------------------+--------------------+----------+----------+
-    *           |  resptype |    mem/creg addr   |    mem/creg data   | l1invall | l1invway |
-    *           +-----------+--------------------+--------------------+----------+----------+
+    *           |<- MTHREAD_ID_WIDTH ->|<- 4bits ->|<- MFC_ADDR_WIDTH ->|<- MFC_DATA_WIDTH ->|<-   1  ->|<-   2  ->|
+    *           +----------------------+-----------+--------------------+--------------------+----------+----------+
+    *           |     memory thread    |  resptype |    mem/creg addr   |    mem/creg data   | l1invall | l1invway |
+    *           +----------------------+-----------+--------------------+--------------------+----------+----------+
     */
 
-`define PRGA_YAMI_FMC_FIFO_ELEM_WIDTH   (`PRGA_YAMI_REQTYPE_WIDTH + `PRGA_YAMI_SIZE_WIDTH + `PRGA_YAMI_FMC_ADDR_WIDTH + `PRGA_YAMI_FMC_DATA_WIDTH + 2)
-`define PRGA_YAMI_MFC_FIFO_ELEM_WIDTH   (`PRGA_YAMI_RESPTYPE_WIDTH                        + `PRGA_YAMI_MFC_ADDR_WIDTH + `PRGA_YAMI_MFC_DATA_WIDTH + 2 + 1)
+`define PRGA_YAMI_FMC_FIFO_ELEM_WIDTH   (`PRGA_YAMI_MTHREAD_ID_WIDTH + `PRGA_YAMI_REQTYPE_WIDTH + `PRGA_YAMI_SIZE_WIDTH + `PRGA_YAMI_FMC_ADDR_WIDTH + `PRGA_YAMI_FMC_DATA_WIDTH + 2)
+`define PRGA_YAMI_MFC_FIFO_ELEM_WIDTH   (`PRGA_YAMI_MTHREAD_ID_WIDTH + `PRGA_YAMI_RESPTYPE_WIDTH                        + `PRGA_YAMI_MFC_ADDR_WIDTH + `PRGA_YAMI_MFC_DATA_WIDTH + 2 + 1)
 
 `define PRGA_YAMI_FMC_FIFO_L1RPLWAY_BASE    0
 `define PRGA_YAMI_FMC_FIFO_DATA_BASE        (`PRGA_YAMI_FMC_FIFO_L1RPLWAY_BASE + `PRGA_YAMI_CACHE_NUM_WAYS_LOG2)
 `define PRGA_YAMI_FMC_FIFO_ADDR_BASE        (`PRGA_YAMI_FMC_FIFO_DATA_BASE + `PRGA_YAMI_FMC_DATA_WIDTH)
 `define PRGA_YAMI_FMC_FIFO_SIZE_BASE        (`PRGA_YAMI_FMC_FIFO_ADDR_BASE + `PRGA_YAMI_FMC_ADDR_WIDTH)
 `define PRGA_YAMI_FMC_FIFO_REQTYPE_BASE     (`PRGA_YAMI_FMC_FIFO_SIZE_BASE + `PRGA_YAMI_SIZE_WIDTH)
+`define PRGA_YAMI_FMC_FIFO_MTHREAD_BASE     (`PRGA_YAMI_FMC_FIFO_REQTYPE_BASE + `PRGA_YAMI_REQTYPE_WIDTH)
 
 `define PRGA_YAMI_FMC_FIFO_L1RPLWAY_INDEX   `PRGA_YAMI_FMC_FIFO_L1RPLWAY_BASE+:`PRGA_YAMI_CACHE_NUM_WAYS_LOG2
 `define PRGA_YAMI_FMC_FIFO_DATA_INDEX       `PRGA_YAMI_FMC_FIFO_DATA_BASE+:`PRGA_YAMI_FMC_DATA_WIDTH
 `define PRGA_YAMI_FMC_FIFO_ADDR_INDEX       `PRGA_YAMI_FMC_FIFO_ADDR_BASE+:`PRGA_YAMI_FMC_ADDR_WIDTH
 `define PRGA_YAMI_FMC_FIFO_SIZE_INDEX       `PRGA_YAMI_FMC_FIFO_SIZE_BASE+:`PRGA_YAMI_SIZE_WIDTH
 `define PRGA_YAMI_FMC_FIFO_REQTYPE_INDEX    `PRGA_YAMI_FMC_FIFO_REQTYPE_BASE+:`PRGA_YAMI_REQTYPE_WIDTH
+`define PRGA_YAMI_FMC_FIFO_MTHREAD_INDEX    `PRGA_YAMI_FMC_FIFO_MTHREAD_BASE+:`PRGA_YAMI_MTHREAD_ID_WIDTH
 
 `define PRGA_YAMI_MFC_FIFO_L1INVWAY_BASE    0
 `define PRGA_YAMI_MFC_FIFO_L1INVALL_BASE    (`PRGA_YAMI_MFC_FIFO_L1INVWAY_BASE + `PRGA_YAMI_CACHE_NUM_WAYS_LOG2)
 `define PRGA_YAMI_MFC_FIFO_DATA_BASE        (`PRGA_YAMI_MFC_FIFO_L1INVALL_BASE + 1)
 `define PRGA_YAMI_MFC_FIFO_ADDR_BASE        (`PRGA_YAMI_MFC_FIFO_DATA_BASE + `PRGA_YAMI_MFC_DATA_WIDTH)
 `define PRGA_YAMI_MFC_FIFO_RESPTYPE_BASE    (`PRGA_YAMI_MFC_FIFO_ADDR_BASE + `PRGA_YAMI_MFC_ADDR_WIDTH)
+`define PRGA_YAMI_MFC_FIFO_MTHREAD_BASE     (`PRGA_YAMI_MFC_FIFO_RESPTYPE_BASE + `PRGA_YAMI_RESPTYPE_WIDTH)
 
 `define PRGA_YAMI_MFC_FIFO_L1INVWAY_INDEX   `PRGA_YAMI_MFC_FIFO_L1INVWAY_BASE+:`PRGA_YAMI_CACHE_NUM_WAYS_LOG2
 `define PRGA_YAMI_MFC_FIFO_L1INVALL_INDEX   `PRGA_YAMI_MFC_FIFO_L1INVALL_BASE+:1
@@ -283,5 +294,6 @@
 `define PRGA_YAMI_MFC_FIFO_ADDR_INDEX       `PRGA_YAMI_MFC_FIFO_ADDR_BASE+:`PRGA_YAMI_MFC_ADDR_WIDTH
 `define PRGA_YAMI_MFC_FIFO_CREG_ADDR_INDEX  `PRGA_YAMI_MFC_FIFO_ADDR_BASE+:`PRGA_YAMI_CREG_ADDR_WIDTH
 `define PRGA_YAMI_MFC_FIFO_RESPTYPE_INDEX   `PRGA_YAMI_MFC_FIFO_RESPTYPE_BASE+:`PRGA_YAMI_RESPTYPE_WIDTH
+`define PRGA_YAMI_MFC_FIFO_MTHREAD_INDEX    `PRGA_YAMI_MFC_FIFO_MTHREAD_BASE+:`PRGA_YAMI_MTHREAD_ID_WIDTH
 
 `endif /* `ifndef PRGA_YAMI_VH */

@@ -297,9 +297,11 @@ class AppUtils(object):
 
         # piton-specific
         if intf.is_yami_piton:
-            mo("fmc_l1rplway", 2)
-            mi("mfc_l1invall", 1)
-            mi("mfc_l1invway", 2)
+            mo("fmc_thread_id", 1)
+            mo("fmc_l1rplway",  2)
+            mi("mfc_thread_id", 1)
+            mi("mfc_l1invall",  1)
+            mi("mfc_l1invway",  2)
 
         return d
 

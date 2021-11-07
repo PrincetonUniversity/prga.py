@@ -94,7 +94,9 @@ class IntegrationRXIYAMI(object):
             ports.append(_mcp(module, prefix + "fmc_parity",    1, _so))
 
         if intf.is_yami_piton:
+            ports.append(_mcp(module, prefix + "fmc_thread_id", 1, _so))
             ports.append(_mcp(module, prefix + "fmc_l1rplway",  2, _so))
+            ports.append(_mcp(module, prefix + "mfc_thread_id", 1, _mo))
             ports.append(_mcp(module, prefix + "mfc_l1invall",  1, _mo))
             ports.append(_mcp(module, prefix + "mfc_l1invway",  2, _mo))
 
@@ -332,9 +334,11 @@ class IntegrationRXIYAMI(object):
                 app.add_port("yami_i{}_mfc_data".format(i),     "input",  8 << yami.mfc_data_bytes_log2)
 
                 if yami.is_yami_piton:
-                    app.add_port("yami_i{}_fmc_l1rplway".format(i), "output", 2)
-                    app.add_port("yami_i{}_mfc_l1invall".format(i), "input", 1)
-                    app.add_port("yami_i{}_mfc_l1invway".format(i), "input", 2)
+                    app.add_port("yami_i{}_fmc_thread_id".format(i), "output", 1)
+                    app.add_port("yami_i{}_fmc_l1rplway".format(i),  "output", 2)
+                    app.add_port("yami_i{}_mfc_thread_id".format(i), "input", 1)
+                    app.add_port("yami_i{}_mfc_l1invall".format(i),  "input", 1)
+                    app.add_port("yami_i{}_mfc_l1invway".format(i),  "input", 2)
 
         # plan IO
         IOPlanner.autoplan(context, app)

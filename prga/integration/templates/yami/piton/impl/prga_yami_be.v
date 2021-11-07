@@ -36,6 +36,7 @@ module prga_yami_be #(
     // -- FMC (fabric-memory channel) ----------------------------------------
     , output reg                                        fmc_rdy
     , input wire                                        fmc_vld
+    , input wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]      fmc_thread_id
     , input wire [`PRGA_YAMI_REQTYPE_WIDTH-1:0]         fmc_type
     , input wire [`PRGA_YAMI_SIZE_WIDTH-1:0]            fmc_size
     , input wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]        fmc_addr
@@ -46,6 +47,7 @@ module prga_yami_be #(
     // -- MFC (memory-fabric channel) ----------------------------------------
     , input wire                                        mfc_rdy
     , output reg                                        mfc_vld
+    , output wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]     mfc_thread_id
     , output wire [`PRGA_YAMI_RESPTYPE_WIDTH-1:0]       mfc_type
     , output wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]       mfc_addr
     , output wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]       mfc_data
@@ -131,6 +133,7 @@ module prga_yami_be #(
     // =======================================================================
 
     // -- Decode MFC FIFO ----------------------------------------------------
+    assign mfc_thread_id = fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_MTHREAD_INDEX];
     assign mfc_type = fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_RESPTYPE_INDEX];
     assign mfc_addr = fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_ADDR_INDEX];
     assign mfc_data = fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_DATA_INDEX];
@@ -250,7 +253,7 @@ module prga_yami_be #(
 
     // -- FMC Parities -------------------------------------------------------
     wire   fmc_parity_fail;
-    assign fmc_parity_fail = ^{fmc_type, fmc_size, fmc_addr, fmc_data, fmc_l1rplway, fmc_parity};
+    assign fmc_parity_fail = ^{fmc_thread_id, fmc_type, fmc_size, fmc_addr, fmc_data, fmc_l1rplway, fmc_parity};
 
     // -- FMC required features ----------------------------------------------
     reg [`PRGA_YAMI_CREG_FEATURE_WIDTH-1:0]     missing_features;
@@ -415,6 +418,7 @@ module prga_yami_be #(
                 endcase
             end
 
+            fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_MTHREAD_INDEX] = fmc_thread_id;
             fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_REQTYPE_INDEX] = fmc_type;
             fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_ADDR_INDEX] = fmc_addr;
             fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_DATA_INDEX] = fmc_data;

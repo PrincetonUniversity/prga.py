@@ -36,6 +36,7 @@ module prga_yami_fe (
     // -- FMC (fabric-memory channel) ----------------------------------------
     , input wire                                        fmc_rdy
     , output reg                                        fmc_vld
+    , output wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]     fmc_thread_id
     , output wire [`PRGA_YAMI_REQTYPE_WIDTH-1:0]        fmc_type
     , output wire [`PRGA_YAMI_SIZE_WIDTH-1:0]           fmc_size
     , output wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]       fmc_addr
@@ -45,6 +46,7 @@ module prga_yami_fe (
     // -- MFC (memory-fabric channel) ----------------------------------------
     , output reg                                        mfc_rdy
     , input wire                                        mfc_vld
+    , input wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]      mfc_thread_id
     , input wire [`PRGA_YAMI_RESPTYPE_WIDTH-1:0]        mfc_type
     , input wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]        mfc_addr
     , input wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]        mfc_data
@@ -57,6 +59,7 @@ module prga_yami_fe (
     // =======================================================================
 
     // -- decode FIFO elemenet -----------------------------------------------
+    assign fmc_thread_id        = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_MTHREAD_INDEX];
     assign fmc_type             = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_REQTYPE_INDEX];
     assign fmc_size             = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_SIZE_INDEX];
     assign fmc_addr             = fifo_fmc_data[`PRGA_YAMI_FMC_FIFO_ADDR_INDEX];
@@ -113,6 +116,7 @@ module prga_yami_fe (
             fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_CREG_ADDR_INDEX] = creg_req_addr;
             fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_CREG_DATA_INDEX] = creg_req_data;
         end else begin
+            fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_MTHREAD_INDEX] = mfc_thread_id;
             fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_RESPTYPE_INDEX] = mfc_type;
             fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_ADDR_INDEX] = mfc_addr;
             fifo_mfc_data[`PRGA_YAMI_MFC_FIFO_DATA_INDEX] = mfc_data;

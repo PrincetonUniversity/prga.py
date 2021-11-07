@@ -31,6 +31,7 @@ module prga_yami #(
     // -- FMC (fabric-memory channel) ----------------------------------------
     , input wire                                        sfmc_rdy
     , output wire                                       sfmc_vld
+    , output wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]     sfmc_thread_id
     , output wire [`PRGA_YAMI_REQTYPE_WIDTH-1:0]        sfmc_type
     , output wire [`PRGA_YAMI_SIZE_WIDTH-1:0]           sfmc_size
     , output wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]       sfmc_addr
@@ -40,6 +41,7 @@ module prga_yami #(
     // -- MFC (memory-fabric channel) ----------------------------------------
     , output wire                                       smfc_rdy
     , input wire                                        smfc_vld
+    , input wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]      smfc_thread_id
     , input wire [`PRGA_YAMI_RESPTYPE_WIDTH-1:0]        smfc_type
     , input wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]        smfc_addr
     , input wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]        smfc_data
@@ -57,6 +59,7 @@ module prga_yami #(
     // -- FMC (fabric-memory channel) ----------------------------------------
     , output wire                                       afmc_rdy
     , input wire                                        afmc_vld
+    , input wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]      afmc_thread_id
     , input wire [`PRGA_YAMI_REQTYPE_WIDTH-1:0]         afmc_type
     , input wire [`PRGA_YAMI_SIZE_WIDTH-1:0]            afmc_size
     , input wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]        afmc_addr
@@ -67,6 +70,7 @@ module prga_yami #(
     // -- MFC (memory-fabric channel) ----------------------------------------
     , input wire                                        amfc_rdy
     , output wire                                       amfc_vld
+    , output wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]     amfc_thread_id
     , output wire [`PRGA_YAMI_RESPTYPE_WIDTH-1:0]       amfc_type
     , output wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]       amfc_addr
     , output wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]       amfc_data
@@ -130,6 +134,7 @@ module prga_yami #(
     // -- buffer system FMC request --
     wire                                        sfmc_rdy_f;
     wire                                        sfmc_vld_p;
+    wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]      sfmc_thread_id_p;
     wire [`PRGA_YAMI_REQTYPE_WIDTH-1:0]         sfmc_type_p;
     wire [`PRGA_YAMI_SIZE_WIDTH-1:0]            sfmc_size_p;
     wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]        sfmc_addr_p;
@@ -140,7 +145,8 @@ module prga_yami #(
         .REGISTERED     (1)
         ,.DECOUPLED     (1)
         ,.DATA_WIDTH    (
-            `PRGA_YAMI_REQTYPE_WIDTH
+            `PRGA_YAMI_MTHREAD_ID_WIDTH
+            + `PRGA_YAMI_REQTYPE_WIDTH
             + `PRGA_YAMI_SIZE_WIDTH
             + `PRGA_YAMI_FMC_ADDR_WIDTH
             + `PRGA_YAMI_FMC_DATA_WIDTH
@@ -152,7 +158,8 @@ module prga_yami #(
         ,.rdy_o             (sfmc_rdy_f)
         ,.val_i             (sfmc_vld_p)
         ,.data_i            ({
-            sfmc_type_p
+            sfmc_thread_id_p
+            , sfmc_type_p
             , sfmc_size_p
             , sfmc_addr_p
             , sfmc_data_p
@@ -161,7 +168,8 @@ module prga_yami #(
         ,.rdy_i             (sfmc_rdy)
         ,.val_o             (sfmc_vld)
         ,.data_o            ({
-            sfmc_type
+            sfmc_thread_id
+            , sfmc_type
             , sfmc_size
             , sfmc_addr
             , sfmc_data
@@ -172,6 +180,7 @@ module prga_yami #(
     // -- buffer system MFC response --
     wire                                        smfc_rdy_p;
     wire                                        smfc_vld_f;
+    wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]      smfc_thread_id_f;
     wire [`PRGA_YAMI_RESPTYPE_WIDTH-1:0]        smfc_type_f;
     wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]        smfc_addr_f;
     wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]        smfc_data_f;
@@ -182,7 +191,8 @@ module prga_yami #(
         .REGISTERED     (1)
         ,.DECOUPLED     (1)
         ,.DATA_WIDTH    (
-            `PRGA_YAMI_RESPTYPE_WIDTH
+            `PRGA_YAMI_MTHREAD_ID_WIDTH
+            + `PRGA_YAMI_RESPTYPE_WIDTH
             + `PRGA_YAMI_MFC_ADDR_WIDTH
             + `PRGA_YAMI_MFC_DATA_WIDTH
             + 1
@@ -194,7 +204,8 @@ module prga_yami #(
         ,.rdy_o             (smfc_rdy)
         ,.val_i             (smfc_vld)
         ,.data_i            ({
-            smfc_type
+            smfc_thread_id
+            , smfc_type
             , smfc_addr
             , smfc_data
             , smfc_l1invall
@@ -203,7 +214,8 @@ module prga_yami #(
         ,.rdy_i             (smfc_rdy_p)
         ,.val_o             (smfc_vld_f)
         ,.data_o            ({
-            smfc_type_f
+            smfc_thread_id_f
+            , smfc_type_f
             , smfc_addr_f
             , smfc_data_f
             , smfc_l1invall_f
@@ -214,6 +226,7 @@ module prga_yami #(
     // -- buffer application FMC request --
     wire                                        afmc_rdy_p;
     wire                                        afmc_vld_f;
+    wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]      afmc_thread_id_f;
     wire [`PRGA_YAMI_REQTYPE_WIDTH-1:0]         afmc_type_f;
     wire [`PRGA_YAMI_SIZE_WIDTH-1:0]            afmc_size_f;
     wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]        afmc_addr_f;
@@ -225,7 +238,8 @@ module prga_yami #(
         .REGISTERED     (1)
         ,.DECOUPLED     (1)
         ,.DATA_WIDTH    (
-            `PRGA_YAMI_REQTYPE_WIDTH
+            `PRGA_YAMI_MTHREAD_ID_WIDTH
+            + `PRGA_YAMI_REQTYPE_WIDTH
             + `PRGA_YAMI_SIZE_WIDTH
             + `PRGA_YAMI_FMC_ADDR_WIDTH
             + `PRGA_YAMI_FMC_DATA_WIDTH
@@ -238,7 +252,8 @@ module prga_yami #(
         ,.rdy_o             (afmc_rdy)
         ,.val_i             (afmc_vld)
         ,.data_i            ({
-            afmc_type
+            afmc_thread_id
+            , afmc_type
             , afmc_size
             , afmc_addr
             , afmc_data
@@ -248,7 +263,8 @@ module prga_yami #(
         ,.rdy_i             (afmc_rdy_p)
         ,.val_o             (afmc_vld_f)
         ,.data_o            ({
-            afmc_type_f
+            afmc_thread_id_f
+            , afmc_type_f
             , afmc_size_f
             , afmc_addr_f
             , afmc_data_f
@@ -260,6 +276,7 @@ module prga_yami #(
     // -- buffer application MFC response --
     wire                                        amfc_rdy_f;
     wire                                        amfc_vld_p;
+    wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]      amfc_thread_id_p;
     wire [`PRGA_YAMI_RESPTYPE_WIDTH-1:0]        amfc_type_p;
     wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]        amfc_addr_p;
     wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]        amfc_data_p;
@@ -270,7 +287,8 @@ module prga_yami #(
         .REGISTERED     (1)
         ,.DECOUPLED     (1)
         ,.DATA_WIDTH    (
-            `PRGA_YAMI_RESPTYPE_WIDTH
+            `PRGA_YAMI_MTHREAD_ID_WIDTH
+            + `PRGA_YAMI_RESPTYPE_WIDTH
             + `PRGA_YAMI_MFC_ADDR_WIDTH
             + `PRGA_YAMI_MFC_DATA_WIDTH
             + 1
@@ -282,7 +300,8 @@ module prga_yami #(
         ,.rdy_o             (amfc_rdy_f)
         ,.val_i             (amfc_vld_p)
         ,.data_i            ({
-            amfc_type_p
+            amfc_thread_id_p
+            , amfc_type_p
             , amfc_addr_p
             , amfc_data_p
             , amfc_l1invall_p
@@ -291,7 +310,8 @@ module prga_yami #(
         ,.rdy_i             (amfc_rdy)
         ,.val_o             (amfc_vld)
         ,.data_o            ({
-            amfc_type
+            amfc_thread_id
+            , amfc_type
             , amfc_addr
             , amfc_data
             , amfc_l1invall
@@ -427,6 +447,7 @@ module prga_yami #(
         ,.fifo_fmc_data     (fifo_fmc_dout)
         ,.fmc_rdy           (sfmc_rdy_f)
         ,.fmc_vld           (sfmc_vld_p)
+        ,.fmc_thread_id     (sfmc_thread_id_p)
         ,.fmc_type          (sfmc_type_p)
         ,.fmc_size          (sfmc_size_p)
         ,.fmc_addr          (sfmc_addr_p)
@@ -434,6 +455,7 @@ module prga_yami #(
         ,.fmc_l1rplway      (sfmc_l1rplway_p)
         ,.mfc_rdy           (smfc_rdy_p)
         ,.mfc_vld           (smfc_vld_f)
+        ,.mfc_thread_id     (smfc_thread_id_f)
         ,.mfc_type          (smfc_type_f)
         ,.mfc_addr          (smfc_addr_f)
         ,.mfc_data          (smfc_data_f)
@@ -475,6 +497,7 @@ module prga_yami #(
         ,.fifo_mfc_data     (fifo_mfc_dout)
         ,.fmc_rdy           (afmc_rdy_p)
         ,.fmc_vld           (afmc_vld_f)
+        ,.fmc_thread_id     (afmc_thread_id_f)
         ,.fmc_type          (afmc_type_f)
         ,.fmc_size          (afmc_size_f)
         ,.fmc_addr          (afmc_addr_f)
@@ -483,6 +506,7 @@ module prga_yami #(
         ,.fmc_parity        (afmc_parity_f)
         ,.mfc_rdy           (amfc_rdy_f)
         ,.mfc_vld           (amfc_vld_p)
+        ,.mfc_thread_id     (amfc_thread_id_p)
         ,.mfc_type          (amfc_type_p)
         ,.mfc_addr          (amfc_addr_p)
         ,.mfc_data          (amfc_data_p)

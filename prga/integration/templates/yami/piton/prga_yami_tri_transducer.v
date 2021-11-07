@@ -18,6 +18,7 @@ module prga_yami_tri_transducer #(
     // -- Transducer -> L15 --------------------------------------------------
     // Outputs
     , output reg                                transducer_l15_val
+    , output reg [`L15_THREADID_MASK]           transducer_l15_threadid
     , output reg [`PCX_REQTYPE_WIDTH-1:0]       transducer_l15_rqtype
     , output reg                                transducer_l15_nc
     , output reg [`PCX_SIZE_WIDTH-1:0]          transducer_l15_size
@@ -31,7 +32,6 @@ module prga_yami_tri_transducer #(
     , input wire                                l15_transducer_header_ack
 
     // Unused outputs
-    , output wire [`L15_THREADID_MASK]          transducer_l15_threadid
     , output wire                               transducer_l15_prefetch
     , output wire                               transducer_l15_invalidate_cacheline // L1 invalidation
     , output wire                               transducer_l15_blockstore
@@ -42,6 +42,7 @@ module prga_yami_tri_transducer #(
     // -- L15 -> Transducer --------------------------------------------------
     // Inputs
     , input wire                                l15_transducer_val
+    , input wire [`L15_THREADID_MASK]           l15_transducer_threadid
     , input wire [`CPX_RESTYPE_WIDTH-1:0]       l15_transducer_returntype
     , input wire [15:4]                         l15_transducer_inval_address_15_4
     , input wire                                l15_transducer_inval_dcache_inval
@@ -57,6 +58,7 @@ module prga_yami_tri_transducer #(
     // -- FMC (fabric-memory channel) ----------------------------------------
     , output reg                                        fmc_rdy
     , input wire                                        fmc_vld
+    , input wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]      fmc_thread_id
     , input wire [`PRGA_YAMI_REQTYPE_WIDTH-1:0]         fmc_type
     , input wire [`PRGA_YAMI_SIZE_WIDTH-1:0]            fmc_size
     , input wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]        fmc_addr
@@ -66,6 +68,7 @@ module prga_yami_tri_transducer #(
     // -- MFC (memory-fabric channel) ----------------------------------------
     , input wire                                        mfc_rdy
     , output reg                                        mfc_vld
+    , output wire [`PRGA_YAMI_MTHREAD_ID_WIDTH-1:0]     mfc_thread_id
     , output reg [`PRGA_YAMI_RESPTYPE_WIDTH-1:0]        mfc_type
     , output wire [`PRGA_YAMI_MFC_ADDR_WIDTH-1:0]       mfc_addr
     , output wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]       mfc_data
@@ -79,7 +82,9 @@ module prga_yami_tri_transducer #(
 
     generate
         if (
-            `PRGA_YAMI_CACHELINE_BYTES_LOG2 != 4
+            `PRGA_YAMI_MTHREAD_ID_WIDTH != 1
+            || `PRGA_YAMI_NUM_MTHREADS != 2
+            || `PRGA_YAMI_CACHELINE_BYTES_LOG2 != 4
             || `PRGA_YAMI_FMC_ADDR_WIDTH > 40
             || `PRGA_YAMI_MFC_ADDR_WIDTH > 16
         ) begin
@@ -95,6 +100,7 @@ module prga_yami_tri_transducer #(
 
     reg                             l15_transducer_ack_pending;
     reg                             transducer_l15_val_next;
+    reg [`L15_THREADID_MASK]        transducer_l15_threadid_next;
     reg [4:0]                       transducer_l15_rqtype_next;
     reg                             transducer_l15_nc_next;
     reg [2:0]                       transducer_l15_size_next;
@@ -124,6 +130,7 @@ module prga_yami_tri_transducer #(
             l15_transducer_ack_pending  <= 1'b0;
 
             transducer_l15_val          <= 1'b0;
+            transducer_l15_threadid     <= { `L15_THREADID_WIDTH {1'b0} };
             transducer_l15_rqtype       <= 5'b0;
             transducer_l15_nc           <= 1'b0;
             transducer_l15_size         <= 3'b0;
@@ -136,6 +143,7 @@ module prga_yami_tri_transducer #(
             l15_transducer_ack_pending  <= transducer_l15_val_next;
 
             transducer_l15_val          <= transducer_l15_val_next;
+            transducer_l15_threadid     <= transducer_l15_threadid_next;
             transducer_l15_rqtype       <= transducer_l15_rqtype_next;
             transducer_l15_nc           <= transducer_l15_nc_next;
             transducer_l15_size         <= transducer_l15_size_next;
@@ -159,7 +167,7 @@ module prga_yami_tri_transducer #(
                                   (l15_transducer_ack_pending && ~l15_transducer_ack);
 
     // -- Connect unused L15 outputs --
-    assign transducer_l15_threadid = {`L15_THREADID_WIDTH {1'b0} }; // only used when 2 YAMI implementations share an L15
+    // assign transducer_l15_threadid = {`L15_THREADID_WIDTH {1'b0} }; // only used when 2 YAMI implementations share an L15
     assign transducer_l15_prefetch = 1'b0;
     assign transducer_l15_invalidate_cacheline = 1'b0;
     assign transducer_l15_blockstore = 1'b0;
@@ -174,6 +182,7 @@ module prga_yami_tri_transducer #(
     // Register L15 responses
     reg                             l15_transducer_stall;
     reg                             l15_transducer_val_f;
+    reg [`L15_THREADID_MASK]        l15_transducer_threadid_f;
     reg [3:0]                       l15_transducer_returntype_f;
     reg [15:4]                      l15_transducer_inval_address_15_4_f;
     reg                             l15_transducer_inval_dcache_inval_f;
@@ -184,6 +193,7 @@ module prga_yami_tri_transducer #(
     always @(posedge clk) begin
         if (~rst_n) begin
             l15_transducer_val_f                    <= 1'b0;
+            l15_transducer_threadid_f               <= { `L15_THREADID_WIDTH {1'b0} };
             l15_transducer_returntype_f             <= { `CPX_RESTYPE_WIDTH {1'b0} };
             l15_transducer_inval_address_15_4_f     <= 12'b0;
             l15_transducer_inval_dcache_inval_f     <= 1'b0;
@@ -192,6 +202,7 @@ module prga_yami_tri_transducer #(
             l15_transducer_data_f                   <= 128'b0;
         end else if (~l15_transducer_stall) begin
             l15_transducer_val_f                    <= l15_transducer_val;
+            l15_transducer_threadid_f               <= l15_transducer_threadid;
             l15_transducer_returntype_f             <= l15_transducer_returntype;
             l15_transducer_inval_address_15_4_f     <= l15_transducer_inval_address_15_4;
             l15_transducer_inval_dcache_inval_f     <= l15_transducer_inval_dcache_inval;
@@ -314,6 +325,7 @@ module prga_yami_tri_transducer #(
 
     always @* begin
         transducer_l15_val_next = 1'b0;
+        transducer_l15_threadid_next = fmc_thread_id;
         transducer_l15_rqtype_next = {`PCX_REQTYPE_WIDTH {1'b0} };
         transducer_l15_nc_next = 1'b0;
         transducer_l15_size_next = {`PCX_SIZE_WIDTH {1'b0} };
@@ -394,6 +406,7 @@ module prga_yami_tri_transducer #(
     // == L15 -> MFC =========================================================
     // =======================================================================
 
+    assign mfc_thread_id = l15_transducer_threadid_f;
     assign mfc_addr = l15_transducer_inval_address_15_4_f[4 +: `PRGA_YAMI_MFC_ADDR_WIDTH];
     assign mfc_l1invall = l15_transducer_inval_dcache_all_way_f;
     assign mfc_l1invway = l15_transducer_inval_way_f;
