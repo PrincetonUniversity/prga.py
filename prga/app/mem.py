@@ -178,7 +178,7 @@ class AppMemMixin(object):
             `Module`:
         """
 
-        if version not in ("cache_v0", "cache_v1"):
+        if version not in ("cache_v0", "cache_v1", "cache_v2"):
             raise TypeError ("Unsupported yami/piton cache version: {}".format(version))
 
         name = "prga_yami_pitoncache"
@@ -203,13 +203,23 @@ class AppMemMixin(object):
 
         # create port groups
         m.portgroups.setdefault("syscon", {})[None] = AppUtils.create_syscon_ports(m, slave = True)
-        m.portgroups.setdefault("yami", {})["kernel"] = AppUtils.create_yami_ports(m, yami,
-                slave = True, prefix = "a_",
-                omit_ports = ("fmc_thread_id", "fmc_l1rplway", "fmc_parity",
-                    "mfc_thread_id", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
-        m.portgroups.setdefault("yami", {})["memory"] = AppUtils.create_yami_ports(m, yami,
-                slave = False, prefix = "m_",
-                omit_ports = ("fmc_thread_id", "fmc_parity", "mfc_thread_id", ))
+
+        # V2 supports multi-thread
+        if version == "cache_v2":
+            m.portgroups.setdefault("yami", {})["kernel"] = AppUtils.create_yami_ports(m, yami,
+                    slave = True, prefix = "a_",
+                    omit_ports = ("fmc_l1rplway", "fmc_parity", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+            m.portgroups.setdefault("yami", {})["memory"] = AppUtils.create_yami_ports(m, yami,
+                    slave = False, prefix = "m_",
+                    omit_ports = ("fmc_parity", ))
+        else:
+            m.portgroups.setdefault("yami", {})["kernel"] = AppUtils.create_yami_ports(m, yami,
+                    slave = True, prefix = "a_",
+                    omit_ports = ("fmc_thread_id", "fmc_l1rplway", "fmc_parity",
+                        "mfc_thread_id", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+            m.portgroups.setdefault("yami", {})["memory"] = AppUtils.create_yami_ports(m, yami,
+                    slave = False, prefix = "m_",
+                    omit_ports = ("fmc_thread_id", "fmc_parity", "mfc_thread_id", ))
 
         # add and instantiate sub-modules
         for d in (
@@ -228,7 +238,7 @@ class AppMemMixin(object):
                 verilog_template = "yami/piton/{}/{}.v".format(version, d)))
             ModuleUtils.instantiate(m, sub, d)
 
-        if version == "cache_v1":
+        if version in ("cache_v1", "cache_v2"):
             for d in (
                     "prga_yami_pitoncache_fifo",
                     "prga_yami_pitoncache_ram_raw",
