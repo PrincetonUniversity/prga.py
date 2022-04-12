@@ -61,7 +61,7 @@ module prga_yami_pitoncache_state_array #(
             din_f           <= { LINE_WIDTH {1'b0} };
             rdata_s3        <= { LINE_WIDTH {1'b0} };
         end else begin
-            s1_s3_conflict  <= wr_s3 && index_s3 == index_s1;
+            s1_s3_conflict  <= we && index_s3 == index_s1;
             din_f           <= din;
 
             if (!stall_s3)

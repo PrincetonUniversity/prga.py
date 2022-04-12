@@ -317,3 +317,255 @@ class AppMemMixin(object):
 
         return m
 
+    def get_or_create_yami_virtual(self, yami):
+        """Get or create a YAMI virtual channel arbitrator.
+
+        Args:
+            yami (`FabricIntf`): YAMI interface
+
+        Returns:
+            `Module`:
+        """
+
+        name = "prga_app_yami_virtual"
+
+        if m := self.modules.get(name):
+            return m
+
+        m = self.add_module(Module(name,
+            portgroups = {},
+            verilog_template = "yami/prga_app_yami_virtual.tmpl.v"))
+
+        m.portgroups.setdefault("syscon", {})[None] = AppUtils.create_syscon_ports(m, slave = True)
+        m.portgroups.setdefault("yami", {})[None] = AppUtils.create_yami_ports(m, yami,
+                slave = False, prefix = "dst_",
+                omit_ports = ("fmc_l1rplway", "fmc_parity", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+        m.portgroups.setdefault("yami", {})[0] = AppUtils.create_yami_ports(m, yami,
+                slave = True, prefix = "vc0_",
+                omit_ports = ("fmc_thread_id", "fmc_l1rplway", "fmc_parity",
+                    "mfc_thread_id", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+        m.portgroups.setdefault("yami", {})[1] = AppUtils.create_yami_ports(m, yami,
+                slave = True, prefix = "vc1_",
+                omit_ports = ("fmc_thread_id", "fmc_l1rplway", "fmc_parity",
+                    "mfc_thread_id", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+
+        return m
+
+    def get_or_create_axi4r_yami_transducer(self, yami, addr_width, data_bytes_log2):
+        """Get or create an AXI4 AR/R to YAMI transducer.
+
+        Args:
+            yami (`FabricIntf`): YAMI interface spec
+            addr_width (:obj:`int`): AXI4 address width
+            data_bytes_log2 (:obj:`int`): Log 2 of the number of bytes of the AXI4 data bus.
+
+        Returns:
+            `Module`:
+        """
+
+        name = "prga_axi4r_yami_transducer_a{}d{}".format(addr_width, 8 << data_bytes_log2)
+
+        if m := self.modules.get(name):
+            return m
+
+        # add search paths
+        self.template_search_paths.extend( (
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'renderer', 'templates'),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'integration', 'templates'),
+                ) )
+
+        # add header
+        self.add_verilog_header("prga_axi4.vh", "axi4/include/prga_axi4.tmpl.vh")
+
+        # add module
+        m = self.add_module(Module(name,
+            portgroups = {},
+            verilog_template = "yami/axi4/prga_axi4r_yami_transducer.tmpl.v",
+            verilog_dep_headers = ("prga_axi4.vh", )))
+
+        m.portgroups.setdefault("axi4r", {})[None] = AppUtils.create_axi4r_ports(m,
+                addr_width, data_bytes_log2, slave = True,
+                omit_ports = (
+                    "arprot", "arqos", "arburst", "arlen", "arcache", "arlock"
+                    ))
+
+        m.portgroups.setdefault("yami", {})[None] = AppUtils.create_yami_ports(m, yami,
+                omit_ports = ("fmc_thread_id", "fmc_data", "fmc_l1rplway", "fmc_parity",
+                    "mfc_thread_id", "mfc_type", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+
+        ModuleUtils.create_port(m, "cfg_baseaddr",      yami.fmc_addr_width,    "input")
+
+        return m
+
+    def get_or_create_axi4w_yami_transducer(self, yami, addr_width, data_bytes_log2):
+        """Get or create an AXI4 AW/W/B to YAMI transducer.
+
+        Args:
+            yami (`FabricIntf`): YAMI interface spec
+            addr_width (:obj:`int`): AXI4 address width
+            data_bytes_log2 (:obj:`int`): Log 2 of the number of bytes of the AXI4 data bus.
+
+        Returns:
+            `Module`:
+        """
+
+        name = "prga_axi4w_yami_transducer_a{}d{}".format(addr_width, 8 << data_bytes_log2)
+
+        if m := self.modules.get(name):
+            return m
+
+        # add search paths
+        self.template_search_paths.extend( (
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'renderer', 'templates'),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'integration', 'templates'),
+                ) )
+
+        # add header
+        self.add_verilog_header("prga_axi4.vh", "axi4/include/prga_axi4.tmpl.vh")
+
+        # add module
+        m = self.add_module(Module(name,
+            portgroups = {},
+            verilog_template = "yami/axi4/prga_axi4w_yami_transducer.tmpl.v",
+            verilog_dep_headers = ("prga_axi4.vh", )))
+
+        m.portgroups.setdefault("syscon", {})[None] = AppUtils.create_syscon_ports(m, slave = True)
+
+        m.portgroups.setdefault("axi4w", {})[None] = AppUtils.create_axi4w_ports(m,
+                addr_width, data_bytes_log2, slave = True,
+                omit_ports = (
+                    "awprot", "awqos", "awburst", "awlen", "awcache", "awlock", "wlast", 
+                    ))
+
+        m.portgroups.setdefault("yami", {})[None] = AppUtils.create_yami_ports(m, yami,
+                omit_ports = ("fmc_thread_id", "fmc_l1rplway", "fmc_parity",
+                    "mfc_thread_id", "mfc_type", "mfc_addr", "mfc_data", "mfc_l1invall", "mfc_l1invway"))
+
+        ModuleUtils.create_port(m, "cfg_baseaddr",      yami.fmc_addr_width,    "input")
+
+        return m
+
+    def get_or_create_axi4r_yami_demux(self, yami, addr_width, data_bytes_log2, num_dsts, *,
+            demux_addr_low = None, demux_addr_high = None):
+        """Get or create an AXI4 AR/R to YAMI demuxing module.
+
+        Args:
+            yami (`FabricIntf`): YAMI interface spec
+            addr_width (:obj:`int`): AXI4 address width
+            data_bytes_log2 (:obj:`int`): Log 2 of the number of bytes of the AXI4 data bus.
+            num_dsts (:obj:`int`): Number of destinations.
+        
+        Keyword Args:
+            demux_addr_low (:obj:`int`): ``demux_addr_high - (num_dsts-1).bit_length()`` if not set
+            demux_addr_high (:obj:`int`): ``yami.fmc_addr_width-1`` if not set
+
+        Returns:
+            `Module`:
+        """
+
+        name = "prga_axi4r_yami_demux{}_blocking_a{}d{}".format(num_dsts, addr_width, 8 << data_bytes_log2)
+
+        if m := self.modules.get(name):
+            return m
+
+        demux_addr_high = uno(demux_addr_high, yami.fmc_addr_width - 1)
+        demux_addr_low  = uno(demux_addr_low,  demux_addr_high - (num_dsts - 1).bit_length())
+
+        # add search paths
+        self.template_search_paths.extend( (
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'renderer', 'templates'),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'integration', 'templates'),
+                ) )
+
+        # add header
+        self.add_verilog_header("prga_axi4.vh", "axi4/include/prga_axi4.tmpl.vh")
+
+        # add module
+        m = self.add_module(Module(name,
+            portgroups = {},
+            num_dsts = num_dsts,
+            demux_addr_low = demux_addr_low,
+            demux_addr_high = demux_addr_high,
+            verilog_template = "yami/prga_app_axi4r_yami_demux_blocking.tmpl.v",
+            verilog_dep_headers = ("prga_axi4.vh", )))
+
+        m.portgroups.setdefault("syscon", {})[None] = AppUtils.create_syscon_ports(m, slave = True)
+
+        m.portgroups.setdefault("axi4r", {})[None] = AppUtils.create_axi4r_ports(m,
+                addr_width, data_bytes_log2, slave = True,
+                omit_ports = (
+                    "arprot", "arqos", "arburst", "arlen", "arcache", "arlock"
+                    ))
+
+        for i in range(num_dsts):
+            m.portgroups.setdefault("yami", {})[i] = AppUtils.create_yami_ports(m, yami,
+                    slave = False, prefix = "dst{}_".format(i),
+                    omit_ports = ("fmc_thread_id", "fmc_data", "fmc_l1rplway", "fmc_parity",
+                        "mfc_thread_id", "mfc_type", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+
+        ModuleUtils.create_port(m, "cfg_addr_offset",   yami.fmc_addr_width,    "input")
+
+        return m
+
+    def get_or_create_axi4w_yami_demux(self, yami, addr_width, data_bytes_log2, num_dsts, *,
+            demux_addr_low = None, demux_addr_high = None):
+        """Get or create an AXI4 AW/W/B to YAMI demuxing module.
+
+        Args:
+            yami (`FabricIntf`): YAMI interface spec
+            addr_width (:obj:`int`): AXI4 address width
+            data_bytes_log2 (:obj:`int`): Log 2 of the number of bytes of the AXI4 data bus.
+            num_dsts (:obj:`int`): Number of destinations.
+        
+        Keyword Args:
+            demux_addr_low (:obj:`int`): ``demux_addr_high - (num_dsts-1).bit_length()`` if not set
+            demux_addr_high (:obj:`int`): ``yami.fmc_addr_width-1`` if not set
+
+        Returns:
+            `Module`:
+        """
+
+        name = "prga_axi4w_yami_demux{}_blocking_a{}d{}".format(num_dsts, addr_width, 8 << data_bytes_log2)
+
+        if m := self.modules.get(name):
+            return m
+
+        demux_addr_high = uno(demux_addr_high, yami.fmc_addr_width - 1)
+        demux_addr_low  = uno(demux_addr_low,  demux_addr_high - (num_dsts - 1).bit_length())
+
+        # add search paths
+        self.template_search_paths.extend( (
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'renderer', 'templates'),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'integration', 'templates'),
+                ) )
+
+        # add header
+        self.add_verilog_header("prga_axi4.vh", "axi4/include/prga_axi4.tmpl.vh")
+        self.add_verilog_header("prga_utils.vh", "stdlib/include/prga_utils.tmpl.vh")
+
+        # add module
+        m = self.add_module(Module(name,
+            portgroups = {},
+            num_dsts = num_dsts,
+            demux_addr_low = demux_addr_low,
+            demux_addr_high = demux_addr_high,
+            verilog_template = "yami/prga_app_axi4w_yami_demux_blocking.tmpl.v",
+            verilog_dep_headers = ("prga_utils.vh", "prga_axi4.vh", )))
+
+        m.portgroups.setdefault("syscon", {})[None] = AppUtils.create_syscon_ports(m, slave = True)
+
+        m.portgroups.setdefault("axi4w", {})[None] = AppUtils.create_axi4w_ports(m,
+                addr_width, data_bytes_log2, slave = True,
+                omit_ports = (
+                    "awprot", "awqos", "awburst", "awlen", "awcache", "awlock", "wlast", "wstrb",
+                    ))
+
+        for i in range(num_dsts):
+            m.portgroups.setdefault("yami", {})[i] = AppUtils.create_yami_ports(m, yami,
+                    slave = False, prefix = "dst{}_".format(i),
+                    omit_ports = ("fmc_thread_id", "fmc_l1rplway", "fmc_parity",
+                        "mfc_thread_id", "mfc_type", "mfc_addr", "mfc_data", "mfc_l1invall", "mfc_l1invway"))
+
+        ModuleUtils.create_port(m, "cfg_addr_offset",   yami.fmc_addr_width,    "input")
+
+        return m
