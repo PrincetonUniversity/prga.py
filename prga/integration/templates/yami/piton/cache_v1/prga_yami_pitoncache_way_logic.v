@@ -36,7 +36,7 @@ module prga_yami_pitoncache_way_logic (
     endgenerate
 
     reg                                         hit_s3_next, iv_s3_next;
-    reg [`PRGA_YAMI_CACHE_NUM_WAYS_LOG2-1:0]    way_s3_next;
+    reg [`PRGA_YAMI_CACHE_NUM_WAYS_LOG2-1:0]    way_s2;
     wire [`PRGA_YAMI_CACHE_NUM_WAYS-1:0]        lru_inc_mask_s3_next, lru_clr_mask_s3_next;
 
     always @(posedge clk) begin
@@ -48,7 +48,7 @@ module prga_yami_pitoncache_way_logic (
             lru_clr_mask_s3 <= { `PRGA_YAMI_CACHE_NUM_WAYS {1'b0} };
         end else if (!stall_s3) begin
             hit_s3          <= hit_s3_next;
-            way_s3          <= way_s3_next;
+            way_s3          <= way_s2;
             iv_s3           <= iv_s3_next;
             lru_inc_mask_s3 <= lru_inc_mask_s3_next;
             lru_clr_mask_s3 <= lru_clr_mask_s3_next;
@@ -79,101 +79,101 @@ module prga_yami_pitoncache_way_logic (
 
             assign lru_inc_mask_s3_next[gv_way] = (state == `PRGA_YAMI_CACHE_STATE_IV || state == `PRGA_YAMI_CACHE_STATE_V)
                                                   && lru < lru_rpl;
-            assign lru_clr_mask_s3_next[gv_way] = gv_way == way_s3;
+            assign lru_clr_mask_s3_next[gv_way] = gv_way == way_s2;
         end
     endgenerate
 
     // -- Way Logic --
     always @* begin
         hit_s3_next     = 1'b0;
-        way_s3_next     = { `PRGA_YAMI_CACHE_NUM_WAYS_LOG2 {1'b0} };
+        way_s2     = { `PRGA_YAMI_CACHE_NUM_WAYS_LOG2 {1'b0} };
 
         // find hit
         if (tag_ways[0] == tag_s2 &&
             (state_ways[0] == `PRGA_YAMI_CACHE_STATE_IV || state_ways[0] == `PRGA_YAMI_CACHE_STATE_V)
         ) begin
             hit_s3_next = 1'b1;
-            way_s3_next = 0;
+            way_s2 = 0;
         end
 
         else if (tag_ways[1] == tag_s2 &&
             (state_ways[1] == `PRGA_YAMI_CACHE_STATE_IV || state_ways[1] == `PRGA_YAMI_CACHE_STATE_V)
         ) begin
             hit_s3_next = 1'b1;
-            way_s3_next = 1;
+            way_s2 = 1;
         end
 
         else if (tag_ways[2] == tag_s2 &&
             (state_ways[2] == `PRGA_YAMI_CACHE_STATE_IV || state_ways[2] == `PRGA_YAMI_CACHE_STATE_V)
         ) begin
             hit_s3_next = 1'b1;
-            way_s3_next = 2;
+            way_s2 = 2;
         end
 
         else if (tag_ways[3] == tag_s2 &&
             (state_ways[3] == `PRGA_YAMI_CACHE_STATE_IV || state_ways[3] == `PRGA_YAMI_CACHE_STATE_V)
         ) begin
             hit_s3_next = 1'b1;
-            way_s3_next = 3;
+            way_s2 = 3;
         end
 
         // find replacement: invalid line
         else if (state_ways[0] == `PRGA_YAMI_CACHE_STATE_I)
-            way_s3_next = 0;
+            way_s2 = 0;
         else if (state_ways[1] == `PRGA_YAMI_CACHE_STATE_I)
-            way_s3_next = 1;
+            way_s2 = 1;
         else if (state_ways[2] == `PRGA_YAMI_CACHE_STATE_I)
-            way_s3_next = 2;
+            way_s2 = 2;
         else if (state_ways[3] == `PRGA_YAMI_CACHE_STATE_I)
-            way_s3_next = 3;
+            way_s2 = 3;
 
         // find replacement: LRU == 3 && not IV
         else if (state_ways[0] == `PRGA_YAMI_CACHE_STATE_V && lru_ways[0] == 3)
-            way_s3_next = 0;
+            way_s2 = 0;
         else if (state_ways[1] == `PRGA_YAMI_CACHE_STATE_V && lru_ways[1] == 3)
-            way_s3_next = 1;
+            way_s2 = 1;
         else if (state_ways[2] == `PRGA_YAMI_CACHE_STATE_V && lru_ways[2] == 3)
-            way_s3_next = 2;
+            way_s2 = 2;
         else if (state_ways[3] == `PRGA_YAMI_CACHE_STATE_V && lru_ways[3] == 3)
-            way_s3_next = 3;
+            way_s2 = 3;
 
         // find replacement: LRU == 2 && not IV
         else if (state_ways[0] == `PRGA_YAMI_CACHE_STATE_V && lru_ways[0] == 2)
-            way_s3_next = 0;
+            way_s2 = 0;
         else if (state_ways[1] == `PRGA_YAMI_CACHE_STATE_V && lru_ways[1] == 2)
-            way_s3_next = 1;
+            way_s2 = 1;
         else if (state_ways[2] == `PRGA_YAMI_CACHE_STATE_V && lru_ways[2] == 2)
-            way_s3_next = 2;
+            way_s2 = 2;
         else if (state_ways[3] == `PRGA_YAMI_CACHE_STATE_V && lru_ways[3] == 2)
-            way_s3_next = 3;
+            way_s2 = 3;
 
         // find replacement: LRU == 1 && not IV
         else if (state_ways[0] == `PRGA_YAMI_CACHE_STATE_V && lru_ways[0] == 1)
-            way_s3_next = 0;
+            way_s2 = 0;
         else if (state_ways[1] == `PRGA_YAMI_CACHE_STATE_V && lru_ways[1] == 1)
-            way_s3_next = 1;
+            way_s2 = 1;
         else if (state_ways[2] == `PRGA_YAMI_CACHE_STATE_V && lru_ways[2] == 1)
-            way_s3_next = 2;
+            way_s2 = 2;
         else if (state_ways[3] == `PRGA_YAMI_CACHE_STATE_V && lru_ways[3] == 1)
-            way_s3_next = 3;
+            way_s2 = 3;
 
         // find replacement: LRU == 0 && not IV
         else if (state_ways[0] == `PRGA_YAMI_CACHE_STATE_V)
-            way_s3_next = 0;
+            way_s2 = 0;
         else if (state_ways[1] == `PRGA_YAMI_CACHE_STATE_V)
-            way_s3_next = 1;
+            way_s2 = 1;
         else if (state_ways[2] == `PRGA_YAMI_CACHE_STATE_V)
-            way_s3_next = 2;
+            way_s2 = 2;
         else if (state_ways[3] == `PRGA_YAMI_CACHE_STATE_V)
-            way_s3_next = 3;
+            way_s2 = 3;
 
     end
 
     always @* begin
-        iv_s3_next      =   state_ways[way_s3] == `PRGA_YAMI_CACHE_STATE_IV;
-        lru_rpl         =   state_ways[way_s3] == `PRGA_YAMI_CACHE_STATE_I ? 
+        iv_s3_next      =   state_ways[way_s2] == `PRGA_YAMI_CACHE_STATE_IV;
+        lru_rpl         =   state_ways[way_s2] == `PRGA_YAMI_CACHE_STATE_I ? 
                             { `PRGA_YAMI_CACHE_LRU_WIDTH {1'b0} } :
-                            lru_ways[way_s3];
+                            lru_ways[way_s2];
     end
 
 endmodule

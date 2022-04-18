@@ -31,11 +31,13 @@ module prga_yami_pitoncache_ram_raw #(
     always @(posedge clk) begin
         if (~rst_n) begin
             use_dout    <= 1'b0;
-            d_f         <= { DATA_WIDTH {1'b0} };
         end else begin
             use_dout    <= re && (!we || waddr != raddr);
-            d_f         <= re && we && waddr == raddr ? d : q;
         end
+    end
+
+    always @(posedge clk) begin
+        d_f     <= d;
     end
 
     always @(posedge clk) begin

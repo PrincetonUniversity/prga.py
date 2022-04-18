@@ -90,8 +90,8 @@ module prga_yami_pitoncache #(
     wire [`PRGA_YAMI_MFC_DATA_WIDTH-1:0]                rob_fill_data_s3;
 
     // -- RPB wires --
-    wire                                                validate_rpb_s1;
     wire                                                dequeue_rpb_s1;
+    wire                                                validate_rpb_s3;
 
     wire                                                rpb_empty_s1;
     wire                                                rpb_vld_s1;
@@ -247,7 +247,6 @@ module prga_yami_pitoncache #(
         ,.data_s2_next          (data_s2_next)
         ,.rob_entry_s2_next     (rob_entry_s2_next)
         ,.enqueue_rpb_s3        (enqueue_rpb_s3)
-        ,.validate_rpb_s1       (validate_rpb_s1)
         ,.dequeue_rpb_s1        (dequeue_rpb_s1)
         ,.rpb_empty_s1          (rpb_empty_s1)
         ,.rpb_vld_s1            (rpb_vld_s1)
@@ -312,6 +311,7 @@ module prga_yami_pitoncache #(
         ,.iv_s3                 (iv_s3)
         ,.hit_rpl_way_s3        (hit_rpl_way_s3)
         ,.enqueue_rpb_s3        (enqueue_rpb_s3)
+        ,.validate_rpb_s3       (validate_rpb_s3)
         ,.rpb_reqtype_s3        (rpb_reqtype_s3)
         ,.rpb_size_s3           (rpb_size_s3)
         ,.rpb_addr_s3           (rpb_addr_s3)
@@ -510,8 +510,8 @@ module prga_yami_pitoncache #(
         ,.rpb_data_s3           (rpb_data_s3)
         ,.rpb_rob_entry_s3      (rob_entry_s3)
 
-        ,.validate_rpb_s1       (validate_rpb_s1)
-        ,.index_s1              (index_s1)
+        ,.validate_rpb_s3       (validate_rpb_s3)
+        ,.index_s3              (index_s3)
         ,.dequeue_rpb_s1        (dequeue_rpb_s1)
         ,.rpb_empty_s1          (rpb_empty_s1)
         ,.rpb_vld_s1            (rpb_vld_s1)

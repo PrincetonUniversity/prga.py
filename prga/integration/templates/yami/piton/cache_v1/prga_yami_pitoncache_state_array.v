@@ -35,10 +35,9 @@ module prga_yami_pitoncache_state_array #(
 
     // -- State Array Memory --
     reg                                     we;
-    reg [`PRGA_YAMI_CACHE_INDEX_WIDTH-1:0]  waddr;
+    reg [`PRGA_YAMI_CACHE_INDEX_WIDTH-1:0]  waddr, raddr_f;
     wire [LINE_WIDTH-1:0]                   din, dout;
-    reg                                     s1_s3_conflict;
-    reg [LINE_WIDTH-1:0]                    rdata_s3, din_f;
+    reg [LINE_WIDTH-1:0]                    rdata_s3;
 
     prga_yami_pitoncache_ram_raw #(
         .ADDR_WIDTH     (`PRGA_YAMI_CACHE_INDEX_WIDTH)
@@ -57,19 +56,17 @@ module prga_yami_pitoncache_state_array #(
 
     always @(posedge clk) begin
         if (~rst_n) begin
-            s1_s3_conflict  <= 1'b0;
-            din_f           <= { LINE_WIDTH {1'b0} };
+            raddr_f         <= { `PRGA_YAMI_CACHE_INDEX_WIDTH {1'b0} };
             rdata_s3        <= { LINE_WIDTH {1'b0} };
         end else begin
-            s1_s3_conflict  <= we && index_s3 == index_s1;
-            din_f           <= din;
+            raddr_f         <= index_s1;
 
             if (!stall_s3)
                 rdata_s3    <= rdata_s2;
         end
     end
 
-    assign rdata_s2 = s1_s3_conflict ? din_f : dout;
+    assign rdata_s2 = we && raddr_f == index_s3 ? din : dout;
 
     // -- Initailization --
     wire                                    we_init;

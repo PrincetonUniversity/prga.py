@@ -56,6 +56,7 @@ module prga_yami_pitoncache_pipeline_s3 (
 
     // -- To RPB -------------------------------------------------------------
     , output reg                                                enqueue_rpb_s3
+    , output reg                                                validate_rpb_s3
     , output wire [`PRGA_YAMI_REQTYPE_WIDTH-1:0]                rpb_reqtype_s3
     , output wire [`PRGA_YAMI_SIZE_WIDTH-1:0]                   rpb_size_s3
     , output wire [`PRGA_YAMI_FMC_ADDR_WIDTH-1:0]               rpb_addr_s3
@@ -145,6 +146,7 @@ module prga_yami_pitoncache_pipeline_s3 (
         rob_fill_data_use_rdata     = 1'b0;
 
         enqueue_rpb_s3      = 1'b0;
+        validate_rpb_s3     = 1'b0;
         ilq_wr_s3           = 1'b0;
         isq_wr_s3           = 1'b0;
         imq_wr_s3           = 1'b0;
@@ -288,6 +290,7 @@ module prga_yami_pitoncache_pipeline_s3 (
                 state_array_op_s3 = `PRGA_YAMI_CACHE_S3OP_SA_TRANSITION_TO_V;
                 data_array_wr_s3 = 1'b1;
                 data_array_wr_full_line = 1'b1;
+                validate_rpb_s3 = 1'b1;
             end
 
             `PRGA_YAMI_CACHE_S3OP_LD_NC_ACK: begin

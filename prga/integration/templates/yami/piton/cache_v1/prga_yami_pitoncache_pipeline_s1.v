@@ -84,7 +84,6 @@ module prga_yami_pitoncache_pipeline_s1 (
     , input wire                                        enqueue_rpb_s3
 
     // -- From RPB -----------------------------------------------------------
-    , output reg                                        validate_rpb_s1
     , output reg                                        dequeue_rpb_s1
     , input wire                                        rpb_empty_s1
     , input wire                                        rpb_vld_s1
@@ -129,7 +128,6 @@ module prga_yami_pitoncache_pipeline_s1 (
         data_s2_next            = { `PRGA_YAMI_MFC_DATA_WIDTH {1'b0} };
         rob_entry_s2_next       = { `PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2 {1'b0} };
 
-        validate_rpb_s1         = 1'b0;
         dequeue_rpb_s1          = 1'b0;
 
         may_conflict_s2_next    = stall_s2 ? may_conflict_s2 : 1'b0;
@@ -152,9 +150,9 @@ module prga_yami_pitoncache_pipeline_s1 (
                         op_s2_next = ilq_nc_s1 ? `PRGA_YAMI_CACHE_S3OP_LD_NC_ACK : `PRGA_YAMI_CACHE_S3OP_LD_ACK;
                         inv_ilq_way_s2_next = ilq_way_s1;
                         size_s2_next = ilq_size_s1;
+                        addr_s2_next[`PRGA_YAMI_CACHE_INDEX_LOW +: `PRGA_YAMI_CACHE_INDEX_WIDTH] = ilq_index_s1;
                         addr_s2_next[`PRGA_YAMI_CACHE_INDEX_LOW-1:0] = ilq_offset_s1;
                         rob_entry_s2_next = ilq_rob_entry_s1;
-                        validate_rpb_s1 = 1'b1;
                         may_conflict_s2_next = !ilq_nc_s1;
                     end
 

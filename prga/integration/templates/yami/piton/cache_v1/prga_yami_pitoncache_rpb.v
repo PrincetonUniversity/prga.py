@@ -27,8 +27,8 @@ module prga_yami_pitoncache_rpb (
     , input wire [`PRGA_YAMI_CACHE_ROB_NUM_ENTRIES_LOG2-1:0]    rpb_rob_entry_s3
 
     // -- Validate -----------------------------------------------------------
-    , input wire                                        validate_rpb_s1
-    , input wire [`PRGA_YAMI_CACHE_INDEX_WIDTH-1:0]     index_s1
+    , input wire                                        validate_rpb_s3
+    , input wire [`PRGA_YAMI_CACHE_INDEX_WIDTH-1:0]     index_s3
 
     // -- Dequeue ------------------------------------------------------------
     , input wire                                        dequeue_rpb_s1
@@ -105,8 +105,8 @@ module prga_yami_pitoncache_rpb (
         end else if (state == ST_S3_BUFFERED) begin
             if (s3buf_vld && dequeue_rpb_s1) begin
                 s3buf_vld   <= 1'b0;
-            end else if (validate_rpb_s1
-                && index_s1 == s3buf_addr[`PRGA_YAMI_CACHE_INDEX_LOW +: `PRGA_YAMI_CACHE_INDEX_WIDTH]
+            end else if (validate_rpb_s3
+                && index_s3 == s3buf_addr[`PRGA_YAMI_CACHE_INDEX_LOW +: `PRGA_YAMI_CACHE_INDEX_WIDTH]
             ) begin
                 s3buf_vld   <= 1'b1;
             end

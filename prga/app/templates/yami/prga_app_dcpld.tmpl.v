@@ -8,7 +8,8 @@
 */
 
 module {{ module.name }} #(
-    parameter   KERNEL_DATA_BYTES   = {{ (module.ports.kresp_data|length) // 8 }}
+    parameter   KERNEL_DATA_BYTES_LOG2  = {{ ((module.ports.kresp_data|length) // 8 - 1).bit_length() }}
+    , parameter KERNEL_ADDR_WIDTH       = {{ module.ports.kreq_addr|length }}
 ) (
     input wire                                      clk
     , input wire                                    rst_n
@@ -24,7 +25,7 @@ module {{ module.name }} #(
     // == Kernel-side Response ===============================================
     , input wire                                    kresp_rdy
     , output wire                                   kresp_vld
-    , output wire [8*KERNEL_DATA_BYTES-1:0]         kresp_data
+    , output wire [(8<<KERNEL_DATA_BYTES_LOG2)-1:0] kresp_data
 
     // == Memory-side Request ================================================
     // -- FMC (fabric-memory channel) ----------------------------------------
@@ -42,17 +43,18 @@ module {{ module.name }} #(
 
     assign kreq_rdy = fmc_rdy;
     assign kresp_vld = mfc_vld;
-    assign kresp_data = mfc_data[0 +: 8*KERNEL_DATA_BYTES];
+    assign kresp_data = mfc_data[0 +: (8<<KERNEL_DATA_BYTES_LOG2)];
 
     assign fmc_vld = kreq_vld;
     assign fmc_type = `PRGA_YAMI_REQTYPE_LOAD;
-    assign fmc_size = KERNEL_DATA_BYTES ==  1 ? `PRGA_YAMI_SIZE_1B :
-                      KERNEL_DATA_BYTES ==  2 ? `PRGA_YAMI_SIZE_2B :
-                      KERNEL_DATA_BYTES ==  4 ? `PRGA_YAMI_SIZE_4B :
-                      KERNEL_DATA_BYTES ==  8 ? `PRGA_YAMI_SIZE_8B :
-                      KERNEL_DATA_BYTES == 16 ? `PRGA_YAMI_SIZE_16B :
-                                                `PRGA_YAMI_SIZE_FULL;
-    assign fmc_addr = cfg_addr + kreq_addr;
+    assign fmc_size = KERNEL_DATA_BYTES_LOG2 == 0 ? `PRGA_YAMI_SIZE_1B :
+                      KERNEL_DATA_BYTES_LOG2 == 1 ? `PRGA_YAMI_SIZE_2B :
+                      KERNEL_DATA_BYTES_LOG2 == 2 ? `PRGA_YAMI_SIZE_4B :
+                      KERNEL_DATA_BYTES_LOG2 == 3 ? `PRGA_YAMI_SIZE_8B :
+                      KERNEL_DATA_BYTES_LOG2 == 4 ? `PRGA_YAMI_SIZE_16B :
+                                                    `PRGA_YAMI_SIZE_FULL;
+
+    assign fmc_addr = cfg_addr + (kreq_addr << KERNEL_DATA_BYTES_LOG2);
     assign mfc_rdy = kresp_rdy;
 
 endmodule

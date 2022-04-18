@@ -569,3 +569,36 @@ class AppMemMixin(object):
         ModuleUtils.create_port(m, "cfg_addr_offset",   yami.fmc_addr_width,    "input")
 
         return m
+
+    def get_or_create_yami_dcpld(self, yami, addr_width, data_bytes_log2):
+        """Get or create a valid-ready to YAMI, decoupled load shim.
+
+        Args:
+            yami (`FabricIntf`): YAMI interface
+            addr_width (:obj:`int`): Width of the address port of the kernel
+            data_bytes_log2 (:obj:`int`): Log 2 of the number of bytes of the data bus.
+
+        Returns:
+            `Module`:
+        """
+        name = "prga_app_yami_dcpld_a{}d{}".format(addr_width, 8 << data_bytes_log2)
+
+        if m := self.modules.get(name):
+            return m
+
+        m = self.add_module(Module(name,
+            portgroups = {},
+            verilog_template = "yami/prga_app_dcpld.tmpl.v"))
+
+        m.portgroups.setdefault("syscon", {})[None] = AppUtils.create_syscon_ports(m, slave = True)
+        m.portgroups.setdefault("vldrdy", {})["addr"] = AppUtils.create_vldrdy_ports(m, 
+                {"addr": addr_width}, slave = True, prefix = "kreq_")
+        m.portgroups.setdefault("vldrdy", {})["data"] = AppUtils.create_vldrdy_ports(m, 
+                {"data": 8 << data_bytes_log2}, prefix = "kresp_")
+        m.portgroups.setdefault("yami", {})[None] = AppUtils.create_yami_ports(m, yami,
+                omit_ports = ("fmc_thread_id", "fmc_data", "fmc_l1rplway", "fmc_parity",
+                    "mfc_thread_id", "mfc_type", "mfc_addr", "mfc_l1invall", "mfc_l1invway"))
+
+        ModuleUtils.create_port(m, "cfg_addr",  yami.fmc_addr_width, "input")
+
+        return m

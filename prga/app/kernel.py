@@ -67,12 +67,13 @@ class KernelBuilder(Object):
         """
         return ModuleUtils.create_port(self._module, name, width, direction, is_clock = is_clock, **kwargs)
 
-    def create_portgroup(self, type_, id_ = None, **kwargs):
+    def create_portgroup(self, type_, id_ = None, *args, **kwargs):
         """Create a port group.
 
         Args:
             type_ (:obj:`str`): Supported types are 'syscon', 'axi4r' and 'axi4w'
             id_ (:obj:`str`): ID of this port group
+            *args: arguments for portgroup creation
 
         Keyword Args:
             **kwargs: Arguments for creating the port group
@@ -90,37 +91,50 @@ class KernelBuilder(Object):
             if id_ in self._module.portgroups.setdefault("axi4r", {}):
                 raise PRGAAPIError("Port group (axi4r) with ID ({}) already exists".format(repr(id_)))
 
-            if (addr_width := kwargs.pop("addr_width", None)) is None:
-                raise PRGAAPIError("Missing required argument for port group (axi4r): addr_width")
-            elif (data_bytes_log2 := kwargs.pop("data_bytes_log2", None)) is None:
-                raise PRGAAPIError("Missing required argument for port group (axi4r): data_bytes_log2")
+            # if (addr_width := kwargs.pop("addr_width", None)) is None:
+            #     raise PRGAAPIError("Missing required argument for port group (axi4r): addr_width")
+            # elif (data_bytes_log2 := kwargs.pop("data_bytes_log2", None)) is None:
+            #     raise PRGAAPIError("Missing required argument for port group (axi4r): data_bytes_log2")
 
-            self._module.portgroups["axi4r"][id_] = AppUtils.create_axi4r_ports(self._module,
-                    addr_width, data_bytes_log2, **kwargs)
+            # self._module.portgroups["axi4r"][id_] = AppUtils.create_axi4r_ports(self._module,
+            #         addr_width, data_bytes_log2, **kwargs)
+
+            self._module.portgroups["axi4r"][id_] = AppUtils.create_axi4r_ports(self._module, *args, **kwargs)
 
         elif type_ == "axi4w":
 
             if id_ in self._module.portgroups.setdefault("axi4w", {}):
                 raise PRGAAPIError("Port group (axi4w) with ID ({}) already exists".format(repr(id_)))
 
-            if (addr_width := kwargs.pop("addr_width", None)) is None:
-                raise PRGAAPIError("Missing required argument for port group (axi4w): addr_width")
-            elif (data_bytes_log2 := kwargs.pop("data_bytes_log2", None)) is None:
-                raise PRGAAPIError("Missing required argument for port group (axi4w): data_bytes_log2")
+            # if (addr_width := kwargs.pop("addr_width", None)) is None:
+            #     raise PRGAAPIError("Missing required argument for port group (axi4w): addr_width")
+            # elif (data_bytes_log2 := kwargs.pop("data_bytes_log2", None)) is None:
+            #     raise PRGAAPIError("Missing required argument for port group (axi4w): data_bytes_log2")
 
-            self._module.portgroups["axi4w"][id_] = AppUtils.create_axi4w_ports(self._module,
-                    addr_width, data_bytes_log2, **kwargs)
+            # self._module.portgroups["axi4w"][id_] = AppUtils.create_axi4w_ports(self._module,
+            #         addr_width, data_bytes_log2, **kwargs)
+
+            self._module.portgroups["axi4w"][id_] = AppUtils.create_axi4w_ports(self._module, *args, **kwargs)
 
         elif type_ == "yami":
 
             if id_ in self._module.portgroups.setdefault("yami", {}):
                 raise PRGAAPIError("Port group (yami) with ID ({}) already exists".format(repr(id_)))
 
-            if (intf := kwargs.pop("intf", None)) is None:
-                raise PRGAAPIError("Missing required argument for port group (yami): intf")
+            # if (intf := kwargs.pop("intf", None)) is None:
+            #     raise PRGAAPIError("Missing required argument for port group (yami): intf")
 
-            self._module.portgroups["yami"][id_] = AppUtils.create_yami_ports(self._module,
-                    intf, **kwargs)
+            # self._module.portgroups["yami"][id_] = AppUtils.create_yami_ports(self._module,
+            #         intf, **kwargs)
+
+            self._module.portgroups["yami"][id_] = AppUtils.create_yami_ports(self._module, *args, **kwargs)
+
+        elif type_ == "vldrdy":
+
+            if id_ in self._module.portgroups.setdefault("vldrdy", {}):
+                raise PRGAAPIError("Port group (vldrdy) with ID ({}) already exists".format(repr(id_)))
+
+            self._module.portgroups["vldrdy"][id_] = AppUtils.create_vldrdy_ports(self._module, *args, **kwargs)
 
         else:
             raise NotImplementedError("Unsupported type: {}".format(type_))
