@@ -362,7 +362,7 @@ class AppUtils(object):
         mo("resp_rdy",      1)
         mi("resp_vld",      1)
         mi("resp_sync",     1)
-        mi("resp_syncaddr", 5)
+        mi("resp_syncaddr", 8)
         mi("resp_data",     8 << intf.data_bytes_log2)
         mi("resp_parity",   1)
 

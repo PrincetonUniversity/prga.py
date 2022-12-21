@@ -128,16 +128,16 @@ class SoftRegSpace(Object):
             bw = 1 << self.intf.data_bytes_log2
 
             # control registers
-            self.addrspace  = [SoftReg('*reserved*', SoftRegType.reserved, i, 8 * bw, bw, 0) for i in range(32)]
-
-            # HSR: input fifo, output data fifo, output token fifo
-            self.addrspace += [None for i in range(12)] 
-
-            # HSR: output token fifo (alternative non-blocking loads)
-            self.addrspace += [SoftReg('*reserved*', SoftRegType.reserved, i, 8 * bw, bw, 0) for i in range(44, 48)] 
+            self.addrspace  = [SoftReg('*reserved*', SoftRegType.reserved, i, 8 * bw, bw, 0) for i in range(64)]
 
             # HSR: plain
-            self.addrspace += [None for i in range(16)] 
+            self.addrspace += [None for i in range(64)] 
+
+            # HSR: input fifo, output data fifo, output token fifo
+            self.addrspace += [None for i in range(32 * 3)] 
+
+            # HSR: output token fifo (alternative non-blocking loads)
+            self.addrspace += [SoftReg('*reserved*', SoftRegType.reserved, i, 8 * bw, bw, 0) for i in range(224, 256)] 
 
         else:
             raise NotImplementedError("Unsupported interface type: {}".format(repr(self.intf)))
@@ -181,13 +181,12 @@ class SoftRegSpace(Object):
 
     def _allocate_rxi(self, type_):
         valid_range = type_.case(
-                hsr_ififo   = (32, 36),
-                hsr_ofifo   = (36, 40),
-                hsr_tfifo   = (40, 44),
-                # hsr_plain   = (48, 64),
-                hsr_kernel  = (48, 64),
-                hsr_basic   = (48, 64),
-                hsr_ififo_vldrdy    = (32, 36),
+                hsr_kernel          = ( 64, 128),
+                hsr_basic           = ( 64, 128),
+                hsr_ififo           = (128, 160),
+                hsr_ififo_vldrdy    = (128, 160),
+                hsr_ofifo           = (160, 192),
+                hsr_tfifo           = (192, 224),
                 default     = None,
                 )
 
@@ -329,13 +328,12 @@ class SoftRegSpace(Object):
 
             elif self.intf.is_rxi:
                 valid_range = type_.case(
-                        hsr_ififo   = (32, 36),
-                        hsr_ofifo   = (36, 40),
-                        hsr_tfifo   = (40, 44),
-                        # hsr_plain   = (48, 64),
-                        hsr_kernel  = (48, 64),
-                        hsr_basic   = (48, 64),
-                        hsr_ififo_vldrdy    = (32, 36),
+                        hsr_kernel          = ( 64, 128),
+                        hsr_basic           = ( 64, 128),
+                        hsr_ififo           = (128, 160),
+                        hsr_ififo_vldrdy    = (128, 160),
+                        hsr_ofifo           = (160, 192),
+                        hsr_tfifo           = (192, 224),
                         default     = None,
                         )
 

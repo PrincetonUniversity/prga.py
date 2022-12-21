@@ -67,13 +67,13 @@
 *
 *   The register address space is divided up into the following major regions:
 *
-*     - register  0-31:
+*     - register   0-63:
 *       control registers, not available to the application
 *
-*     - register 32-63:
+*     - register  64-255:
 *       hardware-sync'ed registers
 *
-*     - register 64+:
+*     - register 256+:
 *       custom soft registers
 *
 *   Control registers may be implemented in the system clock domain, the
@@ -142,7 +142,7 @@
 
 // -- parameterized macros --------------------------------------------------- 
 `define PRGA_RXI_DATA_BYTES_LOG2        {{ intf.data_bytes_log2 }} // 2 or 3 (4B or 8B)
-`define PRGA_RXI_ADDR_WIDTH             {{ intf.addr_width - intf.data_bytes_log2 }} // at least 7
+`define PRGA_RXI_ADDR_WIDTH             {{ intf.addr_width - intf.data_bytes_log2 }} // at least 9
 `define PRGA_RXI_NUM_YAMI               {{ intf.num_yami }}
 
 // -- Derived Macros ---------------------------------------------------------
@@ -153,10 +153,10 @@
 
 // -- Non-Soft Registers -----------------------------------------------------
 // non-soft register ID width
-`define PRGA_RXI_NSRID_WIDTH            6
+`define PRGA_RXI_NSRID_WIDTH            8
 
 // -- Control Registers ------------------------------------------------------
-// # registers: 32
+// # registers: 64
 
 // #0: status
 `define PRGA_RXI_NSRID_STATUS           0
@@ -216,50 +216,50 @@
 
 // #7 - #15: reserved
 
-/* #16 - #23: scratchpads (8x registers)
+/* #16 - #31: scratchpads (16x registers)
 *
 *   Software-managed hard registers
 */
 `define PRGA_RXI_NSRID_SCRATCHPAD       16
-`define PRGA_RXI_SCRATCHPAD_ID_WIDTH    3
+`define PRGA_RXI_SCRATCHPAD_ID_WIDTH    4
 `define PRGA_RXI_NUM_SCRATCHPADS        (1 << `PRGA_RXI_SCRATCHPAD_ID_WIDTH)
 
-/* #24 - #31: programming registers (8x registers)
+/* #32 - #63: programming registers (32x registers)
 * 
 *   Implemented in the programming backend
 */
-`define PRGA_RXI_NSRID_PROG             24
-`define PRGA_RXI_PROG_REG_ID_WIDTH      3
+`define PRGA_RXI_NSRID_PROG             32
+`define PRGA_RXI_PROG_REG_ID_WIDTH      5
 `define PRGA_RXI_NUM_PROG_REGS          (1 << `PRGA_RXI_PROG_REG_ID_WIDTH)
 
 // -- Hardware-Sync'ed Registers ---------------------------------------------
-// # registers: 32
-`define PRGA_RXI_NSRID_HSR              32
-`define PRGA_RXI_HSRID_WIDTH            5
+// # registers: 192
+`define PRGA_RXI_NSRID_HSR              64
+`define PRGA_RXI_HSRID_WIDTH            8
 
-// #32 - #35: input FIFO
-`define PRGA_RXI_HSRID_IQ               0
-`define PRGA_RXI_HSR_IQ_ID_WIDTH        2
+// #64 - #127: plain sync'ed registers (64)
+`define PRGA_RXI_HSRID_PLAIN            64
+`define PRGA_RXI_HSR_PLAIN_ID_WIDTH     6
+`define PRGA_RXI_NUM_HSR_PLAINS         (1 << `PRGA_RXI_HSR_PLAIN_ID_WIDTH)
+
+// #128 - #159: input FIFO
+`define PRGA_RXI_HSRID_IQ               128
+`define PRGA_RXI_HSR_IQ_ID_WIDTH        5
 `define PRGA_RXI_NUM_HSR_IQS            (1 << `PRGA_RXI_HSR_IQ_ID_WIDTH)
 
-// #36 - #39: output data FIFO
-`define PRGA_RXI_HSRID_OQ               4
-`define PRGA_RXI_HSR_OQ_ID_WIDTH        2
+// #160 - #191: output data FIFO
+`define PRGA_RXI_HSRID_OQ               160
+`define PRGA_RXI_HSR_OQ_ID_WIDTH        5
 `define PRGA_RXI_NUM_HSR_OQS            (1 << `PRGA_RXI_HSR_OQ_ID_WIDTH)
 
-// #40 - #47: output token FIFO
-`define PRGA_RXI_HSR_TQ_ID_WIDTH        2
+// #192 - #255: output token FIFO
+`define PRGA_RXI_HSRID_TQ               192
+`define PRGA_RXI_HSRID_TQ_NB            224
+`define PRGA_RXI_HSR_TQ_ID_WIDTH        5
 `define PRGA_RXI_NUM_HSR_TQS            (1 << `PRGA_RXI_HSR_TQ_ID_WIDTH)
-`define PRGA_RXI_HSRID_TQ               8
-`define PRGA_RXI_HSRID_TQ_NB            12
-
-// #48 - #63: plain sync'ed registers (16)
-`define PRGA_RXI_HSR_PLAIN_ID_WIDTH     4
-`define PRGA_RXI_NUM_HSR_PLAINS         (1 << `PRGA_RXI_HSR_PLAIN_ID_WIDTH)
-`define PRGA_RXI_HSRID_PLAIN            16
 
 // -- Soft Registers ---------------------------------------------------------
-`define PRGA_RXI_SRID_BASE              64
+`define PRGA_RXI_SRID_BASE              256
 
 // -- Async FIFO -------------------------------------------------------------
 /*  FE->BE FIFO Element

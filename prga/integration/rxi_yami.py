@@ -64,7 +64,7 @@ class IntegrationRXIYAMI(object):
             # fabric interface, not system interface
             ports.extend([
                 _mcp(module, prefix + "resp_sync",     1, _so),
-                _mcp(module, prefix + "resp_syncaddr", 5, _so),
+                _mcp(module, prefix + "resp_syncaddr", 8, _so),
                 _mcp(module, prefix + "resp_parity",   1, _so),
                 ])
 
@@ -314,7 +314,7 @@ class IntegrationRXIYAMI(object):
             app.add_port("rxi_resp_rdy",        "input",  1)
             app.add_port("rxi_resp_vld",        "output", 1)
             app.add_port("rxi_resp_sync",       "output", 1)
-            app.add_port("rxi_resp_syncaddr",   "output", 5)    # 32 HSRs
+            app.add_port("rxi_resp_syncaddr",   "output", 8)    # 192 HSRs
             app.add_port("rxi_resp_data",       "output", 8 << rxi.data_bytes_log2)
             app.add_port("rxi_resp_parity",     "output", 1)
 

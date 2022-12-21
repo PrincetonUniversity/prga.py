@@ -412,7 +412,8 @@ module prga_rxi_be #(
                     else if (m_resp_sync) begin
                         b2f_wr = 1'b1;
                         b2f_elem[`PRGA_RXI_B2F_SYNC_INDEX] = 1'b1;
-                        b2f_elem[`PRGA_RXI_B2F_NSRID_INDEX] = `PRGA_RXI_NSRID_HSR + m_resp_syncaddr;
+                        // b2f_elem[`PRGA_RXI_B2F_NSRID_INDEX] = `PRGA_RXI_NSRID_HSR + m_resp_syncaddr;
+                        b2f_elem[`PRGA_RXI_B2F_NSRID_INDEX] = m_resp_syncaddr;
                         b2f_elem[`PRGA_RXI_B2F_DATA_INDEX] = m_resp_data;
                     end
 

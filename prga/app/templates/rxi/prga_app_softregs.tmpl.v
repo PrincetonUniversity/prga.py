@@ -21,7 +21,7 @@ module prga_app_softregs #(
     , input wire                                    rxi_resp_rdy
     , output reg                                    rxi_resp_vld
     , output reg                                    rxi_resp_sync
-    , output reg [4:0]                              rxi_resp_syncaddr
+    , output reg [7:0]                              rxi_resp_syncaddr
     , output reg [`PRGA_APP_SOFTREG_DATA_WIDTH-1:0] rxi_resp_data
 
     // == Soft Register Ports =================================================
@@ -371,7 +371,7 @@ module prga_app_softregs #(
     always @* begin
         rxi_resp_vld = 1'b0;
         rxi_resp_sync = 1'b0;
-        rxi_resp_syncaddr = 5'h0;
+        rxi_resp_syncaddr = 8'h0;
         rxi_resp_data = { `PRGA_APP_SOFTREG_DATA_WIDTH {1'b0} };
         resp_rdy = { (NUM_REGS + 1) {1'b0} };
         sync_rdy = { (NUM_HSRS + 1) {1'b0} };
@@ -389,7 +389,7 @@ module prga_app_softregs #(
             case (sync_arb)
                 {%- for r in hsrs %}
                 HSRID_{{ r.name|upper }}: begin
-                    rxi_resp_syncaddr = {{ addr(r.name) }} - 32;
+                    rxi_resp_syncaddr = {{ addr(r.name) }};
                 end
                 {%- endfor %}
             endcase

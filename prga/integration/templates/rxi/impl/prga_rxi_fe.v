@@ -632,9 +632,24 @@ module prga_rxi_fe #(
         // --------------------------------
         else if (s_req_addr < `PRGA_RXI_SRID_BASE) begin
 
+            // -- HSR: plain registers --
+            // --------------------------
+            if (hsr_id < `PRGA_RXI_HSRID_IQ) begin
+                phsr_vld = s_req_vld && !prq_full;
+
+                // stores always succeed
+                if (|s_req_strb)
+                    buffer_bogus( prq_full, s_req_vld );
+
+                // buffer load response
+                else
+                    buffer_response(phsr_dout, prq_full, rb_full, s_req_vld);
+
+            end
+
             // -- HSR: input FIFO --
             // ---------------------
-            if (hsr_id < `PRGA_RXI_HSRID_OQ) begin
+            else if (hsr_id < `PRGA_RXI_HSRID_OQ) begin
                 s_req_rdy = !prq_full && (!iq_full[hsr_id[0 +: `PRGA_RXI_HSR_IQ_ID_WIDTH]] || ~&s_req_strb);
                 iq_wr[hsr_id[0 +: `PRGA_RXI_HSR_IQ_ID_WIDTH]] = s_req_vld && |s_req_strb && !prq_full;
                 prq_wr = s_req_vld && (!iq_full[hsr_id[0 +: `PRGA_RXI_HSR_IQ_ID_WIDTH]] || ~&s_req_strb);
@@ -679,7 +694,7 @@ module prga_rxi_fe #(
 
             // -- HSR: output token FIFO (non-blocking load) --
             // ------------------------------------------------
-            else if (hsr_id < `PRGA_RXI_HSRID_PLAIN) begin
+            else begin
 
                 // ignore stores
                 if (|s_req_strb)
@@ -697,21 +712,6 @@ module prga_rxi_fe #(
                     tq_rd[tq_id] = s_req_vld && !prq_full;
                 end
             end
-
-            // -- HSR: plain registers --
-            // --------------------------
-            else begin
-                phsr_vld = s_req_vld && !prq_full;
-
-                // stores always succeed
-                if (|s_req_strb)
-                    buffer_bogus( prq_full, s_req_vld );
-
-                // buffer load response
-                else
-                    buffer_response(phsr_dout, prq_full, rb_full, s_req_vld);
-
-            end
         end
 
         // -- HSR sync takes priority over custom soft registers --
@@ -722,8 +722,7 @@ module prga_rxi_fe #(
         if (!f2b_wr) begin
             f2b_wr = phsr_f2b_vld;
             f2b_data[`PRGA_RXI_F2B_STRB_INDEX] = { `PRGA_RXI_DATA_BYTES {1'b1} };
-            f2b_data[`PRGA_RXI_F2B_REGID_INDEX] = `PRGA_RXI_NSRID_HSR
-                                                  + `PRGA_RXI_HSRID_PLAIN
+            f2b_data[`PRGA_RXI_F2B_REGID_INDEX] = `PRGA_RXI_HSRID_PLAIN
                                                   + phsr_f2b_id;
             f2b_data[`PRGA_RXI_F2B_DATA_INDEX] = phsr_f2b_data;
             phsr_f2b_rdy = !f2b_full;
@@ -734,8 +733,7 @@ module prga_rxi_fe #(
         if (!f2b_wr) begin
             f2b_wr = iq_vld;
             f2b_data[`PRGA_RXI_F2B_STRB_INDEX] = { `PRGA_RXI_DATA_BYTES {1'b1} };
-            f2b_data[`PRGA_RXI_F2B_REGID_INDEX] = `PRGA_RXI_NSRID_HSR
-                                                  + `PRGA_RXI_HSRID_IQ
+            f2b_data[`PRGA_RXI_F2B_REGID_INDEX] = `PRGA_RXI_HSRID_IQ
                                                   + iq_id;
             f2b_data[`PRGA_RXI_F2B_DATA_INDEX] = iq_dout;
             iq_rdy = !f2b_full;
@@ -769,13 +767,11 @@ module prga_rxi_fe #(
     // -- decode b2f element --
     wire                                    b2f_sync;
     wire [`PRGA_RXI_NSRID_WIDTH-1:0]        b2f_nsr_id;
-    wire [`PRGA_RXI_HSRID_WIDTH-1:0]        b2f_hsr_id;
     wire [`PRGA_RXI_HSR_OQ_ID_WIDTH-1:0]    b2f_oq_id;
     wire [`PRGA_RXI_HSR_TQ_ID_WIDTH-1:0]    b2f_tq_id;
 
     assign b2f_sync = b2f_data[`PRGA_RXI_B2F_SYNC_INDEX];
     assign b2f_nsr_id = b2f_data[`PRGA_RXI_B2F_NSRID_INDEX];
-    assign b2f_hsr_id = b2f_nsr_id[0+:`PRGA_RXI_HSRID_WIDTH];
     assign phsr_b2f_id = b2f_nsr_id[0+:`PRGA_RXI_HSR_PLAIN_ID_WIDTH];
     assign b2f_oq_id = b2f_nsr_id[0+:`PRGA_RXI_HSR_OQ_ID_WIDTH];
     assign b2f_tq_id = b2f_nsr_id[0+:`PRGA_RXI_HSR_TQ_ID_WIDTH];
@@ -829,28 +825,22 @@ module prga_rxi_fe #(
 
             // -- app errcode --
             // -----------------
-            if (b2f_nsr_id == `PRGA_RXI_NSRID_ERRCODE)
-                event_app_error = 1'b1;
+            event_app_error = b2f_nsr_id == `PRGA_RXI_NSRID_ERRCODE;
 
-            // -- Hardware-sync'ed registers --
-            // --------------------------------
-            else if (b2f_nsr_id >= `PRGA_RXI_NSRID_HSR) begin
+            // -- HSR: plain registers --
+            // --------------------------
+            phsr_b2f_sync = b2f_nsr_id >= `PRGA_RXI_HSRID_PLAIN
+                            && b2f_nsr_id < `PRGA_RXI_HSRID_PLAIN + `PRGA_RXI_NUM_HSR_PLAINS;
 
-                // -- HSR: output FIFOs --
-                // -----------------------
-                if (b2f_hsr_id < `PRGA_RXI_HSRID_TQ)
-                    oq_wr[b2f_oq_id] = 1'b1;
+            // -- HSR: output FIFOs --
+            // -----------------------
+            oq_wr[b2f_oq_id] = b2f_nsr_id >= `PRGA_RXI_HSRID_OQ
+                               && b2f_nsr_id < `PRGA_RXI_HSRID_OQ + `PRGA_RXI_NUM_HSR_OQS;
 
-                // -- HSR: output token FIFOs --
-                // -----------------------------
-                else if (b2f_hsr_id < `PRGA_RXI_HSRID_PLAIN)
-                    tq_wr[b2f_tq_id] = 1'b1;
-
-                // -- HSR: plain registers --
-                // --------------------------
-                else
-                    phsr_b2f_sync = 1'b1;
-            end
+            // -- HSR: output token FIFOs --
+            // -----------------------------
+            tq_wr[b2f_tq_id] = b2f_nsr_id >= `PRGA_RXI_HSRID_TQ
+                               && b2f_nsr_id < `PRGA_RXI_HSRID_TQ + `PRGA_RXI_NUM_HSR_TQS;
         end
     end
 
