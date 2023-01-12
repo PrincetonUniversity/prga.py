@@ -5,7 +5,7 @@ from ..common import AbstractProgCircuitryEntry, ProgDataBitmap
 from ...core.common import NetClass, ModuleClass, ModuleView, Corner, Orientation, Dimension
 from ...netlist import Module, ModuleUtils, PortDirection, NetUtils, Const
 from ...passes.translation import SwitchDelegate
-from ...renderer.lib import BuiltinCellLibrary
+from ...renderer import BuiltinCellLibrary, OnDemandCellLibrary
 from ...util import uno, Object
 from ...exception import PRGAInternalError
 
@@ -248,7 +248,7 @@ class Frame(AbstractProgCircuitryEntry):
 
                 lbdr.instantiate( cls._get_or_create_frame_wldec(context, 1, 2), "i_wldec" )
                 lbdr.instantiate( cls._get_or_create_frame_rbmerge(context, 2, 1), "i_rbmerge" )
-                mmctrl = BuiltinCellLibrary._get_or_create_multimode_memory_ctrl(context, abstract)
+                mmctrl = OnDemandCellLibrary._get_or_create_multimode_memory_ctrl(context, abstract)
                 lbdr.instantiate( mmctrl, "i_frac" )
                 lbdr.instantiate(
                         cls._get_or_create_frame_data_cell(context, mmctrl.prog_data_width),

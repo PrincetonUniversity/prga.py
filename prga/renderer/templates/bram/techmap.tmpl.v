@@ -8,7 +8,7 @@ module _mmap__{{ module.name }}_ (CLK1, A1ADDR, A1DATA, A1EN, B1ADDR, B1DATA, B1
     input B1EN;
     output B1DATA;
 
-    parameter INIT      =   1'bx;
+    // parameter INIT      =   1'b0;
     parameter CLKPOL1   =   1;
     parameter CLKPOL2   =   1;
 
