@@ -9,10 +9,10 @@ tcl {{ syn.generic.lib }}
 verilog_defaults -add -I{{ abspath(dir_) }}
 {%- endfor %}
 {%- for k, v in (app.defines|default({})).items() %}
-{%- if none(v) %}
-verilog_define -D{{ k }}
+{%- if v is none %}
+verilog_defines -D{{ k }}
 {%- else %}
-verilog_define -D{{ k }}={{ v }}
+verilog_defines -D{{ k }}={{ v }}
 {%- endif %}
 {%- endfor %}
 {%- for src in app.sources %}
