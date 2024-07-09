@@ -63,6 +63,12 @@ techmap -map [file join $generic_script_root {{ entry.techmap }}]
 opt -full
 clean
 
+# print post-LUTmap report
+stat -width
+
+# convert unsupported FFs to supported FFs
+dfflegalize -cell \$_DFF_P_ x -cell \$_DFFE_PP_ x -cell \$_DFFE_PN_ x
+
 # print final report
 stat -width
 
